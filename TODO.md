@@ -4,12 +4,12 @@ This list tracks the work needed to move Altair from a building repository with 
 
 ## 1. Baseline Health
 
-- [ ] Turn on compiler warnings for host CMake targets.
+- [x] Turn on compiler warnings for host CMake targets.
 - [ ] Decide which warnings should be fatal in CI.
-- [ ] Add a Debug and Release build matrix to CI.
-- [ ] Add a CI check that verifies the Bayek submodule is initialized.
+- [x] Add a Debug and Release build matrix to CI.
+- [x] Add a CI check that verifies the Bayek submodule is initialized.
 - [ ] Add a documented local developer command set for configure, build, test, SITL, and Monte Carlo.
-- [ ] Add generated build, CSV, and plot artifacts to `.gitignore` if missing.
+- [x] Add generated build, CSV, and plot artifacts to `.gitignore` if missing.
 - [ ] Add a lightweight formatting rule or script for C, C++, CMake, and Python files.
 
 Acceptance check:
@@ -141,7 +141,7 @@ Acceptance check:
 
 ## Near-Term Milestone
 
-- [ ] Add warnings and CI matrix.
+- [x] Add warnings and CI matrix.
 - [ ] Expand FSW mode and mixer tests.
 - [ ] Add CLI options and CSV output path support to `sitl_runner`.
 - [ ] Add CLI options and pass/fail summary fields to `mc_runner`.
