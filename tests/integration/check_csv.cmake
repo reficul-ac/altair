@@ -1,0 +1,21 @@
+if(NOT DEFINED CSV_FILE)
+  message(FATAL_ERROR "CSV_FILE is required")
+endif()
+if(NOT DEFINED EXPECTED_HEADER)
+  message(FATAL_ERROR "EXPECTED_HEADER is required")
+endif()
+
+if(NOT EXISTS "${CSV_FILE}")
+  message(FATAL_ERROR "CSV file does not exist: ${CSV_FILE}")
+endif()
+
+file(STRINGS "${CSV_FILE}" CSV_ROWS)
+list(LENGTH CSV_ROWS CSV_ROW_COUNT)
+if(CSV_ROW_COUNT LESS 2)
+  message(FATAL_ERROR "CSV file has no data rows: ${CSV_FILE}")
+endif()
+
+list(GET CSV_ROWS 0 CSV_HEADER)
+if(NOT CSV_HEADER STREQUAL EXPECTED_HEADER)
+  message(FATAL_ERROR "unexpected CSV header in ${CSV_FILE}: ${CSV_HEADER}")
+endif()

@@ -8,7 +8,7 @@ This list tracks the work needed to move Altair from a building repository with 
 - [ ] Decide which warnings should be fatal in CI.
 - [x] Add a Debug and Release build matrix to CI.
 - [x] Add a CI check that verifies the Bayek submodule is initialized.
-- [ ] Add a documented local developer command set for configure, build, test, SITL, and Monte Carlo.
+- [x] Add a documented local developer command set for configure, build, test, SITL, and Monte Carlo.
 - [x] Add generated build, CSV, and plot artifacts to `.gitignore` if missing.
 - [ ] Add a lightweight formatting rule or script for C, C++, CMake, and Python files.
 
@@ -72,11 +72,11 @@ Acceptance check:
 
 ## 6. SITL Runner
 
-- [ ] Add command-line options for duration, step size, scenario, seed, and output path.
-- [ ] Write SITL output to CSV instead of only stdout.
+- [x] Add command-line options for duration, step size, scenario, seed, and output path.
+- [x] Write SITL output to CSV instead of only stdout.
 - [ ] Include inputs, estimates, modes, actuators, and plant truth in SITL logs.
 - [ ] Add nonzero exit codes for invalid scenario config, unbounded output, or failed assertions.
-- [ ] Add a short smoke scenario for CI.
+- [x] Add a short smoke scenario for CI.
 - [ ] Add a longer local scenario for developer inspection.
 - [ ] Add Python or shell wrapper to run SITL and summarize key metrics.
 - [ ] Add documentation with example commands and expected outputs.
@@ -87,13 +87,13 @@ Acceptance check:
 
 ## 7. Monte Carlo Runner
 
-- [ ] Add command-line options for seed, runs, duration, step size, scenario family, and output path.
-- [ ] Log enough per-run metadata to reproduce failures.
+- [x] Add command-line options for seed, runs, duration, step size, scenario family, and output path.
+- [x] Log enough per-run metadata to reproduce failures.
 - [ ] Add randomized initial conditions, wind, sensor noise, parameter perturbations, and command profiles.
 - [ ] Define pass/fail metrics for bounded actuators, no NaNs, safe modes, speed, altitude, and attitude limits.
-- [ ] Emit summary CSV with pass/fail status and failure reason.
+- [x] Emit summary CSV with pass/fail status and failure reason.
 - [ ] Add optional per-run detailed logs for failed cases.
-- [ ] Add CI-scale Monte Carlo smoke run.
+- [x] Add CI-scale Monte Carlo smoke run.
 - [ ] Add local-scale Monte Carlo command for broader sweeps.
 - [ ] Add summary tooling for mean, min, max, percentile, and failure counts.
 
@@ -129,7 +129,7 @@ Acceptance check:
 
 ## 10. Documentation And Operator Workflow
 
-- [ ] Update `README.md` with quickstart commands for build, tests, SITL, and Monte Carlo.
+- [x] Update `README.md` with quickstart commands for build, tests, SITL, and Monte Carlo.
 - [ ] Add docs for simulation assumptions, scenario files, output CSV schemas, and metrics.
 - [ ] Add a development workflow document for adding a new scenario or regression fixture.
 - [ ] Add a troubleshooting section for submodules, CMake, CI, and generated artifacts.
@@ -143,15 +143,15 @@ Acceptance check:
 
 - [x] Add warnings and CI matrix.
 - [ ] Expand FSW mode and mixer tests.
-- [ ] Add CLI options and CSV output path support to `sitl_runner`.
-- [ ] Add CLI options and pass/fail summary fields to `mc_runner`.
-- [ ] Add README quickstart commands for SITL and Monte Carlo.
-- [ ] Add one deterministic scenario that is suitable for CI.
+- [x] Add CLI options and CSV output path support to `sitl_runner`.
+- [x] Add CLI options and pass/fail summary fields to `mc_runner`.
+- [x] Add README quickstart commands for SITL and Monte Carlo.
+- [x] Add one deterministic scenario that is suitable for CI.
 
 Definition of done:
 
-- [ ] `cmake -S . -B build`
-- [ ] `cmake --build build --parallel`
-- [ ] `ctest --test-dir build --output-on-failure`
-- [ ] `./build/vehicle/sitl_runner --scenario smoke --output sitl_smoke.csv`
-- [ ] `./build/vehicle/mc_runner --seed 1 --runs 100 --scenario smoke --output mc_summary.csv`
+- [x] `cmake -S . -B build`
+- [x] `cmake --build build --parallel`
+- [x] `ctest --test-dir build --output-on-failure`
+- [x] `./build/vehicle/sitl_runner --scenario smoke --output sitl_smoke.csv`
+- [x] `./build/vehicle/mc_runner --seed 1 --runs 100 --scenario smoke --output mc_summary.csv`

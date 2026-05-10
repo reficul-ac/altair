@@ -8,8 +8,20 @@ Design documentation lives in [docs/README.md](docs/README.md).
 
 ```sh
 cmake -S . -B build
-cmake --build build
+cmake --build build --parallel
 ctest --test-dir build --output-on-failure
+```
+
+Run the deterministic smoke SITL scenario and write a CSV flight log:
+
+```sh
+./build/vehicle/sitl_runner --scenario smoke --output sitl_smoke.csv
+```
+
+Run the deterministic smoke Monte Carlo sweep and write a summary CSV:
+
+```sh
+./build/vehicle/mc_runner --seed 1 --runs 100 --scenario smoke --output mc_summary.csv
 ```
 
 ## Targets
