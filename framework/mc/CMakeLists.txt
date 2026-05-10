@@ -1,0 +1,2 @@
+add_executable(mc_runner mc_runner.c)
+target_link_libraries(mc_runner PRIVATE altair_sim altair_fsw altair_vehicle altair_common)

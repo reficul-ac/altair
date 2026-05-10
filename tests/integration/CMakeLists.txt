@@ -1,0 +1,11 @@
+add_executable(test_replay test_replay.c)
+target_link_libraries(test_replay PRIVATE altair_fsw altair_vehicle altair_common)
+add_test(NAME integration_replay COMMAND test_replay)
+
+add_executable(test_sitl_smoke test_sitl_smoke.c)
+target_link_libraries(test_sitl_smoke PRIVATE altair_sim altair_fsw altair_vehicle altair_common)
+add_test(NAME integration_sitl_smoke COMMAND test_sitl_smoke)
+
+add_executable(test_telemetry test_telemetry.c)
+target_link_libraries(test_telemetry PRIVATE altair_telemetry)
+add_test(NAME integration_telemetry COMMAND test_telemetry)

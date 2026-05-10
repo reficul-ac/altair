@@ -1,0 +1,7 @@
+#ifndef ALTAIR_CONFIG_H
+#define ALTAIR_CONFIG_H
+
+#define ALTAIR_CONTROL_HZ (100U)
+#define ALTAIR_DEFAULT_DT_S (0.01f)
+
+#endif
