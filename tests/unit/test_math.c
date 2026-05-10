@@ -32,10 +32,10 @@ int main(void) {
   CHECK(near_real(out.roll, e.roll, 1.0e-5f));
   CHECK(near_real(out.pitch, e.pitch, 1.0e-5f));
   CHECK(near_real(out.yaw, e.yaw, 1.0e-5f));
-  rotated = quat_rotate_vec3(quat_from_euler((euler_t){0.0f, 0.0f, ALTAIR_PI * 0.5f}), x_axis);
+  rotated = quat_rotate_vec3(quat_from_euler((euler_t){0.0f, 0.0f, BAYEK_PI * 0.5f}), x_axis);
   CHECK(near_real(rotated.x, 0.0f, 1.0e-5f));
   CHECK(near_real(rotated.y, 1.0f, 1.0e-5f));
-  CHECK(near_real(wrap_pi(4.0f), 4.0f - ALTAIR_TWO_PI, 1.0e-6f));
+  CHECK(near_real(wrap_pi(4.0f), 4.0f - BAYEK_TWO_PI, 1.0e-6f));
   CHECK(near_real(clamp_real(2.0f, -1.0f, 1.0f), 1.0f, 1.0e-6f));
   CHECK(near_real(lerp_real(2.0f, 4.0f, 0.25f), 2.5f, 1.0e-6f));
   return 0;

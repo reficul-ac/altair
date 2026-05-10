@@ -1,4 +1,4 @@
-#include "altair_params.h"
+#include "altair_vehicle.h"
 #include "fsw.h"
 #include "sim_plant.h"
 
@@ -16,14 +16,14 @@ int main(void) {
   clock_t start;
   clock_t end;
 
-  fsw_init(altair_default_params());
+  bayek_fsw_init(altair_vehicle_interface());
   sim_plant_init(&plant);
 
   printf("step,time_s,mode,motor,aileron,elevator,rudder,airspeed_mps,altitude_m\n");
   start = clock();
   for (i = 0; i < steps; ++i) {
     sim_make_fsw_input(&plant, &rc, dt_s, (uint32_t)(i * 10000U), &input);
-    fsw_step(&input, &output);
+    bayek_fsw_step(&input, &output);
     if (!sim_output_is_bounded(&output)) {
       return 2;
     }

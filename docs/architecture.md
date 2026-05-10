@@ -1,19 +1,20 @@
 # Architecture
 
-Altair is organized as a C-first repository with a small reusable flight software core and host-side tooling around it. The layout is designed to make the boundary between portable flight logic and platform-specific code visible in the filesystem.
+Altair is organized as a C-first vehicle repository. Bayek is the reusable framework layer consumed through the private `bayek/` git submodule. The layout keeps Bayek and Altair-specific source separate.
 
 ## Repository Layout
 
 ```text
-framework/
+bayek/
   common/      Shared C99 types, math, and control utilities.
   fsw/         Portable flight software core.
-  sim/         Host-only deterministic simulation plant and SITL runner.
-  mc/          Host-only Monte Carlo runner.
+  sim/         Generic deterministic toy plant helpers.
   hitl/        Future hardware-in-the-loop adapters.
   telemetry/  Packet encode/decode helpers.
-vehicles/
-  altair/      Vehicle-specific params, limits, config, and mixer.
+params/        Altair default parameters.
+mixer/         Altair actuator limits and mixer.
+config/        Altair compile-time configuration.
+vehicle/       Altair-to-Bayek interface and Altair host runners.
 boards/
   arduino_altair/  PlatformIO project and Arduino-compatible board shim.
 tools/
@@ -29,39 +30,44 @@ tests/
 The intended dependency graph is:
 
 ```text
-framework/common
+bayek/common
         ^
         |
-vehicles/altair
+bayek/fsw, bayek/sim, bayek/telemetry
         ^
         |
-framework/fsw
-
-framework/sim, framework/mc, tests, and boards depend on the flight core.
-The flight core does not depend on them.
+altair_vehicle and Altair runners/tests/boards
 ```
 
-`framework/fsw` must remain portable. It should not include host I/O, simulator code, telemetry transport, Arduino APIs, dynamic allocation, or file access. That rule is more important than the current placeholder control law because it keeps the flight logic reusable on both host and embedded targets.
+Bayek must not know Altair exists. Files under `bayek/` must not include `altair_*` headers or link against `altair_vehicle`. Altair may depend on Bayek and provides vehicle-specific behavior through `altair_vehicle_interface()`.
+
+`bayek/fsw` must remain portable. It should not include host I/O, simulator code, telemetry transport, Arduino APIs, dynamic allocation, file access, or Altair headers. That rule is more important than the current placeholder control law because it keeps the flight logic reusable on both host and embedded targets.
 
 ## Module Responsibilities
 
-`framework/common` owns reusable data types and primitive algorithms. These utilities should stay generic enough for any vehicle or board.
+`bayek/common` owns reusable data types and primitive algorithms. These utilities should stay generic enough for any vehicle or board.
 
-`vehicles/altair` owns values and transformations that are specific to the Altair airframe. It is the right place for actuator limits, mixer mapping, and default vehicle parameters.
+`params/`, `mixer/`, `config/`, and `vehicle/` own values and transformations that are specific to the Altair airframe. They are the right places for actuator limits, mixer mapping, default vehicle parameters, and the Bayek vehicle interface implementation.
 
-`framework/fsw` owns flight-mode selection, caller-visible FSW state, state-estimate updates, and control commands. It consumes generic inputs and produces generic outputs.
+`bayek/fsw` owns flight-mode selection, caller-visible FSW state, state-estimate updates, and control commands. It consumes generic inputs, calls the configured vehicle interface, and produces generic outputs.
 
-`framework/sim` owns host-only plant dynamics, sensor generation, and SITL runner logic. It may use `stdio`, timing APIs, and other host facilities because those do not cross into FSW.
+`bayek/sim` owns generic toy plant dynamics and sensor generation. Altair-specific SITL and Monte Carlo runners live under `vehicle/` because they bind Bayek to `altair_vehicle_interface()`.
 
-`framework/mc` owns deterministic batch execution and summary metrics. Python may orchestrate the compiled runner but should not become the core simulator.
-
-`framework/telemetry` owns binary packet formatting. It is independent of `fsw_step()` so telemetry can be used by host tools, embedded transports, or HITL without coupling packet handling to control execution.
+`bayek/telemetry` owns binary packet formatting. It is independent of `bayek_fsw_step()` so telemetry can be used by host tools, embedded transports, or HITL without coupling packet handling to control execution.
 
 `boards/arduino_altair` owns Arduino setup/loop integration and hardware abstraction stubs.
+
+Bayek module internals are documented in [Bayek Architecture](../bayek/docs/architecture.md).
 
 ## Build Model
 
 CMake is the canonical host build path. Each module exposes a named target so future tests and tools can link only what they need. PlatformIO is limited to the Arduino-compatible embedded skeleton.
+
+Clone Altair with submodules, or initialize Bayek after cloning:
+
+```sh
+git submodule update --init --recursive
+```
 
 Host build commands:
 

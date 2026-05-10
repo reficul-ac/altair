@@ -6,9 +6,11 @@ The embedded skeleton lives in `boards/arduino_altair`.
 
 `platformio.ini` defines an Arduino-compatible environment and includes the same C source files used by host builds:
 
-- `framework/common/*.c`
-- `framework/fsw/*.c`
-- `vehicles/altair/*.c`
+- `bayek/common/*.c`
+- `bayek/fsw/*.c`
+- `params/*.c`
+- `mixer/*.c`
+- `vehicle/altair_vehicle.c`
 
 This is the main embedded design point: board builds should link the same flight core source as host tests and simulation.
 
@@ -19,11 +21,11 @@ This is the main embedded design point: board builds should link the same flight
 1. initialize HAL
 2. initialize FSW
 3. read inputs
-4. call `fsw_step()`
+4. call `bayek_fsw_step()`
 5. write actuators
 6. send telemetry
 
-The file may include Arduino APIs because it is a board-layer shim. Those APIs must not move into `framework/fsw`.
+The file may include Arduino APIs because it is a board-layer shim. Those APIs must not move into `bayek/fsw`.
 
 ## HAL Stubs
 
@@ -49,4 +51,4 @@ That makes it possible to compare behavior across:
 - HITL
 - Arduino-compatible embedded builds
 
-All of those paths should exercise the same `framework/fsw` C files.
+All of those paths should exercise the same `bayek/fsw` C files through the Altair vehicle interface.

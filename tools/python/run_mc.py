@@ -14,7 +14,7 @@ def main() -> int:
     parser.add_argument("--output", default="mc_summary.csv")
     args = parser.parse_args()
 
-    exe = pathlib.Path(args.build_dir) / "framework" / "mc" / "mc_runner"
+    exe = pathlib.Path(args.build_dir) / "vehicle" / "mc_runner"
     result = subprocess.run(
         [str(exe), str(args.seed), str(args.runs)],
         check=True,

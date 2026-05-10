@@ -1,4 +1,4 @@
-#include "altair_params.h"
+#include "altair_vehicle.h"
 #include "fsw.h"
 #include "sim_plant.h"
 
@@ -43,12 +43,12 @@ int main(int argc, char **argv) {
     fsw_output_t output;
     rc_input_t rc = {0.52f + throttle_bias, 0.05f, 0.0f, 0.0f, 1U, 1U};
 
-    fsw_init(altair_default_params());
+    bayek_fsw_init(altair_vehicle_interface());
     sim_plant_init(&plant);
     for (step = 0; step < cfg.steps; ++step) {
       real_t abs_roll;
       sim_make_fsw_input(&plant, &rc, 0.01f, (uint32_t)(step * 10000U), &input);
-      fsw_step(&input, &output);
+      bayek_fsw_step(&input, &output);
       if (!sim_output_is_bounded(&output)) {
         return 3;
       }

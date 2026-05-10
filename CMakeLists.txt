@@ -15,10 +15,6 @@ endif()
 
 enable_testing()
 
-add_subdirectory(framework/common)
-add_subdirectory(vehicles/altair)
-add_subdirectory(framework/fsw)
-add_subdirectory(framework/telemetry)
-add_subdirectory(framework/sim)
-add_subdirectory(framework/mc)
+add_subdirectory(bayek)
+add_subdirectory(vehicle)
 add_subdirectory(tests)

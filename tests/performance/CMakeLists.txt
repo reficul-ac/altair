@@ -1,3 +1,3 @@
 add_executable(bench_fsw_step bench_fsw_step.c)
-target_link_libraries(bench_fsw_step PRIVATE altair_fsw altair_vehicle altair_common)
+target_link_libraries(bench_fsw_step PRIVATE bayek_fsw altair_vehicle bayek_common)
 add_test(NAME performance_fsw_step COMMAND bench_fsw_step)

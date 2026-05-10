@@ -1,0 +1,3 @@
+[submodule "bayek"]
+	path = bayek
+	url = https://github.com/reficul-ac/bayek.git

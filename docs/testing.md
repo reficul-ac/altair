@@ -1,38 +1,31 @@
-# Testing Strategy
+# Altair Testing Strategy
 
-The initial test suite is intentionally focused on deterministic behavior and boundary correctness.
+Altair tests verify vehicle-specific behavior and the integration between Altair and the Bayek submodule. Bayek framework-level testing expectations live in [Bayek Testing Strategy](../bayek/docs/testing.md).
 
 ## Unit Tests
 
-Unit tests cover:
+Altair unit tests cover:
 
-- vector math
-- quaternion normalization, multiplication through rotation, and Euler conversions
-- angle wrapping, clamp, and interpolation
-- low-pass filter behavior
-- PID output saturation and integrator limits
-- explicit integrator anti-windup
-- rate and slew limiting
-- deadband
 - Altair mixer saturation and safe outputs
 
-These tests keep low-level numerical behavior visible and separate from flight-mode behavior.
+Bayek common math and control tests should live in the Bayek repository as that test suite grows.
 
 ## Integration Tests
 
 Integration tests cover:
 
-- deterministic replay of `fsw_step()`
+- deterministic replay of `bayek_fsw_step()`
 - SITL smoke run with bounded actuator outputs
 - telemetry encode/decode and CRC rejection
+- Bayek-to-Altair vehicle interface routing through Altair mixer limits
 
 The deterministic replay test resets the core and replays the same input sequence, then checks that actuator outputs match within a tight tolerance.
 
-The SITL smoke test is not intended to prove aircraft performance. It proves that the host plant, sensor generation, FSW call path, and actuator bounds are wired correctly.
+The SITL smoke test is not intended to prove aircraft performance. It proves that the host plant, sensor generation, Bayek FSW call path, Altair vehicle interface, and actuator bounds are wired correctly.
 
 ## Performance Test
 
-The performance test calls `fsw_step()` many times and prints timing. It uses a conservative threshold to catch gross regressions only.
+The performance test initializes Bayek with `altair_vehicle_interface()`, calls `bayek_fsw_step()` many times, and prints timing. It uses a conservative threshold to catch gross regressions only.
 
 Early in the project, performance numbers are more useful as trend data than hard certification gates. The threshold should only become stricter after target hardware, loop rate, and control complexity are better understood.
 

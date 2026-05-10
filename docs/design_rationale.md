@@ -1,63 +1,46 @@
 # Design Rationale
 
-This document records why the initial skeleton makes certain choices. The purpose is to help future changes preserve intent rather than copying the first implementation blindly.
+This document records Altair-specific choices. Bayek framework rationale lives in [Bayek Design Rationale](../bayek/docs/design_rationale.md).
 
-## C First
+## Altair As Vehicle Repository
 
-The flight core is C99 because C has predictable ABI behavior, is easy to integrate into embedded projects, and avoids pulling C++ runtime assumptions into a small control loop. The Arduino shim is C++ only because Arduino uses C++ entry points.
+Altair owns the airframe-specific layer: parameters, actuator limits, mixer behavior, board integration, host runners, and vehicle-facing tests. Bayek owns reusable framework code.
 
-## `real_t` Is `float`
+This split keeps Bayek portable while letting Altair evolve as a concrete aircraft project.
 
-`real_t` is currently `float` to match common microcontroller hardware and reduce memory bandwidth. The type alias makes a future precision experiment possible without rewriting every interface.
+## Bayek As Submodule
 
-The project should not add mixed float/double APIs casually. If double precision is needed later, make it a deliberate configuration choice and rerun replay/performance tests.
+Bayek is pinned through the `bayek/` git submodule. This gives Altair reproducible builds while allowing framework changes to land in the Bayek repository first.
 
-## No Dynamic Allocation In FSW
+Altair code may include Bayek headers and link Bayek targets. Bayek code must not include Altair headers or link Altair targets.
 
-The flight core avoids heap allocation to keep timing and failure modes predictable. Caller-owned structs and static internal state are easier to reason about on embedded targets.
+## Root-Level Vehicle Folders
 
-If multiple instances are needed later, use caller-owned context structs rather than heap allocation.
+Altair-specific source lives in root-level folders:
 
-## No Formatting Or File I/O In FSW
+- `params/`
+- `mixer/`
+- `config/`
+- `vehicle/`
 
-Formatting and file I/O introduce hidden dependencies, variable timing, and platform assumptions. Logging belongs in host runners, telemetry adapters, or board/HAL layers.
+These folders make the vehicle-owned surface explicit and avoid hiding Altair code inside the Bayek submodule.
 
-## Static Singleton FSW State
+## Vehicle Interface Boundary
 
-The first API uses a static singleton because it is small and easy for embedded callers. This is not meant to block future multi-instance simulation. The planned extension is an explicit `fsw_context_t` while keeping the singleton wrapper for simple targets.
+Altair binds Bayek through `altair_vehicle_interface()`. That function supplies Bayek with default parameters, manual mixing, control mixing, and safe actuator behavior.
 
-## Vehicle Layer Between Common And FSW
-
-The vehicle layer prevents Altair-specific actuator limits and mixer choices from leaking into generic math or host simulation. It also prevents the FSW core from hardcoding an airframe-specific actuator layout in multiple places.
+Keeping this boundary explicit prevents the FSW core from hardcoding Altair actuator limits or mixer choices.
 
 ## CMake For Host, PlatformIO For Arduino
 
-CMake is used for host builds because it integrates naturally with CTest and CI. PlatformIO is used only where it adds value: compiling the Arduino-compatible board project.
+CMake is used for host builds because it integrates naturally with CTest and CI. PlatformIO is used only for the Arduino-compatible board project.
 
-The two build systems should share source files, not duplicate flight logic.
+The two build systems should share source files and the same Bayek submodule revision, not duplicate flight logic.
 
-## CSV For Early Host Outputs
+## CSV For Altair Host Outputs
 
-SITL and Monte Carlo write CSV because it is easy to inspect, diff, and consume without extra dependencies. Binary logs can be added later when data volume or fidelity justifies them.
-
-## Toy Plant Instead Of High-Fidelity Dynamics
-
-The current plant validates architecture, determinism, and bounded behavior. A high-fidelity model would take more assumptions than the skeleton currently has and could obscure whether the software boundaries are correct.
-
-The plant should improve incrementally after the basic interfaces settle.
+Altair SITL and Monte Carlo runners write CSV because it is easy to inspect, diff, and consume without extra dependencies. Binary logs can be added later when data volume or fidelity justifies them.
 
 ## Deterministic Monte Carlo
 
-The Monte Carlo runner is deterministic by seed so failures can be reproduced exactly. This matters more than statistical richness in the initial skeleton.
-
-Future dispersions should preserve replay by recording seeds and configuration in the CSV or an adjacent manifest.
-
-## Telemetry Outside FSW
-
-Telemetry is independent of the control step because packet formats and transports change more often than control logic. Keeping the boundary separate allows the same FSW outputs to be logged, transmitted, replayed, or ignored by different callers.
-
-## Conservative Tests
-
-The initial tests focus on simple invariants: math correctness, saturation, determinism, packet CRCs, and smoke execution. They do not overclaim flight performance.
-
-As the control law and plant mature, tests should add scenario-level assertions and golden replay artifacts.
+The Monte Carlo runner is deterministic by seed so failures can be reproduced exactly. Future dispersions should preserve replay by recording seeds and configuration in the CSV or an adjacent manifest.

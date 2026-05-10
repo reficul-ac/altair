@@ -1,4 +1,4 @@
-#include "altair_params.h"
+#include "altair_vehicle.h"
 #include "fsw.h"
 #include "sim_plant.h"
 
@@ -12,11 +12,11 @@ int main(void) {
   fsw_output_t output;
   rc_input_t rc = {0.55f, 0.1f, 0.0f, 0.0f, 1U, 1U};
   int i;
-  fsw_init(altair_default_params());
+  bayek_fsw_init(altair_vehicle_interface());
   sim_plant_init(&plant);
   for (i = 0; i < 300; ++i) {
     sim_make_fsw_input(&plant, &rc, 0.01f, (uint32_t)(i * 10000U), &input);
-    fsw_step(&input, &output);
+    bayek_fsw_step(&input, &output);
     CHECK(sim_output_is_bounded(&output));
     sim_plant_step(&plant, &output.actuators, 0.01f);
   }

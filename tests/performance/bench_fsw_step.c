@@ -1,4 +1,4 @@
-#include "altair_params.h"
+#include "altair_vehicle.h"
 #include "fsw.h"
 
 #include <stdio.h>
@@ -14,7 +14,7 @@ int main(void) {
   double elapsed_s;
   double us_per_step;
 
-  fsw_init(altair_default_params());
+  bayek_fsw_init(altair_vehicle_interface());
   in.dt_s = 0.01f;
   in.rc.throttle = 0.5f;
   in.rc.roll = 0.1f;
@@ -37,7 +37,7 @@ int main(void) {
 
   start = clock();
   for (i = 0; i < iterations; ++i) {
-    fsw_step(&in, &out);
+    bayek_fsw_step(&in, &out);
   }
   end = clock();
   elapsed_s = (double)(end - start) / (double)CLOCKS_PER_SEC;

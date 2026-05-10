@@ -1,4 +1,4 @@
-#include "altair_params.h"
+#include "altair_vehicle.h"
 #include "fsw.h"
 
 #include <math.h>
@@ -33,15 +33,15 @@ int main(void) {
   fsw_output_t b[64];
   fsw_input_t in;
   int i;
-  fsw_init(altair_default_params());
+  bayek_fsw_init(altair_vehicle_interface());
   for (i = 0; i < 64; ++i) {
     make_input(i, &in);
-    fsw_step(&in, &a[i]);
+    bayek_fsw_step(&in, &a[i]);
   }
-  fsw_reset();
+  bayek_fsw_reset();
   for (i = 0; i < 64; ++i) {
     make_input(i, &in);
-    fsw_step(&in, &b[i]);
+    bayek_fsw_step(&in, &b[i]);
     CHECK(fabsf(a[i].actuators.motor - b[i].actuators.motor) < 1.0e-7f);
     CHECK(fabsf(a[i].actuators.aileron - b[i].actuators.aileron) < 1.0e-7f);
     CHECK(fabsf(a[i].actuators.elevator - b[i].actuators.elevator) < 1.0e-7f);
