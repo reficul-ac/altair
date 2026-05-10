@@ -13,6 +13,20 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
 endif()
 
+option(ALTAIR_ENABLE_WARNINGS "Enable compiler warnings for Altair host targets" ON)
+
+function(altair_enable_warnings target)
+  if(NOT ALTAIR_ENABLE_WARNINGS)
+    return()
+  endif()
+
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4)
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+endfunction()
+
 enable_testing()
 
 add_subdirectory(bayek)
