@@ -12,3 +12,13 @@ add_executable(test_mixer test_mixer.c)
 target_link_libraries(test_mixer PRIVATE altair_vehicle bayek_common)
 altair_enable_warnings(test_mixer)
 add_test(NAME unit_mixer COMMAND test_mixer)
+
+add_executable(test_sim6dof test_sim6dof.c)
+target_link_libraries(test_sim6dof PRIVATE bayek_sim bayek_common)
+altair_enable_warnings(test_sim6dof)
+add_test(NAME unit_sim6dof COMMAND test_sim6dof)
+
+add_executable(test_sim_fixedwing test_sim_fixedwing.c)
+target_link_libraries(test_sim_fixedwing PRIVATE bayek_sim bayek_common)
+altair_enable_warnings(test_sim_fixedwing)
+add_test(NAME unit_sim_fixedwing COMMAND test_sim_fixedwing)
