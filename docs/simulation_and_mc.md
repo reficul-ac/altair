@@ -4,7 +4,7 @@ Altair owns concrete host runners that bind Bayek to `altair_vehicle_interface()
 
 ## SITL Plant
 
-Altair currently uses Bayek's deterministic toy plant. It models:
+Altair currently uses Bayek's deterministic toy plant for `smoke` and Bayek's fixed-wing 6DOF plant for `cruise6dof`. These models cover:
 
 - actuator lag
 - actuator saturation through FSW and mixer outputs
@@ -25,6 +25,43 @@ This plant is not an Altair flight dynamics model. It exists to validate:
 `vehicle/sitl_runner.c` runs a fixed number of fixed-size steps. It initializes Bayek with `altair_vehicle_interface()`, prints CSV rows to stdout, and prints a timing summary to stderr.
 
 CSV is used because it is transparent, dependency-free, easy to diff, and easy to consume from Python, spreadsheets, or CI artifacts.
+
+The `smoke` scenario keeps its compact CSV output for plumbing checks. The `cruise6dof` scenario writes richer trajectory data including RC inputs, actuator outputs, latitude/longitude, NED position and velocity, Euler angles, attitude quaternion, body rates, airspeed, altitude, body acceleration, and the last force and moment vectors.
+
+`cruise6dof` can start from a dependency-free initial-condition file:
+
+```ini
+# cruise6dof_initial.ini
+lat_deg = 37.4275
+lon_deg = -122.1697
+altitude_m = 150
+roll_rad = 0
+pitch_rad = 0.04
+yaw_rad = 0.1
+vel_n_mps = 18
+vel_e_mps = 0
+vel_d_mps = 0
+p_rps = 0
+q_rps = 0
+r_rps = 0
+airspeed_mps = 18
+rc_throttle = 0.6
+rc_roll = 0
+rc_pitch = 0.02
+rc_yaw = 0
+rc_arm = 1
+rc_mode = 1
+```
+
+Each line is `key = value`; blank lines and `#` comments are ignored. Omitted fields use the scenario defaults. If no explicit NED velocity is provided, `airspeed_mps` is used as the initial forward speed.
+
+Example run:
+
+```sh
+./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv
+```
+
+Latitude and longitude in `cruise6dof` logs are computed from NED position with a local tangent-plane approximation around `lat_deg` and `lon_deg`. They are useful for plotting short local trajectories, not as a full geodesy model.
 
 ## Altair Monte Carlo Runner
 
@@ -47,6 +84,14 @@ Python scripts in `tools/python` are orchestration helpers only:
 
 - `run_mc.py` invokes the compiled runner and writes CSV.
 - `plot_mc.py` prints simple summary statistics.
+- `plot_sitl.py` plots selected `cruise6dof` trajectory views from a SITL CSV.
+
+Example plotting commands:
+
+```sh
+python3 tools/python/plot_sitl.py sitl_cruise6dof.csv --plot velocities --plot attitudes --plot position --out-dir plots
+python3 tools/python/plot_sitl.py sitl_cruise6dof.csv --plot all --show
+```
 
 Python is intentionally not used for core simulation logic. That keeps simulation behavior close to what C tests and embedded builds exercise.
 

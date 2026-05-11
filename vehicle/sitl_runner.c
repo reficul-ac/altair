@@ -3,8 +3,10 @@
 #include "math_utils.h"
 #include "sim_fixedwing.h"
 #include "sim_plant.h"
+#include "sitl_initial_conditions.h"
 
 #include <errno.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,12 +19,13 @@ typedef struct {
   double dt_s;
   uint32_t seed;
   const char *output_path;
+  const char *initial_path;
 } sitl_config_t;
 
 static void print_usage(FILE *stream) {
   fprintf(stream,
           "usage: sitl_runner [--scenario smoke|cruise6dof] [--duration seconds] [--dt seconds]\n"
-          "                   [--seed uint] [--output path]\n");
+          "                   [--seed uint] [--output path] [--initial path]\n");
 }
 
 static int parse_double_arg(const char *text, const char *name, double *value) {
@@ -61,6 +64,7 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
   cfg->dt_s = 0.01;
   cfg->seed = 1U;
   cfg->output_path = NULL;
+  cfg->initial_path = NULL;
 
   for (i = 1; i < argc; ++i) {
     if (strcmp(argv[i], "--help") == 0) {
@@ -90,6 +94,12 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
         return -1;
       }
       cfg->output_path = argv[i];
+    } else if (strcmp(argv[i], "--initial") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "--initial requires a value\n");
+        return -1;
+      }
+      cfg->initial_path = argv[i];
     } else {
       fprintf(stderr, "unknown option: %s\n", argv[i]);
       return -1;
@@ -106,6 +116,10 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
   }
   if (cfg->dt_s <= 0.0) {
     fprintf(stderr, "dt must be positive\n");
+    return -1;
+  }
+  if (cfg->initial_path != NULL && strcmp(cfg->scenario, "cruise6dof") != 0) {
+    fprintf(stderr, "--initial is only supported with --scenario cruise6dof\n");
     return -1;
   }
   (void)cfg->seed;
@@ -170,29 +184,92 @@ static int run_smoke(const sitl_config_t *cfg, int steps, FILE *csv) {
   return 0;
 }
 
+static void apply_initial_conditions(sim_fixedwing_state_t *plant, const sitl_initial_conditions_t *initial) {
+  euler_t attitude;
+  if (plant == NULL || initial == NULL) {
+    return;
+  }
+  attitude.roll = initial->roll_rad;
+  attitude.pitch = initial->pitch_rad;
+  attitude.yaw = initial->yaw_rad;
+  plant->body.attitude_body_to_ned = quat_from_euler(attitude);
+  plant->body.position_ned_m.x = 0.0f;
+  plant->body.position_ned_m.y = 0.0f;
+  plant->body.position_ned_m.z = -initial->altitude_m;
+  if (initial->has_velocity_ned) {
+    plant->body.velocity_ned_mps.x = initial->vel_n_mps;
+    plant->body.velocity_ned_mps.y = initial->vel_e_mps;
+    plant->body.velocity_ned_mps.z = initial->vel_d_mps;
+  } else {
+    vec3_t forward_body = {initial->airspeed_mps, 0.0f, 0.0f};
+    plant->body.velocity_ned_mps = quat_rotate_vec3(plant->body.attitude_body_to_ned, forward_body);
+  }
+  plant->body.omega_body_rps.x = initial->p_rps;
+  plant->body.omega_body_rps.y = initial->q_rps;
+  plant->body.omega_body_rps.z = initial->r_rps;
+  plant->last_airspeed_mps = initial->airspeed_mps;
+}
+
+static void ned_to_geo(real_t lat0_deg,
+                       real_t lon0_deg,
+                       vec3_t position_ned_m,
+                       real_t *lat_deg,
+                       real_t *lon_deg,
+                       real_t *altitude_m) {
+  const real_t earth_radius_m = 6378137.0f;
+  real_t lat0_rad = lat0_deg * (BAYEK_PI / 180.0f);
+  real_t cos_lat0 = (real_t)cosf(lat0_rad);
+  if (fabsf(cos_lat0) < 1.0e-6f) {
+    cos_lat0 = cos_lat0 < 0.0f ? -1.0e-6f : 1.0e-6f;
+  }
+  *lat_deg = lat0_deg + (position_ned_m.x / earth_radius_m) * (180.0f / BAYEK_PI);
+  *lon_deg = lon0_deg + (position_ned_m.y / (earth_radius_m * cos_lat0)) * (180.0f / BAYEK_PI);
+  *altitude_m = -position_ned_m.z;
+}
+
 static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
   sim_fixedwing_params_t params;
   sim_fixedwing_state_t plant;
   fsw_input_t input;
   fsw_output_t output;
-  rc_input_t rc = {0.58f, 0.0f, 0.02f, 0.0f, 1U, 1U};
+  sitl_initial_conditions_t initial;
+  char initial_error[160];
+  rc_input_t rc;
   int i;
 
   bayek_fsw_init(altair_vehicle_interface());
   sim_fixedwing_default_params(&params);
   sim_fixedwing_init_default(&plant);
+  sitl_initial_conditions_default(&initial);
+  if (cfg->initial_path != NULL) {
+    if (!sitl_initial_conditions_load(cfg->initial_path, &initial, initial_error, sizeof(initial_error))) {
+      fprintf(stderr, "failed to load initial conditions: %s\n", initial_error);
+      return 1;
+    }
+  }
+  apply_initial_conditions(&plant, &initial);
+  rc = initial.rc;
 
   if (fprintf(csv,
               "step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,"
-              "pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,"
-              "p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2\n") < 0) {
+              "lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,"
+              "roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,"
+              "airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,"
+              "force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm\n") < 0) {
     fprintf(stderr, "failed to write output\n");
     return 1;
   }
 
   for (i = 0; i < steps; ++i) {
     euler_t euler;
+    real_t lat_deg;
+    real_t lon_deg;
+    real_t altitude_m;
     sim_fixedwing_make_fsw_input(&plant, &rc, (real_t)cfg->dt_s, (uint32_t)(i * cfg->dt_s * 1000000.0), &input);
+    ned_to_geo(initial.lat_deg, initial.lon_deg, plant.body.position_ned_m, &lat_deg, &lon_deg, &altitude_m);
+    input.gps.lat_deg = lat_deg;
+    input.gps.lon_deg = lon_deg;
+    input.gps.alt_m = altitude_m;
     bayek_fsw_step(&input, &output);
     if (!sim_output_is_bounded(&output)) {
       fprintf(stderr, "unbounded_output at step %d\n", i);
@@ -203,10 +280,13 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
       return 2;
     }
     euler = euler_from_quat(plant.body.attitude_body_to_ned);
+    ned_to_geo(initial.lat_deg, initial.lon_deg, plant.body.position_ned_m, &lat_deg, &lon_deg, &altitude_m);
     if (fprintf(csv,
                 "%d,%.3f,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
-                "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
-                "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+                "%.8f,%.8f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
+                "%.6f,%.6f,%.6f,%.8f,%.8f,%.8f,%.8f,%.6f,%.6f,%.6f,"
+                "%.6f,%.6f,%.6f,%.6f,%.6f,"
+                "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
                 i,
                 (double)(i * cfg->dt_s),
                 (int)output.mode,
@@ -218,6 +298,8 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
                 (double)rc.roll,
                 (double)rc.pitch,
                 (double)rc.yaw,
+                (double)lat_deg,
+                (double)lon_deg,
                 (double)plant.body.position_ned_m.x,
                 (double)plant.body.position_ned_m.y,
                 (double)plant.body.position_ned_m.z,
@@ -227,14 +309,24 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
                 (double)euler.roll,
                 (double)euler.pitch,
                 (double)euler.yaw,
+                (double)plant.body.attitude_body_to_ned.w,
+                (double)plant.body.attitude_body_to_ned.x,
+                (double)plant.body.attitude_body_to_ned.y,
+                (double)plant.body.attitude_body_to_ned.z,
                 (double)plant.body.omega_body_rps.x,
                 (double)plant.body.omega_body_rps.y,
                 (double)plant.body.omega_body_rps.z,
                 (double)plant.last_airspeed_mps,
-                (double)(-plant.body.position_ned_m.z),
+                (double)altitude_m,
                 (double)plant.body.specific_force_body_mps2.x,
                 (double)plant.body.specific_force_body_mps2.y,
-                (double)plant.body.specific_force_body_mps2.z) < 0) {
+                (double)plant.body.specific_force_body_mps2.z,
+                (double)plant.last_force_body_n.x,
+                (double)plant.last_force_body_n.y,
+                (double)plant.last_force_body_n.z,
+                (double)plant.last_moment_body_nm.x,
+                (double)plant.last_moment_body_nm.y,
+                (double)plant.last_moment_body_nm.z) < 0) {
       fprintf(stderr, "failed to write output\n");
       return 1;
     }
