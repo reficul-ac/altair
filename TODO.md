@@ -142,7 +142,7 @@ Acceptance check:
 ## Near-Term Milestone
 
 - [x] Add warnings and CI matrix.
-- [ ] Expand FSW mode and mixer tests.
+- [x] Expand FSW mode and mixer tests.
 - [x] Add CLI options and CSV output path support to `sitl_runner`.
 - [x] Add CLI options and pass/fail summary fields to `mc_runner`.
 - [x] Add README quickstart commands for SITL and Monte Carlo.
