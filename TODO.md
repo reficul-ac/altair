@@ -78,12 +78,12 @@ Acceptance check:
 - [x] Add nonzero exit codes for invalid scenario config, unbounded output, or failed assertions.
 - [x] Add a short smoke scenario for CI.
 - [x] Add a longer local scenario for developer inspection.
-- [ ] Add Python or shell wrapper to run SITL and summarize key metrics.
-- [ ] Add documentation with example commands and expected outputs.
+- [x] Add Python or shell wrapper to run SITL and summarize key metrics.
+- [x] Add documentation with example commands and expected outputs.
 
 Acceptance check:
 
-- [ ] `sitl_runner` can be invoked reproducibly from the command line and produces an inspectable flight log.
+- [x] `sitl_runner` can be invoked reproducibly from the command line and produces an inspectable flight log.
 
 ## 7. Monte Carlo Runner
 

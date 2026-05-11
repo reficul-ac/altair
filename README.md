@@ -39,8 +39,11 @@ rc_mode = 1
 
 ```sh
 ./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv
+python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv
 python3 tools/python/plot_sitl.py sitl_cruise6dof.csv --plot velocities --plot attitudes --plot position --out-dir plots
 ```
+
+`run_sitl.py` invokes the compiled runner and prints stable summary metrics such as `rows`, `final_airspeed_mps`, `final_altitude_m`, `finite`, `max_abs_roll_rad`, and motor command bounds.
 
 `cruise6dof` latitude and longitude columns use a local tangent-plane approximation around the initial latitude and longitude, not a full geodesy model.
 

@@ -81,6 +81,16 @@ add_test(NAME integration_vehicle_interface COMMAND test_vehicle_interface)
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
   add_test(
+    NAME integration_run_sitl_cruise6dof_summary
+    COMMAND
+      ${Python3_EXECUTABLE}
+      "${CMAKE_CURRENT_SOURCE_DIR}/test_run_sitl.py"
+      "${CMAKE_SOURCE_DIR}"
+      "${CMAKE_BINARY_DIR}"
+      "${CMAKE_CURRENT_BINARY_DIR}/run_sitl"
+  )
+
+  add_test(
     NAME integration_plot_sitl_velocities
     COMMAND
       ${Python3_EXECUTABLE}

@@ -63,6 +63,30 @@ Example run:
 
 Latitude and longitude in `cruise6dof` logs are computed from NED position with a local tangent-plane approximation around `lat_deg` and `lon_deg`. They are useful for plotting short local trajectories, not as a full geodesy model.
 
+For routine local runs, `tools/python/run_sitl.py` wraps the compiled runner and prints key metrics from the generated CSV:
+
+```sh
+python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv
+```
+
+Expected output is a stable `key=value` summary that can be pasted into notes or checked in scripts:
+
+```text
+scenario=cruise6dof
+output=sitl_cruise6dof.csv
+rows=6000
+end_time_s=59.990000
+final_mode=1
+final_airspeed_mps=...
+final_altitude_m=...
+finite=true
+max_abs_roll_rad=...
+min_motor=...
+max_motor=...
+```
+
+The exact numeric values depend on duration, step size, initial conditions, and future model changes. `finite=true`, bounded motor output, and plausible final speed/altitude are the first checks to inspect.
+
 ## Altair Monte Carlo Runner
 
 `vehicle/mc_runner.c` is compiled C. It uses a small deterministic linear congruential generator to create seed-based dispersions and binds Bayek through `altair_vehicle_interface()`.
@@ -82,6 +106,7 @@ The current dispersions are placeholders. The key property is replay: the same s
 
 Python scripts in `tools/python` are orchestration helpers only:
 
+- `run_sitl.py` invokes the compiled SITL runner and prints summary metrics.
 - `run_mc.py` invokes the compiled runner and writes CSV.
 - `plot_mc.py` prints simple summary statistics.
 - `plot_sitl.py` plots selected `cruise6dof` trajectory views from a SITL CSV.
