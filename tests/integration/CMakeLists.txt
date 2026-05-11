@@ -108,4 +108,15 @@ if(Python3_Interpreter_FOUND)
       "${CMAKE_SOURCE_DIR}"
       "${CMAKE_CURRENT_BINARY_DIR}/visualize_sitl_3d"
   )
+
+  add_test(
+    NAME integration_sitl_workflow
+    COMMAND
+      ${Python3_EXECUTABLE}
+      "${CMAKE_CURRENT_SOURCE_DIR}/test_sitl_workflow.py"
+      "${CMAKE_SOURCE_DIR}"
+      "${CMAKE_BINARY_DIR}"
+      "${CMAKE_CURRENT_BINARY_DIR}/sitl_workflow"
+  )
+  set_tests_properties(integration_sitl_workflow PROPERTIES SKIP_RETURN_CODE 77)
 endif()

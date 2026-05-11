@@ -76,6 +76,19 @@ python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_init
 python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --realtime
 ```
 
+To run the usual end-to-end local workflow in one command, use `run_sitl_workflow.py`. Its defaults are the routine `cruise6dof` case, the repository initial-condition file, `duration=60`, `dt=0.01`, non-realtime execution, all plots saved under `plots/sitl`, and `sitl_3d.html` generation:
+
+```sh
+tools/python/run_sitl_workflow.py
+```
+
+The same script accepts overrides for less common runs:
+
+```sh
+tools/python/run_sitl_workflow.py --duration 10 --output /tmp/sitl.csv --plots-dir /tmp/plots --html /tmp/sitl_3d.html
+tools/python/run_sitl_workflow.py --realtime
+```
+
 Expected output is a stable `key=value` summary that can be pasted into notes or checked in scripts:
 
 ```text
@@ -114,6 +127,7 @@ The current dispersions are placeholders. The key property is replay: the same s
 Python scripts in `tools/python` are orchestration helpers only:
 
 - `run_sitl.py` invokes the compiled SITL runner and prints summary metrics.
+- `run_sitl_workflow.py` runs SITL, plots the CSV log, and generates the standalone 3D playback page with routine defaults.
 - `run_mc.py` invokes the compiled runner and writes CSV.
 - `plot_mc.py` prints simple summary statistics.
 - `plot_sitl.py` plots selected `cruise6dof` trajectory views from a SITL CSV.
