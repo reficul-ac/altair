@@ -23,6 +23,21 @@ add_test(
 )
 set_tests_properties(integration_sitl_runner_cli_csv PROPERTIES DEPENDS integration_sitl_runner_cli)
 
+set(SITL_CRUISE6DOF_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof.csv")
+add_test(
+  NAME integration_sitl_cruise6dof
+  COMMAND $<TARGET_FILE:sitl_runner> --scenario cruise6dof --duration 60 --dt 0.01 --output "${SITL_CRUISE6DOF_CSV}"
+)
+add_test(
+  NAME integration_sitl_cruise6dof_csv
+  COMMAND
+    ${CMAKE_COMMAND}
+    -DCSV_FILE=${SITL_CRUISE6DOF_CSV}
+    -DEXPECTED_HEADER=step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_csv.cmake"
+)
+set_tests_properties(integration_sitl_cruise6dof_csv PROPERTIES DEPENDS integration_sitl_cruise6dof)
+
 set(MC_SUMMARY_CSV "${CMAKE_CURRENT_BINARY_DIR}/mc_summary.csv")
 add_test(
   NAME integration_mc_runner_cli

@@ -1,5 +1,7 @@
 #include "altair_vehicle.h"
 #include "fsw.h"
+#include "math_utils.h"
+#include "sim_fixedwing.h"
 #include "sim_plant.h"
 
 #include <errno.h>
@@ -19,7 +21,7 @@ typedef struct {
 
 static void print_usage(FILE *stream) {
   fprintf(stream,
-          "usage: sitl_runner [--scenario smoke] [--duration seconds] [--dt seconds]\n"
+          "usage: sitl_runner [--scenario smoke|cruise6dof] [--duration seconds] [--dt seconds]\n"
           "                   [--seed uint] [--output path]\n");
 }
 
@@ -94,7 +96,7 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
     }
   }
 
-  if (strcmp(cfg->scenario, "smoke") != 0) {
+  if (strcmp(cfg->scenario, "smoke") != 0 && strcmp(cfg->scenario, "cruise6dof") != 0) {
     fprintf(stderr, "unknown scenario: %s\n", cfg->scenario);
     return -1;
   }
@@ -125,18 +127,129 @@ static int checked_close(FILE *stream, const char *path) {
   return 1;
 }
 
-int main(int argc, char **argv) {
-  sitl_config_t cfg;
-  int steps;
+static int run_smoke(const sitl_config_t *cfg, int steps, FILE *csv) {
   sim_plant_t plant;
   fsw_input_t input;
   fsw_output_t output;
   rc_input_t rc = {0.55f, 0.10f, 0.02f, 0.0f, 1U, 1U};
   int i;
+
+  bayek_fsw_init(altair_vehicle_interface());
+  sim_plant_init(&plant);
+
+  if (fprintf(csv, "step,time_s,mode,motor,aileron,elevator,rudder,airspeed_mps,altitude_m\n") < 0) {
+    fprintf(stderr, "failed to write output\n");
+    if (csv != stdout) {
+      (void)fclose(csv);
+    }
+    return 1;
+  }
+  for (i = 0; i < steps; ++i) {
+    sim_make_fsw_input(&plant, &rc, (real_t)cfg->dt_s, (uint32_t)(i * cfg->dt_s * 1000000.0), &input);
+    bayek_fsw_step(&input, &output);
+    if (!sim_output_is_bounded(&output)) {
+      fprintf(stderr, "unbounded_output at step %d\n", i);
+      return 2;
+    }
+    sim_plant_step(&plant, &output.actuators, (real_t)cfg->dt_s);
+    if (fprintf(csv,
+                "%d,%.3f,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+                i,
+                (double)(i * cfg->dt_s),
+                (int)output.mode,
+                (double)output.actuators.motor,
+                (double)output.actuators.aileron,
+                (double)output.actuators.elevator,
+                (double)output.actuators.rudder,
+                (double)plant.airspeed_mps,
+                (double)plant.altitude_m) < 0) {
+      fprintf(stderr, "failed to write output\n");
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
+  sim_fixedwing_params_t params;
+  sim_fixedwing_state_t plant;
+  fsw_input_t input;
+  fsw_output_t output;
+  rc_input_t rc = {0.58f, 0.0f, 0.02f, 0.0f, 1U, 1U};
+  int i;
+
+  bayek_fsw_init(altair_vehicle_interface());
+  sim_fixedwing_default_params(&params);
+  sim_fixedwing_init_default(&plant);
+
+  if (fprintf(csv,
+              "step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,"
+              "pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,"
+              "p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2\n") < 0) {
+    fprintf(stderr, "failed to write output\n");
+    return 1;
+  }
+
+  for (i = 0; i < steps; ++i) {
+    euler_t euler;
+    sim_fixedwing_make_fsw_input(&plant, &rc, (real_t)cfg->dt_s, (uint32_t)(i * cfg->dt_s * 1000000.0), &input);
+    bayek_fsw_step(&input, &output);
+    if (!sim_output_is_bounded(&output)) {
+      fprintf(stderr, "unbounded_output at step %d\n", i);
+      return 2;
+    }
+    if (!sim_fixedwing_step(&plant, &params, &output.actuators, (real_t)cfg->dt_s)) {
+      fprintf(stderr, "invalid_sim_state at step %d\n", i);
+      return 2;
+    }
+    euler = euler_from_quat(plant.body.attitude_body_to_ned);
+    if (fprintf(csv,
+                "%d,%.3f,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
+                "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
+                "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+                i,
+                (double)(i * cfg->dt_s),
+                (int)output.mode,
+                (double)output.actuators.motor,
+                (double)output.actuators.aileron,
+                (double)output.actuators.elevator,
+                (double)output.actuators.rudder,
+                (double)rc.throttle,
+                (double)rc.roll,
+                (double)rc.pitch,
+                (double)rc.yaw,
+                (double)plant.body.position_ned_m.x,
+                (double)plant.body.position_ned_m.y,
+                (double)plant.body.position_ned_m.z,
+                (double)plant.body.velocity_ned_mps.x,
+                (double)plant.body.velocity_ned_mps.y,
+                (double)plant.body.velocity_ned_mps.z,
+                (double)euler.roll,
+                (double)euler.pitch,
+                (double)euler.yaw,
+                (double)plant.body.omega_body_rps.x,
+                (double)plant.body.omega_body_rps.y,
+                (double)plant.body.omega_body_rps.z,
+                (double)plant.last_airspeed_mps,
+                (double)(-plant.body.position_ned_m.z),
+                (double)plant.body.specific_force_body_mps2.x,
+                (double)plant.body.specific_force_body_mps2.y,
+                (double)plant.body.specific_force_body_mps2.z) < 0) {
+      fprintf(stderr, "failed to write output\n");
+      return 1;
+    }
+  }
+  return 0;
+}
+
+int main(int argc, char **argv) {
+  sitl_config_t cfg;
+  int steps;
   clock_t start;
   clock_t end;
   FILE *csv = stdout;
   int parse_result;
+  int run_result;
 
   parse_result = parse_args(argc, argv, &cfg);
   if (parse_result > 0) {
@@ -160,47 +273,19 @@ int main(int argc, char **argv) {
     }
   }
 
-  bayek_fsw_init(altair_vehicle_interface());
-  sim_plant_init(&plant);
-
-  if (fprintf(csv, "step,time_s,mode,motor,aileron,elevator,rudder,airspeed_mps,altitude_m\n") < 0) {
-    fprintf(stderr, "failed to write output\n");
+  start = clock();
+  if (strcmp(cfg.scenario, "cruise6dof") == 0) {
+    run_result = run_cruise6dof(&cfg, steps, csv);
+  } else {
+    run_result = run_smoke(&cfg, steps, csv);
+  }
+  end = clock();
+  if (run_result != 0) {
     if (csv != stdout) {
       (void)fclose(csv);
     }
-    return 1;
+    return run_result;
   }
-  start = clock();
-  for (i = 0; i < steps; ++i) {
-    sim_make_fsw_input(&plant, &rc, (real_t)cfg.dt_s, (uint32_t)(i * cfg.dt_s * 1000000.0), &input);
-    bayek_fsw_step(&input, &output);
-    if (!sim_output_is_bounded(&output)) {
-      if (csv != stdout) {
-        (void)fclose(csv);
-      }
-      fprintf(stderr, "unbounded_output at step %d\n", i);
-      return 2;
-    }
-    sim_plant_step(&plant, &output.actuators, (real_t)cfg.dt_s);
-    if (fprintf(csv,
-                "%d,%.3f,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
-                i,
-                (double)(i * cfg.dt_s),
-                (int)output.mode,
-                (double)output.actuators.motor,
-                (double)output.actuators.aileron,
-                (double)output.actuators.elevator,
-                (double)output.actuators.rudder,
-                (double)plant.airspeed_mps,
-                (double)plant.altitude_m) < 0) {
-      fprintf(stderr, "failed to write output\n");
-      if (csv != stdout) {
-        (void)fclose(csv);
-      }
-      return 1;
-    }
-  }
-  end = clock();
   fprintf(stderr, "sitl_steps=%d elapsed_s=%.6f\n", steps, (double)(end - start) / (double)CLOCKS_PER_SEC);
   if (!checked_close(csv, cfg.output_path != NULL ? cfg.output_path : "stdout")) {
     return 1;

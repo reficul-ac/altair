@@ -43,7 +43,7 @@ Acceptance check:
 
 ## 4. Flight Software Core
 
-- [ ] Make FSW input validation explicit.
+- [x] Make FSW input validation explicit.
 - [ ] Add tests for mode selection boundaries, including invalid `dt_s`, missing GPS, disarm, manual, stabilize, and failsafe.
 - [ ] Improve state estimation beyond direct placeholder field assignment.
 - [ ] Add reset and initialization tests around repeated runs.
@@ -57,14 +57,14 @@ Acceptance check:
 
 ## 5. Vehicle Simulation
 
-- [ ] Replace the toy plant with a more useful fixed-wing point-mass or 6-DOF-lite model.
-- [ ] Define the simulation state vector and units.
+- [x] Replace the toy plant with a more useful fixed-wing point-mass or 6-DOF-lite model.
+- [x] Define the simulation state vector and units.
 - [ ] Add wind, turbulence, sensor noise, and bias hooks.
 - [ ] Add deterministic seeding for all stochastic sim effects.
-- [ ] Add bounds checks for state, actuator, and sensor values.
+- [x] Add bounds checks for state, actuator, and sensor values.
 - [ ] Add scenario definitions for takeoff-like acceleration, cruise, turns, descent, and failsafe.
 - [ ] Add tests for deterministic simulation replay.
-- [ ] Document model limitations clearly so results are not overinterpreted.
+- [x] Document model limitations clearly so results are not overinterpreted.
 
 Acceptance check:
 
@@ -74,10 +74,10 @@ Acceptance check:
 
 - [x] Add command-line options for duration, step size, scenario, seed, and output path.
 - [x] Write SITL output to CSV instead of only stdout.
-- [ ] Include inputs, estimates, modes, actuators, and plant truth in SITL logs.
-- [ ] Add nonzero exit codes for invalid scenario config, unbounded output, or failed assertions.
+- [x] Include inputs, estimates, modes, actuators, and plant truth in SITL logs.
+- [x] Add nonzero exit codes for invalid scenario config, unbounded output, or failed assertions.
 - [x] Add a short smoke scenario for CI.
-- [ ] Add a longer local scenario for developer inspection.
+- [x] Add a longer local scenario for developer inspection.
 - [ ] Add Python or shell wrapper to run SITL and summarize key metrics.
 - [ ] Add documentation with example commands and expected outputs.
 
