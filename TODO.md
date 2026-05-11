@@ -79,6 +79,8 @@ Acceptance check:
 - [x] Add a short smoke scenario for CI.
 - [x] Add a longer local scenario for developer inspection.
 - [x] Add Python or shell wrapper to run SITL and summarize key metrics.
+- [x] Add optional real-time wall-clock pacing.
+- [x] Add 3D browser playback from SITL CSV logs.
 - [x] Add documentation with example commands and expected outputs.
 
 Acceptance check:

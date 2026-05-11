@@ -61,12 +61,19 @@ Example run:
 ./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv
 ```
 
+SITL runs as fast as possible by default. Add `--realtime` when a run should be paced so one simulated second takes one wall-clock second:
+
+```sh
+./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --realtime
+```
+
 Latitude and longitude in `cruise6dof` logs are computed from NED position with a local tangent-plane approximation around `lat_deg` and `lon_deg`. They are useful for plotting short local trajectories, not as a full geodesy model.
 
 For routine local runs, `tools/python/run_sitl.py` wraps the compiled runner and prints key metrics from the generated CSV:
 
 ```sh
 python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv
+python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --realtime
 ```
 
 Expected output is a stable `key=value` summary that can be pasted into notes or checked in scripts:
@@ -110,12 +117,14 @@ Python scripts in `tools/python` are orchestration helpers only:
 - `run_mc.py` invokes the compiled runner and writes CSV.
 - `plot_mc.py` prints simple summary statistics.
 - `plot_sitl.py` plots selected `cruise6dof` trajectory views from a SITL CSV.
+- `visualize_sitl_3d.py` writes a standalone browser playback page for `cruise6dof` trajectory CSV logs.
 
 Example plotting commands:
 
 ```sh
 python3 tools/python/plot_sitl.py sitl_cruise6dof.csv --plot velocities --plot attitudes --plot position --out-dir plots
 python3 tools/python/plot_sitl.py sitl_cruise6dof.csv --plot all --show
+python3 tools/python/visualize_sitl_3d.py sitl_cruise6dof.csv --output sitl_3d.html
 ```
 
 Python is intentionally not used for core simulation logic. That keeps simulation behavior close to what C tests and embedded builds exercise.

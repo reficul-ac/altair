@@ -11,6 +11,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
+#include <sys/time.h>
 #include <time.h>
 
 typedef struct {
@@ -20,12 +22,13 @@ typedef struct {
   uint32_t seed;
   const char *output_path;
   const char *initial_path;
+  int realtime;
 } sitl_config_t;
 
 static void print_usage(FILE *stream) {
   fprintf(stream,
           "usage: sitl_runner [--scenario smoke|cruise6dof] [--duration seconds] [--dt seconds]\n"
-          "                   [--seed uint] [--output path] [--initial path]\n");
+          "                   [--seed uint] [--output path] [--initial path] [--realtime]\n");
 }
 
 static int parse_double_arg(const char *text, const char *name, double *value) {
@@ -65,6 +68,7 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
   cfg->seed = 1U;
   cfg->output_path = NULL;
   cfg->initial_path = NULL;
+  cfg->realtime = 0;
 
   for (i = 1; i < argc; ++i) {
     if (strcmp(argv[i], "--help") == 0) {
@@ -100,6 +104,8 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
         return -1;
       }
       cfg->initial_path = argv[i];
+    } else if (strcmp(argv[i], "--realtime") == 0) {
+      cfg->realtime = 1;
     } else {
       fprintf(stderr, "unknown option: %s\n", argv[i]);
       return -1;
@@ -141,15 +147,48 @@ static int checked_close(FILE *stream, const char *path) {
   return 1;
 }
 
+static double wall_time_s(void) {
+  struct timeval tv;
+  if (gettimeofday(&tv, NULL) != 0) {
+    return 0.0;
+  }
+  return (double)tv.tv_sec + (double)tv.tv_usec / 1000000.0;
+}
+
+static void sleep_until_wall_s(double target_s) {
+  double remaining_s = target_s - wall_time_s();
+  struct timeval timeout;
+  long usec;
+  if (remaining_s <= 0.0) {
+    return;
+  }
+  if (remaining_s > 1.0) {
+    remaining_s = 1.0;
+  }
+  usec = (long)(remaining_s * 1000000.0);
+  timeout.tv_sec = usec / 1000000L;
+  timeout.tv_usec = usec % 1000000L;
+  (void)select(0, NULL, NULL, NULL, &timeout);
+}
+
+static void pace_realtime_step(const sitl_config_t *cfg, double start_wall_s, int completed_steps) {
+  if (!cfg->realtime) {
+    return;
+  }
+  sleep_until_wall_s(start_wall_s + (double)completed_steps * cfg->dt_s);
+}
+
 static int run_smoke(const sitl_config_t *cfg, int steps, FILE *csv) {
   sim_plant_t plant;
   fsw_input_t input;
   fsw_output_t output;
   rc_input_t rc = {0.55f, 0.10f, 0.02f, 0.0f, 1U, 1U};
   int i;
+  double start_wall_s;
 
   bayek_fsw_init(altair_vehicle_interface());
   sim_plant_init(&plant);
+  start_wall_s = wall_time_s();
 
   if (fprintf(csv, "step,time_s,mode,motor,aileron,elevator,rudder,airspeed_mps,altitude_m\n") < 0) {
     fprintf(stderr, "failed to write output\n");
@@ -180,6 +219,7 @@ static int run_smoke(const sitl_config_t *cfg, int steps, FILE *csv) {
       fprintf(stderr, "failed to write output\n");
       return 1;
     }
+    pace_realtime_step(cfg, start_wall_s, i + 1);
   }
   return 0;
 }
@@ -236,6 +276,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
   char initial_error[160];
   rc_input_t rc;
   int i;
+  double start_wall_s;
 
   bayek_fsw_init(altair_vehicle_interface());
   sim_fixedwing_default_params(&params);
@@ -249,6 +290,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
   }
   apply_initial_conditions(&plant, &initial);
   rc = initial.rc;
+  start_wall_s = wall_time_s();
 
   if (fprintf(csv,
               "step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,"
@@ -330,6 +372,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
       fprintf(stderr, "failed to write output\n");
       return 1;
     }
+    pace_realtime_step(cfg, start_wall_s, i + 1);
   }
   return 0;
 }
@@ -339,6 +382,8 @@ int main(int argc, char **argv) {
   int steps;
   clock_t start;
   clock_t end;
+  double start_wall_s;
+  double end_wall_s;
   FILE *csv = stdout;
   int parse_result;
   int run_result;
@@ -366,19 +411,26 @@ int main(int argc, char **argv) {
   }
 
   start = clock();
+  start_wall_s = wall_time_s();
   if (strcmp(cfg.scenario, "cruise6dof") == 0) {
     run_result = run_cruise6dof(&cfg, steps, csv);
   } else {
     run_result = run_smoke(&cfg, steps, csv);
   }
   end = clock();
+  end_wall_s = wall_time_s();
   if (run_result != 0) {
     if (csv != stdout) {
       (void)fclose(csv);
     }
     return run_result;
   }
-  fprintf(stderr, "sitl_steps=%d elapsed_s=%.6f\n", steps, (double)(end - start) / (double)CLOCKS_PER_SEC);
+  fprintf(stderr,
+          "sitl_steps=%d cpu_elapsed_s=%.6f wall_elapsed_s=%.6f realtime=%d\n",
+          steps,
+          (double)(end - start) / (double)CLOCKS_PER_SEC,
+          end_wall_s - start_wall_s,
+          cfg.realtime);
   if (!checked_close(csv, cfg.output_path != NULL ? cfg.output_path : "stdout")) {
     return 1;
   }

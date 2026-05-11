@@ -99,4 +99,13 @@ if(Python3_Interpreter_FOUND)
       "${CMAKE_CURRENT_BINARY_DIR}/plot_sitl"
   )
   set_tests_properties(integration_plot_sitl_velocities PROPERTIES SKIP_RETURN_CODE 77)
+
+  add_test(
+    NAME integration_visualize_sitl_3d
+    COMMAND
+      ${Python3_EXECUTABLE}
+      "${CMAKE_CURRENT_SOURCE_DIR}/test_visualize_sitl_3d.py"
+      "${CMAKE_SOURCE_DIR}"
+      "${CMAKE_CURRENT_BINARY_DIR}/visualize_sitl_3d"
+  )
 endif()

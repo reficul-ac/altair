@@ -18,6 +18,11 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--output", default="sitl.csv")
     parser.add_argument("--initial", help="initial-condition file for cruise6dof")
+    parser.add_argument(
+        "--realtime",
+        action="store_true",
+        help="pace the compiled runner so one simulated second takes one wall-clock second",
+    )
     return parser.parse_args()
 
 
@@ -114,6 +119,8 @@ def main():
     ]
     if args.initial is not None:
         command.extend(["--initial", args.initial])
+    if args.realtime:
+        command.append("--realtime")
 
     try:
         subprocess.run(command, check=True, text=True)
