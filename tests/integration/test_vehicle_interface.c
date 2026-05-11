@@ -44,6 +44,27 @@ static int check_altair_limits(const actuator_cmd_t *actuators) {
   return 0;
 }
 
+static int check_reset_estimate(const state_estimate_t *estimate) {
+  CHECK(estimate->attitude.w == 1.0f);
+  CHECK(estimate->attitude.x == 0.0f);
+  CHECK(estimate->attitude.y == 0.0f);
+  CHECK(estimate->attitude.z == 0.0f);
+  CHECK(estimate->euler.roll == 0.0f);
+  CHECK(estimate->euler.pitch == 0.0f);
+  CHECK(estimate->euler.yaw == 0.0f);
+  CHECK(estimate->angular_rate_rps.x == 0.0f);
+  CHECK(estimate->angular_rate_rps.y == 0.0f);
+  CHECK(estimate->angular_rate_rps.z == 0.0f);
+  CHECK(estimate->position_m.x == 0.0f);
+  CHECK(estimate->position_m.y == 0.0f);
+  CHECK(estimate->position_m.z == 0.0f);
+  CHECK(estimate->velocity_mps.x == 0.0f);
+  CHECK(estimate->velocity_mps.y == 0.0f);
+  CHECK(estimate->velocity_mps.z == 0.0f);
+  CHECK(estimate->airspeed_mps == 0.0f);
+  return 0;
+}
+
 static int step_and_check_mode(fsw_input_t *in, fsw_mode_t expected_mode) {
   fsw_output_t out;
 
@@ -54,6 +75,17 @@ static int step_and_check_mode(fsw_input_t *in, fsw_mode_t expected_mode) {
   if (expected_mode == FSW_MODE_DISARMED || expected_mode == FSW_MODE_FAILSAFE) {
     CHECK(check_safe_actuators(&out.actuators) == 0);
   }
+  return 0;
+}
+
+static int step_invalid_and_check_reset_estimate(fsw_input_t *in, fsw_mode_t expected_mode) {
+  fsw_output_t out;
+
+  bayek_fsw_reset();
+  bayek_fsw_step(in, &out);
+  CHECK(out.mode == expected_mode);
+  CHECK(check_safe_actuators(&out.actuators) == 0);
+  CHECK(check_reset_estimate(&out.estimate) == 0);
   return 0;
 }
 
@@ -71,6 +103,52 @@ static int test_disarmed_uses_safe_actuators(void) {
   bayek_fsw_step(&in, &out);
   CHECK(out.mode == FSW_MODE_DISARMED);
   CHECK(check_safe_actuators(&out.actuators) == 0);
+  return 0;
+}
+
+static int test_null_input_fails_safe(void) {
+  fsw_output_t out;
+
+  bayek_fsw_reset();
+  bayek_fsw_step(NULL, &out);
+  CHECK(out.mode == FSW_MODE_FAILSAFE);
+  CHECK(check_safe_actuators(&out.actuators) == 0);
+  CHECK(check_reset_estimate(&out.estimate) == 0);
+  return 0;
+}
+
+static int test_null_output_returns(void) {
+  fsw_input_t in;
+
+  make_valid_input(&in);
+  bayek_fsw_reset();
+  bayek_fsw_step(&in, NULL);
+  return 0;
+}
+
+static int test_invalid_inputs_do_not_update_estimate(void) {
+  fsw_input_t in;
+
+  make_valid_input(&in);
+  in.imu.gyro_rps.z = 1.0f;
+  in.dt_s = 0.0f;
+  CHECK(step_invalid_and_check_reset_estimate(&in, FSW_MODE_FAILSAFE) == 0);
+
+  make_valid_input(&in);
+  in.imu.gyro_rps.z = 1.0f;
+  in.dt_s = 0.1001f;
+  CHECK(step_invalid_and_check_reset_estimate(&in, FSW_MODE_FAILSAFE) == 0);
+
+  make_valid_input(&in);
+  in.imu.gyro_rps.z = 1.0f;
+  in.gps.fix_valid = 0U;
+  CHECK(step_invalid_and_check_reset_estimate(&in, FSW_MODE_FAILSAFE) == 0);
+
+  make_valid_input(&in);
+  in.rc.arm_switch = 0U;
+  in.gps.fix_valid = 0U;
+  CHECK(step_invalid_and_check_reset_estimate(&in, FSW_MODE_DISARMED) == 0);
+
   return 0;
 }
 
@@ -150,6 +228,9 @@ int main(void) {
   bayek_fsw_init(altair_vehicle_interface());
 
   CHECK(test_disarmed_uses_safe_actuators() == 0);
+  CHECK(test_null_input_fails_safe() == 0);
+  CHECK(test_null_output_returns() == 0);
+  CHECK(test_invalid_inputs_do_not_update_estimate() == 0);
   CHECK(test_manual_mode_requires_valid_inputs() == 0);
   CHECK(test_stabilize_mode_requires_valid_inputs() == 0);
   CHECK(test_mode_boundaries() == 0);

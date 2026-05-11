@@ -43,7 +43,7 @@ Acceptance check:
 
 ## 4. Flight Software Core
 
-- [ ] Make FSW input validation explicit.
+- [x] Make FSW input validation explicit.
 - [ ] Add tests for mode selection boundaries, including invalid `dt_s`, missing GPS, disarm, manual, stabilize, and failsafe.
 - [ ] Improve state estimation beyond direct placeholder field assignment.
 - [ ] Add reset and initialization tests around repeated runs.
