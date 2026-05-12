@@ -1,7 +1,7 @@
 #include "altair_vehicle.h"
+#include "altair_sim_model.h"
 #include "fsw.h"
 #include "math_utils.h"
-#include "sim_fixedwing.h"
 #include "sim_plant.h"
 #include "sitl_initial_conditions.h"
 
@@ -17,6 +17,7 @@
 
 typedef struct {
   const char *scenario;
+  const char *profile;
   double duration_s;
   double dt_s;
   uint32_t seed;
@@ -28,7 +29,8 @@ typedef struct {
 static void print_usage(FILE *stream) {
   fprintf(stream,
           "usage: sitl_runner [--scenario smoke|cruise6dof] [--duration seconds] [--dt seconds]\n"
-          "                   [--seed uint] [--output path] [--initial path] [--realtime]\n");
+          "                   [--seed uint] [--output path] [--initial path]\n"
+          "                   [--profile cruise|takeoff|turn|descent|failsafe] [--realtime]\n");
 }
 
 static int parse_double_arg(const char *text, const char *name, double *value) {
@@ -63,6 +65,7 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
   int i;
 
   cfg->scenario = "smoke";
+  cfg->profile = "cruise";
   cfg->duration_s = 10.0;
   cfg->dt_s = 0.01;
   cfg->seed = 1U;
@@ -80,6 +83,12 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
         return -1;
       }
       cfg->scenario = argv[i];
+    } else if (strcmp(argv[i], "--profile") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "--profile requires a value\n");
+        return -1;
+      }
+      cfg->profile = argv[i];
     } else if (strcmp(argv[i], "--duration") == 0) {
       if (++i >= argc || !parse_double_arg(argv[i], "duration", &cfg->duration_s)) {
         return -1;
@@ -126,6 +135,16 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
   }
   if (cfg->initial_path != NULL && strcmp(cfg->scenario, "cruise6dof") != 0) {
     fprintf(stderr, "--initial is only supported with --scenario cruise6dof\n");
+    return -1;
+  }
+  if (strcmp(cfg->profile, "cruise") != 0 && strcmp(cfg->profile, "takeoff") != 0 &&
+      strcmp(cfg->profile, "turn") != 0 && strcmp(cfg->profile, "descent") != 0 &&
+      strcmp(cfg->profile, "failsafe") != 0) {
+    fprintf(stderr, "unknown profile: %s\n", cfg->profile);
+    return -1;
+  }
+  if (strcmp(cfg->scenario, "cruise6dof") != 0 && strcmp(cfg->profile, "cruise") != 0) {
+    fprintf(stderr, "--profile is only supported with --scenario cruise6dof\n");
     return -1;
   }
   (void)cfg->seed;
@@ -267,6 +286,44 @@ static void ned_to_geo(real_t lat0_deg,
   *altitude_m = -position_ned_m.z;
 }
 
+static rc_input_t cruise6dof_profile_rc(const sitl_config_t *cfg, const sitl_initial_conditions_t *initial, int step, int steps) {
+  rc_input_t rc = initial->rc;
+  real_t progress = steps > 1 ? (real_t)step / (real_t)(steps - 1) : 0.0f;
+
+  if (strcmp(cfg->profile, "takeoff") == 0) {
+    rc.throttle = 0.82f;
+    rc.roll = 0.0f;
+    rc.pitch = progress < 0.70f ? 0.08f : 0.03f;
+    rc.yaw = 0.0f;
+  } else if (strcmp(cfg->profile, "turn") == 0) {
+    rc.throttle = initial->rc.throttle;
+    rc.pitch = initial->rc.pitch;
+    rc.yaw = 0.0f;
+    if (progress < 0.20f) {
+      rc.roll = 0.0f;
+    } else if (progress < 0.75f) {
+      rc.roll = 0.30f;
+    } else {
+      rc.roll = -0.10f;
+    }
+  } else if (strcmp(cfg->profile, "descent") == 0) {
+    rc.throttle = progress < 0.25f ? initial->rc.throttle : 0.38f;
+    rc.roll = 0.0f;
+    rc.pitch = progress < 0.25f ? initial->rc.pitch : -0.10f;
+    rc.yaw = 0.0f;
+  } else if (strcmp(cfg->profile, "failsafe") == 0) {
+    if (progress >= 0.50f) {
+      rc.throttle = 0.0f;
+      rc.roll = 0.0f;
+      rc.pitch = 0.0f;
+      rc.yaw = 0.0f;
+      rc.arm_switch = 1U;
+      rc.mode_switch = 1U;
+    }
+  }
+  return rc;
+}
+
 static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
   sim_fixedwing_params_t params;
   sim_fixedwing_state_t plant;
@@ -274,12 +331,16 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
   fsw_output_t output;
   sitl_initial_conditions_t initial;
   char initial_error[160];
-  rc_input_t rc;
+  char model_error[160];
   int i;
   double start_wall_s;
 
   bayek_fsw_init(altair_vehicle_interface());
-  sim_fixedwing_default_params(&params);
+  altair_fixedwing_sim_params(&params);
+  if (!altair_fixedwing_sim_params_are_valid(&params, altair_default_params(), model_error, sizeof(model_error))) {
+    fprintf(stderr, "invalid fixed-wing sim model: %s\n", model_error);
+    return 1;
+  }
   sim_fixedwing_init_default(&plant);
   sitl_initial_conditions_default(&initial);
   if (cfg->initial_path != NULL) {
@@ -289,7 +350,6 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
     }
   }
   apply_initial_conditions(&plant, &initial);
-  rc = initial.rc;
   start_wall_s = wall_time_s();
 
   if (fprintf(csv,
@@ -307,11 +367,15 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
     real_t lat_deg;
     real_t lon_deg;
     real_t altitude_m;
+    rc_input_t rc = cruise6dof_profile_rc(cfg, &initial, i, steps);
     sim_fixedwing_make_fsw_input(&plant, &rc, (real_t)cfg->dt_s, (uint32_t)(i * cfg->dt_s * 1000000.0), &input);
     ned_to_geo(initial.lat_deg, initial.lon_deg, plant.body.position_ned_m, &lat_deg, &lon_deg, &altitude_m);
     input.gps.lat_deg = lat_deg;
     input.gps.lon_deg = lon_deg;
     input.gps.alt_m = altitude_m;
+    if (strcmp(cfg->profile, "failsafe") == 0 && i * 2 >= steps) {
+      input.gps.fix_valid = 0U;
+    }
     bayek_fsw_step(&input, &output);
     if (!sim_output_is_bounded(&output)) {
       fprintf(stderr, "unbounded_output at step %d\n", i);

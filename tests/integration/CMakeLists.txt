@@ -53,6 +53,57 @@ add_test(
 )
 set_tests_properties(integration_sitl_cruise6dof_trajectory PROPERTIES DEPENDS integration_sitl_cruise6dof)
 
+set(SITL_CRUISE6DOF_PROFILES cruise takeoff turn descent failsafe)
+foreach(PROFILE IN LISTS SITL_CRUISE6DOF_PROFILES)
+  set(SITL_PROFILE_CSV_A "${CMAKE_CURRENT_BINARY_DIR}/sitl_${PROFILE}_a.csv")
+  set(SITL_PROFILE_CSV_B "${CMAKE_CURRENT_BINARY_DIR}/sitl_${PROFILE}_b.csv")
+  set(SITL_PROFILE_RUN_A "integration_sitl_cruise6dof_${PROFILE}_profile_a")
+  set(SITL_PROFILE_RUN_B "integration_sitl_cruise6dof_${PROFILE}_profile_b")
+  set(SITL_PROFILE_REPLAY "integration_sitl_cruise6dof_${PROFILE}_profile_replay")
+  set(SITL_PROFILE_GUARDRAILS "integration_sitl_cruise6dof_${PROFILE}_profile_guardrails")
+
+  add_test(
+    NAME ${SITL_PROFILE_RUN_A}
+    COMMAND
+      $<TARGET_FILE:sitl_runner>
+      --scenario cruise6dof
+      --profile ${PROFILE}
+      --initial "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_initial.ini"
+      --duration 2
+      --dt 0.01
+      --output "${SITL_PROFILE_CSV_A}"
+  )
+  add_test(
+    NAME ${SITL_PROFILE_RUN_B}
+    COMMAND
+      $<TARGET_FILE:sitl_runner>
+      --scenario cruise6dof
+      --profile ${PROFILE}
+      --initial "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_initial.ini"
+      --duration 2
+      --dt 0.01
+      --output "${SITL_PROFILE_CSV_B}"
+  )
+  add_test(
+    NAME ${SITL_PROFILE_REPLAY}
+    COMMAND
+      ${CMAKE_COMMAND}
+      -DEXPECTED_FILE=${SITL_PROFILE_CSV_A}
+      -DACTUAL_FILE=${SITL_PROFILE_CSV_B}
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/compare_files.cmake"
+  )
+  add_test(
+    NAME ${SITL_PROFILE_GUARDRAILS}
+    COMMAND
+      ${CMAKE_COMMAND}
+      -DCSV_FILE=${SITL_PROFILE_CSV_A}
+      -DPROFILE=${PROFILE}
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/check_sitl_profile.cmake"
+  )
+  set_tests_properties(${SITL_PROFILE_REPLAY} PROPERTIES DEPENDS "${SITL_PROFILE_RUN_A};${SITL_PROFILE_RUN_B}")
+  set_tests_properties(${SITL_PROFILE_GUARDRAILS} PROPERTIES DEPENDS ${SITL_PROFILE_RUN_A})
+endforeach()
+
 set(MC_SUMMARY_CSV "${CMAKE_CURRENT_BINARY_DIR}/mc_summary.csv")
 add_test(
   NAME integration_mc_runner_cli

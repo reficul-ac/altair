@@ -13,6 +13,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run Altair SITL and summarize the CSV output.")
     parser.add_argument("--build-dir", default="build")
     parser.add_argument("--scenario", default="smoke", choices=("smoke", "cruise6dof"))
+    parser.add_argument(
+        "--profile",
+        default="cruise",
+        choices=("cruise", "takeoff", "turn", "descent", "failsafe"),
+        help="command profile for cruise6dof",
+    )
     parser.add_argument("--duration", type=float, default=5.0)
     parser.add_argument("--dt", type=float, default=0.01)
     parser.add_argument("--seed", type=int, default=1)
@@ -23,7 +29,10 @@ def parse_args():
         action="store_true",
         help="pace the compiled runner so one simulated second takes one wall-clock second",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.scenario != "cruise6dof" and args.profile != "cruise":
+        parser.error("--profile is only supported with --scenario cruise6dof")
+    return args
 
 
 def load_rows(csv_path):
@@ -70,13 +79,14 @@ def print_metric(name, value):
         print(f"{name}={value}")
 
 
-def summarize(rows, scenario, output_path):
+def summarize(rows, scenario, profile, output_path):
     time_s = numeric_column(rows, "time_s")
     modes = numeric_column(rows, "mode")
     airspeeds = numeric_column(rows, "airspeed_mps")
     altitudes = numeric_column(rows, "altitude_m")
 
     print_metric("scenario", scenario)
+    print_metric("profile", profile)
     print_metric("output", output_path)
     print_metric("rows", len(rows))
     print_metric("start_time_s", time_s[0])
@@ -108,6 +118,8 @@ def main():
         str(exe),
         "--scenario",
         args.scenario,
+        "--profile",
+        args.profile,
         "--duration",
         str(args.duration),
         "--dt",
@@ -125,7 +137,7 @@ def main():
     try:
         subprocess.run(command, check=True, text=True)
         rows = load_rows(args.output)
-        summarize(rows, args.scenario, args.output)
+        summarize(rows, args.scenario, args.profile, args.output)
     except (OSError, subprocess.CalledProcessError, ValueError) as exc:
         print(f"run_sitl.py: {exc}", file=sys.stderr)
         return 1

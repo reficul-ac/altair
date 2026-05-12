@@ -15,6 +15,13 @@ target_include_directories(altair_vehicle
 target_link_libraries(altair_vehicle PUBLIC bayek_common bayek_fsw)
 altair_enable_warnings(altair_vehicle)
 
+add_library(altair_sim_model
+  altair_sim_model.c
+)
+target_include_directories(altair_sim_model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(altair_sim_model PUBLIC altair_vehicle bayek_sim)
+altair_enable_warnings(altair_sim_model)
+
 add_library(altair_sitl
   sitl_initial_conditions.c
 )
@@ -23,7 +30,7 @@ target_link_libraries(altair_sitl PUBLIC bayek_common)
 altair_enable_warnings(altair_sitl)
 
 add_executable(sitl_runner sitl_runner.c)
-target_link_libraries(sitl_runner PRIVATE altair_sitl altair_vehicle bayek_sim bayek_fsw bayek_common)
+target_link_libraries(sitl_runner PRIVATE altair_sitl altair_sim_model bayek_fsw bayek_common)
 altair_enable_warnings(sitl_runner)
 
 add_executable(mc_runner mc_runner.c)

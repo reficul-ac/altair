@@ -1,10 +1,10 @@
 # Altair Simulation And Monte Carlo
 
-Altair owns concrete host runners that bind Bayek to `altair_vehicle_interface()`. Bayek owns the generic toy plant documented in [Bayek Simulation](../bayek/docs/simulation.md).
+Altair owns concrete host runners that bind Bayek to `altair_vehicle_interface()`. Altair also owns aircraft-specific simulation model values through `altair_fixedwing_sim_params()`. Bayek owns the reusable integration and dynamics helpers documented in [Bayek Simulation](../bayek/docs/simulation.md).
 
 ## SITL Plant
 
-Altair currently uses Bayek's deterministic toy plant for `smoke` and Bayek's fixed-wing 6DOF plant for `cruise6dof`. These models cover:
+Altair currently uses Bayek's deterministic toy plant for `smoke` and an Altair-parameterized fixed-wing 6DOF plant for `cruise6dof`. These models cover:
 
 - actuator lag
 - actuator saturation through FSW and mixer outputs
@@ -12,13 +12,15 @@ Altair currently uses Bayek's deterministic toy plant for `smoke` and Bayek's fi
 - simple airspeed and altitude evolution
 - simulated IMU, GPS, baro, and airspeed samples
 
-This plant is not an Altair flight dynamics model. It exists to validate:
+The fixed-wing model is a first-pass deterministic simulation contract, not a validated Altair flight dynamics model. Its parameters remain compile-time constants for this milestone. The plant exists to validate:
 
 - build and link boundaries
 - deterministic closed-loop stepping
 - no NaN or Inf outputs
 - bounded actuator commands
 - repeatable CSV logging
+
+CTest runs each `cruise6dof` command profile twice and compares the generated CSV files byte-for-byte. It also applies deliberately broad plausibility guardrails: finite values, bounded actuators, positive airspeed, reasonable altitude, bounded attitude/rates, and failsafe safe outputs for the failsafe profile. These thresholds are guardrails against broken sim behavior, not performance claims.
 
 ## Altair SITL Runner
 
@@ -27,6 +29,14 @@ This plant is not an Altair flight dynamics model. It exists to validate:
 CSV is used because it is transparent, dependency-free, easy to diff, and easy to consume from Python, spreadsheets, or CI artifacts.
 
 The `smoke` scenario keeps its compact CSV output for plumbing checks. The `cruise6dof` scenario writes richer trajectory data including RC inputs, actuator outputs, latitude/longitude, NED position and velocity, Euler angles, attitude quaternion, body rates, airspeed, altitude, body acceleration, and the last force and moment vectors.
+
+`cruise6dof` supports deterministic command profiles with `--profile`:
+
+- `cruise`: hold the initial-condition RC command.
+- `takeoff`: high throttle with a shallow climb command.
+- `turn`: wings-level entry, positive roll command, then a small rollout command.
+- `descent`: reduce throttle and command a shallow descent after the entry segment.
+- `failsafe`: neutralize commands and inject an invalid GPS fix halfway through the run, exercising FSW failsafe safe outputs while the vehicle remains armed.
 
 `cruise6dof` can start from a dependency-free initial-condition file:
 
@@ -73,6 +83,7 @@ For routine local runs, `tools/python/run_sitl.py` wraps the compiled runner and
 
 ```sh
 python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv
+python3 tools/python/run_sitl.py --scenario cruise6dof --profile turn --initial cruise6dof_initial.ini --duration 20 --dt 0.01 --output sitl_turn6dof.csv
 python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --realtime
 ```
 

@@ -21,7 +21,8 @@ Acceptance check:
 - [ ] Replace placeholder Altair parameters with a documented first-pass airframe model.
 - [ ] Define control surface conventions, sign conventions, and actuator units.
 - [ ] Define motor/throttle behavior and saturation rules.
-- [ ] Add parameter validation tests for physical ranges and internal consistency.
+- [x] Move fixed-wing sim parameter construction into an Altair-owned helper and validate consistency with `altair_default_params()`.
+- [x] Add parameter validation tests for physical ranges and internal consistency.
 - [ ] Document mass, wing area, speed limits, control limits, and safe actuator positions.
 - [ ] Decide whether parameters remain compile-time constants or move toward loadable config.
 
@@ -62,8 +63,9 @@ Acceptance check:
 - [ ] Add wind, turbulence, sensor noise, and bias hooks.
 - [ ] Add deterministic seeding for all stochastic sim effects.
 - [x] Add bounds checks for state, actuator, and sensor values.
-- [ ] Add scenario definitions for takeoff-like acceleration, cruise, turns, descent, and failsafe.
-- [ ] Add tests for deterministic simulation replay.
+- [x] Add scenario definitions for takeoff-like acceleration, cruise, turns, descent, and failsafe.
+- [x] Add profile-level deterministic replay and plausibility gates for `cruise`, `takeoff`, `turn`, `descent`, and `failsafe` before adding wind/noise.
+- [x] Add tests for deterministic simulation replay.
 - [x] Document model limitations clearly so results are not overinterpreted.
 
 Acceptance check:
@@ -140,6 +142,58 @@ Acceptance check:
 Acceptance check:
 
 - [ ] A new contributor can clone the repo, run tests, run SITL, run Monte Carlo, and understand the output from docs alone.
+
+## 11. Long-Term Domainization
+
+Altair and Bayek should move gradually toward clearer domain ownership as the code grows. Do this opportunistically when a domain becomes large enough to justify a boundary; avoid churn that only renames files without improving ownership, tests, or interfaces.
+
+Bayek long-term domains:
+
+- [ ] Keep `fsw` as the public flight-core facade while domainizing internals behind it.
+- [ ] Keep `nav` focused on sensor preprocessing, state estimation, estimator reset, and estimator health.
+- [ ] Keep `guidance` focused on command-to-setpoint behavior, independent of where commands originate.
+- [ ] Keep `control` focused on controller state and normalized control requests.
+- [ ] Split `mode` out of `fault` when mode arbitration grows beyond simple disarm/manual/stabilize/failsafe selection.
+- [ ] Keep `fault` focused on sensor health, stale data, actuator health inputs, fault latching, degradation, and recovery rules.
+- [ ] Keep `sim` split conceptually between dynamics, sensor models, scenario/runtime execution, deterministic seeds, and replay support.
+- [ ] Keep telemetry and replay independent from the FSW step so logs, packets, and transports can evolve separately.
+
+Altair long-term domains:
+
+- [ ] Grow the current mixer layer into an explicit actuation domain when it needs trims, reversals, actuator health masking, slew limits, PWM mapping, or safe-output policy.
+- [ ] Keep vehicle model data separate from generic Bayek simulation: mass properties, aero coefficients, actuator geometry, sign conventions, and documented parameter sources belong to Altair.
+- [ ] Keep scenarios, Monte Carlo profiles, pass/fail metrics, CSV schemas, and visualization workflow outside portable Bayek FSW.
+- [ ] Keep board/HAL code responsible for platform timing, sensors, actuator drivers, storage, and transports.
+- [ ] Move toward a clearer future shape only as needed:
+
+```text
+bayek/
+  common/
+  fsw/
+    nav/
+    guidance/
+    control/
+    mode/
+    fault/
+  sim/
+    dynamics/
+    sensors/
+    runtime/
+  telemetry/
+  replay/
+
+altair/
+  vehicle_model/
+  actuation/
+  params/
+  scenarios/
+  boards/
+  tools/
+```
+
+Acceptance check:
+
+- [ ] New features have an obvious home, Bayek stays vehicle-agnostic, Altair owns aircraft-specific policy, and domain boundaries become clearer over time without breaking the stable public FSW API unnecessarily.
 
 ## Near-Term Milestone
 

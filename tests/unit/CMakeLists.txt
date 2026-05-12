@@ -23,6 +23,11 @@ target_link_libraries(test_sim_fixedwing PRIVATE bayek_sim bayek_common)
 altair_enable_warnings(test_sim_fixedwing)
 add_test(NAME unit_sim_fixedwing COMMAND test_sim_fixedwing)
 
+add_executable(test_altair_sim_model test_altair_sim_model.c)
+target_link_libraries(test_altair_sim_model PRIVATE altair_sim_model bayek_common)
+altair_enable_warnings(test_altair_sim_model)
+add_test(NAME unit_altair_sim_model COMMAND test_altair_sim_model)
+
 add_executable(test_sitl_initial_conditions test_sitl_initial_conditions.c)
 target_link_libraries(test_sitl_initial_conditions PRIVATE altair_sitl bayek_common)
 altair_enable_warnings(test_sitl_initial_conditions)

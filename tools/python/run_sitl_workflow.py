@@ -18,6 +18,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run SITL, plot its CSV log, and generate 3D playback HTML.")
     parser.add_argument("--build-dir", default=str(root / "build"))
     parser.add_argument("--scenario", default="cruise6dof", choices=("smoke", "cruise6dof"))
+    parser.add_argument(
+        "--profile",
+        default="cruise",
+        choices=("cruise", "takeoff", "turn", "descent", "failsafe"),
+        help="command profile for cruise6dof",
+    )
     parser.add_argument("--duration", type=float, default=60.0)
     parser.add_argument("--dt", type=float, default=0.01)
     parser.add_argument("--seed", type=int, default=1)
@@ -47,6 +53,8 @@ def parse_args():
         args.initial = str(root / "tests" / "integration" / "cruise6dof_initial.ini")
     if args.scenario != "cruise6dof" and args.initial is not None:
         parser.error("--initial is only supported with --scenario cruise6dof")
+    if args.scenario != "cruise6dof" and args.profile != "cruise":
+        parser.error("--profile is only supported with --scenario cruise6dof")
     if args.scenario != "cruise6dof" and (not args.skip_plots or not args.skip_visualization):
         parser.error("non-cruise6dof scenarios require --skip-plots and --skip-visualization")
     return args
@@ -72,6 +80,8 @@ def main():
         args.build_dir,
         "--scenario",
         args.scenario,
+        "--profile",
+        args.profile,
         "--duration",
         str(args.duration),
         "--dt",

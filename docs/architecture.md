@@ -7,7 +7,7 @@ Altair is organized as a C-first vehicle repository. Bayek is the reusable frame
 ```text
 bayek/
   common/      Shared C99 types, math, and control utilities.
-  fsw/         Portable flight software core.
+  fsw/         Portable flight software core and internal FSW domains.
   sim/         Generic deterministic toy plant helpers.
   hitl/        Future hardware-in-the-loop adapters.
   telemetry/  Packet encode/decode helpers.
@@ -47,11 +47,21 @@ Bayek must not know Altair exists. Files under `bayek/` must not include `altair
 
 `bayek/common` owns reusable data types and primitive algorithms. These utilities should stay generic enough for any vehicle or board.
 
-`params/`, `mixer/`, `config/`, and `vehicle/` own values and transformations that are specific to the Altair airframe. They are the right places for actuator limits, mixer mapping, default vehicle parameters, and the Bayek vehicle interface implementation.
+`params/`, `mixer/`, `config/`, and `vehicle/` own values and transformations that are specific to the Altair airframe. They are the right places for actuator limits, mixer mapping, default vehicle parameters, and the Bayek vehicle interface implementation. Bayek may produce normalized control requests, but Altair owns the final actuator policy.
 
-`bayek/fsw` owns flight-mode selection, caller-visible FSW state, state-estimate updates, and control commands. It consumes generic inputs, calls the configured vehicle interface, and produces generic outputs.
+`bayek/fsw` owns the portable flight software loop. The public API remains `bayek_fsw_init()`, `bayek_fsw_reset()`, and `bayek_fsw_step()`, while the implementation is split into internal domains:
 
-`bayek/sim` owns generic toy plant dynamics and sensor generation. Altair-specific SITL and Monte Carlo runners live under `vehicle/` because they bind Bayek to `altair_vehicle_interface()`.
+- `nav`: state-estimate reset and update from sensor inputs.
+- `fault`: input validity and mode/failsafe selection.
+- `guidance`: mode-specific setpoint generation.
+- `control`: controller state and normalized control requests.
+- `fsw`: facade that orchestrates the domains and calls the configured vehicle interface.
+
+These domain headers are implementation boundaries, not vehicle-specific extension points. Public domain APIs should be added only when tests, replay, or downstream users need them.
+
+`bayek/sim` owns generic plant dynamics, state propagation, and sensor-input helpers. Altair-specific SITL scenarios, Monte Carlo profiles, CSV outputs, and runner CLIs live under `vehicle/` because they bind Bayek to `altair_vehicle_interface()` and Altair-specific workflow policy.
+
+`vehicle/altair_sim_model.c` owns Altair's first-pass aircraft-specific fixed-wing simulation constants. It starts from Bayek's reusable fixed-wing defaults, projects Altair vehicle values such as mass and wing area into the sim parameter block, and validates the resulting contract against `altair_default_params()`. Bayek remains responsible for the reusable 6DOF integration and fixed-wing force/moment helper code; Altair remains responsible for aircraft-specific values and guardrails. These parameters are compile-time constants for the current milestone.
 
 `bayek/telemetry` owns binary packet formatting. It is independent of `bayek_fsw_step()` so telemetry can be used by host tools, embedded transports, or HITL without coupling packet handling to control execution.
 
