@@ -77,6 +77,18 @@ SITL runs as fast as possible by default. Add `--realtime` when a run should be 
 ./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --realtime
 ```
 
+For QGroundControl monitoring, start QGC first and run `cruise6dof` with `--qgc`. The runner sends MAVLink v1 `HEARTBEAT`, `ATTITUDE`, `GLOBAL_POSITION_INT`, and `VFR_HUD` messages to UDP `127.0.0.1:14550`, which is QGC's default local endpoint. `--qgc` implies realtime pacing because QGC expects a live stream:
+
+```sh
+./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --qgc
+```
+
+Use `--qgc-host` and `--qgc-port` for a remote QGC instance or a non-default UDP port:
+
+```sh
+./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --qgc --qgc-host 192.168.1.50 --qgc-port 14550
+```
+
 Latitude and longitude in `cruise6dof` logs are computed from NED position with a local tangent-plane approximation around `lat_deg` and `lon_deg`. They are useful for plotting short local trajectories, not as a full geodesy model.
 
 ## SITL Replay CSV v1
@@ -109,6 +121,7 @@ For routine local runs, `tools/python/run_sitl.py` wraps the compiled runner and
 python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv
 python3 tools/python/run_sitl.py --scenario cruise6dof --profile turn --initial cruise6dof_initial.ini --duration 20 --dt 0.01 --output sitl_turn6dof.csv
 python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --realtime
+python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --qgc
 ```
 
 To run the usual end-to-end local workflow in one command, use `run_sitl_workflow.py`. Its defaults are the routine `cruise6dof` case, the repository initial-condition file, `duration=60`, `dt=0.01`, non-realtime execution, all plots saved under `plots/sitl`, and `sitl_3d.html` generation:
@@ -122,6 +135,7 @@ The same script accepts overrides for less common runs:
 ```sh
 tools/python/run_sitl_workflow.py --duration 10 --output /tmp/sitl.csv --plots-dir /tmp/plots --html /tmp/sitl_3d.html
 tools/python/run_sitl_workflow.py --realtime
+tools/python/run_sitl_workflow.py --qgc
 ```
 
 Expected output is a stable `key=value` summary that can be pasted into notes or checked in scripts:

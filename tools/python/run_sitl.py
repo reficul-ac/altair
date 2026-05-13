@@ -29,9 +29,18 @@ def parse_args():
         action="store_true",
         help="pace the compiled runner so one simulated second takes one wall-clock second",
     )
+    parser.add_argument(
+        "--qgc",
+        action="store_true",
+        help="stream cruise6dof SITL telemetry to QGroundControl over MAVLink UDP; implies --realtime",
+    )
+    parser.add_argument("--qgc-host", default="127.0.0.1", help="QGroundControl UDP IPv4 address")
+    parser.add_argument("--qgc-port", default="14550", help="QGroundControl UDP port")
     args = parser.parse_args()
     if args.scenario != "cruise6dof" and args.profile != "cruise":
         parser.error("--profile is only supported with --scenario cruise6dof")
+    if args.qgc and args.scenario != "cruise6dof":
+        parser.error("--qgc is only supported with --scenario cruise6dof")
     return args
 
 
@@ -133,6 +142,8 @@ def main():
         command.extend(["--initial", args.initial])
     if args.realtime:
         command.append("--realtime")
+    if args.qgc:
+        command.extend(["--qgc", "--qgc-host", args.qgc_host, "--qgc-port", args.qgc_port])
 
     try:
         subprocess.run(command, check=True, text=True)

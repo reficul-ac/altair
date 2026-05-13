@@ -55,6 +55,19 @@ add_test(
 )
 set_tests_properties(integration_sitl_cruise6dof_trajectory PROPERTIES DEPENDS integration_sitl_cruise6dof)
 
+set(SITL_QGC_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_qgc.csv")
+add_test(
+  NAME integration_sitl_cruise6dof_qgc
+  COMMAND
+    $<TARGET_FILE:sitl_runner>
+    --scenario cruise6dof
+    --initial "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_initial.ini"
+    --duration 0.02
+    --dt 0.01
+    --output "${SITL_QGC_CSV}"
+    --qgc
+)
+
 set(SITL_CRUISE6DOF_PROFILES cruise takeoff turn descent failsafe)
 foreach(PROFILE IN LISTS SITL_CRUISE6DOF_PROFILES)
   set(SITL_PROFILE_CSV_A "${CMAKE_CURRENT_BINARY_DIR}/sitl_${PROFILE}_a.csv")

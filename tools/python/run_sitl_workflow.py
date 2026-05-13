@@ -38,6 +38,13 @@ def parse_args():
         help="pace SITL in wall-clock time; default runs as fast as possible",
     )
     parser.add_argument(
+        "--qgc",
+        action="store_true",
+        help="stream cruise6dof SITL telemetry to QGroundControl over MAVLink UDP; implies --realtime",
+    )
+    parser.add_argument("--qgc-host", default="127.0.0.1", help="QGroundControl UDP IPv4 address")
+    parser.add_argument("--qgc-port", default="14550", help="QGroundControl UDP port")
+    parser.add_argument(
         "--plot",
         action="append",
         choices=("velocities", "attitudes", "rates", "position", "all"),
@@ -55,6 +62,8 @@ def parse_args():
         parser.error("--initial is only supported with --scenario cruise6dof")
     if args.scenario != "cruise6dof" and args.profile != "cruise":
         parser.error("--profile is only supported with --scenario cruise6dof")
+    if args.qgc and args.scenario != "cruise6dof":
+        parser.error("--qgc is only supported with --scenario cruise6dof")
     if args.scenario != "cruise6dof" and (not args.skip_plots or not args.skip_visualization):
         parser.error("non-cruise6dof scenarios require --skip-plots and --skip-visualization")
     return args
@@ -95,6 +104,8 @@ def main():
         sitl_command.extend(["--initial", args.initial])
     if args.realtime:
         sitl_command.append("--realtime")
+    if args.qgc:
+        sitl_command.extend(["--qgc", "--qgc-host", args.qgc_host, "--qgc-port", args.qgc_port])
 
     try:
         run_step("Run SITL", sitl_command)

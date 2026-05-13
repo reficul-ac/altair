@@ -5,15 +5,19 @@
 #include "sim_plant.h"
 #include "sitl_initial_conditions.h"
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <math.h>
+#include <netinet/in.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/time.h>
 #include <time.h>
+#include <unistd.h>
 
 typedef struct {
   const char *scenario;
@@ -24,13 +28,24 @@ typedef struct {
   const char *output_path;
   const char *initial_path;
   int realtime;
+  int qgc_enabled;
+  const char *qgc_host;
+  const char *qgc_port;
 } sitl_config_t;
+
+typedef struct {
+  int fd;
+  struct sockaddr_storage addr;
+  socklen_t addr_len;
+  uint8_t seq;
+} qgc_link_t;
 
 static void print_usage(FILE *stream) {
   fprintf(stream,
           "usage: sitl_runner [--scenario smoke|cruise6dof] [--duration seconds] [--dt seconds]\n"
           "                   [--seed uint] [--output path] [--initial path]\n"
-          "                   [--profile cruise|takeoff|turn|descent|failsafe] [--realtime]\n");
+          "                   [--profile cruise|takeoff|turn|descent|failsafe] [--realtime]\n"
+          "                   [--qgc] [--qgc-host host] [--qgc-port port]\n");
 }
 
 static int parse_double_arg(const char *text, const char *name, double *value) {
@@ -72,6 +87,9 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
   cfg->output_path = NULL;
   cfg->initial_path = NULL;
   cfg->realtime = 0;
+  cfg->qgc_enabled = 0;
+  cfg->qgc_host = "127.0.0.1";
+  cfg->qgc_port = "14550";
 
   for (i = 1; i < argc; ++i) {
     if (strcmp(argv[i], "--help") == 0) {
@@ -115,6 +133,21 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
       cfg->initial_path = argv[i];
     } else if (strcmp(argv[i], "--realtime") == 0) {
       cfg->realtime = 1;
+    } else if (strcmp(argv[i], "--qgc") == 0) {
+      cfg->qgc_enabled = 1;
+      cfg->realtime = 1;
+    } else if (strcmp(argv[i], "--qgc-host") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "--qgc-host requires a value\n");
+        return -1;
+      }
+      cfg->qgc_host = argv[i];
+    } else if (strcmp(argv[i], "--qgc-port") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "--qgc-port requires a value\n");
+        return -1;
+      }
+      cfg->qgc_port = argv[i];
     } else {
       fprintf(stderr, "unknown option: %s\n", argv[i]);
       return -1;
@@ -147,8 +180,219 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
     fprintf(stderr, "--profile is only supported with --scenario cruise6dof\n");
     return -1;
   }
+  if (cfg->qgc_enabled && strcmp(cfg->scenario, "cruise6dof") != 0) {
+    fprintf(stderr, "--qgc is only supported with --scenario cruise6dof\n");
+    return -1;
+  }
   (void)cfg->seed;
   return 0;
+}
+
+static uint16_t mavlink_crc_accumulate(uint8_t data, uint16_t crc) {
+  uint8_t tmp = data ^ (uint8_t)(crc & 0xffU);
+  tmp ^= (uint8_t)(tmp << 4U);
+  return (uint16_t)((crc >> 8U) ^ ((uint16_t)tmp << 8U) ^ ((uint16_t)tmp << 3U) ^ ((uint16_t)tmp >> 4U));
+}
+
+static void mavlink_put_u16(uint8_t *payload, size_t offset, uint16_t value) {
+  payload[offset] = (uint8_t)(value & 0xffU);
+  payload[offset + 1U] = (uint8_t)((value >> 8U) & 0xffU);
+}
+
+static void mavlink_put_u32(uint8_t *payload, size_t offset, uint32_t value) {
+  payload[offset] = (uint8_t)(value & 0xffU);
+  payload[offset + 1U] = (uint8_t)((value >> 8U) & 0xffU);
+  payload[offset + 2U] = (uint8_t)((value >> 16U) & 0xffU);
+  payload[offset + 3U] = (uint8_t)((value >> 24U) & 0xffU);
+}
+
+static void mavlink_put_i16(uint8_t *payload, size_t offset, int16_t value) {
+  mavlink_put_u16(payload, offset, (uint16_t)value);
+}
+
+static void mavlink_put_i32(uint8_t *payload, size_t offset, int32_t value) {
+  mavlink_put_u32(payload, offset, (uint32_t)value);
+}
+
+static void mavlink_put_float(uint8_t *payload, size_t offset, float value) {
+  uint32_t raw;
+  memcpy(&raw, &value, sizeof(raw));
+  mavlink_put_u32(payload, offset, raw);
+}
+
+static int qgc_open(const sitl_config_t *cfg, qgc_link_t *link) {
+  struct sockaddr_in addr;
+  char *end = NULL;
+  unsigned long port;
+
+  link->fd = -1;
+  link->addr_len = 0;
+  link->seq = 0U;
+  if (!cfg->qgc_enabled) {
+    return 1;
+  }
+
+  errno = 0;
+  port = strtoul(cfg->qgc_port, &end, 10);
+  if (errno != 0 || end == cfg->qgc_port || *end != '\0' || port == 0UL || port > 65535UL) {
+    fprintf(stderr, "invalid QGC UDP port: %s\n", cfg->qgc_port);
+    return 0;
+  }
+
+  memset(&addr, 0, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons((uint16_t)port);
+  if (inet_pton(AF_INET, cfg->qgc_host, &addr.sin_addr) != 1) {
+    fprintf(stderr, "invalid QGC IPv4 address: %s\n", cfg->qgc_host);
+    return 0;
+  }
+
+  link->fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (link->fd < 0) {
+    fprintf(stderr, "failed to open QGC UDP socket\n");
+    return 0;
+  }
+  memcpy(&link->addr, &addr, sizeof(addr));
+  link->addr_len = (socklen_t)sizeof(addr);
+  return 1;
+}
+
+static void qgc_close(qgc_link_t *link) {
+  if (link->fd >= 0) {
+    (void)close(link->fd);
+    link->fd = -1;
+  }
+}
+
+static void qgc_send_packet(qgc_link_t *link, uint8_t msg_id, const uint8_t *payload, uint8_t payload_len, uint8_t crc_extra) {
+  uint8_t frame[6U + 255U + 2U];
+  uint16_t checksum = 0xffffU;
+  size_t i;
+
+  if (link->fd < 0) {
+    return;
+  }
+  frame[0] = 0xfeU;
+  frame[1] = payload_len;
+  frame[2] = link->seq++;
+  frame[3] = 1U;
+  frame[4] = 1U;
+  frame[5] = msg_id;
+  memcpy(&frame[6], payload, payload_len);
+
+  for (i = 1U; i < 6U + payload_len; ++i) {
+    checksum = mavlink_crc_accumulate(frame[i], checksum);
+  }
+  checksum = mavlink_crc_accumulate(crc_extra, checksum);
+  frame[6U + payload_len] = (uint8_t)(checksum & 0xffU);
+  frame[7U + payload_len] = (uint8_t)((checksum >> 8U) & 0xffU);
+
+  (void)sendto(link->fd, frame, 8U + payload_len, 0, (const struct sockaddr *)&link->addr, link->addr_len);
+}
+
+static int32_t scaled_i32(real_t value, real_t scale) {
+  return (int32_t)lrintf(value * scale);
+}
+
+static int16_t scaled_i16(real_t value, real_t scale) {
+  return (int16_t)lrintf(value * scale);
+}
+
+static uint16_t heading_cdeg(real_t yaw_rad) {
+  real_t yaw_deg = yaw_rad * (180.0f / BAYEK_PI);
+  uint16_t heading;
+  while (yaw_deg < 0.0f) {
+    yaw_deg += 360.0f;
+  }
+  while (yaw_deg >= 360.0f) {
+    yaw_deg -= 360.0f;
+  }
+  heading = (uint16_t)lrintf(yaw_deg * 100.0f);
+  return heading >= 36000U ? 0U : heading;
+}
+
+static void qgc_send_heartbeat(qgc_link_t *link) {
+  uint8_t payload[9] = {0};
+  mavlink_put_u32(payload, 0, 0U);
+  payload[4] = 1U;
+  payload[5] = 0U;
+  payload[6] = 0U;
+  payload[7] = 4U;
+  payload[8] = 3U;
+  qgc_send_packet(link, 0U, payload, sizeof(payload), 50U);
+}
+
+static void qgc_send_attitude(qgc_link_t *link, uint32_t time_boot_ms, const sim_fixedwing_state_t *plant, euler_t euler) {
+  uint8_t payload[28] = {0};
+  mavlink_put_u32(payload, 0, time_boot_ms);
+  mavlink_put_float(payload, 4, euler.roll);
+  mavlink_put_float(payload, 8, euler.pitch);
+  mavlink_put_float(payload, 12, euler.yaw);
+  mavlink_put_float(payload, 16, plant->body.omega_body_rps.x);
+  mavlink_put_float(payload, 20, plant->body.omega_body_rps.y);
+  mavlink_put_float(payload, 24, plant->body.omega_body_rps.z);
+  qgc_send_packet(link, 30U, payload, sizeof(payload), 39U);
+}
+
+static void qgc_send_global_position(qgc_link_t *link,
+                                     uint32_t time_boot_ms,
+                                     real_t lat_deg,
+                                     real_t lon_deg,
+                                     real_t altitude_m,
+                                     const sim_fixedwing_state_t *plant,
+                                     euler_t euler) {
+  uint8_t payload[28] = {0};
+  mavlink_put_u32(payload, 0, time_boot_ms);
+  mavlink_put_i32(payload, 4, scaled_i32(lat_deg, 10000000.0f));
+  mavlink_put_i32(payload, 8, scaled_i32(lon_deg, 10000000.0f));
+  mavlink_put_i32(payload, 12, scaled_i32(altitude_m, 1000.0f));
+  mavlink_put_i32(payload, 16, scaled_i32(altitude_m, 1000.0f));
+  mavlink_put_i16(payload, 20, scaled_i16(plant->body.velocity_ned_mps.x, 100.0f));
+  mavlink_put_i16(payload, 22, scaled_i16(plant->body.velocity_ned_mps.y, 100.0f));
+  mavlink_put_i16(payload, 24, scaled_i16(plant->body.velocity_ned_mps.z, 100.0f));
+  mavlink_put_u16(payload, 26, heading_cdeg(euler.yaw));
+  qgc_send_packet(link, 33U, payload, sizeof(payload), 104U);
+}
+
+static void qgc_send_vfr_hud(qgc_link_t *link,
+                             real_t airspeed_mps,
+                             real_t groundspeed_mps,
+                             real_t altitude_m,
+                             real_t climb_mps,
+                             euler_t euler) {
+  uint8_t payload[20] = {0};
+  mavlink_put_float(payload, 0, airspeed_mps);
+  mavlink_put_float(payload, 4, groundspeed_mps);
+  mavlink_put_i16(payload, 8, (int16_t)lrintf((real_t)heading_cdeg(euler.yaw) / 100.0f));
+  mavlink_put_u16(payload, 10, 0U);
+  mavlink_put_float(payload, 12, altitude_m);
+  mavlink_put_float(payload, 16, climb_mps);
+  qgc_send_packet(link, 74U, payload, sizeof(payload), 20U);
+}
+
+static void qgc_send_state(qgc_link_t *link,
+                           const sitl_config_t *cfg,
+                           int step,
+                           const sim_fixedwing_state_t *plant,
+                           real_t lat_deg,
+                           real_t lon_deg,
+                           real_t altitude_m,
+                           euler_t euler) {
+  uint32_t time_boot_ms;
+  real_t groundspeed_mps;
+
+  if (link->fd < 0) {
+    return;
+  }
+  time_boot_ms = (uint32_t)lrint((double)step * cfg->dt_s * 1000.0);
+  groundspeed_mps = (real_t)sqrtf(plant->body.velocity_ned_mps.x * plant->body.velocity_ned_mps.x +
+                                  plant->body.velocity_ned_mps.y * plant->body.velocity_ned_mps.y);
+  if (step == 0 || fmod((double)step * cfg->dt_s, 1.0) < cfg->dt_s) {
+    qgc_send_heartbeat(link);
+  }
+  qgc_send_attitude(link, time_boot_ms, plant, euler);
+  qgc_send_global_position(link, time_boot_ms, lat_deg, lon_deg, altitude_m, plant, euler);
+  qgc_send_vfr_hud(link, plant->last_airspeed_mps, groundspeed_mps, altitude_m, -plant->body.velocity_ned_mps.z, euler);
 }
 
 static int checked_close(FILE *stream, const char *path) {
@@ -330,6 +574,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
   fsw_input_t input;
   fsw_output_t output;
   sitl_initial_conditions_t initial;
+  qgc_link_t qgc;
   char initial_error[160];
   char model_error[160];
   int i;
@@ -350,6 +595,9 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
     }
   }
   apply_initial_conditions(&plant, &initial);
+  if (!qgc_open(cfg, &qgc)) {
+    return 1;
+  }
   start_wall_s = wall_time_s();
 
   if (fprintf(csv,
@@ -359,6 +607,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
               "airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,"
               "force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm\n") < 0) {
     fprintf(stderr, "failed to write output\n");
+    qgc_close(&qgc);
     return 1;
   }
 
@@ -381,14 +630,17 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
     bayek_fsw_step(&input, &output);
     if (!sim_output_is_bounded(&output)) {
       fprintf(stderr, "unbounded_output at step %d\n", i);
+      qgc_close(&qgc);
       return 2;
     }
     if (!sim_fixedwing_step(&plant, &params, &output.actuators, (real_t)cfg->dt_s)) {
       fprintf(stderr, "invalid_sim_state at step %d\n", i);
+      qgc_close(&qgc);
       return 2;
     }
     euler = euler_from_quat(plant.body.attitude_body_to_ned);
     ned_to_geo(initial.lat_deg, initial.lon_deg, plant.body.position_ned_m, &lat_deg, &lon_deg, &altitude_m);
+    qgc_send_state(&qgc, cfg, i, &plant, lat_deg, lon_deg, altitude_m, euler);
     if (fprintf(csv,
                 "%d,%.3f,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
                 "%u,%.8f,%.8f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
@@ -437,10 +689,12 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
                 (double)plant.last_moment_body_nm.y,
                 (double)plant.last_moment_body_nm.z) < 0) {
       fprintf(stderr, "failed to write output\n");
+      qgc_close(&qgc);
       return 1;
     }
     pace_realtime_step(cfg, start_wall_s, i + 1);
   }
+  qgc_close(&qgc);
   return 0;
 }
 
