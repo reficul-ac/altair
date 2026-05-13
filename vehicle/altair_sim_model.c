@@ -1,9 +1,9 @@
 #include "altair_sim_model.h"
 
 #include "altair_mixer.h"
+#include "altair_sim_params.h"
 #include "math_utils.h"
 
-#include <math.h>
 #include <stdio.h>
 
 static int fail_validation(char *error, size_t error_size, const char *message) {
@@ -13,24 +13,13 @@ static int fail_validation(char *error, size_t error_size, const char *message) 
   return 0;
 }
 
-static int close_enough(real_t a, real_t b) {
-  return fabsf(a - b) <= 1.0e-6f;
-}
-
 static int vec3_is_positive(vec3_t v) {
   return real_is_finite(v.x) && real_is_finite(v.y) && real_is_finite(v.z) &&
          v.x > 0.0f && v.y > 0.0f && v.z > 0.0f;
 }
 
 void altair_fixedwing_sim_params(sim_fixedwing_params_t *params) {
-  const vehicle_params_t *vehicle = altair_default_params();
-  if (params == NULL) {
-    return;
-  }
-
-  sim_fixedwing_default_params(params);
-  params->core.mass_kg = vehicle->mass_kg;
-  params->wing_area_m2 = vehicle->wing_area_m2;
+  altair_default_fixedwing_sim_params(params);
 }
 
 int altair_fixedwing_sim_params_are_valid(const sim_fixedwing_params_t *params,
@@ -46,12 +35,6 @@ int altair_fixedwing_sim_params_are_valid(const sim_fixedwing_params_t *params,
     return fail_validation(error, error_size, "vehicle params are null");
   }
 
-  if (!real_is_finite(vehicle->mass_kg) || vehicle->mass_kg <= 0.0f) {
-    return fail_validation(error, error_size, "vehicle mass must be finite and positive");
-  }
-  if (!real_is_finite(vehicle->wing_area_m2) || vehicle->wing_area_m2 <= 0.0f) {
-    return fail_validation(error, error_size, "vehicle wing area must be finite and positive");
-  }
   if (!real_is_finite(vehicle->min_airspeed_mps) ||
       !real_is_finite(vehicle->max_airspeed_mps) ||
       vehicle->min_airspeed_mps <= 0.0f ||
@@ -67,11 +50,11 @@ int altair_fixedwing_sim_params_are_valid(const sim_fixedwing_params_t *params,
     return fail_validation(error, error_size, "vehicle actuator range must fit normalized sim outputs");
   }
 
-  if (!close_enough(params->core.mass_kg, vehicle->mass_kg)) {
-    return fail_validation(error, error_size, "sim mass does not match Altair vehicle mass");
+  if (!real_is_finite(params->core.mass_kg) || params->core.mass_kg <= 0.0f) {
+    return fail_validation(error, error_size, "sim mass must be finite and positive");
   }
-  if (!close_enough(params->wing_area_m2, vehicle->wing_area_m2)) {
-    return fail_validation(error, error_size, "sim wing area does not match Altair vehicle wing area");
+  if (!real_is_finite(params->wing_area_m2) || params->wing_area_m2 <= 0.0f) {
+    return fail_validation(error, error_size, "sim wing area must be finite and positive");
   }
   if (!vec3_is_positive(params->core.inertia_kgm2)) {
     return fail_validation(error, error_size, "sim inertia must be finite and positive");

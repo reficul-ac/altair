@@ -6,13 +6,14 @@ The Altair vehicle layer lives in root-level vehicle-owned folders.
 
 - `config/altair_config.h`: control-rate and compile-time configuration constants.
 - `mixer/altair_limits.h`: actuator limits.
-- `params/altair_params.c/h`: default `vehicle_params_t`.
+- `params/altair_params.c/h`: default flight-facing `vehicle_params_t`.
+- `params/sim/altair_sim_params.c/h`: Altair-specific SITL physical-model constants.
 - `mixer/altair_mixer.c/h`: mapping from normalized control requests to actuator commands.
 - `vehicle/altair_vehicle.c/h`: `bayek_vehicle_interface_t` implementation for Altair.
 
 ## Responsibilities
 
-The vehicle layer is responsible for airframe-specific knowledge. That includes actuator ranges, safe actuator values, and mixer conventions.
+The vehicle layer is responsible for airframe-specific knowledge. That includes actuator ranges, safe actuator values, mixer conventions, and host-only simulation constants.
 
 Bayek FSW asks the configured vehicle interface to produce valid actuator commands rather than duplicating vehicle-specific saturation behavior.
 
@@ -31,6 +32,8 @@ This is intentionally simple. More complex mixing can be added here without chan
 
 ## Parameter Design
 
-`altair_default_params()` returns a pointer to a static const parameter block. This avoids allocation and gives host and embedded builds the same default values.
+`altair_default_params()` returns a pointer to a static const parameter block for values intended to be loaded by onboard flight software. This avoids allocation and gives host and embedded builds the same flight-facing defaults.
+
+SITL-only physical model constants, such as fixed-wing mass and wing area, live under `params/sim/`. Host simulation callers continue to use `altair_fixedwing_sim_params()`, which delegates to those sim-only defaults. The current PlatformIO source filter includes `params/*.c` but not `params/sim/*.c`, so these sim-only values are kept out of the Arduino firmware build path.
 
 `altair_vehicle_interface()` attaches these parameters to Bayek's generic vehicle interface. If runtime parameter loading is needed later, it should occur outside `bayek/fsw` and be supplied through that interface.

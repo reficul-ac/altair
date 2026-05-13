@@ -16,9 +16,14 @@ target_link_libraries(altair_vehicle PUBLIC bayek_common bayek_fsw)
 altair_enable_warnings(altair_vehicle)
 
 add_library(altair_sim_model
+  ../params/sim/altair_sim_params.c
   altair_sim_model.c
 )
-target_include_directories(altair_sim_model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(altair_sim_model
+  PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../params/sim
+)
 target_link_libraries(altair_sim_model PUBLIC altair_vehicle bayek_sim)
 altair_enable_warnings(altair_sim_model)
 

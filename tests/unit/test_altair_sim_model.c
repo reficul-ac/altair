@@ -75,11 +75,16 @@ int main(void) {
 
   altair_fixedwing_sim_params(&params);
   CHECK_MSG(altair_fixedwing_sim_params_are_valid(&params, vehicle, error, sizeof(error)), error);
-  CHECK(close_real(params.core.mass_kg, vehicle->mass_kg));
-  CHECK(close_real(params.wing_area_m2, vehicle->wing_area_m2));
+  CHECK(close_real(params.core.mass_kg, 2.5f));
+  CHECK(close_real(params.wing_area_m2, 0.45f));
 
   invalid = params;
-  invalid.core.mass_kg = vehicle->mass_kg + 1.0f;
+  invalid.core.mass_kg = -1.0f;
+  CHECK(!altair_fixedwing_sim_params_are_valid(&invalid, vehicle, error, sizeof(error)));
+  CHECK(error[0] != '\0');
+
+  invalid = params;
+  invalid.wing_area_m2 = -1.0f;
   CHECK(!altair_fixedwing_sim_params_are_valid(&invalid, vehicle, error, sizeof(error)));
   CHECK(error[0] != '\0');
 

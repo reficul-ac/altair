@@ -1,6 +1,6 @@
 # Altair Simulation And Monte Carlo
 
-Altair owns concrete host runners that bind Bayek to `altair_vehicle_interface()`. Altair also owns aircraft-specific simulation model values through `altair_fixedwing_sim_params()`. Bayek owns the reusable integration and dynamics helpers documented in [Bayek Simulation](../bayek/docs/simulation.md).
+Altair owns concrete host runners that bind Bayek to `altair_vehicle_interface()`. Altair also owns aircraft-specific simulation model values in `params/sim/`, exposed to callers through `altair_fixedwing_sim_params()`. Bayek owns the reusable integration, generic sim parameter structs, and dynamics helpers documented in [Bayek Simulation](../bayek/docs/simulation.md).
 
 ## SITL Plant
 
@@ -12,7 +12,7 @@ Altair currently uses Bayek's deterministic toy plant for `smoke` and an Altair-
 - simple airspeed and altitude evolution
 - simulated IMU, GPS, baro, and airspeed samples
 
-The fixed-wing model is a first-pass deterministic simulation contract, not a validated Altair flight dynamics model. Its parameters remain compile-time constants for this milestone. The plant exists to validate:
+The fixed-wing model is a first-pass deterministic simulation contract, not a validated Altair flight dynamics model. Bayek's sim structs remain generic, while Altair's concrete physical values, including mass and wing area, are compile-time constants under `params/sim/` for this milestone. The plant exists to validate:
 
 - build and link boundaries
 - deterministic closed-loop stepping
