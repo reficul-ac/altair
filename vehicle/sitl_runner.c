@@ -354,7 +354,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
 
   if (fprintf(csv,
               "step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,"
-              "lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,"
+              "gps_fix_valid,lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,"
               "roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,"
               "airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,"
               "force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm\n") < 0) {
@@ -368,14 +368,16 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
     real_t lon_deg;
     real_t altitude_m;
     rc_input_t rc = cruise6dof_profile_rc(cfg, &initial, i, steps);
+    uint32_t gps_fix_valid = 1U;
     sim_fixedwing_make_fsw_input(&plant, &rc, (real_t)cfg->dt_s, (uint32_t)(i * cfg->dt_s * 1000000.0), &input);
     ned_to_geo(initial.lat_deg, initial.lon_deg, plant.body.position_ned_m, &lat_deg, &lon_deg, &altitude_m);
     input.gps.lat_deg = lat_deg;
     input.gps.lon_deg = lon_deg;
     input.gps.alt_m = altitude_m;
     if (strcmp(cfg->profile, "failsafe") == 0 && i * 2 >= steps) {
-      input.gps.fix_valid = 0U;
+      gps_fix_valid = 0U;
     }
+    input.gps.fix_valid = gps_fix_valid;
     bayek_fsw_step(&input, &output);
     if (!sim_output_is_bounded(&output)) {
       fprintf(stderr, "unbounded_output at step %d\n", i);
@@ -389,7 +391,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
     ned_to_geo(initial.lat_deg, initial.lon_deg, plant.body.position_ned_m, &lat_deg, &lon_deg, &altitude_m);
     if (fprintf(csv,
                 "%d,%.3f,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
-                "%.8f,%.8f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
+                "%u,%.8f,%.8f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
                 "%.6f,%.6f,%.6f,%.8f,%.8f,%.8f,%.8f,%.6f,%.6f,%.6f,"
                 "%.6f,%.6f,%.6f,%.6f,%.6f,"
                 "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
@@ -404,6 +406,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
                 (double)rc.roll,
                 (double)rc.pitch,
                 (double)rc.yaw,
+                gps_fix_valid,
                 (double)lat_deg,
                 (double)lon_deg,
                 (double)plant.body.position_ned_m.x,

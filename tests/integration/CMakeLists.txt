@@ -23,6 +23,8 @@ add_test(
 )
 set_tests_properties(integration_sitl_runner_cli_csv PROPERTIES DEPENDS integration_sitl_runner_cli)
 
+set(SITL_CRUISE6DOF_HEADER "step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,gps_fix_valid,lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm")
+
 set(SITL_CRUISE6DOF_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof.csv")
 add_test(
   NAME integration_sitl_cruise6dof
@@ -39,7 +41,7 @@ add_test(
   COMMAND
     ${CMAKE_COMMAND}
     -DCSV_FILE=${SITL_CRUISE6DOF_CSV}
-    -DEXPECTED_HEADER=step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm
+    -DEXPECTED_HEADER=${SITL_CRUISE6DOF_HEADER}
     -P "${CMAKE_CURRENT_SOURCE_DIR}/check_csv.cmake"
 )
 set_tests_properties(integration_sitl_cruise6dof_csv PROPERTIES DEPENDS integration_sitl_cruise6dof)
@@ -104,6 +106,20 @@ foreach(PROFILE IN LISTS SITL_CRUISE6DOF_PROFILES)
   set_tests_properties(${SITL_PROFILE_GUARDRAILS} PROPERTIES DEPENDS ${SITL_PROFILE_RUN_A})
 endforeach()
 
+set(SITL_FAILSAFE_FIXTURE "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/sitl_cruise6dof_failsafe_v1.csv")
+set(SITL_FAILSAFE_FIXTURE_ACTUAL "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_failsafe_fixture.csv")
+add_test(
+  NAME integration_sitl_cruise6dof_failsafe_fixture_run
+  COMMAND
+    $<TARGET_FILE:sitl_runner>
+    --scenario cruise6dof
+    --profile failsafe
+    --initial "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_initial.ini"
+    --duration 1.0
+    --dt 0.02
+    --output "${SITL_FAILSAFE_FIXTURE_ACTUAL}"
+)
+
 set(MC_SUMMARY_CSV "${CMAKE_CURRENT_BINARY_DIR}/mc_summary.csv")
 add_test(
   NAME integration_mc_runner_cli
@@ -131,6 +147,19 @@ add_test(NAME integration_vehicle_interface COMMAND test_vehicle_interface)
 
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
+  add_test(
+    NAME integration_sitl_cruise6dof_failsafe_fixture_replay
+    COMMAND
+      ${Python3_EXECUTABLE}
+      "${CMAKE_SOURCE_DIR}/tools/python/compare_sitl_replay.py"
+      --expected "${SITL_FAILSAFE_FIXTURE}"
+      --actual "${SITL_FAILSAFE_FIXTURE_ACTUAL}"
+  )
+  set_tests_properties(
+    integration_sitl_cruise6dof_failsafe_fixture_replay
+    PROPERTIES DEPENDS integration_sitl_cruise6dof_failsafe_fixture_run
+  )
+
   add_test(
     NAME integration_run_sitl_cruise6dof_summary
     COMMAND

@@ -28,7 +28,7 @@ CTest runs each `cruise6dof` command profile twice and compares the generated CS
 
 CSV is used because it is transparent, dependency-free, easy to diff, and easy to consume from Python, spreadsheets, or CI artifacts.
 
-The `smoke` scenario keeps its compact CSV output for plumbing checks. The `cruise6dof` scenario writes richer trajectory data including RC inputs, actuator outputs, latitude/longitude, NED position and velocity, Euler angles, attitude quaternion, body rates, airspeed, altitude, body acceleration, and the last force and moment vectors.
+The `smoke` scenario keeps its compact CSV output for plumbing checks. The `cruise6dof` scenario writes richer trajectory data including RC inputs, health/failsafe inputs, actuator outputs, latitude/longitude, NED position and velocity, Euler angles, attitude quaternion, body rates, airspeed, altitude, body acceleration, and the last force and moment vectors.
 
 `cruise6dof` supports deterministic command profiles with `--profile`:
 
@@ -78,6 +78,30 @@ SITL runs as fast as possible by default. Add `--realtime` when a run should be 
 ```
 
 Latitude and longitude in `cruise6dof` logs are computed from NED position with a local tangent-plane approximation around `lat_deg` and `lon_deg`. They are useful for plotting short local trajectories, not as a full geodesy model.
+
+## SITL Replay CSV v1
+
+The first committed replay fixture uses the existing `cruise6dof` CSV as the v1 replay contract. Its identity/configuration is:
+
+- `scenario=cruise6dof`
+- `profile=failsafe`
+- `initial=tests/integration/cruise6dof_initial.ini`
+- `duration=1.0`
+- `dt=0.02`
+
+The v1 fixture covers nominal flight followed by health degradation and failsafe output behavior. Required coverage is time, FSW mode, actuator outputs, RC inputs, explicit `gps_fix_valid`, local geodetic position, NED position and velocity, Euler attitude, attitude quaternion, body rates, airspeed, altitude, body acceleration, and the last body-frame force and moment vectors.
+
+The v1 replay format is the exact CSV header below. Changing columns, order, names, or units requires regenerating `tests/integration/fixtures/sitl_cruise6dof_failsafe_v1.csv`, updating this contract, and updating the replay test expected header/checks in `tests/integration/CMakeLists.txt`.
+
+```text
+step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,gps_fix_valid,lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm
+```
+
+Regenerate the v1 fixture with:
+
+```sh
+./build/vehicle/sitl_runner --scenario cruise6dof --profile failsafe --initial tests/integration/cruise6dof_initial.ini --duration 1.0 --dt 0.02 --output tests/integration/fixtures/sitl_cruise6dof_failsafe_v1.csv
+```
 
 For routine local runs, `tools/python/run_sitl.py` wraps the compiled runner and prints key metrics from the generated CSV:
 
@@ -139,6 +163,7 @@ Python scripts in `tools/python` are orchestration helpers only:
 
 - `run_sitl.py` invokes the compiled SITL runner and prints summary metrics.
 - `run_sitl_workflow.py` runs SITL, plots the CSV log, and generates the standalone 3D playback page with routine defaults.
+- `compare_sitl_replay.py` compares two replay CSV files with identical headers, identical row counts, and numeric tolerances.
 - `run_mc.py` invokes the compiled runner and writes CSV.
 - `plot_mc.py` prints simple summary statistics.
 - `plot_sitl.py` plots selected `cruise6dof` trajectory views from a SITL CSV.
