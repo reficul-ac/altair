@@ -49,12 +49,13 @@ python3 tools/python/visualize_sitl_3d.py sitl_cruise6dof.csv --output sitl_3d.h
 
 `run_sitl.py` invokes the compiled runner and prints stable summary metrics such as `rows`, `final_airspeed_mps`, `final_altitude_m`, `finite`, `max_abs_roll_rad`, and motor command bounds.
 For `cruise6dof`, `--profile` can select `cruise`, `takeoff`, `turn`, `descent`, or `failsafe` command profiles.
+`cruise6dof` uses ECEF truth dynamics by default with a spherical Earth model and preserves local NED CSV columns as derived outputs. Use `--frame-mode ned` for the legacy local-NED dynamics path.
 By default SITL runs as fast as the host can execute it. Pass `--realtime` to pace the run so one simulated second takes one wall-clock second.
 Pass `--qgc` to stream `cruise6dof` attitude, global position, airspeed, and heartbeat MAVLink telemetry to QGroundControl over UDP. QGC listens on `127.0.0.1:14550` by default; use `--qgc-host` and `--qgc-port` to override that endpoint. `--qgc` implies realtime pacing.
 
 `visualize_sitl_3d.py` writes a self-contained HTML playback page for `cruise6dof` CSV logs. Open the generated file in a browser to scrub and play back the 3D trajectory and aircraft attitude marker.
 
-`cruise6dof` latitude and longitude columns use a local tangent-plane approximation around the initial latitude and longitude, not a full geodesy model.
+`cruise6dof` latitude, longitude, and altitude columns are derived from the spherical-Earth ECEF truth state. The CSV also appends ECEF position and velocity columns in meters and meters per second.
 
 Run the deterministic smoke Monte Carlo sweep and write a summary CSV:
 

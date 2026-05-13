@@ -23,7 +23,7 @@ add_test(
 )
 set_tests_properties(integration_sitl_runner_cli_csv PROPERTIES DEPENDS integration_sitl_runner_cli)
 
-set(SITL_CRUISE6DOF_HEADER "step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,gps_fix_valid,lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm")
+set(SITL_CRUISE6DOF_HEADER "step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,gps_fix_valid,lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm,pos_ecef_x_m,pos_ecef_y_m,pos_ecef_z_m,vel_ecef_x_mps,vel_ecef_y_mps,vel_ecef_z_mps")
 
 set(SITL_CRUISE6DOF_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof.csv")
 add_test(
@@ -54,6 +54,28 @@ add_test(
     -P "${CMAKE_CURRENT_SOURCE_DIR}/check_sitl_trajectory.cmake"
 )
 set_tests_properties(integration_sitl_cruise6dof_trajectory PROPERTIES DEPENDS integration_sitl_cruise6dof)
+
+set(SITL_CRUISE6DOF_NED_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_ned.csv")
+add_test(
+  NAME integration_sitl_cruise6dof_ned
+  COMMAND
+    $<TARGET_FILE:sitl_runner>
+    --scenario cruise6dof
+    --frame-mode ned
+    --initial "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_initial.ini"
+    --duration 0.05
+    --dt 0.01
+    --output "${SITL_CRUISE6DOF_NED_CSV}"
+)
+add_test(
+  NAME integration_sitl_cruise6dof_ned_csv
+  COMMAND
+    ${CMAKE_COMMAND}
+    -DCSV_FILE=${SITL_CRUISE6DOF_NED_CSV}
+    -DEXPECTED_HEADER=${SITL_CRUISE6DOF_HEADER}
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_csv.cmake"
+)
+set_tests_properties(integration_sitl_cruise6dof_ned_csv PROPERTIES DEPENDS integration_sitl_cruise6dof_ned)
 
 set(SITL_QGC_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_qgc.csv")
 add_test(

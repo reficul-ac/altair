@@ -85,6 +85,15 @@ int altair_fixedwing_sim_params_are_valid(const sim_fixedwing_params_t *params,
   if (!real_is_finite(params->core.actuator_lag_hz) || params->core.actuator_lag_hz <= 0.0f) {
     return fail_validation(error, error_size, "sim actuator lag must be finite and positive");
   }
+  if (params->core.frame_mode != SIM6DOF_FRAME_NED && params->core.frame_mode != SIM6DOF_FRAME_ECEF) {
+    return fail_validation(error, error_size, "sim frame mode is invalid");
+  }
+  if (params->core.earth_model != SIM6DOF_EARTH_SPHERICAL) {
+    return fail_validation(error, error_size, "sim earth model is invalid");
+  }
+  if (!real_is_finite(params->core.earth_radius_m) || params->core.earth_radius_m <= 1000.0f) {
+    return fail_validation(error, error_size, "sim earth radius must be finite and positive");
+  }
   if (!real_is_finite(params->wing_span_m) || params->wing_span_m <= 0.0f ||
       !real_is_finite(params->mean_chord_m) || params->mean_chord_m <= 0.0f ||
       !real_is_finite(params->max_thrust_n) || params->max_thrust_n <= 0.0f) {

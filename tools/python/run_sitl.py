@@ -24,6 +24,7 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--output", default="sitl.csv")
     parser.add_argument("--initial", help="initial-condition file for cruise6dof")
+    parser.add_argument("--frame-mode", choices=("ned", "ecef"), default="ecef", help="6DOF truth frame")
     parser.add_argument(
         "--realtime",
         action="store_true",
@@ -137,6 +138,8 @@ def main():
         str(args.seed),
         "--output",
         args.output,
+        "--frame-mode",
+        args.frame_mode,
     ]
     if args.initial is not None:
         command.extend(["--initial", args.initial])

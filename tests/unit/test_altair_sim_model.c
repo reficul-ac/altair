@@ -32,6 +32,9 @@ static int close_state(sim_fixedwing_state_t a, sim_fixedwing_state_t b) {
   return close_vec3(a.body.position_ned_m, b.body.position_ned_m) &&
          close_vec3(a.body.velocity_ned_mps, b.body.velocity_ned_mps) &&
          close_quat(a.body.attitude_body_to_ned, b.body.attitude_body_to_ned) &&
+         close_vec3(a.body.position_ecef_m, b.body.position_ecef_m) &&
+         close_vec3(a.body.velocity_ecef_mps, b.body.velocity_ecef_mps) &&
+         close_quat(a.body.attitude_body_to_ecef, b.body.attitude_body_to_ecef) &&
          close_vec3(a.body.omega_body_rps, b.body.omega_body_rps) &&
          close_actuator(a.body.actuator_state, b.body.actuator_state) &&
          close_vec3(a.body.specific_force_body_mps2, b.body.specific_force_body_mps2) &&
@@ -41,18 +44,20 @@ static int close_state(sim_fixedwing_state_t a, sim_fixedwing_state_t b) {
          close_real(a.last_airspeed_mps, b.last_airspeed_mps);
 }
 
-static sim_fixedwing_state_t run_sequence(const sim_fixedwing_params_t *params) {
+static sim_fixedwing_state_t run_sequence(const sim_fixedwing_params_t *params, int frame_mode) {
   sim_fixedwing_state_t state;
+  sim_fixedwing_params_t local_params = *params;
   actuator_cmd_t cmd;
   int i;
 
+  local_params.core.frame_mode = frame_mode;
   sim_fixedwing_init_default(&state);
   for (i = 0; i < 250; ++i) {
     cmd.motor = i < 80 ? 0.62f : 0.54f;
     cmd.aileron = i < 60 ? 0.0f : (i < 170 ? 0.18f : -0.08f);
     cmd.elevator = i < 120 ? 0.04f : -0.03f;
     cmd.rudder = i < 150 ? 0.0f : 0.05f;
-    if (!sim_fixedwing_step(&state, params, &cmd, 0.01f)) {
+    if (!sim_fixedwing_step(&state, &local_params, &cmd, 0.01f)) {
       state.last_airspeed_mps = NAN;
       return state;
     }
@@ -83,8 +88,13 @@ int main(void) {
   CHECK(!altair_fixedwing_sim_params_are_valid(&invalid, vehicle, error, sizeof(error)));
   CHECK(error[0] != '\0');
 
-  first = run_sequence(&params);
-  second = run_sequence(&params);
+  first = run_sequence(&params, SIM6DOF_FRAME_ECEF);
+  second = run_sequence(&params, SIM6DOF_FRAME_ECEF);
+  CHECK(sim_fixedwing_state_is_valid(&first));
+  CHECK(sim_fixedwing_state_is_valid(&second));
+  CHECK(close_state(first, second));
+  first = run_sequence(&params, SIM6DOF_FRAME_NED);
+  second = run_sequence(&params, SIM6DOF_FRAME_NED);
   CHECK(sim_fixedwing_state_is_valid(&first));
   CHECK(sim_fixedwing_state_is_valid(&second));
   CHECK(close_state(first, second));

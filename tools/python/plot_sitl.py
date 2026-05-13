@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 
-SUPPORTED_PLOTS = ("velocities", "attitudes", "rates", "position")
+SUPPORTED_PLOTS = ("velocities", "attitudes", "rates", "position", "ecef")
 
 
 def parse_args():
@@ -111,6 +111,43 @@ def plot_position(rows, pyplot, out_dir):
     return [fig_ll, fig_3d]
 
 
+def plot_ecef(rows, pyplot, out_dir):
+    columns = (
+        "pos_ecef_x_m",
+        "pos_ecef_y_m",
+        "pos_ecef_z_m",
+        "vel_ecef_x_mps",
+        "vel_ecef_y_mps",
+        "vel_ecef_z_mps",
+    )
+    if not all(column in rows[0] for column in columns):
+        return []
+    figures = []
+    figures.extend(
+        plot_three_axis(
+            rows,
+            pyplot,
+            "ecef_position",
+            columns[:3],
+            ("x_m", "y_m", "z_m"),
+            "ECEF Position",
+            out_dir,
+        )
+    )
+    figures.extend(
+        plot_three_axis(
+            rows,
+            pyplot,
+            "ecef_velocity",
+            columns[3:],
+            ("x_mps", "y_mps", "z_mps"),
+            "ECEF Velocity",
+            out_dir,
+        )
+    )
+    return figures
+
+
 def import_pyplot(show):
     try:
         import matplotlib
@@ -162,6 +199,8 @@ def main():
                 )
             elif plot_name == "position":
                 plot_position(rows, pyplot, args.out_dir)
+            elif plot_name == "ecef":
+                plot_ecef(rows, pyplot, args.out_dir)
         if args.show:
             pyplot.show()
     except (OSError, RuntimeError, ValueError) as exc:

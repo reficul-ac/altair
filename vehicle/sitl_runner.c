@@ -27,6 +27,7 @@ typedef struct {
   uint32_t seed;
   const char *output_path;
   const char *initial_path;
+  int frame_mode;
   int realtime;
   int qgc_enabled;
   const char *qgc_host;
@@ -44,6 +45,7 @@ static void print_usage(FILE *stream) {
   fprintf(stream,
           "usage: sitl_runner [--scenario smoke|cruise6dof] [--duration seconds] [--dt seconds]\n"
           "                   [--seed uint] [--output path] [--initial path]\n"
+          "                   [--frame-mode ned|ecef]\n"
           "                   [--profile cruise|takeoff|turn|descent|failsafe] [--realtime]\n"
           "                   [--qgc] [--qgc-host host] [--qgc-port port]\n");
 }
@@ -86,6 +88,7 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
   cfg->seed = 1U;
   cfg->output_path = NULL;
   cfg->initial_path = NULL;
+  cfg->frame_mode = SIM6DOF_FRAME_ECEF;
   cfg->realtime = 0;
   cfg->qgc_enabled = 0;
   cfg->qgc_host = "127.0.0.1";
@@ -131,6 +134,19 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
         return -1;
       }
       cfg->initial_path = argv[i];
+    } else if (strcmp(argv[i], "--frame-mode") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "--frame-mode requires a value\n");
+        return -1;
+      }
+      if (strcmp(argv[i], "ned") == 0) {
+        cfg->frame_mode = SIM6DOF_FRAME_NED;
+      } else if (strcmp(argv[i], "ecef") == 0) {
+        cfg->frame_mode = SIM6DOF_FRAME_ECEF;
+      } else {
+        fprintf(stderr, "invalid --frame-mode: %s\n", argv[i]);
+        return -1;
+      }
     } else if (strcmp(argv[i], "--realtime") == 0) {
       cfg->realtime = 1;
     } else if (strcmp(argv[i], "--qgc") == 0) {
@@ -487,18 +503,21 @@ static int run_smoke(const sitl_config_t *cfg, int steps, FILE *csv) {
   return 0;
 }
 
-static void apply_initial_conditions(sim_fixedwing_state_t *plant, const sitl_initial_conditions_t *initial) {
+static void apply_initial_conditions(sim_fixedwing_state_t *plant,
+                                     const sim6dof_params_t *params,
+                                     const sitl_initial_conditions_t *initial) {
   euler_t attitude;
-  if (plant == NULL || initial == NULL) {
+  if (plant == NULL || params == NULL || initial == NULL) {
     return;
   }
+  sim6dof_set_origin(&plant->body, initial->lat_deg, initial->lon_deg, initial->altitude_m, params->earth_radius_m);
   attitude.roll = initial->roll_rad;
   attitude.pitch = initial->pitch_rad;
   attitude.yaw = initial->yaw_rad;
   plant->body.attitude_body_to_ned = quat_from_euler(attitude);
   plant->body.position_ned_m.x = 0.0f;
   plant->body.position_ned_m.y = 0.0f;
-  plant->body.position_ned_m.z = -initial->altitude_m;
+  plant->body.position_ned_m.z = 0.0f;
   if (initial->has_velocity_ned) {
     plant->body.velocity_ned_mps.x = initial->vel_n_mps;
     plant->body.velocity_ned_mps.y = initial->vel_e_mps;
@@ -511,23 +530,15 @@ static void apply_initial_conditions(sim_fixedwing_state_t *plant, const sitl_in
   plant->body.omega_body_rps.y = initial->q_rps;
   plant->body.omega_body_rps.z = initial->r_rps;
   plant->last_airspeed_mps = initial->airspeed_mps;
+  sim6dof_sync_ecef_from_ned(&plant->body, params->earth_radius_m);
 }
 
-static void ned_to_geo(real_t lat0_deg,
-                       real_t lon0_deg,
-                       vec3_t position_ned_m,
-                       real_t *lat_deg,
-                       real_t *lon_deg,
-                       real_t *altitude_m) {
-  const real_t earth_radius_m = 6378137.0f;
-  real_t lat0_rad = lat0_deg * (BAYEK_PI / 180.0f);
-  real_t cos_lat0 = (real_t)cosf(lat0_rad);
-  if (fabsf(cos_lat0) < 1.0e-6f) {
-    cos_lat0 = cos_lat0 < 0.0f ? -1.0e-6f : 1.0e-6f;
-  }
-  *lat_deg = lat0_deg + (position_ned_m.x / earth_radius_m) * (180.0f / BAYEK_PI);
-  *lon_deg = lon0_deg + (position_ned_m.y / (earth_radius_m * cos_lat0)) * (180.0f / BAYEK_PI);
-  *altitude_m = -position_ned_m.z;
+static void truth_geo_from_state(const sim6dof_state_t *state,
+                                 real_t earth_radius_m,
+                                 real_t *lat_deg,
+                                 real_t *lon_deg,
+                                 real_t *altitude_m) {
+  sim6dof_ecef_to_geodetic(state->position_ecef_m, earth_radius_m, lat_deg, lon_deg, altitude_m);
 }
 
 static rc_input_t cruise6dof_profile_rc(const sitl_config_t *cfg, const sitl_initial_conditions_t *initial, int step, int steps) {
@@ -582,6 +593,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
 
   bayek_fsw_init(altair_vehicle_interface());
   altair_fixedwing_sim_params(&params);
+  params.core.frame_mode = cfg->frame_mode;
   if (!altair_fixedwing_sim_params_are_valid(&params, altair_default_params(), model_error, sizeof(model_error))) {
     fprintf(stderr, "invalid fixed-wing sim model: %s\n", model_error);
     return 1;
@@ -594,7 +606,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
       return 1;
     }
   }
-  apply_initial_conditions(&plant, &initial);
+  apply_initial_conditions(&plant, &params.core, &initial);
   if (!qgc_open(cfg, &qgc)) {
     return 1;
   }
@@ -605,7 +617,8 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
               "gps_fix_valid,lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,"
               "roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,"
               "airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,"
-              "force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm\n") < 0) {
+              "force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm,"
+              "pos_ecef_x_m,pos_ecef_y_m,pos_ecef_z_m,vel_ecef_x_mps,vel_ecef_y_mps,vel_ecef_z_mps\n") < 0) {
     fprintf(stderr, "failed to write output\n");
     qgc_close(&qgc);
     return 1;
@@ -619,10 +632,11 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
     rc_input_t rc = cruise6dof_profile_rc(cfg, &initial, i, steps);
     uint32_t gps_fix_valid = 1U;
     sim_fixedwing_make_fsw_input(&plant, &rc, (real_t)cfg->dt_s, (uint32_t)(i * cfg->dt_s * 1000000.0), &input);
-    ned_to_geo(initial.lat_deg, initial.lon_deg, plant.body.position_ned_m, &lat_deg, &lon_deg, &altitude_m);
+    truth_geo_from_state(&plant.body, params.core.earth_radius_m, &lat_deg, &lon_deg, &altitude_m);
     input.gps.lat_deg = lat_deg;
     input.gps.lon_deg = lon_deg;
     input.gps.alt_m = altitude_m;
+    input.baro.altitude_m = altitude_m;
     if (strcmp(cfg->profile, "failsafe") == 0 && i * 2 >= steps) {
       gps_fix_valid = 0U;
     }
@@ -639,13 +653,14 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
       return 2;
     }
     euler = euler_from_quat(plant.body.attitude_body_to_ned);
-    ned_to_geo(initial.lat_deg, initial.lon_deg, plant.body.position_ned_m, &lat_deg, &lon_deg, &altitude_m);
+    truth_geo_from_state(&plant.body, params.core.earth_radius_m, &lat_deg, &lon_deg, &altitude_m);
     qgc_send_state(&qgc, cfg, i, &plant, lat_deg, lon_deg, altitude_m, euler);
     if (fprintf(csv,
                 "%d,%.3f,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
                 "%u,%.8f,%.8f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
                 "%.6f,%.6f,%.6f,%.8f,%.8f,%.8f,%.8f,%.6f,%.6f,%.6f,"
                 "%.6f,%.6f,%.6f,%.6f,%.6f,"
+                "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
                 "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
                 i,
                 (double)(i * cfg->dt_s),
@@ -687,7 +702,13 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv) {
                 (double)plant.last_force_body_n.z,
                 (double)plant.last_moment_body_nm.x,
                 (double)plant.last_moment_body_nm.y,
-                (double)plant.last_moment_body_nm.z) < 0) {
+                (double)plant.last_moment_body_nm.z,
+                (double)plant.body.position_ecef_m.x,
+                (double)plant.body.position_ecef_m.y,
+                (double)plant.body.position_ecef_m.z,
+                (double)plant.body.velocity_ecef_mps.x,
+                (double)plant.body.velocity_ecef_mps.y,
+                (double)plant.body.velocity_ecef_mps.z) < 0) {
       fprintf(stderr, "failed to write output\n");
       qgc_close(&qgc);
       return 1;

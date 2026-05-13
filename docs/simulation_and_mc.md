@@ -28,7 +28,7 @@ CTest runs each `cruise6dof` command profile twice and compares the generated CS
 
 CSV is used because it is transparent, dependency-free, easy to diff, and easy to consume from Python, spreadsheets, or CI artifacts.
 
-The `smoke` scenario keeps its compact CSV output for plumbing checks. The `cruise6dof` scenario writes richer trajectory data including RC inputs, health/failsafe inputs, actuator outputs, latitude/longitude, NED position and velocity, Euler angles, attitude quaternion, body rates, airspeed, altitude, body acceleration, and the last force and moment vectors.
+The `smoke` scenario keeps its compact CSV output for plumbing checks. The `cruise6dof` scenario writes richer trajectory data including RC inputs, health/failsafe inputs, actuator outputs, latitude/longitude, derived local NED position and velocity, Euler angles, attitude quaternion, body rates, airspeed, altitude, body acceleration, the last force and moment vectors, and ECEF truth position/velocity.
 
 `cruise6dof` supports deterministic command profiles with `--profile`:
 
@@ -65,6 +65,10 @@ rc_mode = 1
 
 Each line is `key = value`; blank lines and `#` comments are ignored. Omitted fields use the scenario defaults. If no explicit NED velocity is provided, `airspeed_mps` is used as the initial forward speed.
 
+`cruise6dof` defaults to ECEF truth dynamics. Select the legacy local-NED dynamics path with `--frame-mode ned`; use `--frame-mode ecef` explicitly when scripts should make the default visible. Internally this maps to Bayek's `SIM6DOF_FRAME_NED = 0` and `SIM6DOF_FRAME_ECEF = 1` parameter values. The current ECEF implementation uses a spherical Earth model with radius `6378137.0 m`; Earth rotation, Coriolis, centrifugal terms, and WGS84 ellipsoid corrections are out of scope for this pass.
+
+The initial `lat_deg`, `lon_deg`, and `altitude_m` keys define both the ECEF initial geodetic state and the local NED origin used for compatibility columns. Explicit `vel_n_mps`, `vel_e_mps`, and `vel_d_mps` remain local NED velocity inputs and are converted to ECEF for ECEF-mode integration.
+
 Example run:
 
 ```sh
@@ -89,7 +93,7 @@ Use `--qgc-host` and `--qgc-port` for a remote QGC instance or a non-default UDP
 ./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --qgc --qgc-host 192.168.1.50 --qgc-port 14550
 ```
 
-Latitude and longitude in `cruise6dof` logs are computed from NED position with a local tangent-plane approximation around `lat_deg` and `lon_deg`. They are useful for plotting short local trajectories, not as a full geodesy model.
+Latitude, longitude, and altitude in `cruise6dof` logs are derived from the spherical-Earth ECEF truth state in ECEF mode. The local `pos_n_m`, `pos_e_m`, `pos_d_m`, `vel_n_mps`, `vel_e_mps`, and `vel_d_mps` columns remain available as derived compatibility outputs relative to the configured initial origin. The appended `pos_ecef_x_m`, `pos_ecef_y_m`, `pos_ecef_z_m`, `vel_ecef_x_mps`, `vel_ecef_y_mps`, and `vel_ecef_z_mps` columns expose the ECEF truth state directly.
 
 ## SITL Replay CSV v1
 
@@ -101,12 +105,12 @@ The first committed replay fixture uses the existing `cruise6dof` CSV as the v1 
 - `duration=1.0`
 - `dt=0.02`
 
-The v1 fixture covers nominal flight followed by health degradation and failsafe output behavior. Required coverage is time, FSW mode, actuator outputs, RC inputs, explicit `gps_fix_valid`, local geodetic position, NED position and velocity, Euler attitude, attitude quaternion, body rates, airspeed, altitude, body acceleration, and the last body-frame force and moment vectors.
+The v1 fixture covers nominal flight followed by health degradation and failsafe output behavior. Required coverage is time, FSW mode, actuator outputs, RC inputs, explicit `gps_fix_valid`, spherical geodetic position, derived NED position and velocity, Euler attitude, attitude quaternion, body rates, airspeed, altitude, body acceleration, the last body-frame force and moment vectors, and ECEF truth position/velocity.
 
 The v1 replay format is the exact CSV header below. Changing columns, order, names, or units requires regenerating `tests/integration/fixtures/sitl_cruise6dof_failsafe_v1.csv`, updating this contract, and updating the replay test expected header/checks in `tests/integration/CMakeLists.txt`.
 
 ```text
-step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,gps_fix_valid,lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm
+step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,gps_fix_valid,lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm,pos_ecef_x_m,pos_ecef_y_m,pos_ecef_z_m,vel_ecef_x_mps,vel_ecef_y_mps,vel_ecef_z_mps
 ```
 
 Regenerate the v1 fixture with:
