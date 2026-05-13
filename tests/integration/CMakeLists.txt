@@ -90,6 +90,20 @@ add_test(
     --qgc
 )
 
+set(SITL_MAVLINK_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_mavlink.csv")
+add_test(
+  NAME integration_sitl_cruise6dof_mavlink_alias
+  COMMAND
+    $<TARGET_FILE:sitl_runner>
+    --scenario cruise6dof
+    --initial "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_initial.ini"
+    --duration 0.02
+    --dt 0.01
+    --output "${SITL_MAVLINK_CSV}"
+    --mavlink
+    --mavlink-port 14551
+)
+
 set(SITL_CRUISE6DOF_PROFILES cruise takeoff turn descent failsafe)
 foreach(PROFILE IN LISTS SITL_CRUISE6DOF_PROFILES)
   set(SITL_PROFILE_CSV_A "${CMAKE_CURRENT_BINARY_DIR}/sitl_${PROFILE}_a.csv")
@@ -203,6 +217,14 @@ if(Python3_Interpreter_FOUND)
       "${CMAKE_SOURCE_DIR}"
       "${CMAKE_BINARY_DIR}"
       "${CMAKE_CURRENT_BINARY_DIR}/run_sitl"
+  )
+
+  add_test(
+    NAME integration_mavlink_live_bridge
+    COMMAND
+      ${Python3_EXECUTABLE}
+      "${CMAKE_CURRENT_SOURCE_DIR}/test_mavlink_live_bridge.py"
+      "${CMAKE_SOURCE_DIR}"
   )
 
   add_test(

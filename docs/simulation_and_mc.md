@@ -81,16 +81,24 @@ SITL runs as fast as possible by default. Add `--realtime` when a run should be 
 ./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --realtime
 ```
 
-For QGroundControl monitoring, start QGC first and run `cruise6dof` with `--qgc`. The runner sends MAVLink v1 `HEARTBEAT`, `ATTITUDE`, `GLOBAL_POSITION_INT`, and `VFR_HUD` messages to UDP `127.0.0.1:14550`, which is QGC's default local endpoint. `--qgc` implies realtime pacing because QGC expects a live stream:
+For live MAVLink telemetry, run `cruise6dof` with `--mavlink`. The runner sends MAVLink v1 `HEARTBEAT`, `ATTITUDE`, `GLOBAL_POSITION_INT`, and `VFR_HUD` messages to UDP `127.0.0.1:14550` by default. `--mavlink` implies realtime pacing because MAVLink consumers expect a live stream:
 
 ```sh
-./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --qgc
+./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --mavlink
 ```
 
-Use `--qgc-host` and `--qgc-port` for a remote QGC instance or a non-default UDP port:
+Use `--mavlink-host` and `--mavlink-port` for a remote endpoint or a non-default UDP port. The older `--qgc`, `--qgc-host`, and `--qgc-port` names remain compatibility aliases:
 
 ```sh
-./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --qgc --qgc-host 192.168.1.50 --qgc-port 14550
+./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --mavlink --mavlink-host 127.0.0.1 --mavlink-port 14551
+```
+
+For simultaneous browser visualization and QGroundControl monitoring, route SITL through the live bridge. SITL sends to the bridge on `127.0.0.1:14551`; the bridge forwards the original packets to QGC on `127.0.0.1:14550` and publishes decoded state over WebSocket:
+
+```sh
+python3 tools/python/mavlink_live_bridge.py --listen-host 127.0.0.1 --listen-port 14551 --forward 127.0.0.1:14550 --ws-host 127.0.0.1 --ws-port 8765
+./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --mavlink --mavlink-port 14551
+cd tools/live_viewer && npm install && npm run dev
 ```
 
 Latitude, longitude, and altitude in `cruise6dof` logs are derived from the spherical-Earth ECEF truth state in ECEF mode. The local `pos_n_m`, `pos_e_m`, `pos_d_m`, `vel_n_mps`, `vel_e_mps`, and `vel_d_mps` columns remain available as derived compatibility outputs relative to the configured initial origin. The appended `pos_ecef_x_m`, `pos_ecef_y_m`, `pos_ecef_z_m`, `vel_ecef_x_mps`, `vel_ecef_y_mps`, and `vel_ecef_z_mps` columns expose the ECEF truth state directly.
@@ -125,7 +133,7 @@ For routine local runs, `tools/python/run_sitl.py` wraps the compiled runner and
 python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv
 python3 tools/python/run_sitl.py --scenario cruise6dof --profile turn --initial cruise6dof_initial.ini --duration 20 --dt 0.01 --output sitl_turn6dof.csv
 python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --realtime
-python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --qgc
+python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --mavlink --mavlink-port 14551
 ```
 
 To run the usual end-to-end local workflow in one command, use `run_sitl_workflow.py`. Its defaults are the routine `cruise6dof` case, the repository initial-condition file, `duration=60`, `dt=0.01`, non-realtime execution, all plots saved under `plots/sitl`, and `sitl_3d.html` generation:
@@ -139,7 +147,7 @@ The same script accepts overrides for less common runs:
 ```sh
 tools/python/run_sitl_workflow.py --duration 10 --output /tmp/sitl.csv --plots-dir /tmp/plots --html /tmp/sitl_3d.html
 tools/python/run_sitl_workflow.py --realtime
-tools/python/run_sitl_workflow.py --qgc
+tools/python/run_sitl_workflow.py --mavlink --mavlink-port 14551
 ```
 
 Expected output is a stable `key=value` summary that can be pasted into notes or checked in scripts:
@@ -181,6 +189,7 @@ Python scripts in `tools/python` are orchestration helpers only:
 
 - `run_sitl.py` invokes the compiled SITL runner and prints summary metrics.
 - `run_sitl_workflow.py` runs SITL, plots the CSV log, and generates the standalone 3D playback page with routine defaults.
+- `mavlink_live_bridge.py` listens for MAVLink v1 UDP packets, forwards raw packets to one or more UDP endpoints such as QGroundControl, and publishes decoded live state over WebSocket for `tools/live_viewer`.
 - `compare_sitl_replay.py` compares two replay CSV files with identical headers, identical row counts, and numeric tolerances.
 - `run_mc.py` invokes the compiled runner and writes CSV.
 - `plot_mc.py` prints simple summary statistics.

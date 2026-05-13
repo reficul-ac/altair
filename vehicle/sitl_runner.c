@@ -47,6 +47,7 @@ static void print_usage(FILE *stream) {
           "                   [--seed uint] [--output path] [--initial path]\n"
           "                   [--frame-mode ned|ecef]\n"
           "                   [--profile cruise|takeoff|turn|descent|failsafe] [--realtime]\n"
+          "                   [--mavlink] [--mavlink-host host] [--mavlink-port port]\n"
           "                   [--qgc] [--qgc-host host] [--qgc-port port]\n");
 }
 
@@ -149,18 +150,18 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
       }
     } else if (strcmp(argv[i], "--realtime") == 0) {
       cfg->realtime = 1;
-    } else if (strcmp(argv[i], "--qgc") == 0) {
+    } else if (strcmp(argv[i], "--qgc") == 0 || strcmp(argv[i], "--mavlink") == 0) {
       cfg->qgc_enabled = 1;
       cfg->realtime = 1;
-    } else if (strcmp(argv[i], "--qgc-host") == 0) {
+    } else if (strcmp(argv[i], "--qgc-host") == 0 || strcmp(argv[i], "--mavlink-host") == 0) {
       if (++i >= argc) {
-        fprintf(stderr, "--qgc-host requires a value\n");
+        fprintf(stderr, "%s requires a value\n", argv[i - 1]);
         return -1;
       }
       cfg->qgc_host = argv[i];
-    } else if (strcmp(argv[i], "--qgc-port") == 0) {
+    } else if (strcmp(argv[i], "--qgc-port") == 0 || strcmp(argv[i], "--mavlink-port") == 0) {
       if (++i >= argc) {
-        fprintf(stderr, "--qgc-port requires a value\n");
+        fprintf(stderr, "%s requires a value\n", argv[i - 1]);
         return -1;
       }
       cfg->qgc_port = argv[i];
@@ -197,7 +198,7 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg) {
     return -1;
   }
   if (cfg->qgc_enabled && strcmp(cfg->scenario, "cruise6dof") != 0) {
-    fprintf(stderr, "--qgc is only supported with --scenario cruise6dof\n");
+    fprintf(stderr, "--mavlink/--qgc is only supported with --scenario cruise6dof\n");
     return -1;
   }
   (void)cfg->seed;
