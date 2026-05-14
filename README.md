@@ -86,11 +86,11 @@ Exit code `3` means at least one Monte Carlo run failed a metric gate.
 ## Targets
 
 - `bayek_common`: reusable C99 math, types, and control utilities.
-- `bayek_fsw`: reusable flight software core with `bayek_fsw_init`, `bayek_fsw_reset`, and `bayek_fsw_step`.
+- `bayek_fsw`: reusable nav, fault, guidance, control, and mission domain modules.
 - `bayek_sim`: deterministic plant, 6DOF, fixed-wing, and trim helpers.
 - `bayek_host_sitl`: host-only SITL initial-condition parsing and condition evaluation.
 - `bayek_telemetry`: binary packet encode/decode helpers.
-- `altair_vehicle`: Altair-specific parameters, limits, and mixer.
+- `altair_vehicle`: Altair-specific parameters, limits, mixer, and `altair_fsw_step()` orchestration.
 - `altair_sim_model`: Altair-owned fixed-wing sim model constants and validation around Bayek's reusable sim helpers.
 - `sitl_runner`: deterministic fixed-step host simulation with CSV logging.
 - `mc_runner`: deterministic Monte Carlo runner with CSV summary output.

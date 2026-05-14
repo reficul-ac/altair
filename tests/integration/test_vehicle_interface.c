@@ -1,5 +1,5 @@
 #include "altair_vehicle.h"
-#include "fsw.h"
+#include "altair_fsw.h"
 
 #include <stdio.h>
 
@@ -12,6 +12,8 @@
             return 1;                                                                              \
         }                                                                                          \
     } while (0)
+
+static altair_fsw_t fsw;
 
 static void make_valid_input(fsw_input_t *in)
 {
@@ -81,8 +83,8 @@ static int step_and_check_mode(fsw_input_t *in, fsw_mode_t expected_mode)
 {
     fsw_output_t out;
 
-    bayek_fsw_reset();
-    bayek_fsw_step(in, &out);
+    altair_fsw_reset(&fsw);
+    altair_fsw_step(&fsw, in, &out);
     CHECK(out.mode == expected_mode);
     CHECK(check_altair_limits(&out.actuators) == 0);
     if (expected_mode == FSW_MODE_DISARMED || expected_mode == FSW_MODE_FAILSAFE)
@@ -96,8 +98,8 @@ static int step_invalid_and_check_reset_estimate(fsw_input_t *in, fsw_mode_t exp
 {
     fsw_output_t out;
 
-    bayek_fsw_reset();
-    bayek_fsw_step(in, &out);
+    altair_fsw_reset(&fsw);
+    altair_fsw_step(&fsw, in, &out);
     CHECK(out.mode == expected_mode);
     CHECK(check_safe_actuators(&out.actuators) == 0);
     CHECK(check_reset_estimate(&out.estimate) == 0);
@@ -116,7 +118,7 @@ static int test_disarmed_uses_safe_actuators(void)
     in.rc.roll = 2.0f;
     in.rc.pitch = -2.0f;
     in.rc.yaw = 2.0f;
-    bayek_fsw_step(&in, &out);
+    altair_fsw_step(&fsw, &in, &out);
     CHECK(out.mode == FSW_MODE_DISARMED);
     CHECK(check_safe_actuators(&out.actuators) == 0);
     return 0;
@@ -126,8 +128,8 @@ static int test_null_input_fails_safe(void)
 {
     fsw_output_t out;
 
-    bayek_fsw_reset();
-    bayek_fsw_step(NULL, &out);
+    altair_fsw_reset(&fsw);
+    altair_fsw_step(&fsw, NULL, &out);
     CHECK(out.mode == FSW_MODE_FAILSAFE);
     CHECK(check_safe_actuators(&out.actuators) == 0);
     CHECK(check_reset_estimate(&out.estimate) == 0);
@@ -139,8 +141,8 @@ static int test_null_output_returns(void)
     fsw_input_t in;
 
     make_valid_input(&in);
-    bayek_fsw_reset();
-    bayek_fsw_step(&in, NULL);
+    altair_fsw_reset(&fsw);
+    altair_fsw_step(&fsw, &in, NULL);
     return 0;
 }
 
@@ -184,7 +186,7 @@ static int test_manual_mode_requires_valid_inputs(void)
     in.rc.roll = 2.0f;
     in.rc.pitch = -2.0f;
     in.rc.yaw = 2.0f;
-    bayek_fsw_step(&in, &out);
+    altair_fsw_step(&fsw, &in, &out);
     CHECK(out.mode == FSW_MODE_MANUAL);
     CHECK(check_altair_limits(&out.actuators) == 0);
     CHECK(out.actuators.motor == 1.0f);
@@ -202,7 +204,7 @@ static int test_stabilize_mode_requires_valid_inputs(void)
     make_valid_input(&in);
 
     in.rc.mode_switch = 1U;
-    bayek_fsw_step(&in, &out);
+    altair_fsw_step(&fsw, &in, &out);
     CHECK(out.mode == FSW_MODE_STABILIZE);
     CHECK(check_altair_limits(&out.actuators) == 0);
     return 0;
@@ -217,8 +219,8 @@ static int test_mission_mode_requires_loaded_mission(void)
     make_valid_input(&in);
     in.rc.mode_switch = 2U;
 
-    bayek_fsw_clear_mission();
-    bayek_fsw_step(&in, &out);
+    altair_fsw_clear_mission(&fsw);
+    altair_fsw_step(&fsw, &in, &out);
     CHECK(out.mode == FSW_MODE_FAILSAFE);
     CHECK(check_safe_actuators(&out.actuators) == 0);
 
@@ -228,11 +230,11 @@ static int test_mission_mode_requires_loaded_mission(void)
     mission.waypoints[0].alt_m = in.gps.alt_m + 10.0f;
     mission.waypoints[0].throttle = 0.50f;
     mission.waypoints[0].acceptance_radius_m = 5.0f;
-    bayek_fsw_set_mission(&mission);
-    bayek_fsw_step(&in, &out);
+    altair_fsw_set_mission(&fsw, &mission);
+    altair_fsw_step(&fsw, &in, &out);
     CHECK(out.mode == FSW_MODE_MISSION);
     CHECK(check_altair_limits(&out.actuators) == 0);
-    bayek_fsw_clear_mission();
+    altair_fsw_clear_mission(&fsw);
     return 0;
 }
 
@@ -284,7 +286,7 @@ static int test_mode_boundaries(void)
 
 int main(void)
 {
-    bayek_fsw_init(altair_vehicle_interface());
+    altair_fsw_init(&fsw, altair_vehicle_interface());
 
     CHECK(test_disarmed_uses_safe_actuators() == 0);
     CHECK(test_null_input_fails_safe() == 0);

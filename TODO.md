@@ -55,7 +55,7 @@ Acceptance check:
 
 Acceptance check:
 
-- [ ] `bayek_fsw_step()` has deterministic, tested behavior for nominal flight, bad inputs, reset, and mode transitions.
+- [ ] `altair_fsw_step()` has deterministic, tested behavior for nominal flight, bad inputs, reset, and mode transitions.
 
 ## 5. Vehicle Simulation
 

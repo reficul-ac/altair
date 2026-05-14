@@ -14,7 +14,7 @@ Bayek common math and control tests should live in the Bayek repository as that 
 
 Integration tests cover:
 
-- deterministic replay of `bayek_fsw_step()`
+- deterministic replay of `altair_fsw_step()`
 - SITL smoke run with bounded actuator outputs
 - Monte Carlo smoke summary semantics and metric gates
 - telemetry encode/decode and CRC rejection
@@ -27,7 +27,7 @@ The SITL smoke test is not intended to prove aircraft performance. It proves tha
 
 ## Performance Test
 
-The performance test initializes Bayek with `altair_vehicle_interface()`, calls `bayek_fsw_step()` many times, and prints timing. It uses a conservative threshold to catch gross regressions only.
+The performance test initializes Bayek with `altair_vehicle_interface()`, calls `altair_fsw_step()` many times, and prints timing. It uses a conservative threshold to catch gross regressions only.
 
 Early in the project, performance numbers are more useful as trend data than hard certification gates. The threshold should only become stricter after target hardware, loop rate, and control complexity are better understood.
 

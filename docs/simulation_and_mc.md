@@ -168,7 +168,7 @@ also supports a separate per-step condition file through `[run] condition_file =
 path/to/conditions.ini` in a case file or the CLI override `--conditions
 path/to/conditions.ini`. Conditions are parsed by Bayek once and evaluated every
 simulation step after the profile command and truth-derived FSW input are generated, but
-before `bayek_fsw_step()` and `sim_fixedwing_step()`.
+before `altair_fsw_step()` and `sim_fixedwing_step()`.
 
 Condition files use rule sections with a single v1 comparison over `t_s` or `step`:
 
@@ -272,4 +272,4 @@ Future Altair simulation work can add:
 - binary log output
 - HITL transport adapters
 
-Those changes should keep `altair_vehicle_interface()` and `bayek_fsw_step()` as the shared execution boundary.
+Those changes should keep `altair_vehicle_interface()` and `altair_fsw_step()` as the shared execution boundary.

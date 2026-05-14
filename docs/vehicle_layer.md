@@ -29,7 +29,7 @@ The current mixer maps:
 
 Each channel is saturated to its declared range.
 
-This is intentionally simple. More complex mixing can be added here without changing `bayek_fsw_step()` callers. Examples include elevon mixing, differential thrust, trim offsets, surface reversal, per-channel slew limits, or actuator health masking.
+This is intentionally simple. More complex mixing can be added here without changing `altair_fsw_step()` callers. Examples include elevon mixing, differential thrust, trim offsets, surface reversal, per-channel slew limits, or actuator health masking.
 
 ## Parameter Design
 

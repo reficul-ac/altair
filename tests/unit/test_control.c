@@ -20,7 +20,7 @@ static int near_real(real_t a, real_t b, real_t eps)
 
 int main(void)
 {
-    pid_t pid;
+    bayek_pid_t pid;
     integrator_t integ;
     lowpass_filter_t lp;
     rate_limiter_t rl;

@@ -1,6 +1,6 @@
 #include "altair_vehicle.h"
 #include "altair_sim_model.h"
-#include "fsw.h"
+#include "altair_fsw.h"
 #include "math_utils.h"
 #include "sim_plant.h"
 #include "sitl_case.h"
@@ -255,7 +255,8 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg)
         }
         else if (strcmp(argv[i], "--mavlink-system-id") == 0)
         {
-            if (++i >= argc || !parse_uint_arg(argv[i], "mavlink system id", &cfg->mavlink_system_id) ||
+            if (++i >= argc ||
+                !parse_uint_arg(argv[i], "mavlink system id", &cfg->mavlink_system_id) ||
                 cfg->mavlink_system_id == 0U || cfg->mavlink_system_id > 255U)
             {
                 return -1;
@@ -263,7 +264,8 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg)
         }
         else if (strcmp(argv[i], "--mavlink-source-port") == 0)
         {
-            if (++i >= argc || !parse_uint_arg(argv[i], "mavlink source port", &cfg->mavlink_source_port) ||
+            if (++i >= argc ||
+                !parse_uint_arg(argv[i], "mavlink source port", &cfg->mavlink_source_port) ||
                 cfg->mavlink_source_port > 65535U)
             {
                 return -1;
@@ -454,7 +456,9 @@ static int qgc_open(const sitl_config_t *cfg, qgc_link_t *link)
         source_addr.sin_port = htons((uint16_t)cfg->mavlink_source_port);
         if (bind(link->fd, (const struct sockaddr *)&source_addr, sizeof(source_addr)) != 0)
         {
-            fprintf(stderr, "failed to bind MAVLink source port %u\n", (unsigned)cfg->mavlink_source_port);
+            fprintf(stderr,
+                    "failed to bind MAVLink source port %u\n",
+                    (unsigned)cfg->mavlink_source_port);
             qgc_close(link);
             return 0;
         }
@@ -700,11 +704,12 @@ static int run_smoke(const sitl_config_t *cfg, int steps, FILE *csv)
     sim_plant_t plant;
     fsw_input_t input;
     fsw_output_t output;
+    altair_fsw_t fsw;
     rc_input_t rc = {0.55f, 0.10f, 0.02f, 0.0f, 1U, 1U};
     int i;
     double start_wall_s;
 
-    bayek_fsw_init(altair_vehicle_interface());
+    altair_fsw_init(&fsw, altair_vehicle_interface());
     sim_plant_init(&plant);
     start_wall_s = wall_time_s();
 
@@ -722,7 +727,7 @@ static int run_smoke(const sitl_config_t *cfg, int steps, FILE *csv)
     {
         sim_make_fsw_input(
             &plant, &rc, (real_t)cfg->dt_s, (uint32_t)(i * cfg->dt_s * 1000000.0), &input);
-        bayek_fsw_step(&input, &output);
+        altair_fsw_step(&fsw, &input, &output);
         if (!sim_output_is_bounded(&output))
         {
             fprintf(stderr, "unbounded_output at step %d\n", i);
@@ -892,6 +897,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
     sim_fixedwing_state_t plant;
     fsw_input_t input;
     fsw_output_t output;
+    altair_fsw_t fsw;
     sitl_initial_conditions_t initial;
     vehicle_params_t vehicle_params;
     bayek_mission_plan_t mission = {0};
@@ -913,7 +919,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
     {
         vehicle_params = cfg->case_file->vehicle_params;
     }
-    bayek_fsw_init(altair_vehicle_interface_with_params(&vehicle_params));
+    altair_fsw_init(&fsw, altair_vehicle_interface_with_params(&vehicle_params));
     altair_fixedwing_sim_params(&params);
     if (cfg->case_file != NULL && cfg->case_file->has_sim_params)
     {
@@ -952,22 +958,22 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
         mission_enabled = cfg->case_file->mission_enabled;
         if (cfg->case_file->mission_enabled && cfg->case_file->mission.waypoint_count > 0U)
         {
-            bayek_fsw_set_mission(&mission);
+            altair_fsw_set_mission(&fsw, &mission);
         }
         else
         {
-            bayek_fsw_clear_mission();
+            altair_fsw_clear_mission(&fsw);
         }
     }
     else if (strcmp(cfg->profile, "mission") == 0)
     {
         mission_enabled = 1U;
         mission = make_cruise6dof_mission(&initial);
-        bayek_fsw_set_mission(&mission);
+        altair_fsw_set_mission(&fsw, &mission);
     }
     else
     {
-        bayek_fsw_clear_mission();
+        altair_fsw_clear_mission(&fsw);
     }
     start_wall_s = wall_time_s();
 
@@ -1058,11 +1064,11 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
             {
                 if (mission_enabled && mission.waypoint_count > 0U)
                 {
-                    bayek_fsw_set_mission(&mission);
+                    altair_fsw_set_mission(&fsw, &mission);
                 }
                 else
                 {
-                    bayek_fsw_clear_mission();
+                    altair_fsw_clear_mission(&fsw);
                 }
             }
         }
@@ -1103,8 +1109,8 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
                 input.gps.fix_valid = gps_fix_valid;
             }
         }
-        bayek_fsw_step(&input, &output);
-        bayek_fsw_get_mission_status(&mission_status);
+        altair_fsw_step(&fsw, &input, &output);
+        altair_fsw_get_mission_status(&fsw, &mission_status);
         if (!sim_output_is_bounded(&output))
         {
             fprintf(stderr, "unbounded_output at step %d\n", i);

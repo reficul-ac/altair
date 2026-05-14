@@ -1,4 +1,4 @@
-#include "fsw.h"
+#include "altair_fsw.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -28,6 +28,7 @@ typedef struct
 
 static const vehicle_params_t params = {40.0f, 5.0f, 0.50f, 0.30f, 0.80f, 1.0f, -1.0f, 0.0f, 0.0f};
 static mock_vehicle_state_t mock;
+static altair_fsw_t fsw;
 
 static actuator_cmd_t mix_manual(const rc_input_t *rc)
 {
@@ -82,8 +83,8 @@ static void reset_mock(void)
 static void init_mock_fsw(void)
 {
     reset_mock();
-    bayek_fsw_init(&vehicle);
-    bayek_fsw_clear_mission();
+    altair_fsw_init(&fsw, &vehicle);
+    altair_fsw_clear_mission(&fsw);
 }
 
 static void make_valid_input(fsw_input_t *in)
@@ -104,6 +105,23 @@ static void make_valid_input(fsw_input_t *in)
     in->gps.fix_valid = 1U;
     in->baro.altitude_m = 100.0f;
     in->airspeed.true_airspeed_mps = 15.0f;
+}
+
+static bayek_mission_plan_t make_two_waypoint_mission(const fsw_input_t *in)
+{
+    bayek_mission_plan_t mission = {0};
+    mission.waypoint_count = 2U;
+    mission.waypoints[0].lat_deg = in->gps.lat_deg;
+    mission.waypoints[0].lon_deg = in->gps.lon_deg;
+    mission.waypoints[0].alt_m = in->gps.alt_m;
+    mission.waypoints[0].throttle = 0.50f;
+    mission.waypoints[0].acceptance_radius_m = 100.0f;
+    mission.waypoints[1].lat_deg = in->gps.lat_deg + 0.001f;
+    mission.waypoints[1].lon_deg = in->gps.lon_deg;
+    mission.waypoints[1].alt_m = in->gps.alt_m + 10.0f;
+    mission.waypoints[1].throttle = 0.50f;
+    mission.waypoints[1].acceptance_radius_m = 10.0f;
+    return mission;
 }
 
 static int near_real(real_t a, real_t b)
@@ -165,7 +183,7 @@ static int test_null_input_failsafe_uses_safe_actuators(void)
     fsw_output_t out;
 
     init_mock_fsw();
-    bayek_fsw_step(NULL, &out);
+    altair_fsw_step(&fsw, NULL, &out);
     CHECK(out.mode == FSW_MODE_FAILSAFE);
     CHECK(check_mock_safe_actuators(&out.actuators) == 0);
     CHECK(check_reset_estimate(&out.estimate) == 0);
@@ -182,7 +200,7 @@ static int test_null_output_returns_without_callbacks(void)
 
     init_mock_fsw();
     make_valid_input(&in);
-    bayek_fsw_step(&in, NULL);
+    altair_fsw_step(&fsw, &in, NULL);
     CHECK(mock.safe_calls == 0U);
     CHECK(mock.manual_calls == 0U);
     CHECK(mock.control_calls == 0U);
@@ -195,8 +213,8 @@ static int test_uninitialized_or_missing_vehicle_failsafe_zero_actuators(void)
     fsw_output_t out;
 
     make_valid_input(&in);
-    bayek_fsw_init(NULL);
-    bayek_fsw_step(&in, &out);
+    altair_fsw_init(&fsw, NULL);
+    altair_fsw_step(&fsw, &in, &out);
     CHECK(out.mode == FSW_MODE_FAILSAFE);
     CHECK(check_zero_actuators(&out.actuators) == 0);
     CHECK(check_reset_estimate(&out.estimate) == 0);
@@ -209,7 +227,7 @@ static int check_invalid_input_failsafe(fsw_input_t *in)
 
     init_mock_fsw();
     in->imu.gyro_rps.z = 1.0f;
-    bayek_fsw_step(in, &out);
+    altair_fsw_step(&fsw, in, &out);
     CHECK(out.mode == FSW_MODE_FAILSAFE);
     CHECK(check_mock_safe_actuators(&out.actuators) == 0);
     CHECK(check_reset_estimate(&out.estimate) == 0);
@@ -255,7 +273,7 @@ static int test_disarmed_input_uses_safe_actuators(void)
     init_mock_fsw();
     make_valid_input(&in);
     in.rc.arm_switch = 0U;
-    bayek_fsw_step(&in, &out);
+    altair_fsw_step(&fsw, &in, &out);
     CHECK(out.mode == FSW_MODE_DISARMED);
     CHECK(check_mock_safe_actuators(&out.actuators) == 0);
     CHECK(mock.safe_calls == 1U);
@@ -272,7 +290,7 @@ static int test_manual_mode_uses_manual_mixer(void)
     init_mock_fsw();
     make_valid_input(&in);
     in.rc.mode_switch = 0U;
-    bayek_fsw_step(&in, &out);
+    altair_fsw_step(&fsw, &in, &out);
     CHECK(out.mode == FSW_MODE_MANUAL);
     CHECK(near_real(out.actuators.motor, in.rc.throttle));
     CHECK(near_real(out.actuators.aileron, in.rc.roll));
@@ -282,6 +300,9 @@ static int test_manual_mode_uses_manual_mixer(void)
     CHECK(mock.control_calls == 0U);
     CHECK(mock.safe_calls == 0U);
     CHECK(mock.last_manual_rc == &in.rc);
+    CHECK(fsw.relative_launch.step_count == 1U);
+    CHECK(fsw.external_guidance.step_count == 0U);
+    CHECK(fsw.performance_management.step_count == 0U);
     return 0;
 }
 
@@ -296,7 +317,7 @@ static int test_stabilize_mode_uses_control_mixer(void)
     in.rc.roll = 1.0f;
     in.rc.pitch = -1.0f;
     in.rc.yaw = 1.0f;
-    bayek_fsw_step(&in, &out);
+    altair_fsw_step(&fsw, &in, &out);
     CHECK(out.mode == FSW_MODE_STABILIZE);
     CHECK(check_control_output_is_bounded(&out.actuators) == 0);
     CHECK(mock.control_calls == 1U);
@@ -306,6 +327,37 @@ static int test_stabilize_mode_uses_control_mixer(void)
     CHECK(near_real(out.actuators.aileron, mock.last_roll));
     CHECK(near_real(out.actuators.elevator, mock.last_pitch));
     CHECK(near_real(out.actuators.rudder, mock.last_yaw));
+    CHECK(fsw.relative_launch.step_count == 1U);
+    CHECK(fsw.external_guidance.step_count == 1U);
+    CHECK(fsw.performance_management.step_count == 1U);
+    return 0;
+}
+
+static int test_mission_mode_advances_waypoint_and_runs_vehicle_hooks(void)
+{
+    fsw_input_t in;
+    fsw_output_t out;
+    bayek_mission_plan_t mission;
+    bayek_mission_status_t status;
+
+    init_mock_fsw();
+    make_valid_input(&in);
+    in.rc.mode_switch = 2U;
+    mission = make_two_waypoint_mission(&in);
+    CHECK(altair_fsw_set_mission(&fsw, &mission) == 1);
+
+    altair_fsw_step(&fsw, &in, &out);
+    altair_fsw_get_mission_status(&fsw, &status);
+
+    CHECK(out.mode == FSW_MODE_MISSION);
+    CHECK(status.loaded == 1U);
+    CHECK(status.active_waypoint_index == 1U);
+    CHECK(mock.control_calls == 1U);
+    CHECK(mock.manual_calls == 0U);
+    CHECK(mock.safe_calls == 0U);
+    CHECK(fsw.relative_launch.step_count == 1U);
+    CHECK(fsw.external_guidance.step_count == 1U);
+    CHECK(fsw.performance_management.step_count == 1U);
     return 0;
 }
 
@@ -317,7 +369,7 @@ static int test_mission_mode_without_loaded_mission_failsafe(void)
     init_mock_fsw();
     make_valid_input(&in);
     in.rc.mode_switch = 2U;
-    bayek_fsw_step(&in, &out);
+    altair_fsw_step(&fsw, &in, &out);
     CHECK(out.mode == FSW_MODE_FAILSAFE);
     CHECK(check_mock_safe_actuators(&out.actuators) == 0);
     CHECK(mock.safe_calls == 1U);
@@ -334,7 +386,7 @@ static int test_unknown_mode_switch_failsafe(void)
     init_mock_fsw();
     make_valid_input(&in);
     in.rc.mode_switch = 3U;
-    bayek_fsw_step(&in, &out);
+    altair_fsw_step(&fsw, &in, &out);
     CHECK(out.mode == FSW_MODE_FAILSAFE);
     CHECK(check_mock_safe_actuators(&out.actuators) == 0);
     CHECK(mock.safe_calls == 1U);
@@ -377,10 +429,10 @@ static int test_reset_repeats_valid_step_deterministically(void)
     in.imu.gyro_rps.x = 0.20f;
     in.imu.gyro_rps.y = -0.10f;
     in.imu.gyro_rps.z = 0.30f;
-    bayek_fsw_step(&in, &first);
+    altair_fsw_step(&fsw, &in, &first);
 
-    bayek_fsw_reset();
-    bayek_fsw_step(&in, &second);
+    altair_fsw_reset(&fsw);
+    altair_fsw_step(&fsw, &in, &second);
 
     CHECK(check_outputs_match(&first, &second) == 0);
     CHECK(mock.control_calls == 2U);
@@ -399,6 +451,7 @@ int main(void)
     CHECK(test_disarmed_input_uses_safe_actuators() == 0);
     CHECK(test_manual_mode_uses_manual_mixer() == 0);
     CHECK(test_stabilize_mode_uses_control_mixer() == 0);
+    CHECK(test_mission_mode_advances_waypoint_and_runs_vehicle_hooks() == 0);
     CHECK(test_mission_mode_without_loaded_mission_failsafe() == 0);
     CHECK(test_unknown_mode_switch_failsafe() == 0);
     CHECK(test_reset_repeats_valid_step_deterministically() == 0);

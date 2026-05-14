@@ -21,7 +21,7 @@ This is the main embedded design point: board builds should link the same flight
 1. initialize HAL
 2. initialize FSW
 3. read inputs
-4. call `bayek_fsw_step()`
+4. call `altair_fsw_step()`
 5. write actuators
 6. send telemetry
 

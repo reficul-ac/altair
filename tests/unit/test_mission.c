@@ -1,6 +1,6 @@
-#include "fsw.h"
 #include "guidance.h"
 #include "math_utils.h"
+#include "mission.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -16,29 +16,6 @@
     } while (0)
 
 static const vehicle_params_t params = {40.0f, 5.0f, 0.50f, 0.30f, 0.80f, 1.0f, -1.0f, 0.0f, 0.0f};
-
-static actuator_cmd_t mix_manual(const rc_input_t *rc)
-{
-    actuator_cmd_t cmd = {
-        rc ? rc->throttle : 0.0f, rc ? rc->roll : 0.0f, rc ? rc->pitch : 0.0f, rc ? rc->yaw : 0.0f};
-    return cmd;
-}
-
-static actuator_cmd_t
-mix_control(real_t throttle, real_t roll_cmd, real_t pitch_cmd, real_t yaw_cmd)
-{
-    actuator_cmd_t cmd = {throttle, roll_cmd, pitch_cmd, yaw_cmd};
-    return cmd;
-}
-
-static actuator_cmd_t safe_actuators(const vehicle_params_t *unused)
-{
-    actuator_cmd_t cmd = {0.0f, 0.0f, 0.0f, 0.0f};
-    (void)unused;
-    return cmd;
-}
-
-static const bayek_vehicle_interface_t vehicle = {&params, mix_manual, mix_control, safe_actuators};
 
 static bayek_mission_plan_t valid_mission(void)
 {
@@ -73,55 +50,112 @@ static int near_real(real_t a, real_t b, real_t eps)
 
 static int test_mission_validation(void)
 {
+    bayek_mission_state_t state;
     bayek_mission_plan_t mission;
     bayek_mission_status_t status;
 
-    bayek_fsw_init(&vehicle);
+    bayek_mission_init(&state);
 
-    bayek_fsw_set_mission(NULL);
-    bayek_fsw_get_mission_status(&status);
+    CHECK(bayek_mission_set(&state, NULL) == 0);
+    bayek_mission_get_status(&state, &status);
     CHECK(status.loaded == 0U);
 
     mission = valid_mission();
     mission.waypoint_count = 0U;
-    bayek_fsw_set_mission(&mission);
-    bayek_fsw_get_mission_status(&status);
+    CHECK(bayek_mission_set(&state, &mission) == 0);
+    bayek_mission_get_status(&state, &status);
     CHECK(status.loaded == 0U);
 
     mission = valid_mission();
     mission.waypoint_count = BAYEK_MISSION_MAX_WAYPOINTS + 1U;
-    bayek_fsw_set_mission(&mission);
-    bayek_fsw_get_mission_status(&status);
+    CHECK(bayek_mission_set(&state, &mission) == 0);
+    bayek_mission_get_status(&state, &status);
     CHECK(status.loaded == 0U);
 
     mission = valid_mission();
     mission.waypoints[0].lat_deg = NAN;
-    bayek_fsw_set_mission(&mission);
-    bayek_fsw_get_mission_status(&status);
+    CHECK(bayek_mission_set(&state, &mission) == 0);
+    bayek_mission_get_status(&state, &status);
     CHECK(status.loaded == 0U);
 
     mission = valid_mission();
     mission.waypoints[0].throttle = 1.1f;
-    bayek_fsw_set_mission(&mission);
-    bayek_fsw_get_mission_status(&status);
+    CHECK(bayek_mission_set(&state, &mission) == 0);
+    bayek_mission_get_status(&state, &status);
     CHECK(status.loaded == 0U);
 
     mission = valid_mission();
     mission.waypoints[0].acceptance_radius_m = 0.0f;
-    bayek_fsw_set_mission(&mission);
-    bayek_fsw_get_mission_status(&status);
+    CHECK(bayek_mission_set(&state, &mission) == 0);
+    bayek_mission_get_status(&state, &status);
     CHECK(status.loaded == 0U);
 
     mission = valid_mission();
-    bayek_fsw_set_mission(&mission);
-    bayek_fsw_get_mission_status(&status);
+    CHECK(bayek_mission_set(&state, &mission) == 1);
+    bayek_mission_get_status(&state, &status);
     CHECK(status.loaded == 1U);
     CHECK(status.waypoint_count == 1U);
     CHECK(status.active_waypoint_index == 0U);
 
-    bayek_fsw_clear_mission();
-    bayek_fsw_get_mission_status(&status);
+    bayek_mission_clear(&state);
+    bayek_mission_get_status(&state, &status);
     CHECK(status.loaded == 0U);
+    return 0;
+}
+
+static int test_active_waypoint_advancement(void)
+{
+    bayek_mission_state_t state;
+    bayek_mission_plan_t mission = {0};
+    bayek_mission_status_t status;
+    fsw_input_t in;
+    state_estimate_t estimate = {0};
+    bayek_guidance_setpoint_t setpoint;
+
+    bayek_mission_init(&state);
+    valid_input(&in);
+    mission.waypoint_count = 2U;
+    mission.waypoints[0] = valid_mission().waypoints[0];
+    mission.waypoints[0].lat_deg = in.gps.lat_deg;
+    mission.waypoints[0].lon_deg = in.gps.lon_deg;
+    mission.waypoints[0].alt_m = in.gps.alt_m;
+    mission.waypoints[0].acceptance_radius_m = 20.0f;
+    mission.waypoints[1] = valid_mission().waypoints[0];
+    mission.waypoints[1].lat_deg = in.gps.lat_deg + 0.001f;
+    mission.waypoints[1].lon_deg = in.gps.lon_deg;
+    mission.waypoints[1].alt_m = in.gps.alt_m;
+    mission.waypoints[1].acceptance_radius_m = 20.0f;
+
+    CHECK(bayek_mission_set(&state, &mission) == 1);
+    CHECK(bayek_mission_select_active_waypoint(&state, &in, &estimate, &params, &setpoint) == 1);
+    bayek_mission_get_status(&state, &status);
+    CHECK(status.active_waypoint_index == 1U);
+    CHECK(status.horizontal_distance_m > 100.0f);
+
+    bayek_mission_reset(&state);
+    bayek_mission_get_status(&state, &status);
+    CHECK(status.loaded == 1U);
+    CHECK(status.active_waypoint_index == 0U);
+    return 0;
+}
+
+static int test_setpoint_selection_failure_paths(void)
+{
+    bayek_mission_state_t state;
+    bayek_mission_plan_t mission;
+    bayek_guidance_setpoint_t setpoint;
+    fsw_input_t in;
+    state_estimate_t estimate = {0};
+
+    bayek_mission_init(&state);
+    valid_input(&in);
+    CHECK(bayek_mission_select_active_waypoint(&state, &in, &estimate, &params, &setpoint) == 0);
+    mission = valid_mission();
+    CHECK(bayek_mission_set(&state, &mission) == 1);
+    CHECK(bayek_mission_select_active_waypoint(&state, NULL, &estimate, &params, &setpoint) == 0);
+    CHECK(bayek_mission_select_active_waypoint(&state, &in, NULL, &params, &setpoint) == 0);
+    CHECK(bayek_mission_select_active_waypoint(&state, &in, &estimate, NULL, &setpoint) == 0);
+    CHECK(bayek_mission_select_active_waypoint(&state, &in, &estimate, &params, NULL) == 0);
     return 0;
 }
 
@@ -167,24 +201,11 @@ static int test_guidance_math(void)
     return 0;
 }
 
-static int test_mission_mode_without_loaded_mission_failsafe(void)
-{
-    fsw_input_t in;
-    fsw_output_t out;
-
-    bayek_fsw_init(&vehicle);
-    valid_input(&in);
-    bayek_fsw_clear_mission();
-    bayek_fsw_step(&in, &out);
-    CHECK(out.mode == FSW_MODE_FAILSAFE);
-    CHECK(near_real(out.actuators.motor, 0.0f, 1.0e-6f));
-    return 0;
-}
-
 int main(void)
 {
     CHECK(test_mission_validation() == 0);
+    CHECK(test_active_waypoint_advancement() == 0);
+    CHECK(test_setpoint_selection_failure_paths() == 0);
     CHECK(test_guidance_math() == 0);
-    CHECK(test_mission_mode_without_loaded_mission_failsafe() == 0);
     return 0;
 }

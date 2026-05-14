@@ -1,4 +1,13 @@
-add_library(altair_vehicle ../params/altair_params.c ../mixer/altair_mixer.c altair_vehicle.c)
+add_library(
+    altair_vehicle
+    ../params/altair_params.c
+    ../mixer/altair_mixer.c
+    altair_vehicle.c
+    altair_fsw.c
+    external_guidance.c
+    performance_management.c
+    relative_launch.c
+)
 
 target_include_directories(
     altair_vehicle
@@ -29,9 +38,9 @@ target_link_libraries(
 altair_enable_warnings(altair_sitl)
 
 add_executable(sitl_runner sitl_runner.c)
-target_link_libraries(sitl_runner PRIVATE altair_sitl altair_sim_model bayek_fsw bayek_common)
+target_link_libraries(sitl_runner PRIVATE altair_sitl altair_sim_model bayek_common)
 altair_enable_warnings(sitl_runner)
 
 add_executable(mc_runner mc_runner.c)
-target_link_libraries(mc_runner PRIVATE altair_vehicle bayek_sim bayek_fsw bayek_common)
+target_link_libraries(mc_runner PRIVATE altair_vehicle bayek_sim bayek_common)
 altair_enable_warnings(mc_runner)
