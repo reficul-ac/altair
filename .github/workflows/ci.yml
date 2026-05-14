@@ -57,7 +57,7 @@ jobs:
           test -f bayek/CMakeLists.txt
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DALTAIR_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         run: cmake --build build --parallel

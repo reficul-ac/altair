@@ -17,6 +17,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 option(ALTAIR_ENABLE_WARNINGS "Enable compiler warnings for Altair host targets" ON)
+option(ALTAIR_WARNINGS_AS_ERRORS "Treat compiler warnings as errors for Altair host targets" OFF)
 
 function(altair_enable_warnings target)
     if(NOT ALTAIR_ENABLE_WARNINGS)
@@ -25,8 +26,14 @@ function(altair_enable_warnings target)
 
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4)
+        if(ALTAIR_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE /WX)
+        endif()
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+        if(ALTAIR_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE -Werror)
+        endif()
     endif()
 endfunction()
 

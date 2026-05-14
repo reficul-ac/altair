@@ -5,7 +5,7 @@ This list tracks the work needed to move Altair from a building repository with 
 ## 1. Baseline Health
 
 - [x] Turn on compiler warnings for host CMake targets.
-- [ ] Decide which warnings should be fatal in CI.
+- [x] Decide which warnings should be fatal in CI.
 - [x] Add a Debug and Release build matrix to CI.
 - [x] Add a CI check that verifies the Bayek submodule is initialized.
 - [x] Add a documented local developer command set for configure, build, test, SITL, and Monte Carlo.
@@ -46,7 +46,7 @@ Acceptance check:
 ## 4. Flight Software Core
 
 - [x] Make FSW input validation explicit.
-- [ ] Add tests for mode selection boundaries, including invalid `dt_s`, missing GPS, disarm, manual, stabilize, and failsafe.
+- [x] Add tests for mode selection boundaries, including invalid `dt_s`, missing GPS, disarm, manual, stabilize, and failsafe.
 - [ ] Improve state estimation beyond direct placeholder field assignment.
 - [ ] Add reset and initialization tests around repeated runs.
 - [ ] Separate control-law tuning constants from hard-coded Bayek internals.

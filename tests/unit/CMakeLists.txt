@@ -13,6 +13,11 @@ target_link_libraries(test_mission PRIVATE bayek_fsw bayek_common)
 altair_enable_warnings(test_mission)
 add_test(NAME unit_mission COMMAND test_mission)
 
+add_executable(test_fsw_boundaries test_fsw_boundaries.c)
+target_link_libraries(test_fsw_boundaries PRIVATE bayek_fsw bayek_common)
+altair_enable_warnings(test_fsw_boundaries)
+add_test(NAME unit_fsw_boundaries COMMAND test_fsw_boundaries)
+
 add_executable(test_mixer test_mixer.c)
 target_link_libraries(test_mixer PRIVATE altair_vehicle bayek_common)
 altair_enable_warnings(test_mixer)
