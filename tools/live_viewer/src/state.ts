@@ -1,5 +1,6 @@
 export type VehicleStateMessage = {
   type: 'vehicle_state';
+  id?: string;
   connected: boolean;
   packetAgeS: number | null;
   heartbeatAgeS: number | null;
@@ -40,6 +41,52 @@ export type VehicleStateMessage = {
     climbMps: number | null;
     throttlePct: number | null;
   };
+  status?: {
+    armed: boolean | null;
+    mode: string | null;
+    baseMode: number | null;
+    customMode: number | null;
+    gpsFix: string | null;
+    satellitesVisible: number | null;
+    batteryRemainingPct: number | null;
+    batteryVoltageV: number | null;
+    onboardControlSensorsHealth: number | null;
+    missionSeq: number | null;
+    lastStatusText: string | null;
+  };
+  trail?: TrailPoint[];
+};
+
+export type InspectorMessage = {
+  key: string;
+  msgId: number;
+  name: string;
+  systemId: number;
+  componentId: number;
+  lastAgeS: number;
+  rateHz: number;
+  count: number;
+  fields: Record<string, number | string | null>;
+};
+
+export type SessionEvent = {
+  id: string;
+  timestampS: number;
+  vehicleId: string | null;
+  level: 'info' | 'warning' | 'error';
+  kind: string;
+  label: string;
+  position: { eastM: number; northM: number; upM: number } | null;
+};
+
+export type SessionSnapshotMessage = {
+  type: 'session_snapshot';
+  vehicles: VehicleStateMessage[];
+  selectedVehicleId: string | null;
+  messages: InspectorMessage[];
+  events: SessionEvent[];
+  packetCount: number;
+  decodedCount: number;
 };
 
 export type TrailPoint = {
@@ -81,6 +128,19 @@ export function parseVehicleState(raw: string): VehicleStateMessage | null {
     return null;
   }
   return parsed as VehicleStateMessage;
+}
+
+export function parseSessionSnapshot(raw: string): SessionSnapshotMessage | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object' || (parsed as { type?: unknown }).type !== 'session_snapshot') {
+    return null;
+  }
+  return parsed as SessionSnapshotMessage;
 }
 
 export function trailPointFromState(state: VehicleStateMessage, timestampMs = Date.now()): TrailPoint | null {

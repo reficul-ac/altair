@@ -1,6 +1,6 @@
 import dgram from 'node:dgram';
 import { afterEach, describe, expect, it } from 'vitest';
-import { LiveVehicleState, MavlinkTelemetryService, MavlinkV1Parser, mavlinkV1Frame, mavTypeLabel } from './mavlink';
+import { decodeMavlinkMessage, LiveVehicleState, MavlinkTelemetryService, MavlinkV1Parser, mavlinkV1Frame, mavTypeLabel, VehicleRegistry } from './mavlink';
 
 const sockets: dgram.Socket[] = [];
 
@@ -51,6 +51,73 @@ function vfrHud(seq = 4): Buffer {
   return mavlinkV1Frame(74, payload, seq);
 }
 
+function localPosition(seq = 5, systemId = 1, componentId = 1): Buffer {
+  const payload = Buffer.alloc(28);
+  payload.writeUInt32LE(120, 0);
+  payload.writeFloatLE(12, 4);
+  payload.writeFloatLE(3, 8);
+  payload.writeFloatLE(-4, 12);
+  payload.writeFloatLE(1.5, 16);
+  payload.writeFloatLE(0.5, 20);
+  payload.writeFloatLE(-0.2, 24);
+  return mavlinkV1Frame(32, payload, seq, systemId, componentId);
+}
+
+function sysStatus(seq = 6): Buffer {
+  const payload = Buffer.alloc(31);
+  payload.writeUInt32LE(7, 0);
+  payload.writeUInt32LE(7, 4);
+  payload.writeUInt32LE(5, 8);
+  payload.writeUInt16LE(320, 12);
+  payload.writeUInt16LE(12100, 14);
+  payload.writeInt16LE(340, 16);
+  payload.writeInt8(72, 30);
+  return mavlinkV1Frame(1, payload, seq);
+}
+
+function gpsRaw(seq = 7): Buffer {
+  const payload = Buffer.alloc(30);
+  payload.writeBigUInt64LE(1000n, 0);
+  payload.writeInt32LE(Math.round(37.5 * 1e7), 8);
+  payload.writeInt32LE(Math.round(-122.2 * 1e7), 12);
+  payload.writeInt32LE(150000, 16);
+  payload.writeUInt16LE(120, 20);
+  payload.writeUInt16LE(130, 22);
+  payload.writeUInt16LE(2100, 24);
+  payload.writeUInt16LE(9000, 26);
+  payload.writeUInt8(3, 28);
+  payload.writeUInt8(11, 29);
+  return mavlinkV1Frame(24, payload, seq);
+}
+
+function missionCurrent(seq = 8): Buffer {
+  const payload = Buffer.alloc(2);
+  payload.writeUInt16LE(4, 0);
+  return mavlinkV1Frame(42, payload, seq);
+}
+
+function batteryStatus(seq = 9): Buffer {
+  const payload = Buffer.alloc(36);
+  payload.writeUInt8(0, 0);
+  payload.writeUInt8(0, 1);
+  payload.writeUInt8(3, 2);
+  payload.writeInt16LE(2350, 3);
+  payload.writeUInt16LE(3980, 5);
+  for (let offset = 7; offset < 25; offset += 2) payload.writeUInt16LE(65535, offset);
+  payload.writeInt16LE(420, 25);
+  payload.writeInt32LE(1200, 27);
+  payload.writeInt32LE(300, 31);
+  payload.writeInt8(64, 35);
+  return mavlinkV1Frame(147, payload, seq);
+}
+
+function statustext(seq = 10): Buffer {
+  const payload = Buffer.alloc(51);
+  payload.writeUInt8(4, 0);
+  payload.write('Ready', 1, 'utf8');
+  return mavlinkV1Frame(253, payload, seq);
+}
+
 describe('Electron MAVLink service', () => {
   it('parses MAVLink v1 frames and rejects bad CRCs', () => {
     const parser = new MavlinkV1Parser();
@@ -79,6 +146,46 @@ describe('Electron MAVLink service', () => {
     expect(payload.localPosition.northM).toBeGreaterThan(10);
     expect(payload.localPosition.eastM).toBeGreaterThan(8);
     expect(payload.localPosition.upM).toBeCloseTo(2);
+  });
+
+  it('decodes live debugging MAVLink messages with useful units', () => {
+    const parser = new MavlinkV1Parser();
+    const frames = [sysStatus(), gpsRaw(), localPosition(), missionCurrent(), batteryStatus(), statustext()];
+    const decoded = parser.feed(Buffer.concat(frames)).map((message) => decodeMavlinkMessage(message));
+    expect(decoded.map((message) => message.name)).toEqual(['SYS_STATUS', 'GPS_RAW_INT', 'LOCAL_POSITION_NED', 'MISSION_CURRENT', 'BATTERY_STATUS', 'STATUSTEXT']);
+    expect(decoded[0].fields.voltageBatteryV).toBeCloseTo(12.1);
+    expect(decoded[1].fields.fix).toBe('3D fix');
+    expect(decoded[2].fields.zDownM).toBeCloseTo(-4);
+    expect(decoded[3].fields.seq).toBe(4);
+    expect(decoded[4].fields.batteryRemainingPct).toBe(64);
+    expect(decoded[5].fields.text).toBe('Ready');
+  });
+
+  it('keeps vehicles separate and computes deterministic message rates', () => {
+    const parser = new MavlinkV1Parser();
+    const registry = new VehicleRegistry();
+    for (const message of parser.feed(localPosition(1, 1, 1))) registry.apply(message, 10);
+    for (const message of parser.feed(localPosition(2, 2, 1))) registry.apply(message, 10.5);
+    for (const message of parser.feed(localPosition(3, 1, 1))) registry.apply(message, 11);
+    const snapshot = registry.snapshot(12);
+    expect(snapshot.vehicles.map((vehicle) => vehicle.id).sort()).toEqual(['1:1', '2:1']);
+    const stats = snapshot.messages.find((message) => message.key === '1:1:32');
+    expect(stats?.count).toBe(2);
+    expect(stats?.rateHz).toBeCloseTo(1);
+  });
+
+  it('generates marker events once per state transition', () => {
+    const parser = new MavlinkV1Parser();
+    const registry = new VehicleRegistry();
+    const armed = Buffer.from([0, 0, 0, 0, 1, 0, 0x80, 4, 3]);
+    const disarmed = Buffer.from([0, 0, 0, 0, 1, 0, 0, 4, 3]);
+    for (const message of parser.feed(mavlinkV1Frame(0, disarmed, 1))) registry.apply(message, 1);
+    for (const message of parser.feed(mavlinkV1Frame(0, armed, 2))) registry.apply(message, 2);
+    for (const message of parser.feed(mavlinkV1Frame(0, armed, 3))) registry.apply(message, 3);
+    registry.addMarker('Check', 4);
+    const events = registry.snapshot(4).events;
+    expect(events.filter((event) => event.kind === 'arming')).toHaveLength(1);
+    expect(events.filter((event) => event.kind === 'marker')).toHaveLength(1);
   });
 
   it('labels MAVLink heartbeat vehicle types', () => {

@@ -9,6 +9,7 @@ import {
   MavlinkTelemetryService,
   parseEndpoint,
   type MavlinkServiceConfig,
+  type SessionSnapshotPayload,
   type VehicleStatePayload
 } from './mavlink.js';
 
@@ -40,7 +41,7 @@ function parseArgs(argv: string[]): Partial<MavlinkServiceConfig> {
 
 const telemetry = new MavlinkTelemetryService(parseArgs(process.argv.slice(1)));
 
-function sendToWindows(channel: string, payload: VehicleStatePayload | MavlinkServiceConfig): void {
+function sendToWindows(channel: string, payload: VehicleStatePayload | MavlinkServiceConfig | SessionSnapshotPayload): void {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send(channel, payload);
   }
@@ -78,9 +79,12 @@ ipcMain.handle('mavlink:set-listen-port', async (_event, port: number) => {
   await telemetry.setListenPort(Number(port));
   return telemetry.getConfig();
 });
+ipcMain.handle('mavlink:select-vehicle', (_event, id: string) => telemetry.selectVehicle(String(id)));
+ipcMain.handle('mavlink:add-marker', (_event, label: string) => telemetry.addMarker(String(label || 'Marker')));
 
 telemetry.on('vehicle-state', (payload: VehicleStatePayload) => sendToWindows('vehicle-state', payload));
 telemetry.on('config', (config: MavlinkServiceConfig) => sendToWindows('mavlink-config', config));
+telemetry.on('session-snapshot', (snapshot: SessionSnapshotPayload) => sendToWindows('session-snapshot', snapshot));
 
 app.whenReady().then(async () => {
   await telemetry.start();
