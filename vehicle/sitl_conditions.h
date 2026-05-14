@@ -3,6 +3,7 @@
 
 #include "common_types.h"
 #include "sim_fixedwing.h"
+#include "sitl_trim.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -15,6 +16,7 @@ extern "C"
 #define SITL_CONDITIONS_MAX_RULES 32U
 #define SITL_CONDITIONS_MAX_ASSIGNMENTS_PER_RULE 16U
 #define SITL_CONDITIONS_TARGET_MAX 64U
+#define SITL_CONDITIONS_VALUE_MAX 64U
 
     typedef enum
     {
@@ -35,6 +37,7 @@ extern "C"
     typedef struct
     {
         char target[SITL_CONDITIONS_TARGET_MAX];
+        char value_text[SITL_CONDITIONS_VALUE_MAX];
         real_t value;
         int line_number;
     } sitl_condition_assignment_t;
@@ -64,6 +67,7 @@ extern "C"
         vehicle_params_t *vehicle_params;
         sim_fixedwing_params_t *sim_params;
         sim_fixedwing_state_t *plant;
+        sitl_trim_config_t *trim;
         uint8_t *mission_enabled;
         bayek_mission_plan_t *mission;
         uint8_t vehicle_params_dirty;

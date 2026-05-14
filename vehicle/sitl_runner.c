@@ -6,6 +6,7 @@
 #include "sitl_case.h"
 #include "sitl_conditions.h"
 #include "sitl_initial_conditions.h"
+#include "sitl_trim.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -853,14 +854,19 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
     vehicle_params_t vehicle_params;
     bayek_mission_plan_t mission = {0};
     uint8_t mission_enabled = 0U;
+    sitl_trim_config_t trim_config;
+    sitl_trim_status_t trim_status;
     qgc_link_t qgc;
     char initial_error[160];
     char model_error[160];
     char condition_error[200];
+    char trim_error[200];
     int i;
     double start_wall_s;
 
     vehicle_params = *altair_default_params();
+    sitl_trim_config_default(&trim_config);
+    sitl_trim_status_default(&trim_status);
     if (cfg->case_file != NULL && cfg->case_file->has_vehicle_params)
     {
         vehicle_params = cfg->case_file->vehicle_params;
@@ -931,7 +937,8 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
             "airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,"
             "force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm,"
             "pos_ecef_x_m,pos_ecef_y_m,pos_ecef_z_m,vel_ecef_x_mps,vel_ecef_y_mps,vel_ecef_z_"
-            "mps,mission_loaded,mission_active_wp,mission_wp_count,mission_distance_m\n") < 0)
+            "mps,trim_active,trim_achieved,trim_failed,trim_iteration_count,trim_residual_norm,"
+            "mission_loaded,mission_active_wp,mission_wp_count,mission_distance_m\n") < 0)
     {
         fprintf(stderr, "failed to write output\n");
         qgc_close(&qgc);
@@ -971,6 +978,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
             condition_ctx.vehicle_params = &vehicle_params;
             condition_ctx.sim_params = &params;
             condition_ctx.plant = &plant;
+            condition_ctx.trim = &trim_config;
             condition_ctx.mission_enabled = &mission_enabled;
             condition_ctx.mission = &mission;
             if (!sitl_conditions_eval(
@@ -1016,6 +1024,43 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
                 }
             }
         }
+        if (trim_config.enabled && !trim_status.achieved && !trim_status.failed)
+        {
+            if (!sitl_trim_fixedwing_level(&plant,
+                                           &params,
+                                           &vehicle_params,
+                                           &trim_config,
+                                           &trim_status,
+                                           trim_error,
+                                           sizeof(trim_error)))
+            {
+                fprintf(stderr, "trim failed at step %d: %s\n", i, trim_error);
+                if (trim_config.fail_on_error)
+                {
+                    qgc_close(&qgc);
+                    return 1;
+                }
+            }
+            if (trim_status.achieved)
+            {
+                initial.rc.throttle = trim_status.actuators.motor;
+                initial.rc.roll = trim_status.actuators.aileron;
+                initial.rc.pitch = vehicle_params.max_pitch_rad > 0.0f
+                                       ? trim_status.pitch_rad / vehicle_params.max_pitch_rad
+                                       : initial.rc.pitch;
+                initial.rc.yaw = trim_status.actuators.rudder;
+                rc = initial.rc;
+                sim_fixedwing_make_fsw_input(
+                    &plant, &rc, (real_t)cfg->dt_s, (uint32_t)(i * cfg->dt_s * 1000000.0), &input);
+                truth_geo_from_state(
+                    &plant.body, params.core.earth_radius_m, &lat_deg, &lon_deg, &altitude_m);
+                input.gps.lat_deg = lat_deg;
+                input.gps.lon_deg = lon_deg;
+                input.gps.alt_m = altitude_m;
+                input.baro.altitude_m = altitude_m;
+                input.gps.fix_valid = gps_fix_valid;
+            }
+        }
         bayek_fsw_step(&input, &output);
         bayek_fsw_get_mission_status(&mission_status);
         if (!sim_output_is_bounded(&output))
@@ -1041,7 +1086,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
                     "%.6f,%.6f,%.6f,%.6f,%.6f,"
                     "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
                     "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
-                    "%u,%u,%u,%.6f\n",
+                    "%u,%u,%u,%u,%.6f,%u,%u,%u,%.6f\n",
                     i,
                     (double)(i * cfg->dt_s),
                     (int)output.mode,
@@ -1089,6 +1134,11 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
                     (double)plant.body.velocity_ecef_mps.x,
                     (double)plant.body.velocity_ecef_mps.y,
                     (double)plant.body.velocity_ecef_mps.z,
+                    (unsigned)trim_status.active,
+                    (unsigned)trim_status.achieved,
+                    (unsigned)trim_status.failed,
+                    (unsigned)trim_status.iteration_count,
+                    (double)trim_status.residual_norm,
                     (unsigned)mission_status.loaded,
                     (unsigned)mission_status.active_waypoint_index,
                     (unsigned)mission_status.waypoint_count,

@@ -42,6 +42,7 @@ static void make_context(sitl_condition_context_t *ctx,
                          vehicle_params_t *vehicle_params,
                          sim_fixedwing_params_t *sim_params,
                          sim_fixedwing_state_t *plant,
+                         sitl_trim_config_t *trim_config,
                          uint8_t *mission_enabled,
                          bayek_mission_plan_t *mission)
 {
@@ -52,6 +53,7 @@ static void make_context(sitl_condition_context_t *ctx,
     input->rc = *rc;
     *vehicle_params = *altair_default_params();
     altair_default_fixedwing_sim_params(sim_params);
+    sitl_trim_config_default(trim_config);
     memset(mission, 0, sizeof(*mission));
     *mission_enabled = 0U;
     ctx->rc = rc;
@@ -59,6 +61,7 @@ static void make_context(sitl_condition_context_t *ctx,
     ctx->vehicle_params = vehicle_params;
     ctx->sim_params = sim_params;
     ctx->plant = plant;
+    ctx->trim = trim_config;
     ctx->mission_enabled = mission_enabled;
     ctx->mission = mission;
 }
@@ -72,6 +75,7 @@ int main(void)
     vehicle_params_t vehicle_params;
     sim_fixedwing_params_t sim_params;
     sim_fixedwing_state_t plant;
+    sitl_trim_config_t trim_config;
     uint8_t mission_enabled;
     bayek_mission_plan_t mission;
     char error[200];
@@ -85,6 +89,9 @@ int main(void)
                      "when = step >= 3\n"
                      "input.gps.fix_valid = 0\n"
                      "rc.throttle = 0.25\n"
+                     "trim.enabled = 1\n"
+                     "trim.mode = fixedwing_level\n"
+                     "trim.max_iterations = 7\n"
                      "mission.enabled = 1\n"
                      "mission.waypoint_count = 1\n"
                      "mission.waypoint.0.lat_deg = 37.5\n"
@@ -97,8 +104,15 @@ int main(void)
     CHECK(conditions.rules[0].lhs == SITL_CONDITION_LHS_TIME_S);
     CHECK(conditions.rules[1].lhs == SITL_CONDITION_LHS_STEP);
 
-    make_context(
-        &ctx, &rc, &input, &vehicle_params, &sim_params, &plant, &mission_enabled, &mission);
+    make_context(&ctx,
+                 &rc,
+                 &input,
+                 &vehicle_params,
+                 &sim_params,
+                 &plant,
+                 &trim_config,
+                 &mission_enabled,
+                 &mission);
     input.gps.fix_valid = 1U;
     ctx.t_s = 19.0;
     ctx.step = 2U;
@@ -113,6 +127,9 @@ int main(void)
     CHECK(input.gps.fix_valid == 0U);
     CHECK(near_real(rc.throttle, 0.25f));
     CHECK(near_real(input.rc.throttle, 0.25f));
+    CHECK(trim_config.enabled == 1U);
+    CHECK(trim_config.mode == SITL_TRIM_MODE_FIXEDWING_LEVEL);
+    CHECK(trim_config.max_iterations == 7U);
     CHECK(mission_enabled == 1U);
     CHECK(mission.waypoint_count == 1U);
     CHECK(ctx.vehicle_params_dirty == 1U);

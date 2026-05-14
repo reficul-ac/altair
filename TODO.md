@@ -64,8 +64,12 @@ Acceptance check:
 - [ ] Add deterministic seeding for all stochastic sim effects.
 - [x] Add bounds checks for state, actuator, and sensor values.
 - [x] Add scenario definitions for takeoff-like acceleration, cruise, turns, descent, and failsafe.
+- [x] Add mission and condition-file driven SITL scenarios for repeatable vehicle-level cases.
 - [x] Add profile-level deterministic replay and plausibility gates for `cruise`, `takeoff`, `turn`, `descent`, and `failsafe` before adding wind/noise.
 - [x] Add tests for deterministic simulation replay.
+- [x] Add reusable Bayek trim solving support and a first Altair fixed-wing level-flight trim adapter.
+- [ ] Extend trim coverage beyond the initial fixed-wing level-flight case, including off-axis initial states and future multirotor support.
+- [ ] Add trim tuning docs that explain residual definitions, bounds, tolerances, and failure modes.
 - [x] Document model limitations clearly so results are not overinterpreted.
 
 Acceptance check:
@@ -83,6 +87,8 @@ Acceptance check:
 - [x] Add Python or shell wrapper to run SITL and summarize key metrics.
 - [x] Add optional real-time wall-clock pacing.
 - [x] Add 3D browser playback from SITL CSV logs.
+- [x] Add case files and condition files for repeatable SITL configuration changes.
+- [x] Add trim trigger/status support through SITL conditions and cruise6dof CSV logs.
 - [x] Add documentation with example commands and expected outputs.
 
 Acceptance check:
@@ -111,8 +117,8 @@ Acceptance check:
 - [ ] Add packet versioning and compatibility checks.
 - [ ] Add telemetry coverage for mode, state estimate, actuator outputs, and health/failsafe status.
 - [ ] Add log-to-replay tooling for deterministic regression tests.
-- [ ] Store small replay fixtures under tests without committing large generated logs.
-- [ ] Add replay comparison tolerances and clear diff output.
+- [x] Store small replay fixtures under tests without committing large generated logs.
+- [x] Add replay comparison tolerances and clear diff output.
 
 Acceptance check:
 
@@ -134,10 +140,11 @@ Acceptance check:
 ## 10. Documentation And Operator Workflow
 
 - [x] Update `README.md` with quickstart commands for build, tests, SITL, and Monte Carlo.
-- [ ] Add docs for simulation assumptions, scenario files, output CSV schemas, and metrics.
+- [x] Add docs for simulation assumptions, scenario files, output CSV schemas, and metrics.
 - [ ] Add a development workflow document for adding a new scenario or regression fixture.
 - [ ] Add a troubleshooting section for submodules, CMake, CI, and generated artifacts.
-- [ ] Keep Bayek/Altair ownership boundaries documented as code evolves.
+- [x] Keep Bayek/Altair ownership boundaries documented as code evolves.
+- [ ] Document the SITL trim condition-file workflow with a worked example and guidance for filtering pre-trim rows.
 
 Acceptance check:
 
@@ -156,6 +163,7 @@ Bayek long-term domains:
 - [ ] Split `mode` out of `fault` when mode arbitration grows beyond simple disarm/manual/stabilize/failsafe selection.
 - [ ] Keep `fault` focused on sensor health, stale data, actuator health inputs, fault latching, degradation, and recovery rules.
 - [ ] Keep `sim` split conceptually between dynamics, sensor models, scenario/runtime execution, deterministic seeds, and replay support.
+- [x] Keep generic simulation trim solving in Bayek `sim` rather than Altair-specific runner code.
 - [ ] Keep telemetry and replay independent from the FSW step so logs, packets, and transports can evolve separately.
 
 Altair long-term domains:
@@ -163,6 +171,7 @@ Altair long-term domains:
 - [ ] Grow the current mixer layer into an explicit actuation domain when it needs trims, reversals, actuator health masking, slew limits, PWM mapping, or safe-output policy.
 - [ ] Keep vehicle model data separate from generic Bayek simulation: mass properties, aero coefficients, actuator geometry, sign conventions, and documented parameter sources belong to Altair.
 - [ ] Keep scenarios, Monte Carlo profiles, pass/fail metrics, CSV schemas, and visualization workflow outside portable Bayek FSW.
+- [x] Keep aircraft-specific trim residuals, actuator bounds, and handoff policy in Altair.
 - [ ] Keep board/HAL code responsible for platform timing, sensors, actuator drivers, storage, and transports.
 - [ ] Move toward a clearer future shape only as needed:
 

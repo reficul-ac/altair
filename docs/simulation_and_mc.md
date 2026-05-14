@@ -119,7 +119,7 @@ The v1 fixture covers nominal flight followed by health degradation and failsafe
 The v1 replay format is the exact CSV header below. Changing columns, order, names, or units requires regenerating `tests/integration/fixtures/sitl_cruise6dof_failsafe_v1.csv`, updating this contract, and updating the replay test expected header/checks in `tests/integration/CMakeLists.txt`.
 
 ```text
-step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,gps_fix_valid,lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm,pos_ecef_x_m,pos_ecef_y_m,pos_ecef_z_m,vel_ecef_x_mps,vel_ecef_y_mps,vel_ecef_z_mps,mission_loaded,mission_active_wp,mission_wp_count,mission_distance_m
+step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,gps_fix_valid,lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm,pos_ecef_x_m,pos_ecef_y_m,pos_ecef_z_m,vel_ecef_x_mps,vel_ecef_y_mps,vel_ecef_z_mps,trim_active,trim_achieved,trim_failed,trim_iteration_count,trim_residual_norm,mission_loaded,mission_active_wp,mission_wp_count,mission_distance_m
 ```
 
 Regenerate the v1 fixture with:

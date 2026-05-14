@@ -272,7 +272,16 @@ static int add_assignment(sitl_condition_rule_t *rule,
         set_error(error, error_size, "invalid assignment target", target, line_number);
         return 0;
     }
-    if (!parse_real_value(value_text, &assignment->value))
+    if (!copy_target(assignment->value_text, sizeof(assignment->value_text), value_text))
+    {
+        set_error(error, error_size, "invalid assignment value", value_text, line_number);
+        return 0;
+    }
+    if (strcmp(target, "trim.mode") == 0)
+    {
+        assignment->value = 0.0f;
+    }
+    else if (!parse_real_value(value_text, &assignment->value))
     {
         set_error(error, error_size, "invalid numeric value", value_text, line_number);
         return 0;
@@ -813,6 +822,59 @@ static int assign_mission(bayek_mission_plan_t *mission,
     return -1;
 }
 
+static int assign_trim(sitl_trim_config_t *trim,
+                       const sitl_condition_assignment_t *assignment,
+                       const char *key,
+                       char *error,
+                       size_t error_size)
+{
+    scalar_ref_t refs[] = {{"target_airspeed_mps", &trim->target_airspeed_mps},
+                           {"tolerance", &trim->tolerance},
+                           {"settle_time_s", &trim->settle_time_s},
+                           {"eval_time_s", &trim->eval_time_s}};
+    real_t *target = find_scalar(refs, sizeof(refs) / sizeof(refs[0]), key);
+    if (target != NULL)
+    {
+        return set_real(target, assignment->value);
+    }
+    if (strcmp(key, "enabled") == 0)
+    {
+        return set_bool(
+            &trim->enabled, assignment->value, error, error_size, assignment->line_number);
+    }
+    if (strcmp(key, "fail_on_error") == 0)
+    {
+        return set_bool(
+            &trim->fail_on_error, assignment->value, error, error_size, assignment->line_number);
+    }
+    if (strcmp(key, "max_iterations") == 0)
+    {
+        return set_uint32(
+            &trim->max_iterations, assignment->value, error, error_size, assignment->line_number);
+    }
+    if (strcmp(key, "mode") == 0)
+    {
+        sitl_trim_mode_t mode;
+        if (!sitl_trim_parse_mode(assignment->value_text, &mode))
+        {
+            set_error(error,
+                      error_size,
+                      "unknown trim mode",
+                      assignment->value_text,
+                      assignment->line_number);
+            return -1;
+        }
+        if (trim->mode != mode)
+        {
+            trim->mode = mode;
+            return 1;
+        }
+        return 0;
+    }
+    set_error(error, error_size, "unknown trim target", key, assignment->line_number);
+    return -1;
+}
+
 static int apply_assignment(const sitl_condition_assignment_t *assignment,
                             sitl_condition_context_t *ctx,
                             char *error,
@@ -874,6 +936,10 @@ static int apply_assignment(const sitl_condition_assignment_t *assignment,
                             error_size,
                             assignment->line_number);
     }
+    if (strncmp(target, "trim.", 5U) == 0)
+    {
+        return assign_trim(ctx->trim, assignment, target + 5U, error, error_size);
+    }
     if (strncmp(target, "mission.", 8U) == 0)
     {
         changed = assign_mission(ctx->mission,
@@ -903,6 +969,7 @@ static int validate_assignment_target(const sitl_condition_assignment_t *assignm
     vehicle_params_t vehicle_params = {0};
     sim_fixedwing_params_t sim_params = {0};
     sim_fixedwing_state_t plant = {0};
+    sitl_trim_config_t trim_config;
     uint8_t mission_enabled = 0U;
     bayek_mission_plan_t mission = {0};
 
@@ -912,6 +979,8 @@ static int validate_assignment_target(const sitl_condition_assignment_t *assignm
     ctx.vehicle_params = &vehicle_params;
     ctx.sim_params = &sim_params;
     ctx.plant = &plant;
+    sitl_trim_config_default(&trim_config);
+    ctx.trim = &trim_config;
     ctx.mission_enabled = &mission_enabled;
     ctx.mission = &mission;
     return apply_assignment(assignment, &ctx, error, error_size) >= 0;
@@ -925,7 +994,7 @@ int sitl_conditions_eval(const sitl_conditions_t *conditions,
     uint32_t i;
     if (conditions == NULL || ctx == NULL || ctx->rc == NULL || ctx->input == NULL ||
         ctx->vehicle_params == NULL || ctx->sim_params == NULL || ctx->plant == NULL ||
-        ctx->mission_enabled == NULL || ctx->mission == NULL)
+        ctx->trim == NULL || ctx->mission_enabled == NULL || ctx->mission == NULL)
     {
         set_error(error, error_size, "invalid condition evaluation arguments", NULL, 0);
         return 0;

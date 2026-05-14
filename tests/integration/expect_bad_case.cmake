@@ -6,8 +6,7 @@ if(NOT DEFINED CASE_FILE)
 endif()
 
 execute_process(
-    COMMAND "${SITL_RUNNER}" --scenario cruise6dof --case "${CASE_FILE}" --duration 0.02 --dt
-            0.01
+    COMMAND "${SITL_RUNNER}" --scenario cruise6dof --case "${CASE_FILE}" --duration 0.02 --dt 0.01
     RESULT_VARIABLE RESULT
     OUTPUT_VARIABLE STDOUT_TEXT
     ERROR_VARIABLE STDERR_TEXT
