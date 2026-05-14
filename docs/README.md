@@ -6,7 +6,7 @@ This directory documents Altair as a vehicle repository with Bayek as the reusab
 
 - [Architecture](architecture.md): repository layout, dependency rules, and module responsibilities.
 - [Vehicle Layer](vehicle_layer.md): Altair-specific params, limits, and mixer responsibilities.
-- [Simulation And Monte Carlo](simulation_and_mc.md): Altair host runners, deterministic replay, Python helpers, and CSV output.
+- [Simulation And Monte Carlo](simulation_and_mc.md): Altair host runners on Bayek's reusable SITL harness, deterministic replay, Python helpers, and CSV output.
 - [Embedded And HAL](embedded.md): PlatformIO skeleton, Arduino shim, HAL stubs, and why embedded code stays outside FSW.
 - [Testing Strategy](testing.md): Altair vehicle, integration, and performance checks.
 - [Design Rationale](design_rationale.md): reasons for Altair-specific choices.

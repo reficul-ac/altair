@@ -67,7 +67,8 @@ Acceptance check:
 - [x] Add mission and condition-file driven SITL scenarios for repeatable vehicle-level cases.
 - [x] Add profile-level deterministic replay and plausibility gates for `cruise`, `takeoff`, `turn`, `descent`, and `failsafe` before adding wind/noise.
 - [x] Add tests for deterministic simulation replay.
-- [x] Add reusable Bayek trim solving support and a first Altair fixed-wing level-flight trim adapter.
+- [x] Add reusable Bayek trim solving support and fixed-wing level-flight trim mechanics.
+- [x] Move reusable fixed-wing level-flight trim mechanics into Bayek while keeping Altair responsible for enablement policy, limits, and concrete parameters.
 - [ ] Extend trim coverage beyond the initial fixed-wing level-flight case, including off-axis initial states and future multirotor support.
 - [ ] Add trim tuning docs that explain residual definitions, bounds, tolerances, and failure modes.
 - [x] Document model limitations clearly so results are not overinterpreted.
@@ -171,7 +172,7 @@ Altair long-term domains:
 - [ ] Grow the current mixer layer into an explicit actuation domain when it needs trims, reversals, actuator health masking, slew limits, PWM mapping, or safe-output policy.
 - [ ] Keep vehicle model data separate from generic Bayek simulation: mass properties, aero coefficients, actuator geometry, sign conventions, and documented parameter sources belong to Altair.
 - [ ] Keep scenarios, Monte Carlo profiles, pass/fail metrics, CSV schemas, and visualization workflow outside portable Bayek FSW.
-- [x] Keep aircraft-specific trim residuals, actuator bounds, and handoff policy in Altair.
+- [x] Keep reusable fixed-wing trim mechanics in Bayek while Altair owns concrete trim enablement policy, actuator bounds, parameters, and failure handling.
 - [ ] Keep board/HAL code responsible for platform timing, sensors, actuator drivers, storage, and transports.
 - [ ] Move toward a clearer future shape only as needed:
 

@@ -38,6 +38,11 @@ target_link_libraries(test_trim_solver PRIVATE bayek_sim bayek_common)
 altair_enable_warnings(test_trim_solver)
 add_test(NAME unit_trim_solver COMMAND test_trim_solver)
 
+add_executable(test_bayek_host_sitl test_bayek_host_sitl.c)
+target_link_libraries(test_bayek_host_sitl PRIVATE bayek_host_sitl bayek_common bayek_sim)
+altair_enable_warnings(test_bayek_host_sitl)
+add_test(NAME unit_bayek_host_sitl COMMAND test_bayek_host_sitl)
+
 add_executable(test_altair_sim_model test_altair_sim_model.c)
 target_link_libraries(test_altair_sim_model PRIVATE altair_sim_model bayek_common)
 altair_enable_warnings(test_altair_sim_model)

@@ -18,6 +18,7 @@ Integration tests cover:
 - SITL smoke run with bounded actuator outputs
 - Monte Carlo smoke summary semantics and metric gates
 - telemetry encode/decode and CRC rejection
+- Bayek host SITL parsing/condition machinery without Altair symbols
 - Bayek-to-Altair vehicle interface routing through Altair mixer limits
 
 The deterministic replay test resets the core and replays the same input sequence, then checks that actuator outputs match within a tight tolerance.

@@ -1,6 +1,6 @@
 # Altair Simulation And Monte Carlo
 
-Altair owns concrete host runners that bind Bayek to `altair_vehicle_interface()`. Altair also owns aircraft-specific simulation model values in `params/sim/`, exposed to callers through `altair_fixedwing_sim_params()`. Bayek owns the reusable integration, generic sim parameter structs, and dynamics helpers documented in [Bayek Simulation](../bayek/docs/simulation.md).
+Altair owns concrete host runners that bind Bayek to `altair_vehicle_interface()`. Altair also owns aircraft-specific simulation model values in `params/sim/`, exposed to callers through `altair_fixedwing_sim_params()`. Bayek owns the reusable integration, generic sim parameter structs, dynamics helpers, fixed-wing trim helper, and host-only SITL parsing/condition machinery documented in [Bayek Simulation](../bayek/docs/simulation.md).
 
 ## SITL Plant
 
@@ -25,6 +25,8 @@ CTest runs each `cruise6dof` command profile twice and compares the generated CS
 ## Altair SITL Runner
 
 `vehicle/sitl_runner.c` runs a fixed number of fixed-size steps. It initializes Bayek with `altair_vehicle_interface()`, prints CSV rows to stdout, and prints a timing summary to stderr.
+
+The runner is still Altair-owned, but much of its reusable input machinery is now Bayek-owned. `bayek_host_sitl` provides the initial-condition parser and per-step condition engine; `bayek_sim` provides the fixed-wing trim helper. Altair keeps the concrete scenarios, command profiles, case-file defaults, CSV columns, MAVLink presentation, validation policy, and Python workflow defaults.
 
 CSV is used because it is transparent, dependency-free, easy to diff, and easy to consume from Python, spreadsheets, or CI artifacts.
 
@@ -151,12 +153,14 @@ tools/python/run_sitl_workflow.py --realtime
 tools/python/run_sitl_workflow.py --mavlink --mavlink-port 14551
 ```
 
-Case files are a one-time setup layer for initial conditions, run configuration, vehicle
-parameters, sim parameters, and missions. `cruise6dof` also supports a separate per-step
-condition file through `[run] condition_file = path/to/conditions.ini` in a case file or
-the CLI override `--conditions path/to/conditions.ini`. Conditions are parsed once and
-evaluated every simulation step after the profile command and truth-derived FSW input are
-generated, but before `bayek_fsw_step()` and `sim_fixedwing_step()`.
+Case files are an Altair one-time setup layer for initial conditions, run configuration,
+vehicle parameters, sim parameters, and missions. The initial-condition data type and
+parser are Bayek-owned and shared with the standalone `--initial` path. `cruise6dof`
+also supports a separate per-step condition file through `[run] condition_file =
+path/to/conditions.ini` in a case file or the CLI override `--conditions
+path/to/conditions.ini`. Conditions are parsed by Bayek once and evaluated every
+simulation step after the profile command and truth-derived FSW input are generated, but
+before `bayek_fsw_step()` and `sim_fixedwing_step()`.
 
 Condition files use rule sections with a single v1 comparison over `t_s` or `step`:
 
@@ -170,9 +174,11 @@ when = step > 2000
 vehicle_params.max_airspeed_mps = 7
 ```
 
-Supported assignment prefixes are `rc.*`, `input.*`, `vehicle_params.*`,
-`sim_params.*`, selected `plant.*` fixed-wing/6DOF state fields, and mission fields such
-as `mission.enabled`, `mission.waypoint_count`, and `mission.waypoint.N.*`.
+Supported assignment prefixes are currently implemented by Bayek's host SITL condition
+registry: `rc.*`, `input.*`, `vehicle_params.*`, `sim_params.*`, selected `plant.*`
+fixed-wing/6DOF state fields, `trim.*`, and mission fields such as `mission.enabled`,
+`mission.waypoint_count`, and `mission.waypoint.N.*`. Altair supplies the concrete
+parameter values and runner policy those assignments act on.
 
 Expected output is a stable `key=value` summary that can be pasted into notes or checked in scripts:
 

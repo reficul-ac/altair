@@ -8,7 +8,8 @@ Altair is organized as a C-first vehicle repository. Bayek is the reusable frame
 bayek/
   common/      Shared C99 types, math, and control utilities.
   fsw/         Portable flight software core and internal FSW domains.
-  sim/         Generic deterministic toy plant helpers.
+  sim/         Generic deterministic plant, 6DOF, fixed-wing, and trim helpers.
+  host/        Vehicle-agnostic host SITL parsers and condition machinery.
   hitl/        Future hardware-in-the-loop adapters.
   telemetry/  Packet encode/decode helpers.
 params/        Altair default parameters.
@@ -36,6 +37,9 @@ bayek/common
 bayek/fsw, bayek/sim, bayek/telemetry
         ^
         |
+bayek/host
+        ^
+        |
 altair_vehicle and Altair runners/tests/boards
 ```
 
@@ -59,9 +63,9 @@ Bayek must not know Altair exists. Files under `bayek/` must not include `altair
 
 These domain headers are implementation boundaries, not vehicle-specific extension points. Public domain APIs should be added only when tests, replay, or downstream users need them.
 
-`bayek/sim` owns generic plant dynamics, state propagation, and sensor-input helpers. Altair-specific SITL scenarios, Monte Carlo profiles, CSV outputs, and runner CLIs live under `vehicle/` because they bind Bayek to `altair_vehicle_interface()` and Altair-specific workflow policy.
+`bayek/sim` owns generic plant dynamics, state propagation, sensor-input helpers, fixed-wing dynamics helpers, and fixed-wing trim support. `bayek/host` owns host-only, vehicle-agnostic SITL parsing and condition machinery. Altair-specific SITL scenarios, Monte Carlo profiles, CSV outputs, runner CLIs, default case values, and presentation policy live under `vehicle/` and `tools/` because they bind Bayek to `altair_vehicle_interface()` and Altair-specific workflow policy.
 
-`params/sim/` owns Altair's first-pass aircraft-specific fixed-wing simulation constants. It starts from Bayek's reusable fixed-wing defaults and applies Altair-only physical model values such as mass and wing area. `vehicle/altair_sim_model.c` keeps the SITL-facing `altair_fixedwing_sim_params()` API and validates the resulting sim parameter contract alongside flight-facing limits from `altair_default_params()`. Bayek remains responsible for generic sim structs, 6DOF integration, and fixed-wing force/moment helper code; Altair owns concrete sim values and guardrails. These parameters are compile-time constants for the current milestone.
+`params/sim/` owns Altair's first-pass aircraft-specific fixed-wing simulation constants. It starts from Bayek's reusable fixed-wing defaults and applies Altair-only physical model values such as mass and wing area. `vehicle/altair_sim_model.c` keeps the SITL-facing `altair_fixedwing_sim_params()` API and validates the resulting sim parameter contract alongside flight-facing limits from `altair_default_params()`. Bayek remains responsible for generic sim structs, 6DOF integration, fixed-wing force/moment helper code, fixed-wing trim mechanics, and host SITL condition parsing; Altair owns concrete sim values, command profiles, CSV schemas, and guardrails. These parameters are compile-time constants for the current milestone.
 
 `bayek/telemetry` owns binary packet formatting. It is independent of `bayek_fsw_step()` so telemetry can be used by host tools, embedded transports, or HITL without coupling packet handling to control execution.
 

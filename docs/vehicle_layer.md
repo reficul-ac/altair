@@ -10,10 +10,11 @@ The Altair vehicle layer lives in root-level vehicle-owned folders.
 - `params/sim/altair_sim_params.c/h`: Altair-specific SITL physical-model constants.
 - `mixer/altair_mixer.c/h`: mapping from normalized control requests to actuator commands.
 - `vehicle/altair_vehicle.c/h`: `bayek_vehicle_interface_t` implementation for Altair.
+- `vehicle/sitl_case.c/h`: Altair-specific case-file defaults and adapters around Bayek's reusable SITL initial-condition and condition machinery.
 
 ## Responsibilities
 
-The vehicle layer is responsible for airframe-specific knowledge. That includes actuator ranges, safe actuator values, mixer conventions, and host-only simulation constants.
+The vehicle layer is responsible for airframe-specific knowledge. That includes actuator ranges, safe actuator values, mixer conventions, host-only simulation constants, concrete SITL scenarios, and presentation policy. Bayek owns reusable host SITL parsers and condition evaluation, but Altair decides which defaults, profiles, CSV columns, and validation gates are used for this aircraft.
 
 Bayek FSW asks the configured vehicle interface to produce valid actuator commands rather than duplicating vehicle-specific saturation behavior.
 

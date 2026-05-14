@@ -91,11 +91,12 @@ Exit code `3` means at least one Monte Carlo run failed a metric gate.
 
 - `bayek_common`: reusable C99 math, types, and control utilities.
 - `bayek_fsw`: reusable flight software core with `bayek_fsw_init`, `bayek_fsw_reset`, and `bayek_fsw_step`.
-- `bayek_sim`: deterministic toy plant helpers.
+- `bayek_sim`: deterministic plant, 6DOF, fixed-wing, and trim helpers.
+- `bayek_host_sitl`: host-only SITL initial-condition parsing and condition evaluation.
 - `bayek_telemetry`: binary packet encode/decode helpers.
 - `altair_vehicle`: Altair-specific parameters, limits, and mixer.
 - `altair_sim_model`: Altair-owned fixed-wing sim model constants and validation around Bayek's reusable sim helpers.
 - `sitl_runner`: deterministic fixed-step host simulation with CSV logging.
 - `mc_runner`: deterministic Monte Carlo runner with CSV summary output.
 
-Bayek must not include or link Altair-specific code. Altair binds Bayek through `altair_vehicle_interface()` and owns aircraft-specific sim model values; Bayek owns the reusable integration/dynamics helpers. The current fixed-wing model is deterministic and useful for guardrails, but it is not a validated flight dynamics model.
+Bayek must not include or link Altair-specific code. Altair binds Bayek through `altair_vehicle_interface()` and owns aircraft-specific sim model values, scenarios, CSV schemas, and runner policy; Bayek owns the reusable integration/dynamics helpers plus host-only SITL parsing and condition evaluation. The current fixed-wing model is deterministic and useful for guardrails, but it is not a validated flight dynamics model.
