@@ -44,6 +44,32 @@ export function homePointFromVehicle(vehicle: VehicleStateMessage): LocalPoint |
   return null;
 }
 
+export function geofenceLocalPoints(vehicle: VehicleStateMessage): { id: string; inclusion: boolean; points: LocalPoint[]; radiusM?: number }[] {
+  if (!vehicle.geofences || vehicle.globalPosition.originLatDeg === null || vehicle.globalPosition.originLonDeg === null) return [];
+  const originAlt = vehicle.globalPosition.originAltitudeM ?? 0;
+  return vehicle.geofences.map((zone) => {
+    if (zone.kind === 'circle') {
+      return {
+        id: zone.id,
+        inclusion: zone.inclusion,
+        radiusM: zone.radiusM,
+        points: [geoToLocal(zone.center.latDeg, zone.center.lonDeg, originAlt, vehicle.globalPosition.originLatDeg!, vehicle.globalPosition.originLonDeg!, originAlt)]
+      };
+    }
+    return {
+      id: zone.id,
+      inclusion: zone.inclusion,
+      points: zone.vertices.map((vertex) => geoToLocal(vertex.latDeg, vertex.lonDeg, originAlt, vehicle.globalPosition.originLatDeg!, vehicle.globalPosition.originLonDeg!, originAlt))
+    };
+  });
+}
+
+export function rallyLocalPoints(vehicle: VehicleStateMessage): LocalPoint[] {
+  if (!vehicle.rallyPoints || vehicle.globalPosition.originLatDeg === null || vehicle.globalPosition.originLonDeg === null) return [];
+  const originAlt = vehicle.globalPosition.originAltitudeM ?? 0;
+  return vehicle.rallyPoints.map((point) => geoToLocal(point.latDeg, point.lonDeg, point.altitudeM ?? originAlt, vehicle.globalPosition.originLatDeg!, vehicle.globalPosition.originLonDeg!, originAlt));
+}
+
 export function bindMapControls(snapshotProvider: () => SessionSnapshotMessage | null): void {
   if (bound) return;
   bound = true;
@@ -112,13 +138,59 @@ export function drawMap(snapshot: SessionSnapshotMessage): void {
   const centerVehicle = selectedMapVehicle(snapshot);
   const center = view.followSelected ? pointFromVehicle(centerVehicle) ?? { eastM: 0, northM: 0 } : { eastM: 0, northM: 0 };
   drawGrid(ctx, center, width, height);
+  drawGeofences(ctx, snapshot, center, width, height);
   drawMission(ctx, snapshot, center, width, height);
+  drawRally(ctx, snapshot, center, width, height);
   drawHome(ctx, snapshot, center, width, height);
   for (const vehicle of snapshot.vehicles) {
     drawTrail(ctx, vehicle, center, width, height, vehicle.id === snapshot.selectedVehicleId);
   }
   drawEvents(ctx, snapshot.events, center, width, height);
   drawScale(ctx, width, height);
+}
+
+function drawGeofences(ctx: CanvasRenderingContext2D, snapshot: SessionSnapshotMessage, center: LocalPoint, width: number, height: number): void {
+  const vehicle = selectedMapVehicle(snapshot);
+  if (!vehicle) return;
+  for (const zone of geofenceLocalPoints(vehicle)) {
+    ctx.strokeStyle = zone.inclusion ? 'rgba(102, 224, 163, 0.8)' : 'rgba(255, 107, 122, 0.8)';
+    ctx.fillStyle = zone.inclusion ? 'rgba(102, 224, 163, 0.08)' : 'rgba(255, 107, 122, 0.08)';
+    ctx.lineWidth = 1.5;
+    if (zone.radiusM !== undefined && zone.points[0]) {
+      const screen = mapWorldToScreen(zone.points[0], center, view, width, height);
+      ctx.beginPath();
+      ctx.arc(screen.x, screen.y, zone.radiusM * view.scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else if (zone.points.length >= 3) {
+      ctx.beginPath();
+      zone.points.forEach((point, index) => {
+        const screen = mapWorldToScreen(point, center, view, width, height);
+        if (index === 0) ctx.moveTo(screen.x, screen.y);
+        else ctx.lineTo(screen.x, screen.y);
+      });
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+}
+
+function drawRally(ctx: CanvasRenderingContext2D, snapshot: SessionSnapshotMessage, center: LocalPoint, width: number, height: number): void {
+  const vehicle = selectedMapVehicle(snapshot);
+  if (!vehicle) return;
+  for (const point of rallyLocalPoints(vehicle)) {
+    const screen = mapWorldToScreen(point, center, view, width, height);
+    ctx.strokeStyle = '#e464ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(screen.x, screen.y - 7);
+    ctx.lineTo(screen.x + 7, screen.y);
+    ctx.lineTo(screen.x, screen.y + 7);
+    ctx.lineTo(screen.x - 7, screen.y);
+    ctx.closePath();
+    ctx.stroke();
+  }
 }
 
 function redraw(snapshotProvider: () => SessionSnapshotMessage | null): void {

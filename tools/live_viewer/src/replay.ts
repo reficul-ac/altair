@@ -19,6 +19,13 @@ export type AltairReplayFile = {
   markers?: SessionEvent[];
 };
 
+export type ImportedLog = {
+  name: string;
+  sourceType: ReplayMetadata['sourceType'];
+  text: string;
+  importedAt?: string;
+};
+
 export type ReplayPlaybackState = ReplayTimelineMessage;
 
 type ReplayEvents = {
@@ -74,6 +81,11 @@ export class ReplaySession {
 
   isLoaded(): boolean {
     return this.frames.length > 0;
+  }
+
+  exportReplay(): AltairReplayFile | null {
+    if (this.frames.length === 0 || this.metadata === null) return null;
+    return serializeAltairReplay(this.frames, this.metadata, this.markers);
   }
 
   play(): ReplayPlaybackState {
@@ -199,6 +211,21 @@ export function parseAltairReplayJson(raw: string): AltairReplayFile {
   return normalizeReplay(parsed as AltairReplayFile);
 }
 
+export function importLogAsReplay(log: ImportedLog): AltairReplayFile {
+  const trimmed = log.text.trim();
+  if (trimmed.startsWith('{')) {
+    const replay = parseAltairReplayJson(trimmed);
+    const normalized = normalizeReplay(replay);
+    return serializeAltairReplay(replay.frames, {
+      ...normalized.metadata,
+      sourceType: log.sourceType,
+      importedFrom: log.name,
+      createdAt: log.importedAt ?? normalized.metadata.createdAt
+    }, normalized.markers);
+  }
+  return importDelimitedLogAsReplay(log);
+}
+
 export function serializeAltairReplay(frames: readonly ReplayFrame[], metadata: Partial<ReplayMetadata> = {}, markers: readonly SessionEvent[] = []): AltairReplayFile {
   const normalized = normalizeFrames(frames);
   const fallbackMarkers = markerEvents(normalized);
@@ -209,6 +236,10 @@ export function serializeAltairReplay(frames: readonly ReplayFrame[], metadata: 
       sourceType: metadata.sourceType ?? 'altair-session',
       createdAt: metadata.createdAt ?? new Date(0).toISOString(),
       label: metadata.label,
+      importedFrom: metadata.importedFrom,
+      firmware: metadata.firmware,
+      vehicleName: metadata.vehicleName,
+      startedAt: metadata.startedAt,
       vehicleIds: metadata.vehicleIds ?? vehicleIdsFor(normalized),
       packetCount: metadata.packetCount ?? normalized.at(-1)?.snapshot.packetCount ?? 0,
       durationS: metadata.durationS ?? normalized.at(-1)?.timestampS ?? 0
@@ -279,7 +310,11 @@ function buildMetadata(frames: readonly ReplayFrame[], metadata: AltairReplayFil
     vehicleIds: metadata.vehicleIds ?? vehicleIdsFor(frames),
     frameCount: frames.length,
     packetCount: metadata.packetCount ?? frames.at(-1)?.snapshot.packetCount ?? 0,
-    durationS: metadata.durationS ?? frames.at(-1)?.timestampS ?? 0
+    durationS: metadata.durationS ?? frames.at(-1)?.timestampS ?? 0,
+    importedFrom: metadata.importedFrom,
+    firmware: metadata.firmware,
+    vehicleName: metadata.vehicleName,
+    startedAt: metadata.startedAt
   };
 }
 
@@ -303,4 +338,134 @@ function markerEvents(frames: readonly ReplayFrame[]): SessionEvent[] {
     }
   }
   return [...events.values()].sort((a, b) => a.timestampS - b.timestampS);
+}
+
+function importDelimitedLogAsReplay(log: ImportedLog): AltairReplayFile {
+  const rows = parseDelimitedRows(log.text);
+  if (rows.length === 0) {
+    throw new Error('imported log has no samples');
+  }
+  const frames = rows.map((row, index) => {
+    const timestampS = numberField(row, ['timestamp_s', 'time_s', 't', 'TimeS']) ?? index;
+    const vehicleId = stringField(row, ['vehicle_id', 'vehicle', 'id', 'Vehicle']) ?? '1:1';
+    const [systemId, componentId] = vehicleId.split(':').map((part) => Number(part));
+    const northM = numberField(row, ['north_m', 'north', 'x_north_m', 'pos_n_m']) ?? 0;
+    const eastM = numberField(row, ['east_m', 'east', 'y_east_m', 'pos_e_m']) ?? 0;
+    const upM = numberField(row, ['up_m', 'up', 'altitude_m', 'alt_m']) ?? 0;
+    const snapshot: SessionSnapshotMessage = {
+      type: 'session_snapshot',
+      vehicles: [{
+        type: 'vehicle_state',
+        id: vehicleId,
+        connected: true,
+        packetAgeS: 0,
+        heartbeatAgeS: 0,
+        systemId: Number.isFinite(systemId) ? systemId : 1,
+        componentId: Number.isFinite(componentId) ? componentId : 1,
+        vehicleType: stringField(row, ['vehicle_type', 'type']) ?? 'Imported log',
+        attitude: {
+          rollRad: numberField(row, ['roll_rad', 'roll']) ?? 0,
+          pitchRad: numberField(row, ['pitch_rad', 'pitch']) ?? 0,
+          yawRad: numberField(row, ['yaw_rad', 'yaw']) ?? 0,
+          rollRateRps: numberField(row, ['roll_rate_rps']) ?? 0,
+          pitchRateRps: numberField(row, ['pitch_rate_rps']) ?? 0,
+          yawRateRps: numberField(row, ['yaw_rate_rps']) ?? 0
+        },
+        globalPosition: {
+          latDeg: numberField(row, ['lat_deg', 'lat']),
+          lonDeg: numberField(row, ['lon_deg', 'lon']),
+          altitudeM: numberField(row, ['altitude_m', 'alt_m']),
+          relativeAltitudeM: numberField(row, ['relative_altitude_m', 'rel_alt_m']),
+          originLatDeg: numberField(row, ['origin_lat_deg']),
+          originLonDeg: numberField(row, ['origin_lon_deg']),
+          originAltitudeM: numberField(row, ['origin_altitude_m'])
+        },
+        localPosition: { northM, eastM, upM },
+        velocity: {
+          northMps: numberField(row, ['vn_mps', 'vel_n_mps']) ?? 0,
+          eastMps: numberField(row, ['ve_mps', 'vel_e_mps']) ?? 0,
+          downMps: numberField(row, ['vd_mps', 'vel_d_mps']) ?? 0
+        },
+        metrics: {
+          headingDeg: numberField(row, ['heading_deg', 'heading']),
+          airspeedMps: numberField(row, ['airspeed_mps', 'airspeed']),
+          groundspeedMps: numberField(row, ['groundspeed_mps', 'groundspeed']),
+          climbMps: numberField(row, ['climb_mps', 'climb']),
+          throttlePct: numberField(row, ['throttle_pct', 'throttle'])
+        },
+        status: {
+          armed: boolField(row, ['armed']),
+          mode: stringField(row, ['mode']),
+          baseMode: null,
+          customMode: null,
+          gpsFix: stringField(row, ['gps_fix']),
+          satellitesVisible: numberField(row, ['satellites_visible', 'satellites']),
+          batteryRemainingPct: numberField(row, ['battery_remaining_pct', 'battery_pct']),
+          batteryVoltageV: numberField(row, ['battery_voltage_v']),
+          onboardControlSensorsHealth: null,
+          missionSeq: numberField(row, ['mission_seq']),
+          lastStatusText: stringField(row, ['status_text'])
+        },
+        logSource: {
+          id: `log-${log.name}`,
+          kind: log.sourceType,
+          label: log.name,
+          path: log.name,
+          importedAt: log.importedAt ?? new Date(0).toISOString()
+        }
+      }],
+      selectedVehicleId: vehicleId,
+      messages: [],
+      events: [],
+      packetCount: index + 1,
+      decodedCount: index + 1,
+      logSources: [{
+        id: `log-${log.name}`,
+        kind: log.sourceType,
+        label: log.name,
+        path: log.name,
+        importedAt: log.importedAt ?? new Date(0).toISOString()
+      }]
+    };
+    return { timestampS, snapshot };
+  });
+  return serializeAltairReplay(frames, {
+    sourceType: log.sourceType,
+    createdAt: log.importedAt ?? new Date(0).toISOString(),
+    importedFrom: log.name,
+    label: log.name
+  });
+}
+
+function parseDelimitedRows(text: string): Record<string, string>[] {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const delimiter = lines[0].includes('\t') ? '\t' : ',';
+  const headers = lines[0].split(delimiter).map((part) => part.trim());
+  return lines.slice(1).map((line) => {
+    const values = line.split(delimiter);
+    return Object.fromEntries(headers.map((header, index) => [header, values[index]?.trim() ?? '']));
+  });
+}
+
+function numberField(row: Record<string, string>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = Number(row[key]);
+    if (Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function stringField(row: Record<string, string>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value.length > 0) return value;
+  }
+  return null;
+}
+
+function boolField(row: Record<string, string>, keys: string[]): boolean | null {
+  const value = stringField(row, keys);
+  if (value === null) return null;
+  return ['1', 'true', 'yes', 'armed'].includes(value.toLowerCase());
 }

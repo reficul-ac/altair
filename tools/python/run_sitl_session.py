@@ -57,6 +57,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--bridge-host", default="127.0.0.1", help="bridge UDP listen host")
     parser.add_argument("--bridge-port", type=int, default=14551, help="bridge UDP listen port")
+    parser.add_argument("--vehicles", type=int, default=1, help="number of SITL vehicle instances to launch")
+    parser.add_argument("--system-id-base", type=int, default=1, help="first MAVLink system id for swarm launches")
+    parser.add_argument("--mavlink-port-base", type=int, default=14600, help="first per-vehicle MAVLink UDP source port for swarm launches")
     parser.add_argument("--ws-host", default="127.0.0.1", help="viewer WebSocket host")
     parser.add_argument("--ws-port", type=int, default=8765, help="viewer WebSocket port")
     parser.add_argument(
@@ -106,6 +109,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--qgc-endpoint requires --qgc")
     if args.app and not args.viewer:
         parser.error("--app cannot be combined with --no-viewer")
+    if args.vehicles < 1:
+        parser.error("--vehicles must be at least 1")
+    if args.system_id_base < 1 or args.system_id_base + args.vehicles - 1 > 255:
+        parser.error("--system-id-base plus --vehicles must fit MAVLink system ids 1..255")
+    if args.mavlink_port_base < 1 or args.mavlink_port_base + args.vehicles - 1 > 65535:
+        parser.error("--mavlink-port-base plus --vehicles must fit UDP ports 1..65535")
     return args
 
 
@@ -172,8 +181,11 @@ def app_command(args: argparse.Namespace) -> list[str]:
     return command
 
 
-def sitl_command(args: argparse.Namespace) -> list[str]:
+def sitl_command(args: argparse.Namespace, vehicle_index: int = 0) -> list[str]:
     root = repo_root()
+    system_id = args.system_id_base + vehicle_index
+    mavlink_source_port = args.mavlink_port_base + vehicle_index
+    output = args.output if args.vehicles == 1 else swarm_output_path(args.output, system_id)
     command = [
         sys.executable,
         str(root / "tools" / "python" / "run_sitl.py"),
@@ -190,7 +202,7 @@ def sitl_command(args: argparse.Namespace) -> list[str]:
         "--seed",
         str(args.seed),
         "--output",
-        args.output,
+        output,
         "--frame-mode",
         args.frame_mode,
         "--realtime",
@@ -199,6 +211,10 @@ def sitl_command(args: argparse.Namespace) -> list[str]:
         args.bridge_host,
         "--mavlink-port",
         str(args.bridge_port),
+        "--mavlink-system-id",
+        str(system_id),
+        "--mavlink-source-port",
+        str(mavlink_source_port),
     ]
     if args.initial:
         command.extend(["--initial", args.initial])
@@ -207,6 +223,14 @@ def sitl_command(args: argparse.Namespace) -> list[str]:
     if args.conditions:
         command.extend(["--conditions", args.conditions])
     return command
+
+
+def swarm_output_path(output: str, system_id: int) -> str:
+    path = pathlib.Path(output)
+    suffix = "".join(path.suffixes)
+    stem = path.name[: -len(suffix)] if suffix else path.name
+    name = f"{stem}_sys{system_id}{suffix}"
+    return str(path.with_name(name))
 
 
 def require_viewer_ready(root: pathlib.Path, install_deps: bool, dry_run: bool) -> None:
@@ -253,7 +277,9 @@ def run(args: argparse.Namespace) -> int:
         if args.install_viewer_deps:
             commands.append(("viewer dependencies", viewer_install_command(), viewer_dir))
         commands.append(("viewer", viewer_command(args), viewer_dir))
-    commands.append(("sitl", sitl_command(args), None))
+    for index in range(args.vehicles):
+        label = "sitl" if args.vehicles == 1 else f"sitl sys{args.system_id_base + index}"
+        commands.append((label, sitl_command(args, index), None))
 
     if args.dry_run:
         for label, command, cwd in commands:
@@ -293,12 +319,19 @@ def run(args: argparse.Namespace) -> int:
             if processes[-1].poll() is not None:
                 return processes[-1].returncode or 1
 
-        label, command, cwd = commands[-1]
-        print(f"\n== Run {label} ==", flush=True)
-        print(quote_command(command), flush=True)
-        sitl = subprocess.Popen(command, cwd=cwd, text=True)
-        processes.append(sitl)
-        return sitl.wait()
+        if args.vehicles == 1:
+            label, command, cwd = commands[-1]
+            print(f"\n== Run {label} ==", flush=True)
+            print(quote_command(command), flush=True)
+            sitl = subprocess.Popen(command, cwd=cwd, text=True)
+            processes.append(sitl)
+            return sitl.wait()
+        print(f"\n== Run swarm ({args.vehicles} vehicles) ==", flush=True)
+        for label, command, cwd in commands[-args.vehicles :]:
+            print(f"{label}: {quote_command(command)}", flush=True)
+            processes.append(subprocess.Popen(command, cwd=cwd, text=True))
+            time.sleep(0.2)
+        return max(process.wait() for process in processes[-args.vehicles :])
     except KeyboardInterrupt:
         return 130
     except (OSError, RuntimeError) as exc:

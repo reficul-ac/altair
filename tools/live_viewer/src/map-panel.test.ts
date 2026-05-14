@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { homePointFromVehicle, mapScreenToWorld, mapWorldToScreen, selectedMapVehicle, type MapViewState } from './map-panel';
+import { geofenceLocalPoints, homePointFromVehicle, mapScreenToWorld, mapWorldToScreen, rallyLocalPoints, selectedMapVehicle, type MapViewState } from './map-panel';
 import type { SessionSnapshotMessage, VehicleStateMessage } from './state';
 
 const view: MapViewState = { scale: 2, panEastM: 5, panNorthM: -3, followSelected: true };
@@ -45,5 +45,19 @@ describe('map panel helpers', () => {
   it('uses MAVLink origin as a home marker fallback', () => {
     expect(homePointFromVehicle(vehicle)).toEqual({ eastM: 0, northM: 0, upM: 0 });
     expect(homePointFromVehicle({ ...vehicle, home: { latDeg: 37.0001, lonDeg: -122, altitudeM: 95 } })?.northM).toBeGreaterThan(11);
+  });
+
+  it('converts geofence and rally overlays to local map coordinates', () => {
+    const enriched: VehicleStateMessage = {
+      ...vehicle,
+      geofences: [
+        { id: 'keep-in', kind: 'circle', inclusion: true, center: { latDeg: 37.0001, lonDeg: -122 }, radiusM: 50 },
+        { id: 'keep-out', kind: 'polygon', inclusion: false, vertices: [{ latDeg: 37, lonDeg: -122 }, { latDeg: 37.0001, lonDeg: -122 }, { latDeg: 37, lonDeg: -121.9999 }] }
+      ],
+      rallyPoints: [{ id: 'r1', latDeg: 37.0001, lonDeg: -122, altitudeM: 120 }]
+    };
+    expect(geofenceLocalPoints(enriched)).toHaveLength(2);
+    expect(geofenceLocalPoints(enriched)[0].radiusM).toBe(50);
+    expect(rallyLocalPoints(enriched)[0].northM).toBeGreaterThan(11);
   });
 });

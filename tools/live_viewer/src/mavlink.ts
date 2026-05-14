@@ -1,5 +1,7 @@
 import dgram, { type RemoteInfo, type Socket } from 'node:dgram';
 import { EventEmitter } from 'node:events';
+import { buildMultiVehicleAnalysis, defaultCommandCapabilities } from './parity.js';
+import type { CameraStream, CommandCapabilityState, LinkDiagnostics, MockLinkState, MultiVehicleAnalysis } from './state.js';
 
 export const MAVLINK_V1_STX = 0xfe;
 export const DEFAULT_LISTEN_HOST = '127.0.0.1';
@@ -103,6 +105,9 @@ export type VehicleStatePayload = {
     missionSeq: number | null;
     lastStatusText: string | null;
   };
+  commandCapabilities?: CommandCapabilityState;
+  diagnostics?: LinkDiagnostics;
+  cameraStreams?: CameraStream[];
   trail?: {
     eastM: number;
     northM: number;
@@ -141,6 +146,8 @@ export type SessionSnapshotPayload = {
   events: SessionEvent[];
   packetCount: number;
   decodedCount: number;
+  analysis?: MultiVehicleAnalysis;
+  mockLinks?: MockLinkState[];
 };
 
 export function x25Crc(data: Uint8Array, crc = 0xffff): number {
@@ -600,6 +607,27 @@ export class LiveVehicleState {
         missionSeq: this.missionSeq,
         lastStatusText: this.lastStatusText
       },
+      commandCapabilities: defaultCommandCapabilities(true, false),
+      diagnostics: {
+        linkId: `${this.systemId ?? 'unknown'}:${this.componentId ?? 'unknown'}`,
+        transport: 'udp',
+        status: this.connected && (packetAgeS === null || packetAgeS < 2) ? 'connected' : 'degraded',
+        packetsRx: this.trail.length,
+        packetsTx: 0,
+        decodedRx: this.trail.length,
+        drops: 0,
+        lastError: null
+      },
+      cameraStreams: [{
+        id: `${this.systemId ?? 'unknown'}-mock-camera`,
+        label: 'MAVLink camera metadata',
+        kind: 'mock',
+        uri: null,
+        status: 'offline',
+        captureSupported: false,
+        recordingSupported: false,
+        telemetrySubtitleSupported: true
+      }],
       trail: this.trail.slice(-800)
     };
   }
@@ -900,15 +928,25 @@ export class VehicleRegistry {
 
   snapshot(nowS = performanceNowS()): SessionSnapshotPayload {
     const vehicles = [...this.vehicles.entries()].map(([id, vehicle]) => ({ ...vehicle.toJsonable(nowS), id }));
-    return {
+    const snapshot: SessionSnapshotPayload = {
       type: 'session_snapshot',
       vehicles,
       selectedVehicleId: this.selectedVehicleId,
       messages: this.inspector.snapshot(nowS),
       events: this.events.slice(-240).reverse(),
       packetCount: this.packetCount,
-      decodedCount: this.decodedCount
+      decodedCount: this.decodedCount,
+      analysis: buildMultiVehicleAnalysis({
+        type: 'session_snapshot',
+        vehicles,
+        selectedVehicleId: this.selectedVehicleId,
+        messages: [],
+        events: [],
+        packetCount: this.packetCount,
+        decodedCount: this.decodedCount
+      })
     };
+    return snapshot;
   }
 
   selectedVehicle(nowS = performanceNowS()): VehicleStatePayload {

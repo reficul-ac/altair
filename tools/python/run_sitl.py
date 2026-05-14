@@ -51,6 +51,13 @@ def parse_args():
     parser.add_argument(
         "--qgc-port", "--mavlink-port", dest="qgc_port", default="14550", help="MAVLink UDP port"
     )
+    parser.add_argument("--mavlink-system-id", type=int, default=1, help="MAVLink system id")
+    parser.add_argument(
+        "--mavlink-source-port",
+        type=int,
+        default=0,
+        help="optional local UDP source port for MAVLink packets",
+    )
     args = parser.parse_args()
     if args.scenario != "cruise6dof" and args.initial is not None:
         parser.error("--initial is only supported with --scenario cruise6dof")
@@ -62,6 +69,10 @@ def parse_args():
         parser.error("--profile is only supported with --scenario cruise6dof")
     if args.qgc and args.scenario != "cruise6dof":
         parser.error("--mavlink/--qgc is only supported with --scenario cruise6dof")
+    if args.mavlink_system_id < 1 or args.mavlink_system_id > 255:
+        parser.error("--mavlink-system-id must be in 1..255")
+    if args.mavlink_source_port < 0 or args.mavlink_source_port > 65535:
+        parser.error("--mavlink-source-port must be in 0..65535")
     return args
 
 
@@ -171,8 +182,18 @@ def main():
         command.append("--realtime")
     if args.qgc:
         command.extend(
-            ["--mavlink", "--mavlink-host", args.qgc_host, "--mavlink-port", args.qgc_port]
+            [
+                "--mavlink",
+                "--mavlink-host",
+                args.qgc_host,
+                "--mavlink-port",
+                args.qgc_port,
+                "--mavlink-system-id",
+                str(args.mavlink_system_id),
+            ]
         )
+        if args.mavlink_source_port:
+            command.extend(["--mavlink-source-port", str(args.mavlink_source_port)])
 
     try:
         subprocess.run(command, check=True, text=True)

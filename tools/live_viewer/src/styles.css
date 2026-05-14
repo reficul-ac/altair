@@ -764,6 +764,54 @@ select {
   overflow-wrap: anywhere;
 }
 
+.analysis-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.1fr);
+  gap: 18px;
+  height: 100%;
+}
+
+.analysis-grid section {
+  min-width: 0;
+  overflow: auto;
+}
+
+.tool-list {
+  display: grid;
+  gap: 8px;
+}
+
+.tool-list div,
+.tool-list button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--muted-border);
+  background: rgba(9, 16, 22, 0.66);
+  color: var(--text);
+  border-radius: 6px;
+  text-align: left;
+}
+
+.tool-list span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.command-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.command-grid button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 #vehicle-list span {
   color: var(--muted);
   font-size: 0.8rem;
@@ -842,6 +890,10 @@ select {
   }
 
   .inspector-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-grid {
     grid-template-columns: 1fr;
   }
 }

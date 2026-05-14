@@ -40,6 +40,8 @@ typedef struct
     int qgc_enabled;
     const char *qgc_host;
     const char *qgc_port;
+    uint32_t mavlink_system_id;
+    uint32_t mavlink_source_port;
 } sitl_config_t;
 
 typedef struct
@@ -49,6 +51,8 @@ typedef struct
     socklen_t addr_len;
     uint8_t seq;
 } qgc_link_t;
+
+static void qgc_close(qgc_link_t *link);
 
 static void print_usage(FILE *stream)
 {
@@ -60,6 +64,7 @@ static void print_usage(FILE *stream)
         "                   [--frame-mode ned|ecef]\n"
         "                   [--profile cruise|takeoff|turn|descent|failsafe|mission] [--realtime]\n"
         "                   [--mavlink] [--mavlink-host host] [--mavlink-port port]\n"
+        "                   [--mavlink-system-id id] [--mavlink-source-port port]\n"
         "                   [--qgc] [--qgc-host host] [--qgc-port port]\n");
 }
 
@@ -115,6 +120,8 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg)
     cfg->qgc_enabled = 0;
     cfg->qgc_host = "127.0.0.1";
     cfg->qgc_port = "14550";
+    cfg->mavlink_system_id = 1U;
+    cfg->mavlink_source_port = 0U;
 
     for (i = 1; i < argc; ++i)
     {
@@ -245,6 +252,22 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg)
                 return -1;
             }
             cfg->qgc_port = argv[i];
+        }
+        else if (strcmp(argv[i], "--mavlink-system-id") == 0)
+        {
+            if (++i >= argc || !parse_uint_arg(argv[i], "mavlink system id", &cfg->mavlink_system_id) ||
+                cfg->mavlink_system_id == 0U || cfg->mavlink_system_id > 255U)
+            {
+                return -1;
+            }
+        }
+        else if (strcmp(argv[i], "--mavlink-source-port") == 0)
+        {
+            if (++i >= argc || !parse_uint_arg(argv[i], "mavlink source port", &cfg->mavlink_source_port) ||
+                cfg->mavlink_source_port > 65535U)
+            {
+                return -1;
+            }
         }
         else
         {
@@ -388,6 +411,7 @@ static void mavlink_put_float(uint8_t *payload, size_t offset, float value)
 static int qgc_open(const sitl_config_t *cfg, qgc_link_t *link)
 {
     struct sockaddr_in addr;
+    struct sockaddr_in source_addr;
     char *end = NULL;
     unsigned long port;
 
@@ -422,6 +446,19 @@ static int qgc_open(const sitl_config_t *cfg, qgc_link_t *link)
         fprintf(stderr, "failed to open QGC UDP socket\n");
         return 0;
     }
+    if (cfg->mavlink_source_port > 0U)
+    {
+        memset(&source_addr, 0, sizeof(source_addr));
+        source_addr.sin_family = AF_INET;
+        source_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        source_addr.sin_port = htons((uint16_t)cfg->mavlink_source_port);
+        if (bind(link->fd, (const struct sockaddr *)&source_addr, sizeof(source_addr)) != 0)
+        {
+            fprintf(stderr, "failed to bind MAVLink source port %u\n", (unsigned)cfg->mavlink_source_port);
+            qgc_close(link);
+            return 0;
+        }
+    }
     memcpy(&link->addr, &addr, sizeof(addr));
     link->addr_len = (socklen_t)sizeof(addr);
     return 1;
@@ -437,6 +474,7 @@ static void qgc_close(qgc_link_t *link)
 }
 
 static void qgc_send_packet(qgc_link_t *link,
+                            const sitl_config_t *cfg,
                             uint8_t msg_id,
                             const uint8_t *payload,
                             uint8_t payload_len,
@@ -453,7 +491,7 @@ static void qgc_send_packet(qgc_link_t *link,
     frame[0] = 0xfeU;
     frame[1] = payload_len;
     frame[2] = link->seq++;
-    frame[3] = 1U;
+    frame[3] = (uint8_t)cfg->mavlink_system_id;
     frame[4] = 1U;
     frame[5] = msg_id;
     memcpy(&frame[6], payload, payload_len);
@@ -496,7 +534,7 @@ static uint16_t heading_cdeg(real_t yaw_rad)
     return heading >= 36000U ? 0U : heading;
 }
 
-static void qgc_send_heartbeat(qgc_link_t *link)
+static void qgc_send_heartbeat(qgc_link_t *link, const sitl_config_t *cfg)
 {
     uint8_t payload[9] = {0};
     mavlink_put_u32(payload, 0, 0U);
@@ -505,10 +543,11 @@ static void qgc_send_heartbeat(qgc_link_t *link)
     payload[6] = 0U;
     payload[7] = 4U;
     payload[8] = 3U;
-    qgc_send_packet(link, 0U, payload, sizeof(payload), 50U);
+    qgc_send_packet(link, cfg, 0U, payload, sizeof(payload), 50U);
 }
 
 static void qgc_send_attitude(qgc_link_t *link,
+                              const sitl_config_t *cfg,
                               uint32_t time_boot_ms,
                               const sim_fixedwing_state_t *plant,
                               euler_t euler)
@@ -521,10 +560,11 @@ static void qgc_send_attitude(qgc_link_t *link,
     mavlink_put_float(payload, 16, plant->body.omega_body_rps.x);
     mavlink_put_float(payload, 20, plant->body.omega_body_rps.y);
     mavlink_put_float(payload, 24, plant->body.omega_body_rps.z);
-    qgc_send_packet(link, 30U, payload, sizeof(payload), 39U);
+    qgc_send_packet(link, cfg, 30U, payload, sizeof(payload), 39U);
 }
 
 static void qgc_send_global_position(qgc_link_t *link,
+                                     const sitl_config_t *cfg,
                                      uint32_t time_boot_ms,
                                      real_t lat_deg,
                                      real_t lon_deg,
@@ -542,10 +582,11 @@ static void qgc_send_global_position(qgc_link_t *link,
     mavlink_put_i16(payload, 22, scaled_i16(plant->body.velocity_ned_mps.y, 100.0f));
     mavlink_put_i16(payload, 24, scaled_i16(plant->body.velocity_ned_mps.z, 100.0f));
     mavlink_put_u16(payload, 26, heading_cdeg(euler.yaw));
-    qgc_send_packet(link, 33U, payload, sizeof(payload), 104U);
+    qgc_send_packet(link, cfg, 33U, payload, sizeof(payload), 104U);
 }
 
 static void qgc_send_vfr_hud(qgc_link_t *link,
+                             const sitl_config_t *cfg,
                              real_t airspeed_mps,
                              real_t groundspeed_mps,
                              real_t altitude_m,
@@ -559,7 +600,7 @@ static void qgc_send_vfr_hud(qgc_link_t *link,
     mavlink_put_u16(payload, 10, 0U);
     mavlink_put_float(payload, 12, altitude_m);
     mavlink_put_float(payload, 16, climb_mps);
-    qgc_send_packet(link, 74U, payload, sizeof(payload), 20U);
+    qgc_send_packet(link, cfg, 74U, payload, sizeof(payload), 20U);
 }
 
 static void qgc_send_state(qgc_link_t *link,
@@ -584,11 +625,12 @@ static void qgc_send_state(qgc_link_t *link,
                       plant->body.velocity_ned_mps.y * plant->body.velocity_ned_mps.y);
     if (step == 0 || fmod((double)step * cfg->dt_s, 1.0) < cfg->dt_s)
     {
-        qgc_send_heartbeat(link);
+        qgc_send_heartbeat(link, cfg);
     }
-    qgc_send_attitude(link, time_boot_ms, plant, euler);
-    qgc_send_global_position(link, time_boot_ms, lat_deg, lon_deg, altitude_m, plant, euler);
+    qgc_send_attitude(link, cfg, time_boot_ms, plant, euler);
+    qgc_send_global_position(link, cfg, time_boot_ms, lat_deg, lon_deg, altitude_m, plant, euler);
     qgc_send_vfr_hud(link,
+                     cfg,
                      plant->last_airspeed_mps,
                      groundspeed_mps,
                      altitude_m,

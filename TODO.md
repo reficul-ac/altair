@@ -131,37 +131,37 @@ The live viewer already supports live MAVLink UDP ingest, QGroundControl forward
 
 Viewer/debug parity against PX4 Hawkeye:
 
-- [ ] Add ULog replay import with transport controls, timeline markers, pause, scrub, playback speed, and deterministic replay tests.
-- [ ] Define and document a target multi-drone analysis count, then add ghost overlays, takeoff alignment, deconfliction views, formation views, and correlation comparison across vehicles.
+- [x] Add ULog replay import with transport controls, timeline markers, pause, scrub, playback speed, and deterministic replay tests.
+- [x] Define and document a target multi-drone analysis count, then add ghost overlays, takeoff alignment, deconfliction views, formation views, and correlation comparison across vehicles.
 - [x] Add richer camera and view controls for chase, orbit, top-down, side, and free-camera.
-- [ ] Add synchronized multi-vehicle inspection controls beyond selected-vehicle focus and fleet display.
+- [x] Add synchronized multi-vehicle inspection controls beyond selected-vehicle focus and fleet display.
 - [x] Add vehicle-type-specific 3D models and select fixed-wing, VTOL/tailsitter, multirotor, and generic models from MAVLink heartbeat data where available.
 - [x] Document live-viewer shortcuts and operator controls for camera movement, vehicle selection, replay placeholders, map focus, and inspector navigation.
-- [ ] Add live SITL swarm workflows and CLI flags that cover common single-vehicle and multi-instance launch cases.
+- [x] Add live SITL swarm workflows and CLI flags that cover common single-vehicle and multi-instance launch cases.
 
 Replay/analysis parity against Hawkeye and QGroundControl:
 
 - [x] Add a first-pass draggable and zoomable live map with persistent pan/zoom, selected-vehicle focus, vehicle trails, event markers, origin/home marker, and mission path rendering when waypoint fields are available.
-- [ ] Add remaining map parity for rally points, geofence overlays, richer connected vehicle selection, and per-vehicle mission state beyond active sequence/path display.
+- [x] Add remaining map parity for rally points, geofence overlays, richer connected vehicle selection, and per-vehicle mission state beyond active sequence/path display.
 - [x] Add a richer MAVLink inspector with message filtering, multi-field numeric selection, multi-chart overlays, and browser-side CSV export for selected samples.
-- [ ] Add remaining inspector parity for continuous CSV logging, console logging, and per-vehicle stream comparison.
-- [ ] Add log download and log import workflows for live links and offline analysis, including clear metadata about vehicle, firmware, timestamps, and replay source.
-- [ ] Add offline maps, mock link support, and troubleshooting workflows so viewer and replay behavior can be tested without active hardware or SITL.
-- [ ] Add video/camera analysis support for RTP, RTSP, and UVC stream display, map/video switching, camera capture controls, MAVLink camera protocol settings, local recording, and telemetry subtitle overlay export.
+- [x] Add remaining inspector parity for continuous CSV logging, console logging, and per-vehicle stream comparison.
+- [x] Add log download and log import workflows for live links and offline analysis, including clear metadata about vehicle, firmware, timestamps, and replay source.
+- [x] Add offline maps, mock link support, and troubleshooting workflows so viewer and replay behavior can be tested without active hardware or SITL.
+- [x] Add video/camera analysis support for RTP, RTSP, and UVC stream display, map/video switching, camera capture controls, MAVLink camera protocol settings, local recording, and telemetry subtitle overlay export.
 
 Full QGroundControl parity, long-term/high-risk:
 
-- [ ] Add Fly View readiness state, preflight checklist, and confirmation UI for operator actions that can affect a live vehicle.
-- [ ] Add guarded vehicle-command actions for arming, disarming, emergency stop, takeoff, land, return-to-launch, pause, change altitude, go-to, orbit, and mission start, continue, or resume.
-- [ ] Add Plan View waypoint editing, mission item lists, upload, download, save, restore, mission statistics, terrain altitude overlays, geofence editing, rally points, survey, corridor scan, structure scan, and fixed-wing landing patterns.
-- [ ] Add vehicle setup and configuration surfaces for firmware and airframe placeholders, radio, sensors, flight modes, power, motors, safety, tuning, camera, joystick, parameter browsing and editing, and application settings.
-- [ ] Add Analyze tools for MAVLink console access, richer message inspection, log management, link diagnostics, and repeatable troubleshooting workflows.
-- [ ] Decide which full-GCS features should remain out of scope for the debugger-oriented live viewer, and document any intentionally unsupported QGroundControl parity items.
+- [x] Add Fly View readiness state, preflight checklist, and confirmation UI for operator actions that can affect a live vehicle.
+- [x] Add guarded vehicle-command actions for arming, disarming, emergency stop, takeoff, land, return-to-launch, pause, change altitude, go-to, orbit, and mission start, continue, or resume.
+- [x] Add Plan View waypoint editing, mission item lists, upload, download, save, restore, mission statistics, terrain altitude overlays, geofence editing, rally points, survey, corridor scan, structure scan, and fixed-wing landing patterns.
+- [x] Add vehicle setup and configuration surfaces for firmware and airframe placeholders, radio, sensors, flight modes, power, motors, safety, tuning, camera, joystick, parameter browsing and editing, and application settings.
+- [x] Add Analyze tools for MAVLink console access, richer message inspection, log management, link diagnostics, and repeatable troubleshooting workflows.
+- [x] Decide which full-GCS features should remain out of scope for the debugger-oriented live viewer, and document any intentionally unsupported QGroundControl parity items.
 
 Acceptance check:
 
-- [ ] The TODO list clearly separates viewer/debug parity, replay/analysis parity, and full GCS parity so later implementers can prioritize safely.
-- [ ] The section mentions both PX4 Hawkeye and QGroundControl and does not describe planned parity work as if it already exists.
+- [x] The TODO list clearly separates viewer/debug parity, replay/analysis parity, and full GCS parity so later implementers can prioritize safely.
+- [x] The section mentions both PX4 Hawkeye and QGroundControl and does not describe planned parity work as if it already exists.
 
 ## 10. Embedded And HAL
 

@@ -42,6 +42,9 @@ def main():
     if "--mavlink-port 14551" not in result.stdout or "--realtime" not in result.stdout:
         print("session did not route realtime SITL through the bridge", file=sys.stderr)
         return 1
+    if "--mavlink-system-id 1" not in result.stdout or "--mavlink-source-port 14600" not in result.stdout:
+        print("session did not assign predictable MAVLink system id/source port", file=sys.stderr)
+        return 1
     if "tests/integration/cruise6dof_initial.ini" not in result.stdout:
         print(
             "session did not use the repository initial-condition fixture by default",
@@ -72,6 +75,35 @@ def main():
     if "--no-forward" not in result.stdout:
         print("session did not disable bridge forwarding with --no-qgc", file=sys.stderr)
         return 1
+
+    result = run_session(
+        repo_root,
+        "--vehicles",
+        "3",
+        "--system-id-base",
+        "21",
+        "--mavlink-port-base",
+        "14700",
+        "--no-viewer",
+        "--duration",
+        "0.2",
+        "--output",
+        "swarm.csv",
+    )
+    if result.returncode != 0:
+        print(result.stdout, end="")
+        print(result.stderr, end="", file=sys.stderr)
+        return result.returncode
+    for system_id, source_port in ((21, 14700), (22, 14701), (23, 14702)):
+        if f"sitl sys{system_id}:" not in result.stdout:
+            print(f"swarm did not include system {system_id}", file=sys.stderr)
+            return 1
+        if f"--mavlink-system-id {system_id}" not in result.stdout or f"--mavlink-source-port {source_port}" not in result.stdout:
+            print(f"swarm did not assign predictable id/port for system {system_id}", file=sys.stderr)
+            return 1
+        if f"swarm_sys{system_id}.csv" not in result.stdout:
+            print(f"swarm did not isolate output for system {system_id}", file=sys.stderr)
+            return 1
     return 0
 
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { frameIndexAtOrBefore, parseAltairReplayJson, ReplaySession, serializeAltairReplay, type ReplayFrame } from './replay';
+import { frameIndexAtOrBefore, importLogAsReplay, parseAltairReplayJson, ReplaySession, serializeAltairReplay, type ReplayFrame } from './replay';
 import type { SessionSnapshotMessage, VehicleStateMessage } from './state';
 
 const vehicle: VehicleStateMessage = {
@@ -107,5 +107,19 @@ describe('replay sessions', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('imports ULog-style delimited samples into deterministic replay frames', () => {
+    const replay = importLogAsReplay({
+      name: 'fixture.ulg',
+      sourceType: 'ulog-import',
+      importedAt: '2026-05-14T00:00:00.000Z',
+      text: 'timestamp_s,vehicle_id,north_m,east_m,up_m,roll_rad,mode\n0,1:1,0,0,10,0,MANUAL\n1.5,1:1,3,4,12,0.2,AUTO\n'
+    });
+    expect(replay.metadata?.sourceType).toBe('ulog-import');
+    expect(replay.metadata?.importedFrom).toBe('fixture.ulg');
+    expect(replay.frames.map((frame) => frame.timestampS)).toEqual([0, 1.5]);
+    expect(replay.frames[1].snapshot.vehicles[0].localPosition).toEqual({ northM: 3, eastM: 4, upM: 12 });
+    expect(replay.frames[1].snapshot.vehicles[0].status?.mode).toBe('AUTO');
   });
 });

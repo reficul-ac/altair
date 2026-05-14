@@ -2,7 +2,7 @@ import { bindMapControls, drawMap } from './map-panel';
 import { clearInspectorLog, recordInspectorSnapshot, updateInspector } from './inspector-ui';
 import { setHudMode, updateHud, updateStatusStrip, updateVehicleList, type HudMode } from './hud-ui';
 import { SceneRenderer, nextCameraMode, type CameraMode, type ThemeName } from './scene-renderer';
-import { parseSessionSnapshot, parseVehicleState, type ReplayTimelineMessage, type SessionSnapshotMessage, type VehicleStateMessage } from './state';
+import { parseSessionSnapshot, parseVehicleState, type CommandName, type GuardedCommandRequest, type GuardedCommandResult, type MockLinkState, type ReplayTimelineMessage, type SessionSnapshotMessage, type VehicleStateMessage } from './state';
 import './styles.css';
 
 type VisualizerConfig = {
@@ -23,6 +23,10 @@ type VisualizerApi = {
   addMarker?: (label: string) => Promise<SessionSnapshotMessage>;
   onReplayState?: (callback: (message: ReplayTimelineMessage) => void) => () => void;
   openReplay?: () => Promise<ReplayTimelineMessage>;
+  importLog?: () => Promise<ReplayTimelineMessage>;
+  exportSessionLog?: () => Promise<{ saved: boolean; path?: string }>;
+  startMockLink?: (vehicleCount: number) => Promise<MockLinkState>;
+  issueCommand?: (request: GuardedCommandRequest) => Promise<GuardedCommandResult>;
   replayPlay?: () => Promise<ReplayTimelineMessage>;
   replayPause?: () => Promise<ReplayTimelineMessage>;
   replaySeek?: (timestampS: number) => Promise<ReplayTimelineMessage>;
@@ -46,6 +50,9 @@ root.innerHTML = `
       <button class="active" data-workspace="flight" type="button">Flight</button>
       <button data-workspace="map" type="button">Map</button>
       <button data-workspace="inspector" type="button">Inspector</button>
+      <button data-workspace="video" type="button">Video</button>
+      <button data-workspace="plan" type="button">Plan</button>
+      <button data-workspace="setup" type="button">Setup</button>
       <button data-workspace="session" type="button">Session</button>
     </nav>
     <section class="viewport workspace-panel active" data-panel="flight">
@@ -125,6 +132,24 @@ root.innerHTML = `
         <section><h2>Fields</h2><dl id="message-detail"></dl><div class="inspector-actions"><button id="inspector-log-export" type="button">Export Log</button><button id="inspector-export" type="button">Export CSV</button></div><div id="chart-fields" class="chart-fields"></div><canvas id="field-chart" width="520" height="180"></canvas></section>
       </div>
     </section>
+    <section class="workspace-panel inspector-workspace" data-panel="video">
+      <div class="analysis-grid">
+        <section><h2>Camera Streams</h2><div id="camera-streams" class="tool-list"></div></section>
+        <section><h2>Capture</h2><div class="command-grid"><button data-camera-action="snapshot" type="button">Capture</button><button data-camera-action="record" type="button">Record</button><button data-camera-action="subtitle" type="button">Subtitle Export</button></div><p id="camera-detail" class="empty">No stream selected</p></section>
+      </div>
+    </section>
+    <section class="workspace-panel inspector-workspace" data-panel="plan">
+      <div class="analysis-grid">
+        <section><h2>Mission</h2><div id="mission-list" class="tool-list"></div><div class="inspector-actions"><button id="plan-save" type="button">Save</button><button id="plan-restore" type="button">Restore</button></div></section>
+        <section><h2>Geofence / Rally</h2><div id="fence-list" class="tool-list"></div><div class="command-grid"><button data-plan-tool="waypoint" type="button">Waypoint</button><button data-plan-tool="geofence" type="button">Fence</button><button data-plan-tool="rally" type="button">Rally</button><button data-plan-tool="survey" type="button">Survey</button><button data-plan-tool="corridor" type="button">Corridor</button><button data-plan-tool="structure" type="button">Structure</button><button data-plan-tool="landing" type="button">Landing</button></div></section>
+      </div>
+    </section>
+    <section class="workspace-panel inspector-workspace" data-panel="setup">
+      <div class="analysis-grid">
+        <section><h2>Readiness</h2><div id="readiness-list" class="tool-list"></div><div class="command-grid" id="guarded-commands"></div></section>
+        <section><h2>Parameters / Diagnostics</h2><input id="parameter-filter" type="search" placeholder="Filter parameters" /><div id="parameter-list" class="tool-list"></div><div id="diagnostics-list" class="tool-list"></div></section>
+      </div>
+    </section>
     <aside class="metrics workspace-panel active" data-panel="session">
       <h1>Altair Live Debugger</h1>
       <section class="controls" aria-label="MAVLink controls">
@@ -135,6 +160,8 @@ root.innerHTML = `
       <section class="replay-controls" aria-label="Replay controls">
         <div class="replay-buttons">
           <button id="replay-open" type="button">Open</button>
+          <button id="log-import" type="button">Import</button>
+          <button id="log-download" type="button">Download</button>
           <button id="replay-play" type="button" disabled>Play</button>
           <button id="replay-reset" type="button">Reset</button>
         </div>
@@ -166,6 +193,8 @@ root.innerHTML = `
       </section>
       <section class="vehicle-switcher"><h2>Vehicles</h2><div id="vehicle-list"></div></section>
       <section class="vehicle-switcher"><h2>Compare</h2><div id="vehicle-comparison" class="vehicle-comparison"></div></section>
+      <section class="vehicle-switcher"><h2>Analysis</h2><div id="analysis-summary" class="vehicle-comparison"></div></section>
+      <section class="vehicle-switcher"><h2>Mock Link</h2><div class="replay-secondary"><input id="mock-count" type="number" min="1" max="32" value="3" /><button id="mock-start" type="button">Start</button></div><p id="mock-status">Offline maps and mock links idle</p></section>
       <dl>
         <div><dt>Heartbeat</dt><dd id="heartbeat">--</dd></div>
         <div><dt>Packet Age</dt><dd id="packet">--</dd></div>
@@ -219,6 +248,8 @@ function applySnapshot(snapshot: SessionSnapshotMessage): void {
   updateInspector(snapshot);
   drawMap(snapshot);
   updateVehicleComparison(snapshot);
+  updateAnalysis(snapshot);
+  updateGcsSurfaces(snapshot);
 }
 
 function updateConfig(config: VisualizerConfig): void {
@@ -295,6 +326,89 @@ function updateVehicleComparison(snapshot: SessionSnapshotMessage): void {
   }).join('') || '<p class="empty">No vehicle streams</p>';
 }
 
+function updateAnalysis(snapshot: SessionSnapshotMessage): void {
+  const target = document.querySelector<HTMLElement>('#analysis-summary');
+  if (!target) return;
+  const analysis = snapshot.analysis;
+  if (!analysis) {
+    target.innerHTML = '<p class="empty">No synchronized analysis yet</p>';
+    return;
+  }
+  target.innerHTML = `
+    <div><strong>Target</strong><span>${analysis.targetVehicleCount} vehicles</span></div>
+    <div><strong>Align</strong><span>${escapeHtml(analysis.alignment)}</span></div>
+    <div><strong>Formation</strong><span>${analysis.formation.vehicles.length} tracked</span></div>
+    <div><strong>Separation</strong><span>${analysis.deconfliction.minimumSeparationM?.toFixed(1) ?? '--'} m</span></div>
+  `;
+}
+
+function updateGcsSurfaces(snapshot: SessionSnapshotMessage): void {
+  const selected = snapshot.vehicles.find((vehicle) => vehicle.id === snapshot.selectedVehicleId) ?? snapshot.vehicles[0] ?? null;
+  updateCameraStreams(selected);
+  updatePlanSurface(selected);
+  updateSetupSurface(selected);
+  const mock = snapshot.mockLinks?.[0];
+  if (mock) document.querySelector<HTMLElement>('#mock-status')!.textContent = `${mock.label} / ${mock.diagnostics.status}`;
+}
+
+function updateCameraStreams(vehicle: VehicleStateMessage | null): void {
+  const streams = vehicle?.cameraStreams ?? [];
+  document.querySelector<HTMLElement>('#camera-streams')!.innerHTML = streams.map((stream) => `
+    <button type="button" data-camera="${escapeAttr(stream.id)}"><strong>${escapeHtml(stream.label)}</strong><span>${escapeHtml(stream.kind.toUpperCase())}</span><span>${escapeHtml(stream.status)}</span></button>
+  `).join('') || '<p class="empty">No RTP, RTSP, or UVC streams advertised</p>';
+}
+
+function updatePlanSurface(vehicle: VehicleStateMessage | null): void {
+  const mission = vehicle?.mission;
+  document.querySelector<HTMLElement>('#mission-list')!.innerHTML = mission?.waypoints?.map((item) => `
+    <div><strong>#${item.seq}</strong><span>${escapeHtml(item.command ?? 'WAYPOINT')}</span><span>${item.altitudeM?.toFixed(1) ?? '--'} m</span></div>
+  `).join('') || '<p class="empty">No downloaded mission items</p>';
+  const fences = vehicle?.geofences ?? [];
+  const rally = vehicle?.rallyPoints ?? [];
+  document.querySelector<HTMLElement>('#fence-list')!.innerHTML = [
+    ...fences.map((zone) => `<div><strong>${escapeHtml(zone.id)}</strong><span>${zone.kind}</span><span>${zone.inclusion ? 'include' : 'exclude'}</span></div>`),
+    ...rally.map((point) => `<div><strong>${escapeHtml(point.id)}</strong><span>rally</span><span>${point.altitudeM?.toFixed(1) ?? '--'} m</span></div>`)
+  ].join('') || '<p class="empty">No geofence or rally points</p>';
+}
+
+function updateSetupSurface(vehicle: VehicleStateMessage | null): void {
+  const readiness = [
+    ['Live link', vehicle?.connected ? 'ready' : 'missing'],
+    ['GPS', vehicle?.status?.gpsFix ?? '--'],
+    ['Battery', vehicle?.status?.batteryRemainingPct === null || vehicle?.status?.batteryRemainingPct === undefined ? '--' : `${vehicle.status.batteryRemainingPct}%`],
+    ['Mission', vehicle?.mission?.state?.state ?? vehicle?.status?.missionSeq ?? '--']
+  ];
+  document.querySelector<HTMLElement>('#readiness-list')!.innerHTML = readiness.map(([label, value]) => `<div><strong>${escapeHtml(String(label))}</strong><span>${escapeHtml(String(value))}</span></div>`).join('');
+  const parameters = vehicle?.parameters ?? [];
+  const query = document.querySelector<HTMLInputElement>('#parameter-filter')?.value.toLowerCase() ?? '';
+  document.querySelector<HTMLElement>('#parameter-list')!.innerHTML = parameters
+    .filter((param) => param.name.toLowerCase().includes(query))
+    .map((param) => `<div><strong>${escapeHtml(param.name)}</strong><span>${escapeHtml(String(param.value))}</span><span>${param.readonly ? 'read-only' : 'editable'}</span></div>`)
+    .join('') || '<p class="empty">No parameters loaded</p>';
+  const diag = vehicle?.diagnostics;
+  document.querySelector<HTMLElement>('#diagnostics-list')!.innerHTML = diag
+    ? `<div><strong>${escapeHtml(diag.linkId)}</strong><span>${escapeHtml(diag.transport)}</span><span>${escapeHtml(diag.status)}</span><span>${diag.packetsRx} rx</span></div>`
+    : '<p class="empty">No link diagnostics</p>';
+  renderGuardedCommands(vehicle);
+}
+
+function renderGuardedCommands(vehicle: VehicleStateMessage | null): void {
+  const commands: CommandName[] = ['arm', 'disarm', 'emergency-stop', 'takeoff', 'land', 'return-to-launch', 'pause', 'change-altitude', 'go-to', 'orbit', 'mission-start', 'mission-continue', 'mission-resume'];
+  const container = document.querySelector<HTMLElement>('#guarded-commands')!;
+  const supported = vehicle?.commandCapabilities?.supported ?? [];
+  container.innerHTML = commands.map((command) => `<button type="button" data-command="${command}" ${supported.includes(command) ? '' : 'disabled'}>${escapeHtml(command)}</button>`).join('');
+  container.querySelectorAll<HTMLButtonElement>('[data-command]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const command = button.dataset.command as CommandName;
+      const vehicleId = vehicle?.id ?? `${vehicle?.systemId ?? '--'}:${vehicle?.componentId ?? '--'}`;
+      if (!window.confirm(`Send ${command} to ${vehicleId}?`)) return;
+      void window.altairVisualizer?.issueCommand?.({ command, vehicleId, confirmed: true }).then((result) => {
+        document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
+      });
+    });
+  });
+}
+
 function formatTime(seconds: number): string {
   const clamped = Math.max(0, seconds);
   const minutes = Math.floor(clamped / 60);
@@ -304,6 +418,10 @@ function formatTime(seconds: number): string {
 
 function escapeHtml(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+}
+
+function escapeAttr(value: string): string {
+  return escapeHtml(value);
 }
 
 document.querySelector<HTMLButtonElement>('#pause')!.addEventListener('click', (event) => {
@@ -333,6 +451,13 @@ document.querySelector<HTMLButtonElement>('#replay-open')!.addEventListener('cli
   clearInspectorLog();
   void window.altairVisualizer?.openReplay?.().then(updateReplayControls);
 });
+document.querySelector<HTMLButtonElement>('#log-import')!.addEventListener('click', () => {
+  clearInspectorLog();
+  void window.altairVisualizer?.importLog?.().then(updateReplayControls);
+});
+document.querySelector<HTMLButtonElement>('#log-download')!.addEventListener('click', () => {
+  void window.altairVisualizer?.exportSessionLog?.();
+});
 document.querySelector<HTMLButtonElement>('#replay-play')!.addEventListener('click', () => {
   const replay = state.replay;
   const command = replay?.playing ? window.altairVisualizer?.replayPause : window.altairVisualizer?.replayPlay;
@@ -349,6 +474,15 @@ document.querySelector<HTMLButtonElement>('#replay-prev-marker')!.addEventListen
 document.querySelector<HTMLButtonElement>('#replay-next-marker')!.addEventListener('click', () => void window.altairVisualizer?.replayMarker?.(1).then(updateReplayControls));
 document.querySelector<HTMLInputElement>('#sync-inspection')!.addEventListener('change', (event) => {
   state.syncInspection = (event.currentTarget as HTMLInputElement).checked;
+});
+document.querySelector<HTMLButtonElement>('#mock-start')!.addEventListener('click', () => {
+  const count = Number(document.querySelector<HTMLInputElement>('#mock-count')!.value);
+  void window.altairVisualizer?.startMockLink?.(count).then((mock) => {
+    document.querySelector<HTMLElement>('#mock-status')!.textContent = `${mock.label} / ${mock.diagnostics.status}`;
+  });
+});
+document.querySelector<HTMLInputElement>('#parameter-filter')!.addEventListener('input', () => {
+  if (state.snapshot) updateSetupSurface(state.selected);
 });
 document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach((button) => button.addEventListener('click', () => scene.setCameraMode(button.dataset.camera as CameraMode)));
 document.querySelectorAll<HTMLButtonElement>('[data-hud]').forEach((button) => button.addEventListener('click', () => {

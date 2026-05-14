@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { MavlinkServiceConfig, SessionSnapshotPayload, VehicleStatePayload } from './mavlink.js';
 import type { ReplayTimelineMessage } from './state.js';
+import type { GuardedCommandRequest, GuardedCommandResult, MockLinkState } from './state.js';
 
 export type AltairVisualizerApi = {
   onVehicleState: (callback: (message: VehicleStatePayload) => void) => () => void;
@@ -13,6 +14,10 @@ export type AltairVisualizerApi = {
   addMarker: (label: string) => Promise<SessionSnapshotPayload>;
   onReplayState: (callback: (message: ReplayTimelineMessage) => void) => () => void;
   openReplay: () => Promise<ReplayTimelineMessage>;
+  importLog: () => Promise<ReplayTimelineMessage>;
+  exportSessionLog: () => Promise<{ saved: boolean; path?: string }>;
+  startMockLink: (vehicleCount: number) => Promise<MockLinkState>;
+  issueCommand: (request: GuardedCommandRequest) => Promise<GuardedCommandResult>;
   replayPlay: () => Promise<ReplayTimelineMessage>;
   replayPause: () => Promise<ReplayTimelineMessage>;
   replaySeek: (timestampS: number) => Promise<ReplayTimelineMessage>;
@@ -59,6 +64,18 @@ const api: AltairVisualizerApi = {
   },
   openReplay() {
     return ipcRenderer.invoke('replay:open');
+  },
+  importLog() {
+    return ipcRenderer.invoke('logs:import');
+  },
+  exportSessionLog() {
+    return ipcRenderer.invoke('logs:export-session');
+  },
+  startMockLink(vehicleCount) {
+    return ipcRenderer.invoke('mock-link:start', vehicleCount);
+  },
+  issueCommand(request) {
+    return ipcRenderer.invoke('command:issue', request);
   },
   replayPlay() {
     return ipcRenderer.invoke('replay:play');
