@@ -73,6 +73,13 @@ Acceptance check:
 - [ ] Extend trim coverage beyond the initial fixed-wing level-flight case, including off-axis initial states and future multirotor support.
 - [ ] Add trim tuning docs that explain residual definitions, bounds, tolerances, and failure modes.
 - [ ] Add an aero database/evaluator that looks up coefficients by flight condition instead of relying only on scalar formulas.
+- [ ] Use OpenVSP + VSPAERO as the first-choice workflow for generating aircraft-level aero database points from a 3D vehicle model.
+- [ ] Sweep `alpha`, `beta`, control deflections, representative airspeeds/dynamic pressure, and propulsion settings where applicable when generating aero database data.
+- [ ] Use AVL as a fast independent cross-check for stability and control derivatives.
+- [ ] Use XFOIL/XFLR5 for airfoil, low-Reynolds-number, and section-polar data that feed or sanity-check the aircraft-level model.
+- [ ] Treat SU2/OpenFOAM as later higher-fidelity CFD spot-check tools rather than the first aero database implementation path.
+- [ ] Version generated aero data with tool versions, geometry revision, sweep settings, assumptions, and known invalid regions.
+- [ ] Calibrate and correct the aero database against flight-test or wind-tunnel data when measured data becomes available.
 - [ ] Define aero database axes and outputs, starting with `alpha`, `beta`, and airspeed/dynamic pressure for `CL`, `CD`, `CY`, `Cl`, `Cm`, and `Cn`.
 - [ ] Add deterministic interpolation and out-of-range clamping/validation tests for aero table lookup.
 - [ ] Replace hard-coded fixed-wing lift/drag/moment formulas with a coefficient-to-force/moment pipeline while preserving current behavior through equivalent starter tables.
