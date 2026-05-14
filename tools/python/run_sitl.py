@@ -16,7 +16,7 @@ def parse_args():
     parser.add_argument(
         "--profile",
         default="cruise",
-        choices=("cruise", "takeoff", "turn", "descent", "failsafe"),
+        choices=("cruise", "takeoff", "turn", "descent", "failsafe", "mission"),
         help="command profile for cruise6dof",
     )
     parser.add_argument("--duration", type=float, default=5.0)

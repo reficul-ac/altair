@@ -208,6 +208,34 @@ static int test_stabilize_mode_requires_valid_inputs(void)
     return 0;
 }
 
+static int test_mission_mode_requires_loaded_mission(void)
+{
+    fsw_input_t in;
+    fsw_output_t out;
+    bayek_mission_plan_t mission = {0};
+
+    make_valid_input(&in);
+    in.rc.mode_switch = 2U;
+
+    bayek_fsw_clear_mission();
+    bayek_fsw_step(&in, &out);
+    CHECK(out.mode == FSW_MODE_FAILSAFE);
+    CHECK(check_safe_actuators(&out.actuators) == 0);
+
+    mission.waypoint_count = 1U;
+    mission.waypoints[0].lat_deg = in.gps.lat_deg + 0.001f;
+    mission.waypoints[0].lon_deg = in.gps.lon_deg;
+    mission.waypoints[0].alt_m = in.gps.alt_m + 10.0f;
+    mission.waypoints[0].throttle = 0.50f;
+    mission.waypoints[0].acceptance_radius_m = 5.0f;
+    bayek_fsw_set_mission(&mission);
+    bayek_fsw_step(&in, &out);
+    CHECK(out.mode == FSW_MODE_MISSION);
+    CHECK(check_altair_limits(&out.actuators) == 0);
+    bayek_fsw_clear_mission();
+    return 0;
+}
+
 static int test_mode_boundaries(void)
 {
     fsw_input_t in;
@@ -218,6 +246,10 @@ static int test_mode_boundaries(void)
     make_valid_input(&in);
     in.rc.mode_switch = 1U;
     CHECK(step_and_check_mode(&in, FSW_MODE_STABILIZE) == 0);
+
+    make_valid_input(&in);
+    in.rc.mode_switch = 2U;
+    CHECK(step_and_check_mode(&in, FSW_MODE_FAILSAFE) == 0);
 
     make_valid_input(&in);
     in.rc.arm_switch = 0U;
@@ -240,6 +272,10 @@ static int test_mode_boundaries(void)
     CHECK(step_and_check_mode(&in, FSW_MODE_MANUAL) == 0);
 
     make_valid_input(&in);
+    in.rc.mode_switch = 3U;
+    CHECK(step_and_check_mode(&in, FSW_MODE_FAILSAFE) == 0);
+
+    make_valid_input(&in);
     in.dt_s = 0.1001f;
     CHECK(step_and_check_mode(&in, FSW_MODE_FAILSAFE) == 0);
 
@@ -256,6 +292,7 @@ int main(void)
     CHECK(test_invalid_inputs_do_not_update_estimate() == 0);
     CHECK(test_manual_mode_requires_valid_inputs() == 0);
     CHECK(test_stabilize_mode_requires_valid_inputs() == 0);
+    CHECK(test_mission_mode_requires_loaded_mission() == 0);
     CHECK(test_mode_boundaries() == 0);
 
     return 0;

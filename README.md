@@ -63,7 +63,7 @@ python3 tools/python/visualize_sitl_3d.py sitl_cruise6dof.csv --output sitl_3d.h
 ```
 
 `run_sitl.py` invokes the compiled runner and prints stable summary metrics such as `rows`, `final_airspeed_mps`, `final_altitude_m`, `finite`, `max_abs_roll_rad`, and motor command bounds.
-For `cruise6dof`, `--profile` can select `cruise`, `takeoff`, `turn`, `descent`, or `failsafe` command profiles.
+For `cruise6dof`, `--profile` can select `cruise`, `takeoff`, `turn`, `descent`, `failsafe`, or `mission` command profiles.
 `cruise6dof` uses ECEF truth dynamics by default with a spherical Earth model and preserves local NED CSV columns as derived outputs. Use `--frame-mode ned` for the legacy local-NED dynamics path.
 By default SITL runs as fast as the host can execute it. Pass `--realtime` to pace the run so one simulated second takes one wall-clock second.
 Pass `--mavlink` to stream `cruise6dof` attitude, global position, airspeed, and heartbeat MAVLink telemetry over UDP. `--mavlink` defaults to `127.0.0.1:14550`, and `--mavlink-host`/`--mavlink-port` override that endpoint. The older `--qgc` names remain aliases.

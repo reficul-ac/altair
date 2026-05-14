@@ -35,7 +35,7 @@ static const real_t MC_MAX_ABS_ROLL_RAD = 1.5708f;
 static int mc_mode_is_valid(fsw_mode_t mode)
 {
     return mode == FSW_MODE_DISARMED || mode == FSW_MODE_MANUAL || mode == FSW_MODE_STABILIZE ||
-           mode == FSW_MODE_FAILSAFE;
+           mode == FSW_MODE_FAILSAFE || mode == FSW_MODE_MISSION;
 }
 
 static int mc_plant_state_is_finite(const sim_plant_t *plant)

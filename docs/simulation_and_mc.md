@@ -28,7 +28,7 @@ CTest runs each `cruise6dof` command profile twice and compares the generated CS
 
 CSV is used because it is transparent, dependency-free, easy to diff, and easy to consume from Python, spreadsheets, or CI artifacts.
 
-The `smoke` scenario keeps its compact CSV output for plumbing checks. The `cruise6dof` scenario writes richer trajectory data including RC inputs, health/failsafe inputs, actuator outputs, latitude/longitude, derived local NED position and velocity, Euler angles, attitude quaternion, body rates, airspeed, altitude, body acceleration, the last force and moment vectors, and ECEF truth position/velocity.
+The `smoke` scenario keeps its compact CSV output for plumbing checks. The `cruise6dof` scenario writes richer trajectory data including RC inputs, health/failsafe inputs, actuator outputs, latitude/longitude, derived local NED position and velocity, Euler angles, attitude quaternion, body rates, airspeed, altitude, body acceleration, the last force and moment vectors, ECEF truth position/velocity, and mission status fields.
 
 `cruise6dof` supports deterministic command profiles with `--profile`:
 
@@ -37,6 +37,7 @@ The `smoke` scenario keeps its compact CSV output for plumbing checks. The `crui
 - `turn`: wings-level entry, positive roll command, then a small rollout command.
 - `descent`: reduce throttle and command a shallow descent after the entry segment.
 - `failsafe`: neutralize commands and inject an invalid GPS fix halfway through the run, exercising FSW failsafe safe outputs while the vehicle remains armed.
+- `mission`: load a deterministic three-waypoint GPS mission that cruises level, then steps up to a higher-altitude waypoint.
 
 `cruise6dof` can start from a dependency-free initial-condition file:
 
@@ -113,12 +114,12 @@ The first committed replay fixture uses the existing `cruise6dof` CSV as the v1 
 - `duration=1.0`
 - `dt=0.02`
 
-The v1 fixture covers nominal flight followed by health degradation and failsafe output behavior. Required coverage is time, FSW mode, actuator outputs, RC inputs, explicit `gps_fix_valid`, spherical geodetic position, derived NED position and velocity, Euler attitude, attitude quaternion, body rates, airspeed, altitude, body acceleration, the last body-frame force and moment vectors, and ECEF truth position/velocity.
+The v1 fixture covers nominal flight followed by health degradation and failsafe output behavior. Required coverage is time, FSW mode, actuator outputs, RC inputs, explicit `gps_fix_valid`, spherical geodetic position, derived NED position and velocity, Euler attitude, attitude quaternion, body rates, airspeed, altitude, body acceleration, the last body-frame force and moment vectors, ECEF truth position/velocity, and mission status.
 
 The v1 replay format is the exact CSV header below. Changing columns, order, names, or units requires regenerating `tests/integration/fixtures/sitl_cruise6dof_failsafe_v1.csv`, updating this contract, and updating the replay test expected header/checks in `tests/integration/CMakeLists.txt`.
 
 ```text
-step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,gps_fix_valid,lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm,pos_ecef_x_m,pos_ecef_y_m,pos_ecef_z_m,vel_ecef_x_mps,vel_ecef_y_mps,vel_ecef_z_mps
+step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,gps_fix_valid,lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm,pos_ecef_x_m,pos_ecef_y_m,pos_ecef_z_m,vel_ecef_x_mps,vel_ecef_y_mps,vel_ecef_z_mps,mission_loaded,mission_active_wp,mission_wp_count,mission_distance_m
 ```
 
 Regenerate the v1 fixture with:
@@ -191,7 +192,7 @@ Each run is marked failed when any guardrail trips:
 
 - `nonfinite_state`: final airspeed, final altitude, max roll, or plant state values are not finite.
 - `unbounded_output`: FSW actuator output is non-finite or outside its normalized bounds.
-- `invalid_mode`: FSW mode is outside disarmed, manual, stabilize, or failsafe.
+- `invalid_mode`: FSW mode is outside disarmed, manual, stabilize, failsafe, or mission.
 - `airspeed_limit`: final airspeed is outside `1.0..80.0 m/s`.
 - `altitude_limit`: final altitude is outside `-100.0..10000.0 m`.
 - `roll_limit`: max absolute roll exceeds `1.5708 rad`.

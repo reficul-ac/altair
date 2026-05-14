@@ -8,6 +8,11 @@ target_link_libraries(test_control PRIVATE bayek_common)
 altair_enable_warnings(test_control)
 add_test(NAME unit_control COMMAND test_control)
 
+add_executable(test_mission test_mission.c)
+target_link_libraries(test_mission PRIVATE bayek_fsw bayek_common)
+altair_enable_warnings(test_mission)
+add_test(NAME unit_mission COMMAND test_mission)
+
 add_executable(test_mixer test_mixer.c)
 target_link_libraries(test_mixer PRIVATE altair_vehicle bayek_common)
 altair_enable_warnings(test_mixer)

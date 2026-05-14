@@ -45,13 +45,14 @@ typedef struct
 
 static void print_usage(FILE *stream)
 {
-    fprintf(stream,
-            "usage: sitl_runner [--scenario smoke|cruise6dof] [--duration seconds] [--dt seconds]\n"
-            "                   [--seed uint] [--output path] [--initial path]\n"
-            "                   [--frame-mode ned|ecef]\n"
-            "                   [--profile cruise|takeoff|turn|descent|failsafe] [--realtime]\n"
-            "                   [--mavlink] [--mavlink-host host] [--mavlink-port port]\n"
-            "                   [--qgc] [--qgc-host host] [--qgc-port port]\n");
+    fprintf(
+        stream,
+        "usage: sitl_runner [--scenario smoke|cruise6dof] [--duration seconds] [--dt seconds]\n"
+        "                   [--seed uint] [--output path] [--initial path]\n"
+        "                   [--frame-mode ned|ecef]\n"
+        "                   [--profile cruise|takeoff|turn|descent|failsafe|mission] [--realtime]\n"
+        "                   [--mavlink] [--mavlink-host host] [--mavlink-port port]\n"
+        "                   [--qgc] [--qgc-host host] [--qgc-port port]\n");
 }
 
 static int parse_double_arg(const char *text, const char *name, double *value)
@@ -244,7 +245,7 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg)
     }
     if (strcmp(cfg->profile, "cruise") != 0 && strcmp(cfg->profile, "takeoff") != 0 &&
         strcmp(cfg->profile, "turn") != 0 && strcmp(cfg->profile, "descent") != 0 &&
-        strcmp(cfg->profile, "failsafe") != 0)
+        strcmp(cfg->profile, "failsafe") != 0 && strcmp(cfg->profile, "mission") != 0)
     {
         fprintf(stderr, "unknown profile: %s\n", cfg->profile);
         return -1;
@@ -725,7 +726,40 @@ static rc_input_t cruise6dof_profile_rc(const sitl_config_t *cfg,
             rc.mode_switch = 1U;
         }
     }
+    else if (strcmp(cfg->profile, "mission") == 0)
+    {
+        rc.throttle = 0.0f;
+        rc.roll = 0.0f;
+        rc.pitch = 0.0f;
+        rc.yaw = 0.0f;
+        rc.arm_switch = 1U;
+        rc.mode_switch = 2U;
+    }
     return rc;
+}
+
+static void load_cruise6dof_mission(const sitl_initial_conditions_t *initial)
+{
+    bayek_mission_plan_t mission = {0};
+    const real_t throttle = 0.62f;
+
+    mission.waypoint_count = 3U;
+    mission.waypoints[0].lat_deg = initial->lat_deg;
+    mission.waypoints[0].lon_deg = initial->lon_deg;
+    mission.waypoints[0].alt_m = initial->altitude_m;
+    mission.waypoints[0].throttle = throttle;
+    mission.waypoints[0].acceptance_radius_m = 100.0f;
+    mission.waypoints[1].lat_deg = initial->lat_deg + 0.00030f;
+    mission.waypoints[1].lon_deg = initial->lon_deg;
+    mission.waypoints[1].alt_m = initial->altitude_m;
+    mission.waypoints[1].throttle = throttle;
+    mission.waypoints[1].acceptance_radius_m = 20.0f;
+    mission.waypoints[2].lat_deg = initial->lat_deg + 0.00100f;
+    mission.waypoints[2].lon_deg = initial->lon_deg;
+    mission.waypoints[2].alt_m = initial->altitude_m + 80.0f;
+    mission.waypoints[2].throttle = throttle;
+    mission.waypoints[2].acceptance_radius_m = 25.0f;
+    bayek_fsw_set_mission(&mission);
 }
 
 static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
@@ -766,6 +800,14 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
     {
         return 1;
     }
+    if (strcmp(cfg->profile, "mission") == 0)
+    {
+        load_cruise6dof_mission(&initial);
+    }
+    else
+    {
+        bayek_fsw_clear_mission();
+    }
     start_wall_s = wall_time_s();
 
     if (fprintf(
@@ -776,7 +818,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
             "airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,"
             "force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm,"
             "pos_ecef_x_m,pos_ecef_y_m,pos_ecef_z_m,vel_ecef_x_mps,vel_ecef_y_mps,vel_ecef_z_"
-            "mps\n") < 0)
+            "mps,mission_loaded,mission_active_wp,mission_wp_count,mission_distance_m\n") < 0)
     {
         fprintf(stderr, "failed to write output\n");
         qgc_close(&qgc);
@@ -789,6 +831,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
         real_t lat_deg;
         real_t lon_deg;
         real_t altitude_m;
+        bayek_mission_status_t mission_status;
         rc_input_t rc = cruise6dof_profile_rc(cfg, &initial, i, steps);
         uint32_t gps_fix_valid = 1U;
         sim_fixedwing_make_fsw_input(
@@ -805,6 +848,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
         }
         input.gps.fix_valid = gps_fix_valid;
         bayek_fsw_step(&input, &output);
+        bayek_fsw_get_mission_status(&mission_status);
         if (!sim_output_is_bounded(&output))
         {
             fprintf(stderr, "unbounded_output at step %d\n", i);
@@ -827,7 +871,8 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
                     "%.6f,%.6f,%.6f,%.8f,%.8f,%.8f,%.8f,%.6f,%.6f,%.6f,"
                     "%.6f,%.6f,%.6f,%.6f,%.6f,"
                     "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+                    "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
+                    "%u,%u,%u,%.6f\n",
                     i,
                     (double)(i * cfg->dt_s),
                     (int)output.mode,
@@ -874,7 +919,11 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
                     (double)plant.body.position_ecef_m.z,
                     (double)plant.body.velocity_ecef_mps.x,
                     (double)plant.body.velocity_ecef_mps.y,
-                    (double)plant.body.velocity_ecef_mps.z) < 0)
+                    (double)plant.body.velocity_ecef_mps.z,
+                    (unsigned)mission_status.loaded,
+                    (unsigned)mission_status.active_waypoint_index,
+                    (unsigned)mission_status.waypoint_count,
+                    (double)mission_status.horizontal_distance_m) < 0)
         {
             fprintf(stderr, "failed to write output\n");
             qgc_close(&qgc);

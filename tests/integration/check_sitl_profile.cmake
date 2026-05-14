@@ -19,8 +19,8 @@ foreach(ROW_INDEX RANGE 1 ${LAST_INDEX})
     list(GET CSV_ROWS ${ROW_INDEX} ROW)
     string(REPLACE "," ";" FIELDS "${ROW}")
     list(LENGTH FIELDS FIELD_COUNT)
-    if(NOT FIELD_COUNT EQUAL 47)
-        message(FATAL_ERROR "expected 47 CSV fields in ${CSV_FILE}, got ${FIELD_COUNT}: ${ROW}")
+    if(NOT FIELD_COUNT EQUAL 51)
+        message(FATAL_ERROR "expected 51 CSV fields in ${CSV_FILE}, got ${FIELD_COUNT}: ${ROW}")
     endif()
     foreach(FIELD IN LISTS FIELDS)
         if(NOT FIELD MATCHES "${NUMBER_RE}")
@@ -41,7 +41,7 @@ foreach(ROW_INDEX RANGE 1 ${LAST_INDEX})
     list(GET FIELDS 30 AIRSPEED)
     list(GET FIELDS 31 ALTITUDE)
 
-    if(MODE LESS 0 OR MODE GREATER 3)
+    if(MODE LESS 0 OR MODE GREATER 4)
         message(FATAL_ERROR "mode out of range in ${CSV_FILE}: ${MODE}")
     endif()
     if(MOTOR LESS 0.0 OR MOTOR GREATER 1.0)
@@ -104,6 +104,13 @@ list(GET LAST_FIELDS 4 LAST_AILERON)
 list(GET LAST_FIELDS 5 LAST_ELEVATOR)
 list(GET LAST_FIELDS 6 LAST_RUDDER)
 list(GET LAST_FIELDS 11 LAST_GPS_FIX_VALID)
+list(GET LAST_FIELDS 31 LAST_ALTITUDE)
+list(GET FIRST_FIELDS 47 FIRST_MISSION_LOADED)
+list(GET FIRST_FIELDS 48 FIRST_MISSION_ACTIVE)
+list(GET FIRST_FIELDS 49 FIRST_MISSION_COUNT)
+list(GET LAST_FIELDS 47 LAST_MISSION_LOADED)
+list(GET LAST_FIELDS 48 LAST_MISSION_ACTIVE)
+list(GET LAST_FIELDS 49 LAST_MISSION_COUNT)
 
 if(PROFILE STREQUAL "turn")
     if(NOT FIRST_ROLL STREQUAL "0.000000")
@@ -112,6 +119,35 @@ if(PROFILE STREQUAL "turn")
     if(NOT MID_ROLL GREATER 0.20)
         message(
             FATAL_ERROR "turn profile should command positive roll mid-run, got rc_roll=${MID_ROLL}"
+        )
+    endif()
+endif()
+if(PROFILE STREQUAL "mission")
+    if(NOT FIRST_MISSION_LOADED EQUAL 1 OR NOT FIRST_MISSION_COUNT EQUAL 3)
+        message(
+            FATAL_ERROR
+                "mission profile should load three altitude-step waypoints, got loaded=${FIRST_MISSION_LOADED} count=${FIRST_MISSION_COUNT}"
+        )
+    endif()
+    if(NOT LAST_MODE EQUAL 4)
+        message(FATAL_ERROR "mission profile should remain in mission mode, got last=${LAST_MODE}")
+    endif()
+    if(NOT FIRST_MISSION_ACTIVE GREATER 0)
+        message(
+            FATAL_ERROR
+                "mission profile should advance past the launch waypoint immediately, got first active=${FIRST_MISSION_ACTIVE}"
+        )
+    endif()
+    if(NOT LAST_MISSION_LOADED EQUAL 1 OR NOT LAST_MISSION_COUNT EQUAL 3 OR NOT LAST_MISSION_ACTIVE EQUAL 2)
+        message(
+            FATAL_ERROR
+                "mission profile should keep the altitude-step mission loaded at the climb waypoint, got loaded=${LAST_MISSION_LOADED} count=${LAST_MISSION_COUNT} active=${LAST_MISSION_ACTIVE}"
+        )
+    endif()
+    if(NOT LAST_ALTITUDE GREATER 170.0)
+        message(
+            FATAL_ERROR
+                "mission profile should begin climbing toward the higher waypoint, got altitude=${LAST_ALTITUDE}"
         )
     endif()
 endif()
