@@ -56,6 +56,7 @@ int main(void)
                      "dt_s = 0.02\n"
                      "seed = 42\n"
                      "frame_mode = ned\n"
+                     "condition_file = sitl_conditions.ini\n"
                      "\n"
                      "[initial]\n"
                      "lat_deg = 37.5\n"
@@ -105,6 +106,7 @@ int main(void)
     CHECK(case_file.run.dt_s == 0.02);
     CHECK(case_file.run.seed == 42U);
     CHECK(case_file.run.frame_mode == SIM6DOF_FRAME_NED);
+    CHECK(strcmp(case_file.run.condition_file, "sitl_conditions.ini") == 0);
     CHECK(case_file.has_initial == 1U);
     CHECK(near_real(case_file.initial.lat_deg, 37.5f));
     CHECK(near_real(case_file.initial.rc.throttle, 0.7f));

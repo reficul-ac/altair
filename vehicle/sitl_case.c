@@ -179,11 +179,8 @@ void sitl_case_default(sitl_case_t *case_file)
     case_file->mission_enabled = 1U;
 }
 
-static int parse_section(const char *name,
-                         case_section_ref_t *section,
-                         char *error,
-                         size_t error_size,
-                         int line_number)
+static int parse_section(
+    const char *name, case_section_ref_t *section, char *error, size_t error_size, int line_number)
 {
     if (strcmp(name, "run") == 0)
     {
@@ -304,12 +301,8 @@ static int apply_initial_key(sitl_initial_conditions_t *initial,
     return 1;
 }
 
-static int apply_rc_key(rc_input_t *rc,
-                        const char *key,
-                        real_t value,
-                        char *error,
-                        size_t error_size,
-                        int line_number)
+static int apply_rc_key(
+    rc_input_t *rc, const char *key, real_t value, char *error, size_t error_size, int line_number)
 {
     if (strcmp(key, "throttle") == 0 || strcmp(key, "rc_throttle") == 0)
     {
@@ -630,6 +623,15 @@ static int apply_run_key(sitl_case_run_t *run,
         }
         run->has_frame_mode = 1U;
     }
+    else if (strcmp(key, "condition_file") == 0)
+    {
+        if (!copy_text(run->condition_file, sizeof(run->condition_file), value_text))
+        {
+            set_error(error, error_size, "invalid condition file value", value_text, line_number);
+            return 0;
+        }
+        run->has_condition_file = 1U;
+    }
     else
     {
         set_error(error, error_size, "unknown run key", key, line_number);
@@ -687,7 +689,8 @@ static int apply_key_value(sitl_case_t *case_file,
             set_error(error, error_size, "unknown mission key", key, line_number);
             return 0;
         }
-        if (!parse_scalar(value_text, &value) || !parse_bool_value(value, &case_file->mission_enabled))
+        if (!parse_scalar(value_text, &value) ||
+            !parse_bool_value(value, &case_file->mission_enabled))
         {
             set_error(error, error_size, "invalid boolean value", value_text, line_number);
             return 0;
@@ -821,8 +824,14 @@ int sitl_case_load(const char *path, sitl_case_t *case_file, char *error, size_t
             (void)fclose(file);
             return 0;
         }
-        if (!apply_key_value(
-                case_file, section, key, value_text, waypoint_present, error, error_size, line_number))
+        if (!apply_key_value(case_file,
+                             section,
+                             key,
+                             value_text,
+                             waypoint_present,
+                             error,
+                             error_size,
+                             line_number))
         {
             (void)fclose(file);
             return 0;

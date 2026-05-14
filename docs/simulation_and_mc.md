@@ -151,6 +151,29 @@ tools/python/run_sitl_workflow.py --realtime
 tools/python/run_sitl_workflow.py --mavlink --mavlink-port 14551
 ```
 
+Case files are a one-time setup layer for initial conditions, run configuration, vehicle
+parameters, sim parameters, and missions. `cruise6dof` also supports a separate per-step
+condition file through `[run] condition_file = path/to/conditions.ini` in a case file or
+the CLI override `--conditions path/to/conditions.ini`. Conditions are parsed once and
+evaluated every simulation step after the profile command and truth-derived FSW input are
+generated, but before `bayek_fsw_step()` and `sim_fixedwing_step()`.
+
+Condition files use rule sections with a single v1 comparison over `t_s` or `step`:
+
+```ini
+[rule.gps_drop_after_30s]
+when = t_s >= 30
+input.gps.fix_valid = 0
+
+[rule.param_stomp_after_20s]
+when = step > 2000
+vehicle_params.max_airspeed_mps = 7
+```
+
+Supported assignment prefixes are `rc.*`, `input.*`, `vehicle_params.*`,
+`sim_params.*`, selected `plant.*` fixed-wing/6DOF state fields, and mission fields such
+as `mission.enabled`, `mission.waypoint_count`, and `mission.waypoint.N.*`.
+
 Expected output is a stable `key=value` summary that can be pasted into notes or checked in scripts:
 
 ```text

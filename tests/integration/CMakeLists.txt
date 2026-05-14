@@ -115,6 +115,61 @@ add_test(
         "${CMAKE_CURRENT_SOURCE_DIR}/expect_bad_case.cmake"
 )
 
+set(SITL_CRUISE6DOF_CONDITIONS_GPS_CSV
+    "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_conditions_gps.csv"
+)
+add_test(
+    NAME integration_sitl_cruise6dof_conditions_gps
+    COMMAND
+        $<TARGET_FILE:sitl_runner> --scenario cruise6dof --initial
+        "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_initial.ini" --conditions
+        "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_conditions_gps.ini" --duration 0.06 --dt 0.01
+        --output "${SITL_CRUISE6DOF_CONDITIONS_GPS_CSV}"
+)
+add_test(NAME integration_sitl_cruise6dof_conditions_gps_drop
+         COMMAND ${CMAKE_COMMAND} -DCSV_FILE=${SITL_CRUISE6DOF_CONDITIONS_GPS_CSV} -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/check_sitl_conditions_gps.cmake"
+)
+set_tests_properties(
+    integration_sitl_cruise6dof_conditions_gps_drop
+    PROPERTIES DEPENDS integration_sitl_cruise6dof_conditions_gps
+)
+
+set(SITL_CRUISE6DOF_CONDITIONS_BASELINE_CSV
+    "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_conditions_baseline.csv"
+)
+add_test(
+    NAME integration_sitl_cruise6dof_conditions_baseline
+    COMMAND
+        $<TARGET_FILE:sitl_runner> --scenario cruise6dof --initial
+        "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_initial.ini" --duration 0.06 --dt 0.01 --output
+        "${SITL_CRUISE6DOF_CONDITIONS_BASELINE_CSV}"
+)
+
+set(SITL_CRUISE6DOF_CONDITIONS_PARAM_CSV
+    "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_conditions_param.csv"
+)
+add_test(
+    NAME integration_sitl_cruise6dof_conditions_param
+    COMMAND
+        $<TARGET_FILE:sitl_runner> --scenario cruise6dof --initial
+        "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_initial.ini" --conditions
+        "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_conditions_param.ini" --duration 0.06 --dt 0.01
+        --output "${SITL_CRUISE6DOF_CONDITIONS_PARAM_CSV}"
+)
+add_test(
+    NAME integration_sitl_cruise6dof_conditions_param_changes_trajectory
+    COMMAND
+        ${CMAKE_COMMAND} -DEXPECTED_FILE=${SITL_CRUISE6DOF_CONDITIONS_BASELINE_CSV}
+        -DACTUAL_FILE=${SITL_CRUISE6DOF_CONDITIONS_PARAM_CSV} -P
+        "${CMAKE_CURRENT_SOURCE_DIR}/compare_files_not_equal.cmake"
+)
+set_tests_properties(
+    integration_sitl_cruise6dof_conditions_param_changes_trajectory
+    PROPERTIES DEPENDS
+               "integration_sitl_cruise6dof_conditions_baseline;integration_sitl_cruise6dof_conditions_param"
+)
+
 set(SITL_CRUISE6DOF_NED_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_ned.csv")
 add_test(
     NAME integration_sitl_cruise6dof_ned

@@ -4,6 +4,7 @@
 #include "math_utils.h"
 #include "sim_plant.h"
 #include "sitl_case.h"
+#include "sitl_conditions.h"
 #include "sitl_initial_conditions.h"
 
 #include <arpa/inet.h>
@@ -30,7 +31,9 @@ typedef struct
     const char *output_path;
     const char *initial_path;
     const char *case_path;
+    const char *condition_path;
     const sitl_case_t *case_file;
+    const sitl_conditions_t *conditions;
     int frame_mode;
     int realtime;
     int qgc_enabled;
@@ -52,6 +55,7 @@ static void print_usage(FILE *stream)
         stream,
         "usage: sitl_runner [--scenario smoke|cruise6dof] [--duration seconds] [--dt seconds]\n"
         "                   [--seed uint] [--output path] [--initial path] [--case path]\n"
+        "                   [--conditions path]\n"
         "                   [--frame-mode ned|ecef]\n"
         "                   [--profile cruise|takeoff|turn|descent|failsafe|mission] [--realtime]\n"
         "                   [--mavlink] [--mavlink-host host] [--mavlink-port port]\n"
@@ -102,7 +106,9 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg)
     cfg->output_path = NULL;
     cfg->initial_path = NULL;
     cfg->case_path = NULL;
+    cfg->condition_path = NULL;
     cfg->case_file = NULL;
+    cfg->conditions = NULL;
     cfg->frame_mode = SIM6DOF_FRAME_ECEF;
     cfg->realtime = 0;
     cfg->qgc_enabled = 0;
@@ -181,6 +187,15 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg)
                 return -1;
             }
             cfg->case_path = argv[i];
+        }
+        else if (strcmp(argv[i], "--conditions") == 0)
+        {
+            if (++i >= argc)
+            {
+                fprintf(stderr, "--conditions requires a value\n");
+                return -1;
+            }
+            cfg->condition_path = argv[i];
         }
         else if (strcmp(argv[i], "--frame-mode") == 0)
         {
@@ -271,6 +286,10 @@ static void apply_case_run_config(sitl_config_t *cfg, const sitl_case_t *case_fi
     {
         cfg->frame_mode = case_file->run.frame_mode;
     }
+    if (case_file->run.has_condition_file && cfg->condition_path == NULL)
+    {
+        cfg->condition_path = case_file->run.condition_file;
+    }
     cfg->case_file = case_file;
 }
 
@@ -299,6 +318,11 @@ static int validate_config(const sitl_config_t *cfg)
     if (cfg->case_path != NULL && strcmp(cfg->scenario, "cruise6dof") != 0)
     {
         fprintf(stderr, "--case is only supported with --scenario cruise6dof\n");
+        return -1;
+    }
+    if (cfg->condition_path != NULL && strcmp(cfg->scenario, "cruise6dof") != 0)
+    {
+        fprintf(stderr, "--conditions is only supported with --scenario cruise6dof\n");
         return -1;
     }
     if (strcmp(cfg->profile, "cruise") != 0 && strcmp(cfg->profile, "takeoff") != 0 &&
@@ -795,7 +819,7 @@ static rc_input_t cruise6dof_profile_rc(const sitl_config_t *cfg,
     return rc;
 }
 
-static void load_cruise6dof_mission(const sitl_initial_conditions_t *initial)
+static bayek_mission_plan_t make_cruise6dof_mission(const sitl_initial_conditions_t *initial)
 {
     bayek_mission_plan_t mission = {0};
     const real_t throttle = 0.62f;
@@ -816,7 +840,7 @@ static void load_cruise6dof_mission(const sitl_initial_conditions_t *initial)
     mission.waypoints[2].alt_m = initial->altitude_m + 80.0f;
     mission.waypoints[2].throttle = throttle;
     mission.waypoints[2].acceptance_radius_m = 25.0f;
-    bayek_fsw_set_mission(&mission);
+    return mission;
 }
 
 static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
@@ -827,9 +851,12 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
     fsw_output_t output;
     sitl_initial_conditions_t initial;
     vehicle_params_t vehicle_params;
+    bayek_mission_plan_t mission = {0};
+    uint8_t mission_enabled = 0U;
     qgc_link_t qgc;
     char initial_error[160];
     char model_error[160];
+    char condition_error[200];
     int i;
     double start_wall_s;
 
@@ -873,9 +900,11 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
     }
     if (cfg->case_file != NULL && cfg->case_file->has_mission)
     {
+        mission = cfg->case_file->mission;
+        mission_enabled = cfg->case_file->mission_enabled;
         if (cfg->case_file->mission_enabled && cfg->case_file->mission.waypoint_count > 0U)
         {
-            bayek_fsw_set_mission(&cfg->case_file->mission);
+            bayek_fsw_set_mission(&mission);
         }
         else
         {
@@ -884,7 +913,9 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
     }
     else if (strcmp(cfg->profile, "mission") == 0)
     {
-        load_cruise6dof_mission(&initial);
+        mission_enabled = 1U;
+        mission = make_cruise6dof_mission(&initial);
+        bayek_fsw_set_mission(&mission);
     }
     else
     {
@@ -929,6 +960,62 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
             gps_fix_valid = 0U;
         }
         input.gps.fix_valid = gps_fix_valid;
+        if (cfg->conditions != NULL)
+        {
+            sitl_condition_context_t condition_ctx;
+            memset(&condition_ctx, 0, sizeof(condition_ctx));
+            condition_ctx.t_s = (double)i * cfg->dt_s;
+            condition_ctx.step = (uint32_t)i;
+            condition_ctx.rc = &rc;
+            condition_ctx.input = &input;
+            condition_ctx.vehicle_params = &vehicle_params;
+            condition_ctx.sim_params = &params;
+            condition_ctx.plant = &plant;
+            condition_ctx.mission_enabled = &mission_enabled;
+            condition_ctx.mission = &mission;
+            if (!sitl_conditions_eval(
+                    cfg->conditions, &condition_ctx, condition_error, sizeof(condition_error)))
+            {
+                fprintf(
+                    stderr, "failed to evaluate conditions at step %d: %s\n", i, condition_error);
+                qgc_close(&qgc);
+                return 1;
+            }
+            rc = input.rc;
+            gps_fix_valid = input.gps.fix_valid;
+            if (condition_ctx.plant_ecef_dirty)
+            {
+                sim6dof_sync_ned_from_ecef(&plant.body, params.core.earth_radius_m);
+            }
+            if (condition_ctx.plant_ned_dirty)
+            {
+                sim6dof_sync_ecef_from_ned(&plant.body, params.core.earth_radius_m);
+            }
+            if (condition_ctx.vehicle_params_dirty || condition_ctx.sim_params_dirty)
+            {
+                if (!altair_fixedwing_sim_params_are_valid(
+                        &params, &vehicle_params, model_error, sizeof(model_error)))
+                {
+                    fprintf(stderr,
+                            "invalid fixed-wing sim model after conditions at step %d: %s\n",
+                            i,
+                            model_error);
+                    qgc_close(&qgc);
+                    return 1;
+                }
+            }
+            if (condition_ctx.mission_dirty)
+            {
+                if (mission_enabled && mission.waypoint_count > 0U)
+                {
+                    bayek_fsw_set_mission(&mission);
+                }
+                else
+                {
+                    bayek_fsw_clear_mission();
+                }
+            }
+        }
         bayek_fsw_step(&input, &output);
         bayek_fsw_get_mission_status(&mission_status);
         if (!sim_output_is_bounded(&output))
@@ -1029,7 +1116,9 @@ int main(int argc, char **argv)
     int parse_result;
     int run_result;
     sitl_case_t case_file;
+    sitl_conditions_t conditions;
     char case_error[200];
+    char condition_error[200];
 
     parse_result = parse_args(argc, argv, &cfg);
     if (parse_result > 0)
@@ -1054,6 +1143,16 @@ int main(int argc, char **argv)
     {
         print_usage(stderr);
         return 1;
+    }
+    if (cfg.condition_path != NULL)
+    {
+        if (!sitl_conditions_load(
+                cfg.condition_path, &conditions, condition_error, sizeof(condition_error)))
+        {
+            fprintf(stderr, "failed to load condition file: %s\n", condition_error);
+            return 1;
+        }
+        cfg.conditions = &conditions;
     }
 
     steps = (int)(cfg.duration_s / cfg.dt_s);

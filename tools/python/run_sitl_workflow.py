@@ -35,6 +35,7 @@ def parse_args():
         help="initial-condition file for cruise6dof; defaults to the repository cruise6dof fixture",
     )
     parser.add_argument("--case", help="sectioned SITL case file for cruise6dof")
+    parser.add_argument("--conditions", help="per-step SITL condition file for cruise6dof")
     parser.add_argument(
         "--realtime",
         action="store_true",
@@ -75,6 +76,8 @@ def parse_args():
         parser.error("--initial is only supported with --scenario cruise6dof")
     if args.scenario != "cruise6dof" and args.case is not None:
         parser.error("--case is only supported with --scenario cruise6dof")
+    if args.scenario != "cruise6dof" and args.conditions is not None:
+        parser.error("--conditions is only supported with --scenario cruise6dof")
     if args.scenario != "cruise6dof" and args.profile != "cruise":
         parser.error("--profile is only supported with --scenario cruise6dof")
     if args.qgc and args.scenario != "cruise6dof":
@@ -119,6 +122,8 @@ def main():
         sitl_command.extend(["--initial", args.initial])
     if args.case:
         sitl_command.extend(["--case", args.case])
+    if args.conditions:
+        sitl_command.extend(["--conditions", args.conditions])
     if args.realtime:
         sitl_command.append("--realtime")
     if args.qgc:

@@ -25,6 +25,7 @@ def parse_args():
     parser.add_argument("--output", default="sitl.csv")
     parser.add_argument("--initial", help="initial-condition file for cruise6dof")
     parser.add_argument("--case", help="sectioned SITL case file for cruise6dof")
+    parser.add_argument("--conditions", help="per-step SITL condition file for cruise6dof")
     parser.add_argument(
         "--frame-mode", choices=("ned", "ecef"), default="ecef", help="6DOF truth frame"
     )
@@ -55,6 +56,8 @@ def parse_args():
         parser.error("--initial is only supported with --scenario cruise6dof")
     if args.scenario != "cruise6dof" and args.case is not None:
         parser.error("--case is only supported with --scenario cruise6dof")
+    if args.scenario != "cruise6dof" and args.conditions is not None:
+        parser.error("--conditions is only supported with --scenario cruise6dof")
     if args.scenario != "cruise6dof" and args.profile != "cruise":
         parser.error("--profile is only supported with --scenario cruise6dof")
     if args.qgc and args.scenario != "cruise6dof":
@@ -162,6 +165,8 @@ def main():
         command.extend(["--initial", args.initial])
     if args.case is not None:
         command.extend(["--case", args.case])
+    if args.conditions is not None:
+        command.extend(["--conditions", args.conditions])
     if args.realtime:
         command.append("--realtime")
     if args.qgc:

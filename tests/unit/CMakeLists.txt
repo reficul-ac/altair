@@ -47,3 +47,8 @@ add_executable(test_sitl_case test_sitl_case.c)
 target_link_libraries(test_sitl_case PRIVATE altair_sitl bayek_common bayek_sim)
 altair_enable_warnings(test_sitl_case)
 add_test(NAME unit_sitl_case COMMAND test_sitl_case)
+
+add_executable(test_sitl_conditions test_sitl_conditions.c)
+target_link_libraries(test_sitl_conditions PRIVATE altair_sitl bayek_common bayek_sim)
+altair_enable_warnings(test_sitl_conditions)
+add_test(NAME unit_sitl_conditions COMMAND test_sitl_conditions)

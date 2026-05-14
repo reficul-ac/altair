@@ -14,6 +14,7 @@ extern "C"
 #endif
 
 #define SITL_CASE_TEXT_MAX 32U
+#define SITL_CASE_PATH_MAX 128U
 
     typedef struct
     {
@@ -29,6 +30,8 @@ extern "C"
         uint32_t seed;
         uint8_t has_frame_mode;
         int frame_mode;
+        uint8_t has_condition_file;
+        char condition_file[SITL_CASE_PATH_MAX];
     } sitl_case_run_t;
 
     typedef struct
