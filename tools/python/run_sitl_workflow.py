@@ -15,7 +15,9 @@ def repo_root():
 
 def parse_args():
     root = repo_root()
-    parser = argparse.ArgumentParser(description="Run SITL, plot its CSV log, and generate 3D playback HTML.")
+    parser = argparse.ArgumentParser(
+        description="Run SITL, plot its CSV log, and generate 3D playback HTML."
+    )
     parser.add_argument("--build-dir", default=str(root / "build"))
     parser.add_argument("--scenario", default="cruise6dof", choices=("smoke", "cruise6dof"))
     parser.add_argument(
@@ -44,8 +46,16 @@ def parse_args():
         action="store_true",
         help="stream cruise6dof SITL telemetry over MAVLink UDP; implies --realtime",
     )
-    parser.add_argument("--qgc-host", "--mavlink-host", dest="qgc_host", default="127.0.0.1", help="MAVLink UDP IPv4 address")
-    parser.add_argument("--qgc-port", "--mavlink-port", dest="qgc_port", default="14550", help="MAVLink UDP port")
+    parser.add_argument(
+        "--qgc-host",
+        "--mavlink-host",
+        dest="qgc_host",
+        default="127.0.0.1",
+        help="MAVLink UDP IPv4 address",
+    )
+    parser.add_argument(
+        "--qgc-port", "--mavlink-port", dest="qgc_port", default="14550", help="MAVLink UDP port"
+    )
     parser.add_argument(
         "--plot",
         action="append",
@@ -107,13 +117,21 @@ def main():
     if args.realtime:
         sitl_command.append("--realtime")
     if args.qgc:
-        sitl_command.extend(["--mavlink", "--mavlink-host", args.qgc_host, "--mavlink-port", args.qgc_port])
+        sitl_command.extend(
+            ["--mavlink", "--mavlink-host", args.qgc_host, "--mavlink-port", args.qgc_port]
+        )
 
     try:
         run_step("Run SITL", sitl_command)
 
         if not args.skip_plots:
-            plot_command = [sys.executable, str(plot_sitl), args.output, "--out-dir", args.plots_dir]
+            plot_command = [
+                sys.executable,
+                str(plot_sitl),
+                args.output,
+                "--out-dir",
+                args.plots_dir,
+            ]
             for plot_name in args.plot or ["all"]:
                 plot_command.extend(["--plot", plot_name])
             plot_env = os.environ.copy()

@@ -4,10 +4,11 @@
 #include "common_types.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-const vehicle_params_t *altair_default_params(void);
+    const vehicle_params_t *altair_default_params(void);
 
 #ifdef __cplusplus
 }

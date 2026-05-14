@@ -19,7 +19,9 @@ def load_bridge(repo_root):
 
 def frame(bridge, msg_id, payload, seq=1):
     header = bytes([0xFE, len(payload), seq, 1, 1, msg_id])
-    crc = bridge.x25_crc(bytes([bridge.MAVLINK_CRC_EXTRA[msg_id]]), bridge.x25_crc(header[1:] + payload))
+    crc = bridge.x25_crc(
+        bytes([bridge.MAVLINK_CRC_EXTRA[msg_id]]), bridge.x25_crc(header[1:] + payload)
+    )
     return header + payload + bytes([crc & 0xFF, crc >> 8])
 
 
@@ -32,11 +34,24 @@ def main():
     parser = bridge.MavlinkV1Parser()
     state = bridge.LiveVehicleState()
     heartbeat = frame(bridge, 0, struct.pack("<IBBBBB", 0, 1, 0, 0, 4, 3), seq=7)
-    attitude = frame(bridge, 30, struct.pack("<Iffffff", 100, 0.1, -0.2, 1.3, 0.01, 0.02, 0.03), seq=8)
+    attitude = frame(
+        bridge, 30, struct.pack("<Iffffff", 100, 0.1, -0.2, 1.3, 0.01, 0.02, 0.03), seq=8
+    )
     global_position = frame(
         bridge,
         33,
-        struct.pack("<IiiiihhhH", 100, int(37.4275 * 1e7), int(-122.1697 * 1e7), 151000, 151000, 1800, 100, -20, 13000),
+        struct.pack(
+            "<IiiiihhhH",
+            100,
+            int(37.4275 * 1e7),
+            int(-122.1697 * 1e7),
+            151000,
+            151000,
+            1800,
+            100,
+            -20,
+            13000,
+        ),
         seq=9,
     )
     vfr_hud = frame(bridge, 74, struct.pack("<ffhHff", 18.5, 18.1, 130, 0, 151.0, 0.2), seq=10)
@@ -64,7 +79,9 @@ def main():
     endpoint = sink.getsockname()
     forwarder = bridge.UdpForwarder([endpoint])
     broadcasts = []
-    protocol = bridge.BridgeProtocol(bridge.MavlinkV1Parser(), bridge.LiveVehicleState(), forwarder, [broadcasts.append])
+    protocol = bridge.BridgeProtocol(
+        bridge.MavlinkV1Parser(), bridge.LiveVehicleState(), forwarder, [broadcasts.append]
+    )
     protocol.datagram_received(attitude, ("127.0.0.1", 14551))
     forwarded, _ = sink.recvfrom(512)
     forwarder.close()

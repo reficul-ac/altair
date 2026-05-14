@@ -12,6 +12,21 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
+## Formatting
+
+Altair-owned C, C++, CMake, and Python files are formatted with `clang-format`, `cmake-format`,
+and `black`. Install those tools, then run check mode before opening a pull request:
+
+```sh
+python3 tools/python/format_repo.py --check
+```
+
+To rewrite tracked files locally:
+
+```sh
+python3 tools/python/format_repo.py --fix
+```
+
 Run the deterministic smoke SITL scenario and write a CSV flight log:
 
 ```sh

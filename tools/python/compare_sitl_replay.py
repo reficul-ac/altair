@@ -31,21 +31,31 @@ def parse_number(path, row_number, column, value):
     try:
         parsed = float(value)
     except ValueError as exc:
-        raise ValueError(f"{path}: row {row_number}, column {column}: not numeric: {value}") from exc
+        raise ValueError(
+            f"{path}: row {row_number}, column {column}: not numeric: {value}"
+        ) from exc
     if not math.isfinite(parsed):
         raise ValueError(f"{path}: row {row_number}, column {column}: non-finite value: {value}")
     return parsed
 
 
 def compare_rows(expected_path, actual_path, header, expected_rows, actual_rows, abs_tol, rel_tol):
-    for row_index, (expected_row, actual_row) in enumerate(zip(expected_rows, actual_rows), start=2):
+    for row_index, (expected_row, actual_row) in enumerate(
+        zip(expected_rows, actual_rows), start=2
+    ):
         if len(expected_row) != len(header):
-            raise ValueError(f"{expected_path}: row {row_index}: expected {len(header)} fields, got {len(expected_row)}")
+            raise ValueError(
+                f"{expected_path}: row {row_index}: expected {len(header)} fields, got {len(expected_row)}"
+            )
         if len(actual_row) != len(header):
-            raise ValueError(f"{actual_path}: row {row_index}: expected {len(header)} fields, got {len(actual_row)}")
+            raise ValueError(
+                f"{actual_path}: row {row_index}: expected {len(header)} fields, got {len(actual_row)}"
+            )
 
         for column_index, column in enumerate(header):
-            expected_value = parse_number(expected_path, row_index, column, expected_row[column_index])
+            expected_value = parse_number(
+                expected_path, row_index, column, expected_row[column_index]
+            )
             actual_value = parse_number(actual_path, row_index, column, actual_row[column_index])
             if not math.isclose(actual_value, expected_value, rel_tol=rel_tol, abs_tol=abs_tol):
                 diff = actual_value - expected_value
@@ -68,7 +78,9 @@ def main():
                 f"actual:   {','.join(actual_header)}"
             )
         if len(actual_rows) != len(expected_rows):
-            raise ValueError(f"row count differs: expected {len(expected_rows)}, actual {len(actual_rows)}")
+            raise ValueError(
+                f"row count differs: expected {len(expected_rows)}, actual {len(actual_rows)}"
+            )
         compare_rows(
             args.expected,
             args.actual,

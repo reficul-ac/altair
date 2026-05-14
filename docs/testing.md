@@ -34,12 +34,26 @@ Early in the project, performance numbers are more useful as trend data than har
 The repository includes a GitHub Actions workflow at `.github/workflows/ci.yml`. It runs:
 
 ```sh
+python3 tools/python/format_repo.py --check
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-To block merges on GitHub, configure a branch protection rule or repository ruleset for the default branch and require the `cmake-test` status check to pass before merging.
+The formatting check requires `clang-format`, `black`, and `cmake-format`. Use check mode in CI
+and before review:
+
+```sh
+python3 tools/python/format_repo.py --check
+```
+
+Use fix mode for local rewrites:
+
+```sh
+python3 tools/python/format_repo.py --fix
+```
+
+To block merges on GitHub, configure a branch protection rule or repository ruleset for the default branch and require the `format-check` and `cmake-test` status checks to pass before merging.
 
 Optional later checks:
 
@@ -47,4 +61,4 @@ Optional later checks:
 - sanitizer builds for host-only tests
 - replay artifact diffing
 - PlatformIO compile check
-- formatting and static analysis
+- static analysis

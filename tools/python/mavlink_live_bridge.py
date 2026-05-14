@@ -16,7 +16,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Iterable
 
-
 MAVLINK_V1_STX = 0xFE
 MAVLINK_CRC_EXTRA = {
     0: 50,
@@ -132,7 +131,15 @@ class LiveVehicleState:
         elif message.msg_id == 30:
             decoded = _unpack("<Iffffff", message.payload, 28)
             if decoded is not None:
-                _, self.roll_rad, self.pitch_rad, self.yaw_rad, self.rollspeed_rps, self.pitchspeed_rps, self.yawspeed_rps = decoded
+                (
+                    _,
+                    self.roll_rad,
+                    self.pitch_rad,
+                    self.yaw_rad,
+                    self.rollspeed_rps,
+                    self.pitchspeed_rps,
+                    self.yawspeed_rps,
+                ) = decoded
         elif message.msg_id == 33:
             decoded = _unpack("<IiiiihhhH", message.payload, 28)
             if decoded is not None:
@@ -152,7 +159,14 @@ class LiveVehicleState:
         elif message.msg_id == 74:
             decoded = _unpack("<ffhHff", message.payload, 20)
             if decoded is not None:
-                self.airspeed_mps, self.groundspeed_mps, heading, throttle, self.altitude_m, self.climb_mps = decoded
+                (
+                    self.airspeed_mps,
+                    self.groundspeed_mps,
+                    heading,
+                    throttle,
+                    self.altitude_m,
+                    self.climb_mps,
+                ) = decoded
                 self.heading_deg = float(heading)
                 self.throttle_pct = throttle
 
@@ -203,12 +217,18 @@ class LiveVehicleState:
     def local_position(self) -> tuple[float | None, float | None, float | None]:
         if self.lat_deg is None or self.lon_deg is None or self.altitude_m is None:
             return None, None, None
-        if self.origin_lat_deg is None or self.origin_lon_deg is None or self.origin_altitude_m is None:
+        if (
+            self.origin_lat_deg is None
+            or self.origin_lon_deg is None
+            or self.origin_altitude_m is None
+        ):
             return None, None, None
         earth_radius_m = 6378137.0
         lat0_rad = math.radians(self.origin_lat_deg)
         north_m = math.radians(self.lat_deg - self.origin_lat_deg) * earth_radius_m
-        east_m = math.radians(self.lon_deg - self.origin_lon_deg) * earth_radius_m * math.cos(lat0_rad)
+        east_m = (
+            math.radians(self.lon_deg - self.origin_lon_deg) * earth_radius_m * math.cos(lat0_rad)
+        )
         up_m = self.altitude_m - self.origin_altitude_m
         return north_m, east_m, up_m
 
@@ -235,7 +255,13 @@ class UdpForwarder:
 
 
 class BridgeProtocol(asyncio.DatagramProtocol):
-    def __init__(self, parser: MavlinkV1Parser, state: LiveVehicleState, forwarder: UdpForwarder, broadcasters: Iterable) -> None:
+    def __init__(
+        self,
+        parser: MavlinkV1Parser,
+        state: LiveVehicleState,
+        forwarder: UdpForwarder,
+        broadcasters: Iterable,
+    ) -> None:
         self.parser = parser
         self.state = state
         self.forwarder = forwarder
@@ -292,7 +318,12 @@ async def read_http_headers(reader: asyncio.StreamReader) -> dict[str, str]:
     return headers
 
 
-async def websocket_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, state: LiveVehicleState, clients: set[WebSocketClient]) -> None:
+async def websocket_handler(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    state: LiveVehicleState,
+    clients: set[WebSocketClient],
+) -> None:
     try:
         headers = await read_http_headers(reader)
         key = headers.get("sec-websocket-key")
@@ -300,7 +331,9 @@ async def websocket_handler(reader: asyncio.StreamReader, writer: asyncio.Stream
             writer.close()
             await writer.wait_closed()
             return
-        accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()).decode("ascii")
+        accept = base64.b64encode(
+            hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
+        ).decode("ascii")
         writer.write(
             (
                 "HTTP/1.1 101 Switching Protocols\r\n"
@@ -342,10 +375,17 @@ def parse_endpoint(text: str) -> tuple[str, int]:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Forward MAVLink UDP packets and publish decoded live vehicle state over WebSocket.")
+    parser = argparse.ArgumentParser(
+        description="Forward MAVLink UDP packets and publish decoded live vehicle state over WebSocket."
+    )
     parser.add_argument("--listen-host", default="0.0.0.0")
     parser.add_argument("--listen-port", type=int, default=14551)
-    parser.add_argument("--forward", action="append", type=parse_endpoint, help="UDP endpoint to forward raw MAVLink packets to; repeatable")
+    parser.add_argument(
+        "--forward",
+        action="append",
+        type=parse_endpoint,
+        help="UDP endpoint to forward raw MAVLink packets to; repeatable",
+    )
     parser.add_argument("--ws-host", default="127.0.0.1")
     parser.add_argument("--ws-port", type=int, default=8765)
     args = parser.parse_args(argv)

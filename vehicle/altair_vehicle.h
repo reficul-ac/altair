@@ -4,10 +4,11 @@
 #include "fsw.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-const bayek_vehicle_interface_t *altair_vehicle_interface(void);
+    const bayek_vehicle_interface_t *altair_vehicle_interface(void);
 
 #ifdef __cplusplus
 }

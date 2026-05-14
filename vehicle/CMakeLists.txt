@@ -1,35 +1,22 @@
-add_library(altair_vehicle
-  ../params/altair_params.c
-  ../mixer/altair_mixer.c
-  altair_vehicle.c
-)
+add_library(altair_vehicle ../params/altair_params.c ../mixer/altair_mixer.c altair_vehicle.c)
 
-target_include_directories(altair_vehicle
-  PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../params
-    ${CMAKE_CURRENT_SOURCE_DIR}/../mixer
-    ${CMAKE_CURRENT_SOURCE_DIR}/../config
+target_include_directories(
+    altair_vehicle
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../params
+           ${CMAKE_CURRENT_SOURCE_DIR}/../mixer ${CMAKE_CURRENT_SOURCE_DIR}/../config
 )
 
 target_link_libraries(altair_vehicle PUBLIC bayek_common bayek_fsw)
 altair_enable_warnings(altair_vehicle)
 
-add_library(altair_sim_model
-  ../params/sim/altair_sim_params.c
-  altair_sim_model.c
-)
-target_include_directories(altair_sim_model
-  PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../params/sim
+add_library(altair_sim_model ../params/sim/altair_sim_params.c altair_sim_model.c)
+target_include_directories(
+    altair_sim_model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../params/sim
 )
 target_link_libraries(altair_sim_model PUBLIC altair_vehicle bayek_sim)
 altair_enable_warnings(altair_sim_model)
 
-add_library(altair_sitl
-  sitl_initial_conditions.c
-)
+add_library(altair_sitl sitl_initial_conditions.c)
 target_include_directories(altair_sitl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(altair_sitl PUBLIC bayek_common)
 altair_enable_warnings(altair_sitl)

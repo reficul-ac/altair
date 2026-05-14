@@ -4,10 +4,11 @@
 #include "sim_fixedwing.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-void altair_default_fixedwing_sim_params(sim_fixedwing_params_t *params);
+    void altair_default_fixedwing_sim_params(sim_fixedwing_params_t *params);
 
 #ifdef __cplusplus
 }

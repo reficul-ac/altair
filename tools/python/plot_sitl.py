@@ -7,14 +7,15 @@ import math
 import sys
 from pathlib import Path
 
-
 SUPPORTED_PLOTS = ("velocities", "attitudes", "rates", "position", "ecef")
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Plot Altair SITL CSV logs.")
     parser.add_argument("csv_path")
-    parser.add_argument("--plot", action="append", choices=SUPPORTED_PLOTS + ("all",), required=True)
+    parser.add_argument(
+        "--plot", action="append", choices=SUPPORTED_PLOTS + ("all",), required=True
+    )
     parser.add_argument("--out-dir")
     parser.add_argument("--show", action="store_true")
     return parser.parse_args()
@@ -151,6 +152,7 @@ def plot_ecef(rows, pyplot, out_dir):
 def import_pyplot(show):
     try:
         import matplotlib
+
         if not show:
             matplotlib.use("Agg")
         import matplotlib.pyplot as pyplot

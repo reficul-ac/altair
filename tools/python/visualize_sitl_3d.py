@@ -9,7 +9,6 @@ import math
 import sys
 from pathlib import Path
 
-
 REQUIRED_COLUMNS = ("time_s", "pos_n_m", "pos_e_m", "altitude_m")
 OPTIONAL_COLUMNS = (
     "roll_rad",
@@ -582,7 +581,9 @@ def main():
     try:
         frames = load_frames(args.csv_path)
         output_path = Path(args.output)
-        output_path.write_text(render_html(args.title, Path(args.csv_path).name, frames), encoding="utf-8")
+        output_path.write_text(
+            render_html(args.title, Path(args.csv_path).name, frames), encoding="utf-8"
+        )
         print(f"output={output_path}")
         print(f"frames={len(frames)}")
     except (OSError, ValueError) as exc:
