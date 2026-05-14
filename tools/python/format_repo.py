@@ -9,7 +9,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 CLANG_EXTENSIONS = {".c", ".cc", ".cpp", ".h", ".hpp"}
 PYTHON_EXTENSIONS = {".py"}
 CMAKE_NAMES = {"CMakeLists.txt"}
@@ -147,7 +146,9 @@ def check_black(repo_root: Path, files: list[Path]) -> int:
     return run(["black", "--check", "--quiet", *map(str, files)], cwd=repo_root).returncode
 
 
-def fix_files(repo_root: Path, clang_files: list[Path], python_files: list[Path], cmake_files: list[Path]) -> int:
+def fix_files(
+    repo_root: Path, clang_files: list[Path], python_files: list[Path], cmake_files: list[Path]
+) -> int:
     commands: list[list[str]] = []
     if clang_files:
         commands.append(["clang-format", "-i", *map(str, clang_files)])
@@ -166,7 +167,9 @@ def fix_files(repo_root: Path, clang_files: list[Path], python_files: list[Path]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--check", action="store_true", help="fail if any tracked source is unformatted")
+    mode.add_argument(
+        "--check", action="store_true", help="fail if any tracked source is unformatted"
+    )
     mode.add_argument("--fix", action="store_true", help="rewrite tracked source files in place")
     return parser.parse_args()
 

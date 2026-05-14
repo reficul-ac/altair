@@ -85,6 +85,8 @@ Run the deterministic smoke Monte Carlo sweep and write a summary CSV:
 ./build/vehicle/mc_runner --seed 1 --runs 100 --scenario smoke --output mc_summary.csv
 ```
 
+Exit code `3` means at least one Monte Carlo run failed a metric gate.
+
 ## Targets
 
 - `bayek_common`: reusable C99 math, types, and control utilities.

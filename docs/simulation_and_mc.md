@@ -181,7 +181,22 @@ The runner currently varies throttle bias and writes summary metrics:
 - final altitude
 - max absolute roll
 
-The current dispersions are placeholders. The key property is replay: the same seed and run count should produce the same CSV.
+The Monte Carlo summary CSV contract is:
+
+```text
+run,seed,scenario,passed,failure_reason,throttle_bias,final_airspeed_mps,final_altitude_m,max_abs_roll_rad
+```
+
+Each run is marked failed when any guardrail trips:
+
+- `nonfinite_state`: final airspeed, final altitude, max roll, or plant state values are not finite.
+- `unbounded_output`: FSW actuator output is non-finite or outside its normalized bounds.
+- `invalid_mode`: FSW mode is outside disarmed, manual, stabilize, or failsafe.
+- `airspeed_limit`: final airspeed is outside `1.0..80.0 m/s`.
+- `altitude_limit`: final altitude is outside `-100.0..10000.0 m`.
+- `roll_limit`: max absolute roll exceeds `1.5708 rad`.
+
+The runner exits `0` when all runs pass, `3` when any run fails a metric gate, and `1` for command-line or output-file errors. The current dispersions are placeholders. The key property is replay: the same seed and run count should produce the same CSV.
 
 ## Python Tools
 

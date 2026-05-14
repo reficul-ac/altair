@@ -10,7 +10,7 @@ This list tracks the work needed to move Altair from a building repository with 
 - [x] Add a CI check that verifies the Bayek submodule is initialized.
 - [x] Add a documented local developer command set for configure, build, test, SITL, and Monte Carlo.
 - [x] Add generated build, CSV, and plot artifacts to `.gitignore` if missing.
-- [ ] Add a lightweight formatting rule or script for C, C++, CMake, and Python files.
+- [x] Add a lightweight formatting rule or script for C, C++, CMake, and Python files.
 
 Acceptance check:
 
@@ -94,7 +94,7 @@ Acceptance check:
 - [x] Add command-line options for seed, runs, duration, step size, scenario family, and output path.
 - [x] Log enough per-run metadata to reproduce failures.
 - [ ] Add randomized initial conditions, wind, sensor noise, parameter perturbations, and command profiles.
-- [ ] Define pass/fail metrics for bounded actuators, no NaNs, safe modes, speed, altitude, and attitude limits.
+- [x] Define pass/fail metrics for bounded actuators, no NaNs, safe modes, speed, altitude, and attitude limits.
 - [x] Emit summary CSV with pass/fail status and failure reason.
 - [ ] Add optional per-run detailed logs for failed cases.
 - [x] Add CI-scale Monte Carlo smoke run.

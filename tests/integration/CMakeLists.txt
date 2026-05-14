@@ -155,6 +155,13 @@ add_test(
         -P "${CMAKE_CURRENT_SOURCE_DIR}/check_csv.cmake"
 )
 set_tests_properties(integration_mc_runner_cli_csv PROPERTIES DEPENDS integration_mc_runner_cli)
+add_test(NAME integration_mc_runner_cli_semantics
+         COMMAND ${CMAKE_COMMAND} -DCSV_FILE=${MC_SUMMARY_CSV} -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/check_mc_summary.cmake"
+)
+set_tests_properties(
+    integration_mc_runner_cli_semantics PROPERTIES DEPENDS integration_mc_runner_cli
+)
 
 add_executable(test_telemetry test_telemetry.c)
 target_link_libraries(test_telemetry PRIVATE bayek_telemetry)

@@ -1,5 +1,6 @@
 #include "altair_vehicle.h"
 #include "fsw.h"
+#include "math_utils.h"
 #include "sim_plant.h"
 
 #include <errno.h>
@@ -18,6 +19,36 @@ typedef struct
     const char *output_path;
     real_t throttle_bias_span;
 } mc_config_t;
+
+enum
+{
+    MC_EXIT_CLI_OR_OUTPUT_ERROR = 1,
+    MC_EXIT_FAILED_GATE = 3
+};
+
+static const real_t MC_MIN_AIRSPEED_MPS = 1.0f;
+static const real_t MC_MAX_AIRSPEED_MPS = 80.0f;
+static const real_t MC_MIN_ALTITUDE_M = -100.0f;
+static const real_t MC_MAX_ALTITUDE_M = 10000.0f;
+static const real_t MC_MAX_ABS_ROLL_RAD = 1.5708f;
+
+static int mc_mode_is_valid(fsw_mode_t mode)
+{
+    return mode == FSW_MODE_DISARMED || mode == FSW_MODE_MANUAL || mode == FSW_MODE_STABILIZE ||
+           mode == FSW_MODE_FAILSAFE;
+}
+
+static int mc_plant_state_is_finite(const sim_plant_t *plant)
+{
+    return real_is_finite(plant->attitude.roll) && real_is_finite(plant->attitude.pitch) &&
+           real_is_finite(plant->attitude.yaw) && real_is_finite(plant->rates_rps.x) &&
+           real_is_finite(plant->rates_rps.y) && real_is_finite(plant->rates_rps.z) &&
+           real_is_finite(plant->altitude_m) && real_is_finite(plant->airspeed_mps) &&
+           real_is_finite(plant->actuator_state.motor) &&
+           real_is_finite(plant->actuator_state.aileron) &&
+           real_is_finite(plant->actuator_state.elevator) &&
+           real_is_finite(plant->actuator_state.rudder);
+}
 
 static void print_usage(FILE *stream)
 {
@@ -236,14 +267,14 @@ int main(int argc, char **argv)
     if (parse_result < 0)
     {
         print_usage(stderr);
-        return 1;
+        return MC_EXIT_CLI_OR_OUTPUT_ERROR;
     }
 
     steps = (int)(cfg.duration_s / cfg.dt_s);
     if (steps <= 0)
     {
         fprintf(stderr, "duration and dt produce no simulation steps\n");
-        return 1;
+        return MC_EXIT_CLI_OR_OUTPUT_ERROR;
     }
     if (cfg.output_path != NULL)
     {
@@ -251,7 +282,7 @@ int main(int argc, char **argv)
         if (csv == NULL)
         {
             fprintf(stderr, "failed to open output %s\n", cfg.output_path);
-            return 1;
+            return MC_EXIT_CLI_OR_OUTPUT_ERROR;
         }
     }
 
@@ -264,7 +295,7 @@ int main(int argc, char **argv)
         {
             (void)fclose(csv);
         }
-        return 1;
+        return MC_EXIT_CLI_OR_OUTPUT_ERROR;
     }
     for (run = 0; run < cfg.runs; ++run)
     {
@@ -294,12 +325,60 @@ int main(int argc, char **argv)
                 any_failed = 1;
                 break;
             }
+            if (!mc_mode_is_valid(output.mode))
+            {
+                passed = 0;
+                failure_reason = "invalid_mode";
+                any_failed = 1;
+                break;
+            }
             sim_plant_step(&plant, &output.actuators, (real_t)cfg.dt_s);
+            if (!mc_plant_state_is_finite(&plant))
+            {
+                passed = 0;
+                failure_reason = "nonfinite_state";
+                any_failed = 1;
+                break;
+            }
             abs_roll = plant.attitude.roll < 0.0f ? -plant.attitude.roll : plant.attitude.roll;
             if (abs_roll > max_abs_roll)
             {
                 max_abs_roll = abs_roll;
             }
+            if (!real_is_finite(max_abs_roll))
+            {
+                passed = 0;
+                failure_reason = "nonfinite_state";
+                any_failed = 1;
+                break;
+            }
+            if (max_abs_roll > MC_MAX_ABS_ROLL_RAD)
+            {
+                passed = 0;
+                failure_reason = "roll_limit";
+                any_failed = 1;
+                break;
+            }
+        }
+        if (passed && !mc_plant_state_is_finite(&plant))
+        {
+            passed = 0;
+            failure_reason = "nonfinite_state";
+            any_failed = 1;
+        }
+        if (passed &&
+            (plant.airspeed_mps < MC_MIN_AIRSPEED_MPS || plant.airspeed_mps > MC_MAX_AIRSPEED_MPS))
+        {
+            passed = 0;
+            failure_reason = "airspeed_limit";
+            any_failed = 1;
+        }
+        if (passed &&
+            (plant.altitude_m < MC_MIN_ALTITUDE_M || plant.altitude_m > MC_MAX_ALTITUDE_M))
+        {
+            passed = 0;
+            failure_reason = "altitude_limit";
+            any_failed = 1;
         }
         if (fprintf(csv,
                     "%d,%u,%s,%d,%s,%.6f,%.6f,%.6f,%.6f\n",
@@ -318,12 +397,12 @@ int main(int argc, char **argv)
             {
                 (void)fclose(csv);
             }
-            return 1;
+            return MC_EXIT_CLI_OR_OUTPUT_ERROR;
         }
     }
     if (!checked_close(csv, cfg.output_path != NULL ? cfg.output_path : "stdout"))
     {
-        return 1;
+        return MC_EXIT_CLI_OR_OUTPUT_ERROR;
     }
-    return any_failed ? 3 : 0;
+    return any_failed ? MC_EXIT_FAILED_GATE : 0;
 }

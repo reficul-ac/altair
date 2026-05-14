@@ -16,6 +16,7 @@ Integration tests cover:
 
 - deterministic replay of `bayek_fsw_step()`
 - SITL smoke run with bounded actuator outputs
+- Monte Carlo smoke summary semantics and metric gates
 - telemetry encode/decode and CRC rejection
 - Bayek-to-Altair vehicle interface routing through Altair mixer limits
 
