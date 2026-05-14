@@ -63,6 +63,21 @@ static int close_state(sim_fixedwing_state_t a, sim_fixedwing_state_t b)
            close_real(a.last_airspeed_mps, b.last_airspeed_mps);
 }
 
+static int expect_invalid_sim(const sim_fixedwing_params_t *params, const vehicle_params_t *vehicle)
+{
+    char error[160];
+    return !altair_fixedwing_sim_params_are_valid(params, vehicle, error, sizeof(error)) &&
+           error[0] != '\0';
+}
+
+static int expect_invalid_vehicle(const sim_fixedwing_params_t *params,
+                                  const vehicle_params_t *vehicle)
+{
+    char error[160];
+    return !altair_fixedwing_sim_params_are_valid(params, vehicle, error, sizeof(error)) &&
+           error[0] != '\0';
+}
+
 static sim_fixedwing_state_t run_sequence(const sim_fixedwing_params_t *params, int frame_mode)
 {
     sim_fixedwing_state_t state;
@@ -94,27 +109,111 @@ int main(void)
     sim_fixedwing_state_t first;
     sim_fixedwing_state_t second;
     const vehicle_params_t *vehicle = altair_default_params();
+    vehicle_params_t invalid_vehicle;
+    real_t weight_n;
+    real_t wing_loading;
     char error[160];
 
     altair_fixedwing_sim_params(&params);
     CHECK_MSG(altair_fixedwing_sim_params_are_valid(&params, vehicle, error, sizeof(error)), error);
     CHECK(close_real(params.core.mass_kg, 2.5f));
     CHECK(close_real(params.wing_area_m2, 0.45f));
+    CHECK(params.core.gravity_mps2 > 9.0f && params.core.gravity_mps2 < 10.0f);
+    CHECK(params.core.air_density_kgpm3 > 1.0f && params.core.air_density_kgpm3 < 1.4f);
+    CHECK(params.core.earth_radius_m > 6000000.0f && params.core.earth_radius_m < 7000000.0f);
+    weight_n = params.core.mass_kg * params.core.gravity_mps2;
+    CHECK(params.max_thrust_n > 0.5f * weight_n);
+    wing_loading = weight_n / params.wing_area_m2;
+    CHECK(wing_loading > 20.0f && wing_loading < 120.0f);
 
     invalid = params;
     invalid.core.mass_kg = -1.0f;
-    CHECK(!altair_fixedwing_sim_params_are_valid(&invalid, vehicle, error, sizeof(error)));
-    CHECK(error[0] != '\0');
+    CHECK(expect_invalid_sim(&invalid, vehicle));
 
     invalid = params;
     invalid.wing_area_m2 = -1.0f;
-    CHECK(!altair_fixedwing_sim_params_are_valid(&invalid, vehicle, error, sizeof(error)));
-    CHECK(error[0] != '\0');
+    CHECK(expect_invalid_sim(&invalid, vehicle));
 
     invalid = params;
     invalid.max_thrust_n = -1.0f;
-    CHECK(!altair_fixedwing_sim_params_are_valid(&invalid, vehicle, error, sizeof(error)));
-    CHECK(error[0] != '\0');
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+
+    invalid_vehicle = *vehicle;
+    invalid_vehicle.min_airspeed_mps = 0.0f;
+    CHECK(expect_invalid_vehicle(&params, &invalid_vehicle));
+    invalid_vehicle = *vehicle;
+    invalid_vehicle.max_airspeed_mps = invalid_vehicle.min_airspeed_mps;
+    CHECK(expect_invalid_vehicle(&params, &invalid_vehicle));
+    invalid_vehicle = *vehicle;
+    invalid_vehicle.max_airspeed_mps = 121.0f;
+    CHECK(expect_invalid_vehicle(&params, &invalid_vehicle));
+    invalid_vehicle = *vehicle;
+    invalid_vehicle.min_actuator = -1.1f;
+    CHECK(expect_invalid_vehicle(&params, &invalid_vehicle));
+    invalid_vehicle = *vehicle;
+    invalid_vehicle.max_actuator = 1.1f;
+    CHECK(expect_invalid_vehicle(&params, &invalid_vehicle));
+    invalid_vehicle = *vehicle;
+    invalid_vehicle.min_actuator = invalid_vehicle.max_actuator;
+    CHECK(expect_invalid_vehicle(&params, &invalid_vehicle));
+
+    invalid = params;
+    invalid.core.inertia_kgm2.x = 0.0f;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.core.gravity_mps2 = NAN;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.core.air_density_kgpm3 = 0.0f;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.core.actuator_lag_hz = -1.0f;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.core.frame_mode = 99;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.core.earth_model = 99;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.core.earth_radius_m = 1000.0f;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.wing_span_m = 0.0f;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.mean_chord_m = INFINITY;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.drag_cd0 = -0.01f;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.drag_cd_alpha = -0.01f;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.lift_cl0 = NAN;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.lift_cl_alpha = NAN;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.lift_cl_elevator = NAN;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.stall_alpha_rad = 0.0f;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.roll_aileron_nm = NAN;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.pitch_elevator_nm = NAN;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.yaw_rudder_nm = NAN;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.rate_damping_nms.y = NAN;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
 
     first = run_sequence(&params, SIM6DOF_FRAME_ECEF);
     second = run_sequence(&params, SIM6DOF_FRAME_ECEF);
