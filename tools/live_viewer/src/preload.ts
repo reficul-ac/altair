@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { MavlinkServiceConfig, SessionSnapshotPayload, VehicleStatePayload } from './mavlink.js';
+import type { ReplayTimelineMessage } from './state.js';
 
 export type AltairVisualizerApi = {
   onVehicleState: (callback: (message: VehicleStatePayload) => void) => () => void;
@@ -10,6 +11,14 @@ export type AltairVisualizerApi = {
   setListenPort: (port: number) => Promise<MavlinkServiceConfig>;
   selectVehicle: (id: string) => Promise<SessionSnapshotPayload>;
   addMarker: (label: string) => Promise<SessionSnapshotPayload>;
+  onReplayState: (callback: (message: ReplayTimelineMessage) => void) => () => void;
+  openReplay: () => Promise<ReplayTimelineMessage>;
+  replayPlay: () => Promise<ReplayTimelineMessage>;
+  replayPause: () => Promise<ReplayTimelineMessage>;
+  replaySeek: (timestampS: number) => Promise<ReplayTimelineMessage>;
+  replaySetSpeed: (speed: number) => Promise<ReplayTimelineMessage>;
+  replayReset: () => Promise<ReplayTimelineMessage>;
+  replayMarker: (direction: -1 | 1) => Promise<ReplayTimelineMessage>;
 };
 
 const api: AltairVisualizerApi = {
@@ -28,6 +37,11 @@ const api: AltairVisualizerApi = {
     ipcRenderer.on('mavlink-config', listener);
     return () => ipcRenderer.off('mavlink-config', listener);
   },
+  onReplayState(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, message: ReplayTimelineMessage): void => callback(message);
+    ipcRenderer.on('replay-state', listener);
+    return () => ipcRenderer.off('replay-state', listener);
+  },
   getConfig() {
     return ipcRenderer.invoke('mavlink:get-config');
   },
@@ -42,6 +56,27 @@ const api: AltairVisualizerApi = {
   },
   addMarker(label) {
     return ipcRenderer.invoke('mavlink:add-marker', label);
+  },
+  openReplay() {
+    return ipcRenderer.invoke('replay:open');
+  },
+  replayPlay() {
+    return ipcRenderer.invoke('replay:play');
+  },
+  replayPause() {
+    return ipcRenderer.invoke('replay:pause');
+  },
+  replaySeek(timestampS) {
+    return ipcRenderer.invoke('replay:seek', timestampS);
+  },
+  replaySetSpeed(speed) {
+    return ipcRenderer.invoke('replay:set-speed', speed);
+  },
+  replayReset() {
+    return ipcRenderer.invoke('replay:reset');
+  },
+  replayMarker(direction) {
+    return ipcRenderer.invoke('replay:marker', direction);
   }
 };
 

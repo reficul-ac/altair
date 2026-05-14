@@ -1,8 +1,8 @@
 import { bindMapControls, drawMap } from './map-panel';
-import { updateInspector } from './inspector-ui';
+import { clearInspectorLog, recordInspectorSnapshot, updateInspector } from './inspector-ui';
 import { setHudMode, updateHud, updateStatusStrip, updateVehicleList, type HudMode } from './hud-ui';
 import { SceneRenderer, nextCameraMode, type CameraMode, type ThemeName } from './scene-renderer';
-import { parseSessionSnapshot, parseVehicleState, type SessionSnapshotMessage, type VehicleStateMessage } from './state';
+import { parseSessionSnapshot, parseVehicleState, type ReplayTimelineMessage, type SessionSnapshotMessage, type VehicleStateMessage } from './state';
 import './styles.css';
 
 type VisualizerConfig = {
@@ -21,6 +21,14 @@ type VisualizerApi = {
   setListenPort: (port: number) => Promise<VisualizerConfig>;
   selectVehicle?: (id: string) => Promise<SessionSnapshotMessage>;
   addMarker?: (label: string) => Promise<SessionSnapshotMessage>;
+  onReplayState?: (callback: (message: ReplayTimelineMessage) => void) => () => void;
+  openReplay?: () => Promise<ReplayTimelineMessage>;
+  replayPlay?: () => Promise<ReplayTimelineMessage>;
+  replayPause?: () => Promise<ReplayTimelineMessage>;
+  replaySeek?: (timestampS: number) => Promise<ReplayTimelineMessage>;
+  replaySetSpeed?: (speed: number) => Promise<ReplayTimelineMessage>;
+  replayReset?: () => Promise<ReplayTimelineMessage>;
+  replayMarker?: (direction: -1 | 1) => Promise<ReplayTimelineMessage>;
 };
 
 declare global {
@@ -114,7 +122,7 @@ root.innerHTML = `
     <section class="workspace-panel inspector-workspace" data-panel="inspector">
       <div class="inspector-grid">
         <section><h2>Messages</h2><input id="inspector-filter" type="search" placeholder="Filter messages" /><div class="inspector-header"><span>Name</span><span>Src</span><span>Rate</span><span>Count</span></div><div id="inspector-table"></div></section>
-        <section><h2>Fields</h2><dl id="message-detail"></dl><div class="inspector-actions"><button id="inspector-export" type="button">Export CSV</button></div><div id="chart-fields" class="chart-fields"></div><canvas id="field-chart" width="520" height="180"></canvas></section>
+        <section><h2>Fields</h2><dl id="message-detail"></dl><div class="inspector-actions"><button id="inspector-log-export" type="button">Export Log</button><button id="inspector-export" type="button">Export CSV</button></div><div id="chart-fields" class="chart-fields"></div><canvas id="field-chart" width="520" height="180"></canvas></section>
       </div>
     </section>
     <aside class="metrics workspace-panel active" data-panel="session">
@@ -123,6 +131,29 @@ root.innerHTML = `
         <label><span>MAVLink port</span><input id="listen-port" type="number" min="1" max="65535" value="14551" /></label>
         <label class="toggle"><input id="qgc" type="checkbox" checked /><span>Forward QGC</span></label>
         <p id="config">UDP 127.0.0.1:14551</p>
+      </section>
+      <section class="replay-controls" aria-label="Replay controls">
+        <div class="replay-buttons">
+          <button id="replay-open" type="button">Open</button>
+          <button id="replay-play" type="button" disabled>Play</button>
+          <button id="replay-reset" type="button">Reset</button>
+        </div>
+        <input id="replay-timeline" type="range" min="0" max="0.001" step="0.001" value="0" disabled />
+        <div class="replay-secondary">
+          <button id="replay-prev-marker" type="button">Prev</button>
+          <select id="replay-speed" aria-label="Playback speed">
+            <option value="0.25">0.25x</option>
+            <option value="0.5">0.5x</option>
+            <option value="1" selected>1x</option>
+            <option value="2">2x</option>
+            <option value="4">4x</option>
+            <option value="8">8x</option>
+          </select>
+          <button id="replay-next-marker" type="button">Next</button>
+        </div>
+        <label class="toggle"><input id="sync-inspection" type="checkbox" checked /><span>Lock timestamp</span></label>
+        <p id="replay-time">0:00 / 0:00 @ 1x</p>
+        <p id="replay-meta">No replay loaded</p>
       </section>
       <div class="command-strip">
         <button id="pause" type="button">Pause</button>
@@ -134,6 +165,7 @@ root.innerHTML = `
         <strong id="vehicle-id">sys --</strong>
       </section>
       <section class="vehicle-switcher"><h2>Vehicles</h2><div id="vehicle-list"></div></section>
+      <section class="vehicle-switcher"><h2>Compare</h2><div id="vehicle-comparison" class="vehicle-comparison"></div></section>
       <dl>
         <div><dt>Heartbeat</dt><dd id="heartbeat">--</dd></div>
         <div><dt>Packet Age</dt><dd id="packet">--</dd></div>
@@ -160,7 +192,14 @@ const scene = new SceneRenderer(
   document.querySelector<HTMLCanvasElement>('#radar')!,
   document.querySelector<HTMLCanvasElement>('#ortho')!
 );
-const state = { hudMode: 'console' as HudMode, showYaw: false, snapshot: null as SessionSnapshotMessage | null, selected: null as VehicleStateMessage | null };
+const state = {
+  hudMode: 'console' as HudMode,
+  showYaw: false,
+  snapshot: null as SessionSnapshotMessage | null,
+  selected: null as VehicleStateMessage | null,
+  replay: null as ReplayTimelineMessage | null,
+  syncInspection: true
+};
 bindMapControls(() => state.snapshot);
 
 function applyVehicle(message: VehicleStateMessage): void {
@@ -172,12 +211,14 @@ function applyVehicle(message: VehicleStateMessage): void {
 
 function applySnapshot(snapshot: SessionSnapshotMessage): void {
   state.snapshot = snapshot;
+  recordInspectorSnapshot(snapshot, state.replay?.loaded ? state.replay.timestampS : performance.now() / 1000);
   const selected = snapshot.vehicles.find((vehicle) => vehicle.id === snapshot.selectedVehicleId) ?? snapshot.vehicles[0] ?? null;
   if (selected) applyVehicle(selected);
   scene.applyFleet(snapshot.vehicles, snapshot.selectedVehicleId, snapshot.events);
   updateVehicleList(snapshot, (id) => void window.altairVisualizer?.selectVehicle?.(id).then(applySnapshot));
   updateInspector(snapshot);
   drawMap(snapshot);
+  updateVehicleComparison(snapshot);
 }
 
 function updateConfig(config: VisualizerConfig): void {
@@ -197,6 +238,7 @@ function connect(): void {
   if (window.altairVisualizer) {
     window.altairVisualizer.onVehicleState(applyVehicle);
     window.altairVisualizer.onSessionSnapshot?.(applySnapshot);
+    window.altairVisualizer.onReplayState?.(updateReplayControls);
     window.altairVisualizer.onConfig(updateConfig);
     window.altairVisualizer.getConfig().then(updateConfig).catch(() => {
       document.querySelector<HTMLElement>('#status')!.textContent = 'MAVLink service unavailable';
@@ -213,6 +255,55 @@ function connect(): void {
     if (message) applyVehicle(message);
   });
   socket.addEventListener('close', () => setTimeout(connect, 1000));
+}
+
+function updateReplayControls(replay: ReplayTimelineMessage): void {
+  state.replay = replay;
+  const timeline = document.querySelector<HTMLInputElement>('#replay-timeline');
+  const play = document.querySelector<HTMLButtonElement>('#replay-play');
+  const time = document.querySelector<HTMLElement>('#replay-time');
+  const meta = document.querySelector<HTMLElement>('#replay-meta');
+  if (timeline) {
+    timeline.max = String(Math.max(0.001, replay.durationS));
+    timeline.value = String(replay.timestampS);
+    timeline.disabled = !replay.loaded;
+  }
+  if (play) {
+    play.textContent = replay.playing ? 'Pause' : 'Play';
+    play.disabled = !replay.loaded;
+  }
+  if (time) {
+    time.textContent = `${formatTime(replay.timestampS)} / ${formatTime(replay.durationS)} @ ${replay.speed}x`;
+  }
+  if (meta) {
+    meta.textContent = replay.metadata
+      ? `${replay.metadata.sourceType} / ${replay.metadata.frameCount} frames / ${replay.metadata.vehicleIds.join(', ') || 'no vehicles'}`
+      : 'No replay loaded';
+  }
+}
+
+function updateVehicleComparison(snapshot: SessionSnapshotMessage): void {
+  const target = document.querySelector<HTMLElement>('#vehicle-comparison');
+  if (!target) return;
+  target.innerHTML = snapshot.vehicles.map((vehicle) => {
+    const id = vehicle.id ?? `${vehicle.systemId}:${vehicle.componentId}`;
+    const position = vehicle.localPosition.eastM === null || vehicle.localPosition.northM === null
+      ? '--'
+      : `${vehicle.localPosition.northM.toFixed(1)} N / ${vehicle.localPosition.eastM.toFixed(1)} E`;
+    const armed = vehicle.status?.armed === null || vehicle.status?.armed === undefined ? '--' : vehicle.status.armed ? 'ARM' : 'SAFE';
+    return `<div><strong>${escapeHtml(id)}</strong><span>${escapeHtml(vehicle.vehicleType ?? 'MAVLink')}</span><span>${escapeHtml(vehicle.status?.mode ?? '--')}</span><span>${armed}</span><span>${position}</span></div>`;
+  }).join('') || '<p class="empty">No vehicle streams</p>';
+}
+
+function formatTime(seconds: number): string {
+  const clamped = Math.max(0, seconds);
+  const minutes = Math.floor(clamped / 60);
+  const wholeSeconds = Math.floor(clamped % 60);
+  return `${minutes}:${wholeSeconds.toString().padStart(2, '0')}`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 }
 
 document.querySelector<HTMLButtonElement>('#pause')!.addEventListener('click', (event) => {
@@ -238,6 +329,27 @@ document.querySelector<HTMLButtonElement>('#theme-toggle')!.addEventListener('cl
   scene.setTheme(next[scene.theme]);
 });
 document.querySelector<HTMLButtonElement>('#marker')!.addEventListener('click', () => void window.altairVisualizer?.addMarker?.('Manual marker').then(applySnapshot));
+document.querySelector<HTMLButtonElement>('#replay-open')!.addEventListener('click', () => {
+  clearInspectorLog();
+  void window.altairVisualizer?.openReplay?.().then(updateReplayControls);
+});
+document.querySelector<HTMLButtonElement>('#replay-play')!.addEventListener('click', () => {
+  const replay = state.replay;
+  const command = replay?.playing ? window.altairVisualizer?.replayPause : window.altairVisualizer?.replayPlay;
+  void command?.().then(updateReplayControls);
+});
+document.querySelector<HTMLButtonElement>('#replay-reset')!.addEventListener('click', () => void window.altairVisualizer?.replayReset?.().then(updateReplayControls));
+document.querySelector<HTMLInputElement>('#replay-timeline')!.addEventListener('input', (event) => {
+  void window.altairVisualizer?.replaySeek?.(Number((event.currentTarget as HTMLInputElement).value)).then(updateReplayControls);
+});
+document.querySelector<HTMLSelectElement>('#replay-speed')!.addEventListener('change', (event) => {
+  void window.altairVisualizer?.replaySetSpeed?.(Number((event.currentTarget as HTMLSelectElement).value)).then(updateReplayControls);
+});
+document.querySelector<HTMLButtonElement>('#replay-prev-marker')!.addEventListener('click', () => void window.altairVisualizer?.replayMarker?.(-1).then(updateReplayControls));
+document.querySelector<HTMLButtonElement>('#replay-next-marker')!.addEventListener('click', () => void window.altairVisualizer?.replayMarker?.(1).then(updateReplayControls));
+document.querySelector<HTMLInputElement>('#sync-inspection')!.addEventListener('change', (event) => {
+  state.syncInspection = (event.currentTarget as HTMLInputElement).checked;
+});
 document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach((button) => button.addEventListener('click', () => scene.setCameraMode(button.dataset.camera as CameraMode)));
 document.querySelectorAll<HTMLButtonElement>('[data-hud]').forEach((button) => button.addEventListener('click', () => {
   state.hudMode = button.dataset.hud as HudMode;

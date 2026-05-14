@@ -103,6 +103,32 @@ export type SessionSnapshotMessage = {
   decodedCount: number;
 };
 
+export type ReplaySourceType = 'altair-session' | 'ulog-import' | 'mavlink-live';
+
+export type ReplayMetadata = {
+  schemaVersion: number;
+  sourceType: ReplaySourceType;
+  createdAt: string;
+  vehicleIds: string[];
+  frameCount: number;
+  packetCount: number;
+  durationS: number;
+  label?: string;
+};
+
+export type ReplayTimelineMessage = {
+  type: 'replay_timeline';
+  loaded: boolean;
+  playing: boolean;
+  timestampS: number;
+  durationS: number;
+  speed: number;
+  frameIndex: number;
+  frameCount: number;
+  markers: SessionEvent[];
+  metadata: ReplayMetadata | null;
+};
+
 export type TrailPoint = {
   eastM: number;
   northM: number;

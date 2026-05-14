@@ -623,6 +623,7 @@ select {
 
 .inspector-actions {
   display: flex;
+  gap: 8px;
   justify-content: flex-end;
   margin-bottom: 10px;
 }
@@ -640,7 +641,8 @@ select {
   font-weight: 700;
 }
 
-.controls {
+.controls,
+.replay-controls {
   display: grid;
   gap: 12px;
   margin-bottom: 18px;
@@ -648,7 +650,8 @@ select {
   border-bottom: 1px solid var(--muted-border);
 }
 
-.controls label {
+.controls label,
+.replay-controls label {
   display: grid;
   gap: 6px;
   color: var(--muted);
@@ -656,7 +659,8 @@ select {
   text-transform: uppercase;
 }
 
-.controls .toggle {
+.controls .toggle,
+.replay-controls .toggle {
   grid-template-columns: auto 1fr;
   align-items: center;
   text-transform: none;
@@ -664,7 +668,8 @@ select {
   color: var(--text);
 }
 
-.controls .toggle input {
+.controls .toggle input,
+.replay-controls .toggle input {
   width: 18px;
   min-height: 18px;
   margin: 0;
@@ -684,6 +689,22 @@ select {
   grid-template-columns: 1fr 1fr 72px;
   gap: 8px;
   margin-bottom: 14px;
+}
+
+.replay-buttons,
+.replay-secondary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+#replay-time,
+#replay-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .vehicle-card {
@@ -717,6 +738,30 @@ select {
   display: grid;
   gap: 3px;
   text-align: left;
+}
+
+.vehicle-comparison {
+  display: grid;
+  gap: 8px;
+}
+
+.vehicle-comparison div {
+  display: grid;
+  grid-template-columns: minmax(42px, 0.9fr) minmax(60px, 1fr) minmax(48px, 0.8fr);
+  gap: 4px 8px;
+  border: 1px solid var(--muted-border);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 0.8rem;
+}
+
+.vehicle-comparison strong {
+  color: var(--text);
+}
+
+.vehicle-comparison span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 #vehicle-list span {

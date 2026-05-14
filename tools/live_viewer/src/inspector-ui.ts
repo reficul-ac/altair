@@ -2,12 +2,19 @@ import { fmt } from './hud-ui';
 import type { InspectorMessage, SessionEvent, SessionSnapshotMessage } from './state';
 
 type ChartPoint = { t: number; v: number };
+type InspectorLogRow = {
+  snapshotTimeS: number;
+  message: InspectorMessage;
+  field: string;
+  value: number | string | null;
+};
 
 let selectedKey: string | null = null;
 let lastSnapshot: SessionSnapshotMessage | null = null;
 let selectedMessage: InspectorMessage | null = null;
 const selectedChartFields = new Set<string>();
 const chartSeries = new Map<string, ChartPoint[]>();
+const inspectorLog: InspectorLogRow[] = [];
 
 export function filterInspectorMessages(messages: readonly InspectorMessage[], query: string): InspectorMessage[] {
   const needle = query.trim().toLowerCase();
@@ -43,6 +50,36 @@ export function buildInspectorCsv(message: InspectorMessage | null, fields: read
     for (const point of series) {
       rows.push([csvCell(message.name), csvCell(`${message.systemId}:${message.componentId}`), csvCell(field), point.t.toFixed(0), String(point.v)].join(','));
     }
+  }
+  return `${rows.join('\n')}\n`;
+}
+
+export function recordInspectorSnapshot(snapshot: SessionSnapshotMessage, timestampS = performance.now() / 1000): void {
+  for (const message of snapshot.messages) {
+    for (const [field, value] of Object.entries(message.fields)) {
+      inspectorLog.push({ snapshotTimeS: timestampS, message, field, value });
+    }
+  }
+  while (inspectorLog.length > 120_000) inspectorLog.splice(0, inspectorLog.length - 120_000);
+}
+
+export function clearInspectorLog(): void {
+  inspectorLog.length = 0;
+}
+
+export function buildInspectorLogCsv(): string {
+  const rows = ['snapshot_s,message,source,msg_id,field,value,count,rate_hz'];
+  for (const row of inspectorLog) {
+    rows.push([
+      row.snapshotTimeS.toFixed(3),
+      csvCell(row.message.name),
+      csvCell(`${row.message.systemId}:${row.message.componentId}`),
+      String(row.message.msgId),
+      csvCell(row.field),
+      csvCell(String(row.value ?? '')),
+      String(row.message.count),
+      row.message.rateHz.toFixed(3)
+    ].join(','));
   }
   return `${rows.join('\n')}\n`;
 }
@@ -90,6 +127,11 @@ function bindInspectorChrome(): void {
   if (exportButton && exportButton.dataset.bound !== 'true') {
     exportButton.dataset.bound = 'true';
     exportButton.addEventListener('click', () => exportSelectedCsv());
+  }
+  const logExportButton = document.querySelector<HTMLButtonElement>('#inspector-log-export');
+  if (logExportButton && logExportButton.dataset.bound !== 'true') {
+    logExportButton.dataset.bound = 'true';
+    logExportButton.addEventListener('click', () => exportInspectorLogCsv());
   }
 }
 
@@ -166,6 +208,17 @@ function exportSelectedCsv(): void {
   const link = document.createElement('a');
   link.href = url;
   link.download = `${selectedMessage?.name ?? 'mavlink'}-inspector.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportInspectorLogCsv(): void {
+  const csv = buildInspectorLogCsv();
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'altair-inspector-log.csv';
   link.click();
   URL.revokeObjectURL(url);
 }

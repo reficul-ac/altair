@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { addInspectorSamples, buildInspectorCsv, filterInspectorMessages, numericFieldNames } from './inspector-ui';
-import type { InspectorMessage } from './state';
+import { addInspectorSamples, buildInspectorCsv, buildInspectorLogCsv, clearInspectorLog, filterInspectorMessages, numericFieldNames, recordInspectorSnapshot } from './inspector-ui';
+import type { InspectorMessage, SessionSnapshotMessage } from './state';
 
 const attitude: InspectorMessage = {
   key: '1:1:30-test',
@@ -43,5 +43,23 @@ describe('inspector helpers', () => {
     expect(csv).toContain('"ATTITUDE","1:1","rollRad",100,0.1');
     expect(csv).toContain('"ATTITUDE","1:1","rollRad",150,0.2');
     expect(csv).not.toContain('pitchRad');
+  });
+
+  it('records continuous inspector snapshots as a session log csv', () => {
+    clearInspectorLog();
+    const snapshot: SessionSnapshotMessage = {
+      type: 'session_snapshot',
+      vehicles: [],
+      selectedVehicleId: null,
+      messages: [attitude],
+      events: [],
+      packetCount: 1,
+      decodedCount: 1
+    };
+    recordInspectorSnapshot(snapshot, 12.3456);
+    const csv = buildInspectorLogCsv();
+    expect(csv).toContain('snapshot_s,message,source,msg_id,field,value,count,rate_hz');
+    expect(csv).toContain('12.346,"ATTITUDE","1:1",30,"rollRad","0.1",2,10.000');
+    expect(csv).toContain('12.346,"ATTITUDE","1:1",30,"label","ok",2,10.000');
   });
 });

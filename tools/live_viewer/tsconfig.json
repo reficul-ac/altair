@@ -15,5 +15,5 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["src/main.ts", "src/state.ts", "src/hud-ui.ts", "src/inspector-ui.ts", "src/map-panel.ts", "src/scene-renderer.ts", "src/vite-env.d.ts"]
+  "include": ["src/main.ts", "src/state.ts", "src/replay.ts", "src/hud-ui.ts", "src/inspector-ui.ts", "src/map-panel.ts", "src/scene-renderer.ts", "src/vite-env.d.ts"]
 }

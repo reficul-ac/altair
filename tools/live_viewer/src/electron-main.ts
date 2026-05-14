@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -12,6 +13,7 @@ import {
   type SessionSnapshotPayload,
   type VehicleStatePayload
 } from './mavlink.js';
+import { parseAltairReplayJson, ReplaySession, type ReplayPlaybackState } from './replay.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, '..');
@@ -40,8 +42,9 @@ function parseArgs(argv: string[]): Partial<MavlinkServiceConfig> {
 }
 
 const telemetry = new MavlinkTelemetryService(parseArgs(process.argv.slice(1)));
+const replay = new ReplaySession();
 
-function sendToWindows(channel: string, payload: VehicleStatePayload | MavlinkServiceConfig | SessionSnapshotPayload): void {
+function sendToWindows(channel: string, payload: VehicleStatePayload | MavlinkServiceConfig | SessionSnapshotPayload | ReplayPlaybackState): void {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send(channel, payload);
   }
@@ -79,12 +82,32 @@ ipcMain.handle('mavlink:set-listen-port', async (_event, port: number) => {
   await telemetry.setListenPort(Number(port));
   return telemetry.getConfig();
 });
-ipcMain.handle('mavlink:select-vehicle', (_event, id: string) => telemetry.selectVehicle(String(id)));
+ipcMain.handle('mavlink:select-vehicle', (_event, id: string) => replay.isLoaded() ? replay.selectVehicle(String(id)) : telemetry.selectVehicle(String(id)));
 ipcMain.handle('mavlink:add-marker', (_event, label: string) => telemetry.addMarker(String(label || 'Marker')));
+ipcMain.handle('replay:open', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Open Altair replay',
+    properties: ['openFile'],
+    filters: [{ name: 'Altair replay', extensions: ['altair-replay', 'json'] }]
+  });
+  if (result.canceled || !result.filePaths[0]) {
+    return replay.state();
+  }
+  const raw = await readFile(result.filePaths[0], 'utf8');
+  return replay.load(parseAltairReplayJson(raw));
+});
+ipcMain.handle('replay:play', () => replay.play());
+ipcMain.handle('replay:pause', () => replay.pause());
+ipcMain.handle('replay:seek', (_event, timestampS: number) => replay.seek(Number(timestampS)));
+ipcMain.handle('replay:set-speed', (_event, speed: number) => replay.setSpeed(Number(speed)));
+ipcMain.handle('replay:reset', () => replay.reset());
+ipcMain.handle('replay:marker', (_event, direction: -1 | 1) => replay.seekMarker(direction < 0 ? -1 : 1));
 
 telemetry.on('vehicle-state', (payload: VehicleStatePayload) => sendToWindows('vehicle-state', payload));
 telemetry.on('config', (config: MavlinkServiceConfig) => sendToWindows('mavlink-config', config));
 telemetry.on('session-snapshot', (snapshot: SessionSnapshotPayload) => sendToWindows('session-snapshot', snapshot));
+replay.on('session-snapshot', (snapshot) => sendToWindows('session-snapshot', snapshot as SessionSnapshotPayload));
+replay.on('state', (state) => sendToWindows('replay-state', state));
 
 app.whenReady().then(async () => {
   await telemetry.start();
