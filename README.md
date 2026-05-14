@@ -53,27 +53,23 @@ rc_mode = 1
 ```
 
 ```sh
-./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv
-python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv
-python3 tools/python/run_sitl.py --scenario cruise6dof --profile turn --initial cruise6dof_initial.ini --duration 20 --dt 0.01 --output sitl_turn6dof.csv
-python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --realtime
-python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --mavlink --mavlink-port 14551
-python3 tools/python/plot_sitl.py sitl_cruise6dof.csv --plot velocities --plot attitudes --plot position --out-dir plots
-python3 tools/python/visualize_sitl_3d.py sitl_cruise6dof.csv --output sitl_3d.html
+tools/python/run_sitl_workflow.py
 ```
 
-`run_sitl.py` invokes the compiled runner and prints stable summary metrics such as `rows`, `final_airspeed_mps`, `final_altitude_m`, `finite`, `max_abs_roll_rad`, and motor command bounds.
+`run_sitl_workflow.py` is the offline playback workflow. It runs the default `cruise6dof` case, writes `sitl_cruise6dof.csv`, saves plots under `plots/sitl`, and generates `sitl_3d.html`.
+For live QGroundControl and browser visualization, run a session:
+
+```sh
+tools/python/run_sitl_session.py
+```
+
+The session launcher starts the MAVLink bridge, forwards telemetry to QGroundControl at `127.0.0.1:14550`, starts the live viewer at `http://127.0.0.1:5173`, and runs realtime `cruise6dof` SITL through the bridge. If `tools/live_viewer/node_modules` is missing, rerun with `--install-viewer-deps`.
+
+`run_sitl.py` remains the low-level wrapper around the compiled runner and prints stable summary metrics such as `rows`, `final_airspeed_mps`, `final_altitude_m`, `finite`, `max_abs_roll_rad`, and motor command bounds.
 For `cruise6dof`, `--profile` can select `cruise`, `takeoff`, `turn`, `descent`, `failsafe`, or `mission` command profiles.
 `cruise6dof` uses ECEF truth dynamics by default with a spherical Earth model and preserves local NED CSV columns as derived outputs. Use `--frame-mode ned` for the legacy local-NED dynamics path.
 By default SITL runs as fast as the host can execute it. Pass `--realtime` to pace the run so one simulated second takes one wall-clock second.
 Pass `--mavlink` to stream `cruise6dof` attitude, global position, airspeed, and heartbeat MAVLink telemetry over UDP. `--mavlink` defaults to `127.0.0.1:14550`, and `--mavlink-host`/`--mavlink-port` override that endpoint. The older `--qgc` names remain aliases.
-
-For live browser visualization with QGroundControl forwarding, run the bridge and point SITL at the bridge port:
-
-```sh
-python3 tools/python/mavlink_live_bridge.py --listen-host 127.0.0.1 --listen-port 14551 --forward 127.0.0.1:14550
-cd tools/live_viewer && npm install && npm run dev
-```
 
 `visualize_sitl_3d.py` writes a self-contained HTML playback page for `cruise6dof` CSV logs. Open the generated file in a browser to scrub and play back the 3D trajectory and aircraft attitude marker.
 

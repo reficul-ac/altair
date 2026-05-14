@@ -31,6 +31,11 @@ def main():
         return 2
 
     bridge = load_bridge(Path(sys.argv[1]))
+    args = bridge.parse_args(["--no-forward"])
+    if args.forward != []:
+        print("--no-forward did not disable default forwarding", file=sys.stderr)
+        return 1
+
     parser = bridge.MavlinkV1Parser()
     state = bridge.LiveVehicleState()
     heartbeat = frame(bridge, 0, struct.pack("<IBBBBB", 0, 1, 0, 0, 4, 3), seq=7)

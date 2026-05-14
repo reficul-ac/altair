@@ -386,10 +386,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=parse_endpoint,
         help="UDP endpoint to forward raw MAVLink packets to; repeatable",
     )
+    parser.add_argument(
+        "--no-forward",
+        action="store_true",
+        help="do not forward raw MAVLink packets to any UDP endpoint",
+    )
     parser.add_argument("--ws-host", default="127.0.0.1")
     parser.add_argument("--ws-port", type=int, default=8765)
     args = parser.parse_args(argv)
-    if args.forward is None:
+    if args.no_forward:
+        args.forward = []
+    elif args.forward is None:
         args.forward = [("127.0.0.1", 14550)]
     return args
 

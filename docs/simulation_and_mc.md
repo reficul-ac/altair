@@ -96,13 +96,13 @@ Use `--mavlink-host` and `--mavlink-port` for a remote endpoint or a non-default
 ./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --mavlink --mavlink-host 127.0.0.1 --mavlink-port 14551
 ```
 
-For simultaneous browser visualization and QGroundControl monitoring, route SITL through the live bridge. SITL sends to the bridge on `127.0.0.1:14551`; the bridge forwards the original packets to QGC on `127.0.0.1:14550` and publishes decoded state over WebSocket:
+For simultaneous browser visualization and QGroundControl monitoring, use the live session launcher:
 
 ```sh
-python3 tools/python/mavlink_live_bridge.py --listen-host 127.0.0.1 --listen-port 14551 --forward 127.0.0.1:14550 --ws-host 127.0.0.1 --ws-port 8765
-./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --mavlink --mavlink-port 14551
-cd tools/live_viewer && npm install && npm run dev
+tools/python/run_sitl_session.py
 ```
+
+The launcher starts `mavlink_live_bridge.py`, forwards raw packets to QGroundControl at `127.0.0.1:14550`, starts the browser live viewer at `http://127.0.0.1:5173`, and runs realtime `cruise6dof` SITL pointed at bridge UDP port `14551`. If the live viewer dependencies are not installed, rerun with `--install-viewer-deps`. Use `--no-qgc` or `--no-viewer` to disable either side of the live session.
 
 Latitude, longitude, and altitude in `cruise6dof` logs are derived from the spherical-Earth ECEF truth state in ECEF mode. The local `pos_n_m`, `pos_e_m`, `pos_d_m`, `vel_n_mps`, `vel_e_mps`, and `vel_d_mps` columns remain available as derived compatibility outputs relative to the configured initial origin. The appended `pos_ecef_x_m`, `pos_ecef_y_m`, `pos_ecef_z_m`, `vel_ecef_x_mps`, `vel_ecef_y_mps`, and `vel_ecef_z_mps` columns expose the ECEF truth state directly.
 
@@ -139,7 +139,7 @@ python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_init
 python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --mavlink --mavlink-port 14551
 ```
 
-To run the usual end-to-end local workflow in one command, use `run_sitl_workflow.py`. Its defaults are the routine `cruise6dof` case, the repository initial-condition file, `duration=60`, `dt=0.01`, non-realtime execution, all plots saved under `plots/sitl`, and `sitl_3d.html` generation:
+To run the offline playback workflow in one command, use `run_sitl_workflow.py`. Its defaults are the routine `cruise6dof` case, the repository initial-condition file, `duration=60`, `dt=0.01`, non-realtime execution, all plots saved under `plots/sitl`, and `sitl_3d.html` generation:
 
 ```sh
 tools/python/run_sitl_workflow.py
@@ -151,6 +151,14 @@ The same script accepts overrides for less common runs:
 tools/python/run_sitl_workflow.py --duration 10 --output /tmp/sitl.csv --plots-dir /tmp/plots --html /tmp/sitl_3d.html
 tools/python/run_sitl_workflow.py --realtime
 tools/python/run_sitl_workflow.py --mavlink --mavlink-port 14551
+```
+
+For a live session with both the browser viewer and QGroundControl forwarding:
+
+```sh
+tools/python/run_sitl_session.py
+tools/python/run_sitl_session.py --profile turn --duration 30
+tools/python/run_sitl_session.py --no-qgc
 ```
 
 Case files are an Altair one-time setup layer for initial conditions, run configuration,
@@ -233,7 +241,8 @@ The runner exits `0` when all runs pass, `3` when any run fails a metric gate, a
 Python scripts in `tools/python` are orchestration helpers only:
 
 - `run_sitl.py` invokes the compiled SITL runner and prints summary metrics.
-- `run_sitl_workflow.py` runs SITL, plots the CSV log, and generates the standalone 3D playback page with routine defaults.
+- `run_sitl_workflow.py` runs the offline playback workflow: SITL, CSV plots, and standalone 3D playback HTML with routine defaults.
+- `run_sitl_session.py` runs the live workflow: MAVLink bridge, browser live viewer, optional QGroundControl forwarding, and realtime SITL.
 - `mavlink_live_bridge.py` listens for MAVLink v1 UDP packets, forwards raw packets to one or more UDP endpoints such as QGroundControl, and publishes decoded live state over WebSocket for `tools/live_viewer`.
 - `compare_sitl_replay.py` compares two replay CSV files with identical headers, identical row counts, and numeric tolerances.
 - `run_mc.py` invokes the compiled runner and writes CSV.

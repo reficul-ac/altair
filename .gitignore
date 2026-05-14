@@ -3,6 +3,7 @@ build-*/
 artifacts/
 plots/
 /*.csv
+/sitl_3d.html
 __pycache__/
 *.py[cod]
 tools/live_viewer/dist/

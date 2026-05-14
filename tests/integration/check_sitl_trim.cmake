@@ -9,7 +9,10 @@ if(LINE_COUNT LESS 2)
 endif()
 
 list(GET CSV_LINES 0 HEADER)
-string(FIND "${HEADER}" "trim_active,trim_achieved,trim_failed,trim_iteration_count,trim_residual_norm" TRIM_COLUMNS)
+string(FIND "${HEADER}"
+            "trim_active,trim_achieved,trim_failed,trim_iteration_count,trim_residual_norm"
+            TRIM_COLUMNS
+)
 if(TRIM_COLUMNS EQUAL -1)
     message(FATAL_ERROR "trim status columns are missing")
 endif()
