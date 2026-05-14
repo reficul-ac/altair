@@ -1,11 +1,22 @@
 {
-  "name": "altair-live-viewer",
+  "name": "altair-visualizer",
+  "productName": "Altair Visualizer",
+  "description": "Desktop MAVLink 3D visualizer for Altair SITL.",
+  "author": "Altair",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/reficul-ac/altair.git",
+    "directory": "tools/live_viewer"
+  },
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "dist-electron/electron-main.js",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc && vite build",
+    "build": "tsc -p tsconfig.json && vite build && tsc -p tsconfig.electron.json",
+    "app": "npm run build && electron .",
+    "dist:appimage": "npm run build && electron-builder --linux AppImage --publish never",
     "test": "vitest run"
   },
   "dependencies": {
@@ -13,8 +24,26 @@
     "vite": "^5.3.0"
   },
   "devDependencies": {
+    "@types/node": "^20.14.0",
     "@types/three": "^0.184.1",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
     "typescript": "^5.5.0",
     "vitest": "^1.6.0"
+  },
+  "build": {
+    "appId": "ac.reficul.altair.visualizer",
+    "productName": "Altair Visualizer",
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Science"
+    }
   }
 }

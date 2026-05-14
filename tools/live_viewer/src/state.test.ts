@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { parseVehicleState, trailPointFromState, TrailBuffer, type VehicleStateMessage } from './state';
+import {
+  hasRenderablePosition,
+  isTelemetryStale,
+  headingDegFromYaw,
+  parseVehicleState,
+  trailPointFromState,
+  TrailBuffer,
+  yawDegFromRad,
+  type VehicleStateMessage
+} from './state';
 
 const message: VehicleStateMessage = {
   type: 'vehicle_state',
@@ -8,6 +17,7 @@ const message: VehicleStateMessage = {
   heartbeatAgeS: 0.5,
   systemId: 1,
   componentId: 1,
+  vehicleType: 'Fixed-wing',
   attitude: {
     rollRad: 0.1,
     pitchRad: 0.2,
@@ -40,6 +50,7 @@ describe('live viewer state', () => {
   it('parses vehicle state messages', () => {
     expect(parseVehicleState(JSON.stringify(message))?.metrics.airspeedMps).toBe(18.5);
     expect(parseVehicleState(JSON.stringify({ type: 'other' }))).toBeNull();
+    expect(parseVehicleState('not json')).toBeNull();
   });
 
   it('keeps the trail bounded', () => {
@@ -53,5 +64,21 @@ describe('live viewer state', () => {
 
   it('builds trail points from local ENU state', () => {
     expect(trailPointFromState(message, 42)).toEqual({ eastM: 2, northM: 3, upM: 4, timestampMs: 42 });
+  });
+
+  it('reports stale and partial telemetry', () => {
+    expect(isTelemetryStale(null)).toBe(true);
+    expect(isTelemetryStale({ ...message, packetAgeS: 2.1 })).toBe(true);
+    expect(isTelemetryStale({ ...message, packetAgeS: 0.5 })).toBe(false);
+    expect(hasRenderablePosition(null)).toBe(false);
+    expect(hasRenderablePosition({ ...message, localPosition: { eastM: null, northM: 3, upM: 4 } })).toBe(false);
+    expect(hasRenderablePosition(message)).toBe(true);
+  });
+
+  it('converts yaw to display heading formats', () => {
+    expect(headingDegFromYaw(0)).toBe(90);
+    expect(headingDegFromYaw(Math.PI / 2)).toBe(0);
+    expect(yawDegFromRad(Math.PI)).toBe(-180);
+    expect(yawDegFromRad(-Math.PI / 2)).toBe(-90);
   });
 });

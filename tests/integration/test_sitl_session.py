@@ -49,6 +49,18 @@ def main():
         )
         return 1
 
+    result = run_session(repo_root, "--app", "--duration", "0.2")
+    if result.returncode != 0:
+        print(result.stdout, end="")
+        print(result.stderr, end="", file=sys.stderr)
+        return result.returncode
+    if "app: (cd" not in result.stdout or "npm run app -- --listen-host 127.0.0.1 --listen-port 14551" not in result.stdout:
+        print("session did not start the Electron visualizer with --app", file=sys.stderr)
+        return 1
+    if "mavlink_live_bridge.py" in result.stdout or "npm run dev" in result.stdout:
+        print("session started the browser bridge path despite --app", file=sys.stderr)
+        return 1
+
     result = run_session(repo_root, "--no-viewer", "--no-qgc")
     if result.returncode != 0:
         print(result.stdout, end="")

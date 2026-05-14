@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "lib": ["ES2022", "DOM"],
+    "noEmit": false,
+    "outDir": "dist-electron",
+    "rootDir": "src",
+    "sourceMap": true,
+    "isolatedModules": false
+  },
+  "include": [
+    "src/electron-main.ts",
+    "src/preload.ts",
+    "src/electron-test-entry.ts",
+    "src/mavlink.ts",
+    "src/state.ts"
+  ]
+}

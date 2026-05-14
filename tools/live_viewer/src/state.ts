@@ -5,6 +5,7 @@ export type VehicleStateMessage = {
   heartbeatAgeS: number | null;
   systemId: number | null;
   componentId: number | null;
+  vehicleType: string | null;
   attitude: {
     rollRad: number;
     pitchRad: number;
@@ -70,7 +71,12 @@ export class TrailBuffer {
 }
 
 export function parseVehicleState(raw: string): VehicleStateMessage | null {
-  const parsed: unknown = JSON.parse(raw);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
   if (!parsed || typeof parsed !== 'object' || (parsed as { type?: unknown }).type !== 'vehicle_state') {
     return null;
   }
@@ -83,4 +89,25 @@ export function trailPointFromState(state: VehicleStateMessage, timestampMs = Da
     return null;
   }
   return { eastM, northM, upM, timestampMs };
+}
+
+export function isTelemetryStale(state: VehicleStateMessage | null, staleAfterS = 2): boolean {
+  if (!state?.connected || state.packetAgeS === null) {
+    return true;
+  }
+  return state.packetAgeS >= staleAfterS;
+}
+
+export function hasRenderablePosition(state: VehicleStateMessage | null): boolean {
+  return state !== null && trailPointFromState(state) !== null;
+}
+
+export function headingDegFromYaw(yawRad: number): number {
+  const deg = (yawRad * 180) / Math.PI;
+  return (90 - deg + 360) % 360;
+}
+
+export function yawDegFromRad(yawRad: number): number {
+  const deg = (yawRad * 180) / Math.PI;
+  return ((((deg + 180) % 360) + 360) % 360) - 180;
 }

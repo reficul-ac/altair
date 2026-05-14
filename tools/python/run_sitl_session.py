@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a live Altair SITL session with browser viewer and optional QGC forwarding."""
+"""Run a live Altair SITL session with desktop or browser visualization."""
 
 from __future__ import annotations
 
@@ -82,6 +82,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="start the browser live viewer dev server",
     )
     parser.add_argument("--no-viewer", dest="viewer", action="store_false")
+    parser.add_argument(
+        "--app",
+        action="store_true",
+        help="start the packaged Electron visualizer instead of the browser viewer and Python bridge",
+    )
     parser.add_argument("--viewer-host", default="127.0.0.1")
     parser.add_argument("--viewer-port", type=int, default=5173)
     parser.add_argument(
@@ -99,6 +104,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         args.initial = str(root / "tests" / "integration" / "cruise6dof_initial.ini")
     if not args.qgc and args.qgc_endpoint:
         parser.error("--qgc-endpoint requires --qgc")
+    if args.app and not args.viewer:
+        parser.error("--app cannot be combined with --no-viewer")
     return args
 
 
@@ -144,6 +151,25 @@ def viewer_command(args: argparse.Namespace) -> list[str]:
         "--port",
         str(args.viewer_port),
     ]
+
+
+def app_command(args: argparse.Namespace) -> list[str]:
+    command = [
+        "npm",
+        "run",
+        "app",
+        "--",
+        "--listen-host",
+        args.bridge_host,
+        "--listen-port",
+        str(args.bridge_port),
+    ]
+    if args.qgc:
+        for host, port in args.qgc_endpoint or [("127.0.0.1", 14550)]:
+            command.extend(["--qgc-endpoint", f"{host}:{port}"])
+    else:
+        command.append("--no-qgc")
+    return command
 
 
 def sitl_command(args: argparse.Namespace) -> list[str]:
@@ -214,10 +240,15 @@ def terminate(processes: list[subprocess.Popen]) -> None:
 def run(args: argparse.Namespace) -> int:
     root = repo_root()
     viewer_dir = root / "tools" / "live_viewer"
-    commands: list[tuple[str, list[str], pathlib.Path | None]] = [
-        ("bridge", bridge_command(args), None),
-    ]
-    if args.viewer:
+    commands: list[tuple[str, list[str], pathlib.Path | None]] = []
+    if args.app:
+        require_viewer_ready(root, args.install_viewer_deps, args.dry_run)
+        if args.install_viewer_deps:
+            commands.append(("viewer dependencies", viewer_install_command(), viewer_dir))
+        commands.append(("app", app_command(args), viewer_dir))
+    else:
+        commands.append(("bridge", bridge_command(args), None))
+    if args.viewer and not args.app:
         require_viewer_ready(root, args.install_viewer_deps, args.dry_run)
         if args.install_viewer_deps:
             commands.append(("viewer dependencies", viewer_install_command(), viewer_dir))
@@ -241,7 +272,9 @@ def run(args: argparse.Namespace) -> int:
     try:
         print(
             (
-                f"viewer=http://{args.viewer_host}:{args.viewer_port}"
+                "viewer=app"
+                if args.app
+                else f"viewer=http://{args.viewer_host}:{args.viewer_port}"
                 if args.viewer
                 else "viewer=disabled"
             ),

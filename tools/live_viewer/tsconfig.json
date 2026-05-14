@@ -15,5 +15,5 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src/main.ts", "src/state.ts", "src/vite-env.d.ts"]
 }
