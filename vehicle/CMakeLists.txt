@@ -16,9 +16,9 @@ target_include_directories(
 target_link_libraries(altair_sim_model PUBLIC altair_vehicle bayek_sim)
 altair_enable_warnings(altair_sim_model)
 
-add_library(altair_sitl sitl_initial_conditions.c)
+add_library(altair_sitl sitl_initial_conditions.c sitl_case.c)
 target_include_directories(altair_sitl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(altair_sitl PUBLIC bayek_common)
+target_link_libraries(altair_sitl PUBLIC bayek_common bayek_sim altair_vehicle altair_sim_model)
 altair_enable_warnings(altair_sitl)
 
 add_executable(sitl_runner sitl_runner.c)

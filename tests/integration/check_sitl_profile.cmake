@@ -138,7 +138,10 @@ if(PROFILE STREQUAL "mission")
                 "mission profile should advance past the launch waypoint immediately, got first active=${FIRST_MISSION_ACTIVE}"
         )
     endif()
-    if(NOT LAST_MISSION_LOADED EQUAL 1 OR NOT LAST_MISSION_COUNT EQUAL 3 OR NOT LAST_MISSION_ACTIVE EQUAL 2)
+    if(NOT LAST_MISSION_LOADED EQUAL 1
+       OR NOT LAST_MISSION_COUNT EQUAL 3
+       OR NOT LAST_MISSION_ACTIVE EQUAL 2
+    )
         message(
             FATAL_ERROR
                 "mission profile should keep the altitude-step mission loaded at the climb waypoint, got loaded=${LAST_MISSION_LOADED} count=${LAST_MISSION_COUNT} active=${LAST_MISSION_ACTIVE}"

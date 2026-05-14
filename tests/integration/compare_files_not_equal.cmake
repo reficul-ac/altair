@@ -1,0 +1,12 @@
+if(NOT DEFINED EXPECTED_FILE)
+    message(FATAL_ERROR "EXPECTED_FILE is required")
+endif()
+if(NOT DEFINED ACTUAL_FILE)
+    message(FATAL_ERROR "ACTUAL_FILE is required")
+endif()
+
+file(READ "${EXPECTED_FILE}" EXPECTED_CONTENT)
+file(READ "${ACTUAL_FILE}" ACTUAL_CONTENT)
+if(EXPECTED_CONTENT STREQUAL ACTUAL_CONTENT)
+    message(FATAL_ERROR "files should differ: ${EXPECTED_FILE} and ${ACTUAL_FILE}")
+endif()

@@ -24,6 +24,7 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--output", default="sitl.csv")
     parser.add_argument("--initial", help="initial-condition file for cruise6dof")
+    parser.add_argument("--case", help="sectioned SITL case file for cruise6dof")
     parser.add_argument(
         "--frame-mode", choices=("ned", "ecef"), default="ecef", help="6DOF truth frame"
     )
@@ -50,6 +51,10 @@ def parse_args():
         "--qgc-port", "--mavlink-port", dest="qgc_port", default="14550", help="MAVLink UDP port"
     )
     args = parser.parse_args()
+    if args.scenario != "cruise6dof" and args.initial is not None:
+        parser.error("--initial is only supported with --scenario cruise6dof")
+    if args.scenario != "cruise6dof" and args.case is not None:
+        parser.error("--case is only supported with --scenario cruise6dof")
     if args.scenario != "cruise6dof" and args.profile != "cruise":
         parser.error("--profile is only supported with --scenario cruise6dof")
     if args.qgc and args.scenario != "cruise6dof":
@@ -155,6 +160,8 @@ def main():
     ]
     if args.initial is not None:
         command.extend(["--initial", args.initial])
+    if args.case is not None:
+        command.extend(["--case", args.case])
     if args.realtime:
         command.append("--realtime")
     if args.qgc:

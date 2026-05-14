@@ -50,6 +50,71 @@ set_tests_properties(
     integration_sitl_cruise6dof_trajectory PROPERTIES DEPENDS integration_sitl_cruise6dof
 )
 
+set(SITL_CRUISE6DOF_CASE_INITIAL_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_case_initial.csv")
+add_test(
+    NAME integration_sitl_cruise6dof_case_initial
+    COMMAND
+        $<TARGET_FILE:sitl_runner> --scenario cruise6dof --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_case_initial.ini" --duration 10 --dt 0.01 --output
+        "${SITL_CRUISE6DOF_CASE_INITIAL_CSV}"
+)
+add_test(
+    NAME integration_sitl_cruise6dof_case_initial_matches_initial
+    COMMAND
+        ${CMAKE_COMMAND} -DEXPECTED_FILE=${SITL_CRUISE6DOF_CSV}
+        -DACTUAL_FILE=${SITL_CRUISE6DOF_CASE_INITIAL_CSV} -P
+        "${CMAKE_CURRENT_SOURCE_DIR}/compare_files.cmake"
+)
+set_tests_properties(
+    integration_sitl_cruise6dof_case_initial_matches_initial
+    PROPERTIES DEPENDS "integration_sitl_cruise6dof;integration_sitl_cruise6dof_case_initial"
+)
+
+set(SITL_CRUISE6DOF_CASE_SIM_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_case_sim.csv")
+add_test(
+    NAME integration_sitl_cruise6dof_case_sim_params
+    COMMAND
+        $<TARGET_FILE:sitl_runner> --scenario cruise6dof --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_case_sim_params.ini" --duration 10 --dt 0.01
+        --output "${SITL_CRUISE6DOF_CASE_SIM_CSV}"
+)
+add_test(
+    NAME integration_sitl_cruise6dof_case_sim_changes_trajectory
+    COMMAND
+        ${CMAKE_COMMAND} -DEXPECTED_FILE=${SITL_CRUISE6DOF_CSV}
+        -DACTUAL_FILE=${SITL_CRUISE6DOF_CASE_SIM_CSV} -P
+        "${CMAKE_CURRENT_SOURCE_DIR}/compare_files_not_equal.cmake"
+)
+set_tests_properties(
+    integration_sitl_cruise6dof_case_sim_changes_trajectory
+    PROPERTIES DEPENDS "integration_sitl_cruise6dof;integration_sitl_cruise6dof_case_sim_params"
+)
+
+set(SITL_CRUISE6DOF_CASE_MISSION_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_case_mission.csv")
+add_test(
+    NAME integration_sitl_cruise6dof_case_mission
+    COMMAND
+        $<TARGET_FILE:sitl_runner> --scenario cruise6dof --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_case_mission.ini" --duration 1 --dt 0.01 --output
+        "${SITL_CRUISE6DOF_CASE_MISSION_CSV}"
+)
+add_test(NAME integration_sitl_cruise6dof_case_mission_columns
+         COMMAND ${CMAKE_COMMAND} -DCSV_FILE=${SITL_CRUISE6DOF_CASE_MISSION_CSV} -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/check_sitl_case_mission.cmake"
+)
+set_tests_properties(
+    integration_sitl_cruise6dof_case_mission_columns
+    PROPERTIES DEPENDS integration_sitl_cruise6dof_case_mission
+)
+
+add_test(
+    NAME integration_sitl_cruise6dof_case_bad
+    COMMAND
+        ${CMAKE_COMMAND} -DSITL_RUNNER=$<TARGET_FILE:sitl_runner>
+        -DCASE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_case_bad.ini -P
+        "${CMAKE_CURRENT_SOURCE_DIR}/expect_bad_case.cmake"
+)
+
 set(SITL_CRUISE6DOF_NED_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_ned.csv")
 add_test(
     NAME integration_sitl_cruise6dof_ned

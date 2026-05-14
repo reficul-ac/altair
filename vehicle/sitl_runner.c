@@ -3,6 +3,7 @@
 #include "fsw.h"
 #include "math_utils.h"
 #include "sim_plant.h"
+#include "sitl_case.h"
 #include "sitl_initial_conditions.h"
 
 #include <arpa/inet.h>
@@ -28,6 +29,8 @@ typedef struct
     uint32_t seed;
     const char *output_path;
     const char *initial_path;
+    const char *case_path;
+    const sitl_case_t *case_file;
     int frame_mode;
     int realtime;
     int qgc_enabled;
@@ -48,7 +51,7 @@ static void print_usage(FILE *stream)
     fprintf(
         stream,
         "usage: sitl_runner [--scenario smoke|cruise6dof] [--duration seconds] [--dt seconds]\n"
-        "                   [--seed uint] [--output path] [--initial path]\n"
+        "                   [--seed uint] [--output path] [--initial path] [--case path]\n"
         "                   [--frame-mode ned|ecef]\n"
         "                   [--profile cruise|takeoff|turn|descent|failsafe|mission] [--realtime]\n"
         "                   [--mavlink] [--mavlink-host host] [--mavlink-port port]\n"
@@ -98,6 +101,8 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg)
     cfg->seed = 1U;
     cfg->output_path = NULL;
     cfg->initial_path = NULL;
+    cfg->case_path = NULL;
+    cfg->case_file = NULL;
     cfg->frame_mode = SIM6DOF_FRAME_ECEF;
     cfg->realtime = 0;
     cfg->qgc_enabled = 0;
@@ -168,6 +173,15 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg)
             }
             cfg->initial_path = argv[i];
         }
+        else if (strcmp(argv[i], "--case") == 0)
+        {
+            if (++i >= argc)
+            {
+                fprintf(stderr, "--case requires a value\n");
+                return -1;
+            }
+            cfg->case_path = argv[i];
+        }
         else if (strcmp(argv[i], "--frame-mode") == 0)
         {
             if (++i >= argc)
@@ -223,6 +237,45 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg)
         }
     }
 
+    (void)cfg->seed;
+    return 0;
+}
+
+static void apply_case_run_config(sitl_config_t *cfg, const sitl_case_t *case_file)
+{
+    if (cfg == NULL || case_file == NULL)
+    {
+        return;
+    }
+    if (case_file->run.has_scenario)
+    {
+        cfg->scenario = case_file->run.scenario;
+    }
+    if (case_file->run.has_profile)
+    {
+        cfg->profile = case_file->run.profile;
+    }
+    if (case_file->run.has_duration_s)
+    {
+        cfg->duration_s = case_file->run.duration_s;
+    }
+    if (case_file->run.has_dt_s)
+    {
+        cfg->dt_s = case_file->run.dt_s;
+    }
+    if (case_file->run.has_seed)
+    {
+        cfg->seed = case_file->run.seed;
+    }
+    if (case_file->run.has_frame_mode)
+    {
+        cfg->frame_mode = case_file->run.frame_mode;
+    }
+    cfg->case_file = case_file;
+}
+
+static int validate_config(const sitl_config_t *cfg)
+{
     if (strcmp(cfg->scenario, "smoke") != 0 && strcmp(cfg->scenario, "cruise6dof") != 0)
     {
         fprintf(stderr, "unknown scenario: %s\n", cfg->scenario);
@@ -243,6 +296,11 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg)
         fprintf(stderr, "--initial is only supported with --scenario cruise6dof\n");
         return -1;
     }
+    if (cfg->case_path != NULL && strcmp(cfg->scenario, "cruise6dof") != 0)
+    {
+        fprintf(stderr, "--case is only supported with --scenario cruise6dof\n");
+        return -1;
+    }
     if (strcmp(cfg->profile, "cruise") != 0 && strcmp(cfg->profile, "takeoff") != 0 &&
         strcmp(cfg->profile, "turn") != 0 && strcmp(cfg->profile, "descent") != 0 &&
         strcmp(cfg->profile, "failsafe") != 0 && strcmp(cfg->profile, "mission") != 0)
@@ -260,7 +318,6 @@ static int parse_args(int argc, char **argv, sitl_config_t *cfg)
         fprintf(stderr, "--mavlink/--qgc is only supported with --scenario cruise6dof\n");
         return -1;
     }
-    (void)cfg->seed;
     return 0;
 }
 
@@ -769,17 +826,27 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
     fsw_input_t input;
     fsw_output_t output;
     sitl_initial_conditions_t initial;
+    vehicle_params_t vehicle_params;
     qgc_link_t qgc;
     char initial_error[160];
     char model_error[160];
     int i;
     double start_wall_s;
 
-    bayek_fsw_init(altair_vehicle_interface());
+    vehicle_params = *altair_default_params();
+    if (cfg->case_file != NULL && cfg->case_file->has_vehicle_params)
+    {
+        vehicle_params = cfg->case_file->vehicle_params;
+    }
+    bayek_fsw_init(altair_vehicle_interface_with_params(&vehicle_params));
     altair_fixedwing_sim_params(&params);
+    if (cfg->case_file != NULL && cfg->case_file->has_sim_params)
+    {
+        params = cfg->case_file->sim_params;
+    }
     params.core.frame_mode = cfg->frame_mode;
     if (!altair_fixedwing_sim_params_are_valid(
-            &params, altair_default_params(), model_error, sizeof(model_error)))
+            &params, &vehicle_params, model_error, sizeof(model_error)))
     {
         fprintf(stderr, "invalid fixed-wing sim model: %s\n", model_error);
         return 1;
@@ -795,12 +862,27 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
             return 1;
         }
     }
+    if (cfg->case_file != NULL && cfg->case_file->has_initial)
+    {
+        initial = cfg->case_file->initial;
+    }
     apply_initial_conditions(&plant, &params.core, &initial);
     if (!qgc_open(cfg, &qgc))
     {
         return 1;
     }
-    if (strcmp(cfg->profile, "mission") == 0)
+    if (cfg->case_file != NULL && cfg->case_file->has_mission)
+    {
+        if (cfg->case_file->mission_enabled && cfg->case_file->mission.waypoint_count > 0U)
+        {
+            bayek_fsw_set_mission(&cfg->case_file->mission);
+        }
+        else
+        {
+            bayek_fsw_clear_mission();
+        }
+    }
+    else if (strcmp(cfg->profile, "mission") == 0)
     {
         load_cruise6dof_mission(&initial);
     }
@@ -946,6 +1028,8 @@ int main(int argc, char **argv)
     FILE *csv = stdout;
     int parse_result;
     int run_result;
+    sitl_case_t case_file;
+    char case_error[200];
 
     parse_result = parse_args(argc, argv, &cfg);
     if (parse_result > 0)
@@ -953,6 +1037,20 @@ int main(int argc, char **argv)
         return 0;
     }
     if (parse_result < 0)
+    {
+        print_usage(stderr);
+        return 1;
+    }
+    if (cfg.case_path != NULL)
+    {
+        if (!sitl_case_load(cfg.case_path, &case_file, case_error, sizeof(case_error)))
+        {
+            fprintf(stderr, "failed to load case file: %s\n", case_error);
+            return 1;
+        }
+        apply_case_run_config(&cfg, &case_file);
+    }
+    if (validate_config(&cfg) < 0)
     {
         print_usage(stderr);
         return 1;

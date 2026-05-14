@@ -34,6 +34,7 @@ def parse_args():
         "--initial",
         help="initial-condition file for cruise6dof; defaults to the repository cruise6dof fixture",
     )
+    parser.add_argument("--case", help="sectioned SITL case file for cruise6dof")
     parser.add_argument(
         "--realtime",
         action="store_true",
@@ -68,10 +69,12 @@ def parse_args():
     parser.add_argument("--skip-plots", action="store_true")
     parser.add_argument("--skip-visualization", action="store_true")
     args = parser.parse_args()
-    if args.initial is None and args.scenario == "cruise6dof":
+    if args.initial is None and args.case is None and args.scenario == "cruise6dof":
         args.initial = str(root / "tests" / "integration" / "cruise6dof_initial.ini")
     if args.scenario != "cruise6dof" and args.initial is not None:
         parser.error("--initial is only supported with --scenario cruise6dof")
+    if args.scenario != "cruise6dof" and args.case is not None:
+        parser.error("--case is only supported with --scenario cruise6dof")
     if args.scenario != "cruise6dof" and args.profile != "cruise":
         parser.error("--profile is only supported with --scenario cruise6dof")
     if args.qgc and args.scenario != "cruise6dof":
@@ -114,6 +117,8 @@ def main():
     ]
     if args.initial:
         sitl_command.extend(["--initial", args.initial])
+    if args.case:
+        sitl_command.extend(["--case", args.case])
     if args.realtime:
         sitl_command.append("--realtime")
     if args.qgc:
