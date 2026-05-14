@@ -240,9 +240,11 @@ def run(args: argparse.Namespace) -> int:
     signal.signal(signal.SIGTERM, stop)
     try:
         print(
-            f"viewer=http://{args.viewer_host}:{args.viewer_port}"
-            if args.viewer
-            else "viewer=disabled",
+            (
+                f"viewer=http://{args.viewer_host}:{args.viewer_port}"
+                if args.viewer
+                else "viewer=disabled"
+            ),
             flush=True,
         )
         if args.qgc:

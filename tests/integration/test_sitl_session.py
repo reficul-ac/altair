@@ -43,7 +43,10 @@ def main():
         print("session did not route realtime SITL through the bridge", file=sys.stderr)
         return 1
     if "tests/integration/cruise6dof_initial.ini" not in result.stdout:
-        print("session did not use the repository initial-condition fixture by default", file=sys.stderr)
+        print(
+            "session did not use the repository initial-condition fixture by default",
+            file=sys.stderr,
+        )
         return 1
 
     result = run_session(repo_root, "--no-viewer", "--no-qgc")
