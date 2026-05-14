@@ -2,8 +2,22 @@ import * as THREE from 'three';
 import { fmt } from './hud-ui';
 import { TrailBuffer, trailPointFromState, type SessionEvent, type VehicleStateMessage, type TrailPoint } from './state';
 
-export type CameraMode = 'chase' | 'fpv' | 'free';
+export const CAMERA_MODES = ['chase', 'orbit', 'top', 'side', 'free'] as const;
+export type CameraMode = (typeof CAMERA_MODES)[number];
 export type ThemeName = 'grid' | 'rez' | 'snow';
+export type VehicleModelKind = 'fixed-wing' | 'multirotor' | 'vtol' | 'generic';
+
+export function nextCameraMode(mode: CameraMode): CameraMode {
+  return CAMERA_MODES[(CAMERA_MODES.indexOf(mode) + 1) % CAMERA_MODES.length];
+}
+
+export function classifyVehicleModel(vehicleType: string | null | undefined): VehicleModelKind {
+  const label = (vehicleType ?? '').toLowerCase();
+  if (label.includes('vtol') || label.includes('tailsitter')) return 'vtol';
+  if (label.includes('rotor') || label.includes('copter') || label.includes('helicopter')) return 'multirotor';
+  if (label.includes('fixed') || label.includes('plane') || label.includes('airship')) return 'fixed-wing';
+  return 'generic';
+}
 
 export class SceneRenderer {
   readonly trail = new TrailBuffer(2200);
@@ -11,8 +25,9 @@ export class SceneRenderer {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(55, 1, 0.1, 4000);
   private readonly freeControls = { yaw: 0, pitch: -0.35, keys: new Set<string>(), dragging: false, lastX: 0, lastY: 0 };
-  private readonly aircraft = makeAircraft();
-  private readonly otherAircraft = new Map<string, THREE.Group>();
+  private aircraft = makeVehicleModel('fixed-wing');
+  private selectedModelKind: VehicleModelKind = 'fixed-wing';
+  private readonly otherAircraft = new Map<string, { group: THREE.Group; kind: VehicleModelKind }>();
   private readonly headingCue = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 8), 42, 0xffc857, 10, 5);
   private readonly trailGeometry = new THREE.BufferGeometry();
   private readonly trailMaterial = new THREE.LineBasicMaterial({ color: 0x66e0a3 });
@@ -64,6 +79,7 @@ export class SceneRenderer {
 
   applyVehicle(message: VehicleStateMessage): void {
     this.lastMessage = message;
+    this.ensureSelectedVehicleModel(message.vehicleType);
     const point = trailPointFromState(message);
     if (point) {
       this.lastPoint = point;
@@ -81,17 +97,25 @@ export class SceneRenderer {
   applyFleet(vehicles: VehicleStateMessage[], selectedId: string | null, events: SessionEvent[]): void {
     for (const vehicle of vehicles) {
       if (!vehicle.id || vehicle.id === selectedId) continue;
-      const group = this.otherAircraft.get(vehicle.id) ?? makeAircraft(0x3aa0ff);
-      if (!this.otherAircraft.has(vehicle.id)) {
+      const kind = classifyVehicleModel(vehicle.vehicleType);
+      let entry = this.otherAircraft.get(vehicle.id);
+      if (entry && entry.kind !== kind) {
+        this.scene.remove(entry.group);
+        this.otherAircraft.delete(vehicle.id);
+        entry = undefined;
+      }
+      if (!entry) {
+        const group = makeVehicleModel(kind, 0x3aa0ff);
         group.scale.setScalar(0.72);
-        this.otherAircraft.set(vehicle.id, group);
+        entry = { group, kind };
+        this.otherAircraft.set(vehicle.id, entry);
         this.scene.add(group);
       }
-      this.applyPose(group, vehicle);
+      this.applyPose(entry.group, vehicle);
     }
-    for (const [id, group] of this.otherAircraft) {
+    for (const [id, entry] of this.otherAircraft) {
       if (!vehicles.some((vehicle) => vehicle.id === id && vehicle.id !== selectedId)) {
-        this.scene.remove(group);
+        this.scene.remove(entry.group);
         this.otherAircraft.delete(id);
       }
     }
@@ -132,6 +156,19 @@ export class SceneRenderer {
   clearTrail(): void {
     this.trail.clear();
     this.updateTrail();
+  }
+
+  private ensureSelectedVehicleModel(vehicleType: string | null | undefined): void {
+    const kind = classifyVehicleModel(vehicleType);
+    if (kind === this.selectedModelKind) return;
+    const previous = this.aircraft;
+    const replacement = makeVehicleModel(kind);
+    replacement.position.copy(previous.position);
+    replacement.rotation.copy(previous.rotation);
+    this.scene.remove(previous);
+    this.aircraft = replacement;
+    this.selectedModelKind = kind;
+    this.scene.add(this.aircraft);
   }
 
   private applyPose(group: THREE.Group, message: VehicleStateMessage): void {
@@ -195,6 +232,9 @@ export class SceneRenderer {
 
   private updateCamera(deltaS: number): void {
     const target = this.aircraft.position;
+    if (this.cameraMode !== 'top') {
+      this.camera.up.set(0, 0, 1);
+    }
     if (this.cameraMode === 'chase') {
       const yaw = this.lastMessage?.attitude.yawRad ?? 0;
       const offset = new THREE.Vector3(-Math.sin(yaw) * 110, -Math.cos(yaw) * 110, 62);
@@ -202,13 +242,24 @@ export class SceneRenderer {
       this.camera.lookAt(target.x, target.y, target.z + 6);
       return;
     }
-    if (this.cameraMode === 'fpv') {
+    if (this.cameraMode === 'orbit') {
+      const orbitYaw = performance.now() * 0.00008;
+      const offset = new THREE.Vector3(Math.sin(orbitYaw) * 145, Math.cos(orbitYaw) * 145, 86);
+      this.camera.position.lerp(target.clone().add(offset), 0.035);
+      this.camera.lookAt(target.x, target.y, target.z + 8);
+      return;
+    }
+    if (this.cameraMode === 'top') {
+      this.camera.up.set(0, 1, 0);
+      this.camera.position.lerp(target.clone().add(new THREE.Vector3(0, 0, 260)), 0.09);
+      this.camera.lookAt(target.x, target.y, target.z);
+      return;
+    }
+    if (this.cameraMode === 'side') {
       const yaw = this.lastMessage?.attitude.yawRad ?? 0;
-      const pitch = this.lastMessage?.attitude.pitchRad ?? 0;
-      const eye = target.clone().add(new THREE.Vector3(Math.sin(yaw) * 16, Math.cos(yaw) * 16, 4));
-      const look = eye.clone().add(new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.cos(yaw) * Math.cos(pitch), Math.sin(pitch)).multiplyScalar(120));
-      this.camera.position.lerp(eye, 0.18);
-      this.camera.lookAt(look);
+      const offset = new THREE.Vector3(Math.cos(yaw) * 120, -Math.sin(yaw) * 120, 38);
+      this.camera.position.lerp(target.clone().add(offset), 0.06);
+      this.camera.lookAt(target.x, target.y, target.z + 4);
       return;
     }
     const boost = this.freeControls.keys.has('ShiftLeft') || this.freeControls.keys.has('ShiftRight') ? 3 : 1;
@@ -266,7 +317,14 @@ function setText(id: string, value: string): void {
   document.querySelector<HTMLElement>(`#${id}`)!.textContent = value;
 }
 
-function makeAircraft(accent = 0x3aa0ff): THREE.Group {
+function makeVehicleModel(kind: VehicleModelKind, accent = 0x3aa0ff): THREE.Group {
+  if (kind === 'multirotor') return makeMultirotor(accent);
+  if (kind === 'vtol') return makeVtol(accent);
+  if (kind === 'generic') return makeGenericVehicle(accent);
+  return makeFixedWing(accent);
+}
+
+function makeFixedWing(accent = 0x3aa0ff): THREE.Group {
   const group = new THREE.Group();
   const fuselage = new THREE.Mesh(new THREE.CapsuleGeometry(3.6, 24, 8, 16), new THREE.MeshStandardMaterial({ color: 0xf4f8fb, roughness: 0.38, metalness: 0.08 }));
   fuselage.rotation.z = Math.PI / 2;
@@ -278,6 +336,53 @@ function makeAircraft(accent = 0x3aa0ff): THREE.Group {
   const nose = new THREE.Mesh(new THREE.ConeGeometry(3.7, 8, 24), new THREE.MeshStandardMaterial({ color: 0xfffbf0, roughness: 0.36 }));
   nose.rotation.z = -Math.PI / 2;
   nose.position.x = 16;
+  group.add(nose);
+  return group;
+}
+
+function makeMultirotor(accent = 0x3aa0ff): THREE.Group {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(12, 8, 3), new THREE.MeshStandardMaterial({ color: 0xf4f8fb, roughness: 0.42 }));
+  group.add(body);
+  const armMaterial = new THREE.MeshStandardMaterial({ color: accent, roughness: 0.5 });
+  const rotorMaterial = new THREE.MeshStandardMaterial({ color: 0xffc857, roughness: 0.32 });
+  for (const [x, y] of [[14, 14], [14, -14], [-14, 14], [-14, -14]]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(3, Math.hypot(x, y) * 2, 1), armMaterial);
+    arm.rotation.z = Math.atan2(y, x) - Math.PI / 2;
+    group.add(arm);
+    const rotor = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 0.4, 32), rotorMaterial);
+    rotor.position.set(x, y, 1.6);
+    group.add(rotor);
+  }
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(3.2, 7, 20), new THREE.MeshStandardMaterial({ color: 0xfffbf0, roughness: 0.36 }));
+  nose.rotation.z = -Math.PI / 2;
+  nose.position.x = 9;
+  group.add(nose);
+  return group;
+}
+
+function makeVtol(accent = 0x3aa0ff): THREE.Group {
+  const group = makeFixedWing(accent);
+  const rotorMaterial = new THREE.MeshStandardMaterial({ color: 0xffc857, roughness: 0.35 });
+  for (const y of [-18, 18]) {
+    const boom = new THREE.Mesh(new THREE.BoxGeometry(15, 2.4, 1.2), new THREE.MeshStandardMaterial({ color: 0xf4f8fb, roughness: 0.45 }));
+    boom.position.set(3, y, 3);
+    group.add(boom);
+    const rotor = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 6.5, 0.5, 32), rotorMaterial);
+    rotor.rotation.y = Math.PI / 2;
+    rotor.position.set(10, y, 3);
+    group.add(rotor);
+  }
+  return group;
+}
+
+function makeGenericVehicle(accent = 0x3aa0ff): THREE.Group {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(16, 10, 8), new THREE.MeshStandardMaterial({ color: accent, roughness: 0.48 }));
+  group.add(body);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(5, 10, 24), new THREE.MeshStandardMaterial({ color: 0xffc857, roughness: 0.4 }));
+  nose.rotation.z = -Math.PI / 2;
+  nose.position.x = 12;
   group.add(nose);
   return group;
 }

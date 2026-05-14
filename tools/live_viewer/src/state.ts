@@ -54,6 +54,20 @@ export type VehicleStateMessage = {
     missionSeq: number | null;
     lastStatusText: string | null;
   };
+  home?: {
+    latDeg: number;
+    lonDeg: number;
+    altitudeM: number;
+  };
+  mission?: {
+    activeSeq: number | null;
+    waypoints?: {
+      seq: number;
+      latDeg: number;
+      lonDeg: number;
+      altitudeM: number | null;
+    }[];
+  };
   trail?: TrailPoint[];
 };
 

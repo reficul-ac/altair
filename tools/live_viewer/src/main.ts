@@ -1,7 +1,7 @@
-import { drawMap } from './map-panel';
+import { bindMapControls, drawMap } from './map-panel';
 import { updateInspector } from './inspector-ui';
 import { setHudMode, updateHud, updateStatusStrip, updateVehicleList, type HudMode } from './hud-ui';
-import { SceneRenderer, type CameraMode, type ThemeName } from './scene-renderer';
+import { SceneRenderer, nextCameraMode, type CameraMode, type ThemeName } from './scene-renderer';
 import { parseSessionSnapshot, parseVehicleState, type SessionSnapshotMessage, type VehicleStateMessage } from './state';
 import './styles.css';
 
@@ -47,7 +47,9 @@ root.innerHTML = `
       <div class="topbar">
         <div class="segmented" aria-label="Camera mode">
           <button class="active" data-camera="chase" type="button">Chase</button>
-          <button data-camera="fpv" type="button">FPV</button>
+          <button data-camera="orbit" type="button">Orbit</button>
+          <button data-camera="top" type="button">Top</button>
+          <button data-camera="side" type="button">Side</button>
           <button data-camera="free" type="button">Free</button>
         </div>
         <div class="segmented" aria-label="HUD mode">
@@ -102,12 +104,17 @@ root.innerHTML = `
       <div class="axis axis-north">N</div>
     </section>
     <section class="workspace-panel map-workspace" data-panel="map">
+      <div class="map-toolbar" aria-label="Map controls">
+        <button id="map-focus" type="button">Focus</button>
+        <button id="map-zoom-in" type="button">+</button>
+        <button id="map-zoom-out" type="button">-</button>
+      </div>
       <canvas id="map-canvas" width="1200" height="760"></canvas>
     </section>
     <section class="workspace-panel inspector-workspace" data-panel="inspector">
       <div class="inspector-grid">
-        <section><h2>Messages</h2><div class="inspector-header"><span>Name</span><span>Src</span><span>Rate</span><span>Count</span></div><div id="inspector-table"></div></section>
-        <section><h2>Fields</h2><dl id="message-detail"></dl><div id="chart-fields" class="chart-fields"></div><canvas id="field-chart" width="520" height="180"></canvas></section>
+        <section><h2>Messages</h2><input id="inspector-filter" type="search" placeholder="Filter messages" /><div class="inspector-header"><span>Name</span><span>Src</span><span>Rate</span><span>Count</span></div><div id="inspector-table"></div></section>
+        <section><h2>Fields</h2><dl id="message-detail"></dl><div class="inspector-actions"><button id="inspector-export" type="button">Export CSV</button></div><div id="chart-fields" class="chart-fields"></div><canvas id="field-chart" width="520" height="180"></canvas></section>
       </div>
     </section>
     <aside class="metrics workspace-panel active" data-panel="session">
@@ -154,6 +161,7 @@ const scene = new SceneRenderer(
   document.querySelector<HTMLCanvasElement>('#ortho')!
 );
 const state = { hudMode: 'console' as HudMode, showYaw: false, snapshot: null as SessionSnapshotMessage | null, selected: null as VehicleStateMessage | null };
+bindMapControls(() => state.snapshot);
 
 function applyVehicle(message: VehicleStateMessage): void {
   state.selected = message;
@@ -260,7 +268,7 @@ document.querySelector<HTMLInputElement>('#listen-port')!.addEventListener('chan
   void window.altairVisualizer?.setListenPort(Number((event.currentTarget as HTMLInputElement).value)).then(updateConfig);
 });
 window.addEventListener('keydown', (event) => {
-  if (event.code === 'KeyC') scene.setCameraMode(scene.cameraMode === 'chase' ? 'fpv' : scene.cameraMode === 'fpv' ? 'free' : 'chase');
+  if (event.code === 'KeyC') scene.setCameraMode(nextCameraMode(scene.cameraMode));
   if (event.code === 'KeyH') document.querySelector<HTMLButtonElement>(`[data-hud="${state.hudMode === 'console' ? 'tactical' : state.hudMode === 'tactical' ? 'off' : 'console'}"]`)?.click();
   if (event.code === 'KeyO') document.querySelector<HTMLButtonElement>('#ortho-toggle')!.click();
   if (event.code === 'KeyY') document.querySelector<HTMLButtonElement>('#heading-mode')!.click();

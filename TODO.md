@@ -125,7 +125,45 @@ Acceptance check:
 
 - [ ] A SITL or Monte Carlo run can produce data that is replayable in a regression test.
 
-## 9. Embedded And HAL
+## 9. Live Viewer / Ground Station Parity
+
+The live viewer already supports live MAVLink UDP ingest, QGroundControl forwarding, a 3D view, HUD, map trail, multi-vehicle selection, a basic MAVLink inspector, events, and Electron packaging. The work below tracks missing parity against PX4 Hawkeye and QGroundControl without implying that every ground-station feature belongs in the short-term debugger workflow.
+
+Viewer/debug parity against PX4 Hawkeye:
+
+- [ ] Add ULog replay import with transport controls, timeline markers, pause, scrub, playback speed, and deterministic replay tests.
+- [ ] Define and document a target multi-drone analysis count, then add ghost overlays, takeoff alignment, deconfliction views, formation views, and correlation comparison across vehicles.
+- [x] Add richer camera and view controls for chase, orbit, top-down, side, and free-camera.
+- [ ] Add synchronized multi-vehicle inspection controls beyond selected-vehicle focus and fleet display.
+- [x] Add vehicle-type-specific 3D models and select fixed-wing, VTOL/tailsitter, multirotor, and generic models from MAVLink heartbeat data where available.
+- [x] Document live-viewer shortcuts and operator controls for camera movement, vehicle selection, replay placeholders, map focus, and inspector navigation.
+- [ ] Add live SITL swarm workflows and CLI flags that cover common single-vehicle and multi-instance launch cases.
+
+Replay/analysis parity against Hawkeye and QGroundControl:
+
+- [x] Add a first-pass draggable and zoomable live map with persistent pan/zoom, selected-vehicle focus, vehicle trails, event markers, origin/home marker, and mission path rendering when waypoint fields are available.
+- [ ] Add remaining map parity for rally points, geofence overlays, richer connected vehicle selection, and per-vehicle mission state beyond active sequence/path display.
+- [x] Add a richer MAVLink inspector with message filtering, multi-field numeric selection, multi-chart overlays, and browser-side CSV export for selected samples.
+- [ ] Add remaining inspector parity for continuous CSV logging, console logging, and per-vehicle stream comparison.
+- [ ] Add log download and log import workflows for live links and offline analysis, including clear metadata about vehicle, firmware, timestamps, and replay source.
+- [ ] Add offline maps, mock link support, and troubleshooting workflows so viewer and replay behavior can be tested without active hardware or SITL.
+- [ ] Add video/camera analysis support for RTP, RTSP, and UVC stream display, map/video switching, camera capture controls, MAVLink camera protocol settings, local recording, and telemetry subtitle overlay export.
+
+Full QGroundControl parity, long-term/high-risk:
+
+- [ ] Add Fly View readiness state, preflight checklist, and confirmation UI for operator actions that can affect a live vehicle.
+- [ ] Add guarded vehicle-command actions for arming, disarming, emergency stop, takeoff, land, return-to-launch, pause, change altitude, go-to, orbit, and mission start, continue, or resume.
+- [ ] Add Plan View waypoint editing, mission item lists, upload, download, save, restore, mission statistics, terrain altitude overlays, geofence editing, rally points, survey, corridor scan, structure scan, and fixed-wing landing patterns.
+- [ ] Add vehicle setup and configuration surfaces for firmware and airframe placeholders, radio, sensors, flight modes, power, motors, safety, tuning, camera, joystick, parameter browsing and editing, and application settings.
+- [ ] Add Analyze tools for MAVLink console access, richer message inspection, log management, link diagnostics, and repeatable troubleshooting workflows.
+- [ ] Decide which full-GCS features should remain out of scope for the debugger-oriented live viewer, and document any intentionally unsupported QGroundControl parity items.
+
+Acceptance check:
+
+- [ ] The TODO list clearly separates viewer/debug parity, replay/analysis parity, and full GCS parity so later implementers can prioritize safely.
+- [ ] The section mentions both PX4 Hawkeye and QGroundControl and does not describe planned parity work as if it already exists.
+
+## 10. Embedded And HAL
 
 - [ ] Add PlatformIO compile verification to CI if dependency cost is acceptable.
 - [ ] Replace Arduino HAL stubs with a simulated or documented board-facing contract.
@@ -138,7 +176,7 @@ Acceptance check:
 
 - [ ] The Arduino skeleton compiles and its HAL contract matches the host-side FSW input/output model.
 
-## 10. Documentation And Operator Workflow
+## 11. Documentation And Operator Workflow
 
 - [x] Update `README.md` with quickstart commands for build, tests, SITL, and Monte Carlo.
 - [x] Add docs for simulation assumptions, scenario files, output CSV schemas, and metrics.
@@ -151,7 +189,7 @@ Acceptance check:
 
 - [ ] A new contributor can clone the repo, run tests, run SITL, run Monte Carlo, and understand the output from docs alone.
 
-## 11. Long-Term Domainization
+## 12. Long-Term Domainization
 
 Altair and Bayek should move gradually toward clearer domain ownership as the code grows. Do this opportunistically when a domain becomes large enough to justify a boundary; avoid churn that only renames files without improving ownership, tests, or interfaces.
 

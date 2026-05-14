@@ -516,10 +516,30 @@ select {
   background: var(--bg);
 }
 
+.map-workspace {
+  position: relative;
+}
+
+.map-toolbar {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
+  display: flex;
+  gap: 8px;
+}
+
+.map-toolbar button {
+  min-width: 42px;
+  background: color-mix(in srgb, var(--panel-bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+}
+
 #map-canvas {
   display: block;
   width: 100%;
   height: calc(100vh - 52px);
+  touch-action: none;
 }
 
 .inspector-workspace {
@@ -538,6 +558,10 @@ select {
 .event-section h2 {
   margin: 0 0 10px;
   font-size: 0.95rem;
+}
+
+#inspector-filter {
+  margin-bottom: 10px;
 }
 
 .inspector-header,
@@ -590,6 +614,16 @@ select {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  margin-bottom: 10px;
+}
+
+.chart-fields button {
+  font-size: 0.82rem;
+}
+
+.inspector-actions {
+  display: flex;
+  justify-content: flex-end;
   margin-bottom: 10px;
 }
 
