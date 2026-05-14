@@ -71,12 +71,35 @@ set_tests_properties(
 )
 
 set(SITL_CRUISE6DOF_CASE_SIM_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_case_sim.csv")
+set(SITL_CRUISE6DOF_CASE_SIM_REPLAY_CSV
+    "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_case_sim_replay.csv"
+)
 add_test(
     NAME integration_sitl_cruise6dof_case_sim_params
     COMMAND
         $<TARGET_FILE:sitl_runner> --scenario cruise6dof --case
         "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_case_sim_params.ini" --duration 10 --dt 0.01
         --output "${SITL_CRUISE6DOF_CASE_SIM_CSV}"
+)
+add_test(
+    NAME integration_sitl_cruise6dof_case_sim_params_replay
+    COMMAND
+        $<TARGET_FILE:sitl_runner> --scenario cruise6dof --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_case_sim_params.ini" --duration 10 --dt 0.01
+        --output "${SITL_CRUISE6DOF_CASE_SIM_REPLAY_CSV}"
+)
+add_test(
+    NAME integration_sitl_cruise6dof_case_sim_params_deterministic
+    COMMAND
+        ${CMAKE_COMMAND} -DEXPECTED_FILE=${SITL_CRUISE6DOF_CASE_SIM_CSV}
+        -DACTUAL_FILE=${SITL_CRUISE6DOF_CASE_SIM_REPLAY_CSV} -P
+        "${CMAKE_CURRENT_SOURCE_DIR}/compare_files.cmake"
+)
+set_tests_properties(
+    integration_sitl_cruise6dof_case_sim_params_deterministic
+    PROPERTIES
+        DEPENDS
+        "integration_sitl_cruise6dof_case_sim_params;integration_sitl_cruise6dof_case_sim_params_replay"
 )
 add_test(
     NAME integration_sitl_cruise6dof_case_sim_changes_trajectory

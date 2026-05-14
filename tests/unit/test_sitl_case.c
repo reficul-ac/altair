@@ -79,8 +79,12 @@ int main(void)
                      "\n"
                      "[sim_params]\n"
                      "core.mass_kg = 2.8\n"
+                     "core.inertia_kgm2.x = 0.09\n"
                      "wing_area_m2 = 0.46\n"
+                     "wing_span_m = 1.9\n"
                      "max_thrust_n = 18\n"
+                     "lift_cl_alpha = 4.4\n"
+                     "rate_damping_nms.y = 0.5\n"
                      "\n"
                      "[mission]\n"
                      "enabled = 1\n"
@@ -115,7 +119,11 @@ int main(void)
     CHECK(near_real(case_file.vehicle_params.max_airspeed_mps, 32.0f));
     CHECK(case_file.has_sim_params == 1U);
     CHECK(near_real(case_file.sim_params.core.mass_kg, 2.8f));
+    CHECK(near_real(case_file.sim_params.core.inertia_kgm2.x, 0.09f));
+    CHECK(near_real(case_file.sim_params.wing_span_m, 1.9f));
     CHECK(near_real(case_file.sim_params.max_thrust_n, 18.0f));
+    CHECK(near_real(case_file.sim_params.lift_cl_alpha, 4.4f));
+    CHECK(near_real(case_file.sim_params.rate_damping_nms.y, 0.5f));
     CHECK(case_file.has_mission == 1U);
     CHECK(case_file.mission_enabled == 1U);
     CHECK(case_file.mission.waypoint_count == 2U);

@@ -29,6 +29,11 @@ static int close_real(real_t a, real_t b)
     return fabsf(a - b) <= 1.0e-6f;
 }
 
+static int finite_positive(real_t value)
+{
+    return real_is_finite(value) && value > 0.0f;
+}
+
 static int close_vec3(vec3_t a, vec3_t b)
 {
     return close_real(a.x, b.x) && close_real(a.y, b.y) && close_real(a.z, b.z);
@@ -117,14 +122,52 @@ int main(void)
     altair_fixedwing_sim_params(&params);
     CHECK_MSG(altair_fixedwing_sim_params_are_valid(&params, vehicle, error, sizeof(error)), error);
     CHECK(close_real(params.core.mass_kg, 2.5f));
+    CHECK(close_real(params.core.inertia_kgm2.x, 0.08f));
+    CHECK(close_real(params.core.inertia_kgm2.y, 0.12f));
+    CHECK(close_real(params.core.inertia_kgm2.z, 0.18f));
+    CHECK(close_real(params.core.gravity_mps2, 9.80665f));
+    CHECK(close_real(params.core.air_density_kgpm3, 1.225f));
+    CHECK(close_real(params.core.actuator_lag_hz, 12.0f));
+    CHECK(params.core.frame_mode == SIM6DOF_FRAME_ECEF);
+    CHECK(params.core.earth_model == SIM6DOF_EARTH_SPHERICAL);
+    CHECK(close_real(params.core.earth_radius_m, 6378137.0f));
     CHECK(close_real(params.wing_area_m2, 0.45f));
-    CHECK(params.core.gravity_mps2 > 9.0f && params.core.gravity_mps2 < 10.0f);
-    CHECK(params.core.air_density_kgpm3 > 1.0f && params.core.air_density_kgpm3 < 1.4f);
-    CHECK(params.core.earth_radius_m > 6000000.0f && params.core.earth_radius_m < 7000000.0f);
+    CHECK(close_real(params.wing_span_m, 1.8f));
+    CHECK(close_real(params.mean_chord_m, 0.25f));
+    CHECK(close_real(params.max_thrust_n, 18.0f));
+    CHECK(close_real(params.drag_cd0, 0.035f));
+    CHECK(close_real(params.drag_cd_alpha, 0.80f));
+    CHECK(close_real(params.lift_cl0, 0.18f));
+    CHECK(close_real(params.lift_cl_alpha, 4.2f));
+    CHECK(close_real(params.lift_cl_elevator, 0.35f));
+    CHECK(close_real(params.stall_alpha_rad, 0.28f));
+    CHECK(close_real(params.roll_aileron_nm, 1.6f));
+    CHECK(close_real(params.pitch_elevator_nm, 1.0f));
+    CHECK(close_real(params.yaw_rudder_nm, 0.6f));
+    CHECK(close_real(params.rate_damping_nms.x, 0.35f));
+    CHECK(close_real(params.rate_damping_nms.y, 0.45f));
+    CHECK(close_real(params.rate_damping_nms.z, 0.30f));
+    CHECK(finite_positive(params.core.mass_kg));
+    CHECK(finite_positive(params.core.inertia_kgm2.x));
+    CHECK(finite_positive(params.core.inertia_kgm2.y));
+    CHECK(finite_positive(params.core.inertia_kgm2.z));
+    CHECK(finite_positive(params.wing_area_m2));
+    CHECK(finite_positive(params.wing_span_m));
+    CHECK(finite_positive(params.mean_chord_m));
+    CHECK(finite_positive(params.max_thrust_n));
+    CHECK(finite_positive(params.lift_cl_alpha));
+    CHECK(finite_positive(params.stall_alpha_rad));
+    CHECK(params.drag_cd0 >= 0.0f);
+    CHECK(params.drag_cd_alpha >= 0.0f);
+    CHECK(params.rate_damping_nms.x >= 0.0f);
+    CHECK(params.rate_damping_nms.y >= 0.0f);
+    CHECK(params.rate_damping_nms.z >= 0.0f);
     weight_n = params.core.mass_kg * params.core.gravity_mps2;
     CHECK(params.max_thrust_n > 0.5f * weight_n);
     wing_loading = weight_n / params.wing_area_m2;
     CHECK(wing_loading > 20.0f && wing_loading < 120.0f);
+    CHECK(vehicle->min_airspeed_mps < 18.0f && vehicle->max_airspeed_mps > 18.0f);
+    CHECK(params.core.actuator_lag_hz > 1.0f && params.core.actuator_lag_hz < 50.0f);
 
     invalid = params;
     invalid.core.mass_kg = -1.0f;
@@ -197,6 +240,9 @@ int main(void)
     invalid.lift_cl_alpha = NAN;
     CHECK(expect_invalid_sim(&invalid, vehicle));
     invalid = params;
+    invalid.lift_cl_alpha = 0.0f;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
     invalid.lift_cl_elevator = NAN;
     CHECK(expect_invalid_sim(&invalid, vehicle));
     invalid = params;
@@ -213,6 +259,9 @@ int main(void)
     CHECK(expect_invalid_sim(&invalid, vehicle));
     invalid = params;
     invalid.rate_damping_nms.y = NAN;
+    CHECK(expect_invalid_sim(&invalid, vehicle));
+    invalid = params;
+    invalid.rate_damping_nms.y = -0.01f;
     CHECK(expect_invalid_sim(&invalid, vehicle));
 
     first = run_sequence(&params, SIM6DOF_FRAME_ECEF);

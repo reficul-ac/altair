@@ -104,16 +104,18 @@ int altair_fixedwing_sim_params_are_valid(const sim_fixedwing_params_t *params,
     if (!real_is_finite(params->drag_cd0) || params->drag_cd0 < 0.0f ||
         !real_is_finite(params->drag_cd_alpha) || params->drag_cd_alpha < 0.0f ||
         !real_is_finite(params->lift_cl0) || !real_is_finite(params->lift_cl_alpha) ||
-        !real_is_finite(params->lift_cl_elevator) || !real_is_finite(params->stall_alpha_rad) ||
-        params->stall_alpha_rad <= 0.0f)
+        params->lift_cl_alpha <= 0.0f || !real_is_finite(params->lift_cl_elevator) ||
+        !real_is_finite(params->stall_alpha_rad) || params->stall_alpha_rad <= 0.0f)
     {
         return fail_validation(error, error_size, "sim aerodynamic coefficients are invalid");
     }
     if (!real_is_finite(params->roll_aileron_nm) || !real_is_finite(params->pitch_elevator_nm) ||
         !real_is_finite(params->yaw_rudder_nm) || !real_is_finite(params->rate_damping_nms.x) ||
-        !real_is_finite(params->rate_damping_nms.y) || !real_is_finite(params->rate_damping_nms.z))
+        params->rate_damping_nms.x < 0.0f || !real_is_finite(params->rate_damping_nms.y) ||
+        params->rate_damping_nms.y < 0.0f || !real_is_finite(params->rate_damping_nms.z) ||
+        params->rate_damping_nms.z < 0.0f)
     {
-        return fail_validation(error, error_size, "sim control moments or damping are non-finite");
+        return fail_validation(error, error_size, "sim control moments or damping are invalid");
     }
 
     safe = altair_safe_actuators(vehicle);

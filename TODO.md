@@ -18,12 +18,13 @@ Acceptance check:
 
 ## 2. Vehicle Model Definition
 
-- [ ] Replace placeholder Altair parameters with a documented first-pass airframe model.
+- [x] Replace placeholder SITL values with a documented first-pass estimated airframe model.
 - [ ] Define control surface conventions, sign conventions, and actuator units.
 - [ ] Define motor/throttle behavior and saturation rules.
 - [x] Move fixed-wing sim parameter construction into an Altair-owned helper and validate consistency with `altair_default_params()`.
 - [x] Add parameter validation tests for physical ranges and internal consistency.
-- [ ] Document mass, wing area, speed limits, control limits, and safe actuator positions.
+- [x] Document mass, wing area, speed limits, control limits, safe actuator positions, and SITL tuning parameters at estimate level.
+- [ ] Replace first-pass SITL estimates with measured or otherwise validated Altair aircraft data.
 - [ ] Decide whether parameters remain compile-time constants or move toward loadable config.
 
 Acceptance check:
@@ -170,7 +171,8 @@ Bayek long-term domains:
 Altair long-term domains:
 
 - [ ] Grow the current mixer layer into an explicit actuation domain when it needs trims, reversals, actuator health masking, slew limits, PWM mapping, or safe-output policy.
-- [ ] Keep vehicle model data separate from generic Bayek simulation: mass properties, aero coefficients, actuator geometry, sign conventions, and documented parameter sources belong to Altair.
+- [x] Keep first-pass SITL vehicle model data separate from generic Bayek simulation: mass properties, aero coefficients, actuator geometry, and documented estimate sources belong to Altair.
+- [ ] Add measured sign conventions and validated parameter sources for the real aircraft.
 - [ ] Keep scenarios, Monte Carlo profiles, pass/fail metrics, CSV schemas, and visualization workflow outside portable Bayek FSW.
 - [x] Keep reusable fixed-wing trim mechanics in Bayek while Altair owns concrete trim enablement policy, actuator bounds, parameters, and failure handling.
 - [ ] Keep board/HAL code responsible for platform timing, sensors, actuator drivers, storage, and transports.

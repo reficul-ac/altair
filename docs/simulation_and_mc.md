@@ -180,6 +180,59 @@ fixed-wing/6DOF state fields, `trim.*`, and mission fields such as `mission.enab
 `mission.waypoint_count`, and `mission.waypoint.N.*`. Altair supplies the concrete
 parameter values and runner policy those assignments act on.
 
+## SITL Fixed-Wing Tuning Reference
+
+Altair's first-pass fixed-wing model values are engineering estimates for deterministic
+SITL, not measured or validated aircraft data. Tune them through `[sim_params]` in a
+case file for one-time setup, or through `sim_params.*` assignments in a conditions file
+for per-step experiments. The CSV schema does not include parameter trace columns; keep
+the case or conditions file with the run output when parameter provenance matters.
+
+| Parameter | Unit | Surface | Meaning and expected effect |
+| --- | --- | --- | --- |
+| `core.mass_kg` | kg | Flight-facing estimate | Vehicle mass. Higher mass slows acceleration and climb response. |
+| `core.inertia_kgm2.x` | kg m^2 | SITL-only estimate | Roll inertia. Higher values slow roll-rate response. |
+| `core.inertia_kgm2.y` | kg m^2 | SITL-only estimate | Pitch inertia. Higher values slow pitch-rate response. |
+| `core.inertia_kgm2.z` | kg m^2 | SITL-only estimate | Yaw inertia. Higher values slow yaw-rate response. |
+| `core.gravity_mps2` | m/s^2 | SITL-only environment | Gravity used by the 6DOF integrator. Normally leave at standard gravity. |
+| `core.air_density_kgpm3` | kg/m^3 | SITL-only environment | Density used for dynamic pressure. Higher values increase lift and drag at the same airspeed. |
+| `core.actuator_lag_hz` | Hz | SITL-only actuator model | First-order actuator response. Higher values track commands faster. |
+| `core.frame_mode` | enum | SITL-only integration | `ecef` or `ned` in case files, numeric enum in conditions. Selects truth integration frame. |
+| `core.earth_model` | enum | SITL-only integration | Spherical Earth model selector. Only `SIM6DOF_EARTH_SPHERICAL = 0` is currently valid. |
+| `core.earth_radius_m` | m | SITL-only environment | Spherical Earth radius for ECEF/geodetic conversion. |
+| `wing_area_m2` | m^2 | Flight-facing estimate | Reference wing area. Higher values increase lift and drag. |
+| `wing_span_m` | m | Flight-facing estimate | Reference span for the fixed-wing parameter set. Currently documented and validated for ownership, with limited direct dynamics use. |
+| `mean_chord_m` | m | Flight-facing estimate | Reference chord for the fixed-wing parameter set. Currently documented and validated for ownership, with limited direct dynamics use. |
+| `max_thrust_n` | N | Flight-facing estimate | Full-throttle thrust. Higher values increase acceleration and climb energy. |
+| `drag_cd0` | coefficient | SITL aero estimate | Baseline drag coefficient. Higher values reduce acceleration and steady speed. |
+| `drag_cd_alpha` | coefficient/rad^2 | SITL aero estimate | Angle-of-attack drag growth. Higher values penalize pitch-up/high-alpha flight. |
+| `lift_cl0` | coefficient | SITL aero estimate | Lift coefficient at zero effective angle of attack. Higher values increase level-flight lift. |
+| `lift_cl_alpha` | coefficient/rad | SITL aero estimate | Lift slope versus angle of attack. Higher values increase pitch/lift sensitivity before stall limiting. |
+| `lift_cl_elevator` | coefficient/command | SITL aero estimate | Elevator contribution to effective lift. Higher magnitude increases elevator authority in lift. |
+| `stall_alpha_rad` | rad | SITL aero estimate | Effective angle-of-attack clamp. Lower values limit lift at smaller alpha. |
+| `roll_aileron_nm` | N m/command | SITL control estimate | Aileron roll moment authority. Higher values increase roll acceleration. |
+| `pitch_elevator_nm` | N m/command | SITL control estimate | Elevator pitch moment authority. Higher values increase pitch acceleration. |
+| `yaw_rudder_nm` | N m/command | SITL control estimate | Rudder yaw moment authority. Higher values increase yaw acceleration. |
+| `rate_damping_nms.x` | N m s/rad | SITL damping estimate | Roll-rate damping. Higher values damp roll rates more aggressively. |
+| `rate_damping_nms.y` | N m s/rad | SITL damping estimate | Pitch-rate damping. Higher values damp pitch rates more aggressively. |
+| `rate_damping_nms.z` | N m s/rad | SITL damping estimate | Yaw-rate damping. Higher values damp yaw rates more aggressively. |
+
+Example case-file tuning block:
+
+```ini
+[sim_params]
+core.mass_kg = 3.2
+core.inertia_kgm2.x = 0.10
+core.inertia_kgm2.y = 0.15
+core.inertia_kgm2.z = 0.22
+wing_area_m2 = 0.50
+max_thrust_n = 16
+drag_cd0 = 0.042
+lift_cl_alpha = 4.5
+roll_aileron_nm = 1.35
+rate_damping_nms.y = 0.58
+```
+
 Expected output is a stable `key=value` summary that can be pasted into notes or checked in scripts:
 
 ```text
