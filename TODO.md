@@ -24,6 +24,7 @@ Acceptance check:
 - [x] Move fixed-wing sim parameter construction into an Altair-owned helper and validate consistency with `altair_default_params()`.
 - [x] Add parameter validation tests for physical ranges and internal consistency.
 - [ ] Document mass, wing area, speed limits, control limits, and safe actuator positions.
+- [ ] Document aero data provenance and intended fidelity level, including whether values come from estimates, analysis tools, wind tunnel data, or flight-test identification.
 - [ ] Decide whether parameters remain compile-time constants or move toward loadable config.
 
 Acceptance check:
@@ -71,6 +72,13 @@ Acceptance check:
 - [x] Move reusable fixed-wing level-flight trim mechanics into Bayek while keeping Altair responsible for enablement policy, limits, and concrete parameters.
 - [ ] Extend trim coverage beyond the initial fixed-wing level-flight case, including off-axis initial states and future multirotor support.
 - [ ] Add trim tuning docs that explain residual definitions, bounds, tolerances, and failure modes.
+- [ ] Add an aero database/evaluator that looks up coefficients by flight condition instead of relying only on scalar formulas.
+- [ ] Define aero database axes and outputs, starting with `alpha`, `beta`, and airspeed/dynamic pressure for `CL`, `CD`, `CY`, `Cl`, `Cm`, and `Cn`.
+- [ ] Add deterministic interpolation and out-of-range clamping/validation tests for aero table lookup.
+- [ ] Replace hard-coded fixed-wing lift/drag/moment formulas with a coefficient-to-force/moment pipeline while preserving current behavior through equivalent starter tables.
+- [ ] Add actuator/control-surface effectiveness schedules based on flight condition, including elevator, aileron, rudder, and throttle/propulsion effects.
+- [ ] Add richer actuator modeling: surface position state, lag/rate limits, saturation, deadband, and future load/hinge effectiveness limits.
+- [ ] Keep reusable interpolation/model-evaluation machinery in Bayek and Altair-specific aero data, geometry, sign conventions, and parameter provenance in Altair.
 - [x] Document model limitations clearly so results are not overinterpreted.
 
 Acceptance check:
