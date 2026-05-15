@@ -32,7 +32,7 @@ export function defaultCommandCapabilities(liveLink: boolean, writableLink = fal
     liveLink,
     writableLink,
     supported: liveLink && writableLink ? LIVE_COMMANDS : [],
-    blockedReason: liveLink ? 'Live command actions require an explicitly writable link.' : 'No live link is active.'
+    blockedReason: liveLink && writableLink ? null : liveLink ? 'Live command actions require an explicitly writable link.' : 'No live link is active.'
   };
 }
 

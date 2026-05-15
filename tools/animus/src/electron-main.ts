@@ -15,7 +15,8 @@ import {
 } from './mavlink.js';
 import { parseAltairReplayJson, ReplaySession, type ReplayPlaybackState } from './replay.js';
 import { createMockLink, defaultCommandCapabilities, evaluateGuardedCommand } from './parity.js';
-import type { GuardedCommandRequest, GuardedCommandResult, MockLinkState } from './state.js';
+import { validateMission } from './state.js';
+import type { GuardedCommandRequest, GuardedCommandResult, MissionPlan, MockLinkState } from './state.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, '..');
@@ -35,6 +36,8 @@ function parseArgs(argv: string[]): Partial<MavlinkServiceConfig> {
       config.qgcForwarding = false;
     } else if (arg === '--qgc') {
       config.qgcForwarding = true;
+    } else if (arg === '--writable-animus') {
+      config.writableAnimus = true;
     }
   }
   if (qgcEndpoints.length > 0) {
@@ -87,6 +90,31 @@ ipcMain.handle('mavlink:set-listen-port', async (_event, port: number) => {
 });
 ipcMain.handle('mavlink:select-vehicle', (_event, id: string) => replay.isLoaded() ? replay.selectVehicle(String(id)) : telemetry.selectVehicle(String(id)));
 ipcMain.handle('mavlink:add-marker', (_event, label: string) => telemetry.addMarker(String(label || 'Marker')));
+ipcMain.handle('mission:validate', (_event, plan: MissionPlan) => validateMission(plan));
+ipcMain.handle('mission:save', async (_event, plan: MissionPlan) => {
+  const validation = validateMission(plan);
+  if (!validation.valid) return { saved: false, validation, reason: 'mission validation failed' };
+  const result = await dialog.showSaveDialog({
+    title: 'Save Bayek mission',
+    defaultPath: 'bayek-mission.json',
+    filters: [{ name: 'Bayek mission', extensions: ['json'] }]
+  });
+  if (result.canceled || !result.filePath) return { saved: false, validation };
+  await writeFile(result.filePath, JSON.stringify(plan, null, 2), 'utf8');
+  return { saved: true, path: result.filePath, validation };
+});
+ipcMain.handle('mission:load', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Load Bayek mission',
+    properties: ['openFile'],
+    filters: [{ name: 'Bayek mission', extensions: ['json'] }]
+  });
+  if (result.canceled || !result.filePaths[0]) return { loaded: false };
+  const plan = JSON.parse(await readFile(result.filePaths[0], 'utf8')) as MissionPlan;
+  return { loaded: true, path: result.filePaths[0], plan, validation: validateMission(plan) };
+});
+ipcMain.handle('mission:upload-sitl', (_event, plan: MissionPlan, vehicleId?: string) => telemetry.uploadMissionToSitl(plan, vehicleId));
+ipcMain.handle('mission:download-sitl', (_event, vehicleId?: string) => telemetry.downloadMissionFromSitl(vehicleId));
 ipcMain.handle('replay:open', async () => {
   const result = await dialog.showOpenDialog({
     title: 'Open Altair replay',
@@ -150,7 +178,10 @@ ipcMain.handle('mock-link:start', (_event, vehicleCount: number) => {
   return mockLink;
 });
 ipcMain.handle('command:issue', (_event, request: GuardedCommandRequest): GuardedCommandResult => {
-  const result = evaluateGuardedCommand(request, defaultCommandCapabilities(false, false));
+  const selected = telemetry.registry.selectedVehicle();
+  const capability = selected.commandCapabilities ?? defaultCommandCapabilities(selected.connected, telemetry.getConfig().writableAnimus);
+  const guard = evaluateGuardedCommand(request, capability);
+  const result = guard.accepted ? telemetry.dispatchCommand(request) : guard;
   sendToWindows('session-snapshot', {
     type: 'session_snapshot',
     vehicles: [],

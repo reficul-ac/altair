@@ -90,6 +90,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="start the packaged Electron Animus instead of the browser viewer and Python bridge",
     )
+    parser.add_argument(
+        "--writable-animus",
+        action="store_true",
+        help="enable guarded SITL-only write controls in Animus; disabled by default",
+    )
     parser.add_argument("--viewer-host", default="127.0.0.1")
     parser.add_argument("--viewer-port", type=int, default=5173)
     parser.add_argument(
@@ -142,6 +147,8 @@ def bridge_command(args: argparse.Namespace) -> list[str]:
             command.extend(["--forward", f"{host}:{port}"])
     else:
         command.append("--no-forward")
+    if args.writable_animus:
+        command.append("--writable-animus")
     return command
 
 
@@ -178,6 +185,8 @@ def app_command(args: argparse.Namespace) -> list[str]:
             command.extend(["--qgc-endpoint", f"{host}:{port}"])
     else:
         command.append("--no-qgc")
+    if args.writable_animus:
+        command.append("--writable-animus")
     return command
 
 

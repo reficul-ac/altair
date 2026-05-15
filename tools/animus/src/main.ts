@@ -2,7 +2,23 @@ import { bindMapControls, drawMap } from './map-panel';
 import { clearInspectorLog, recordInspectorSnapshot, updateInspector } from './inspector-ui';
 import { setHudMode, updateHud, updateStatusStrip, updateVehicleList, type HudMode } from './hud-ui';
 import { SceneRenderer, nextCameraMode, type CameraMode, type ThemeName } from './scene-renderer';
-import { parseSessionSnapshot, parseVehicleState, type CommandName, type GuardedCommandRequest, type GuardedCommandResult, type MockLinkState, type ReplayTimelineMessage, type SessionSnapshotMessage, type VehicleStateMessage } from './state';
+import {
+  createEmptyMissionPlan,
+  validateMission,
+  type CommandDispatchResult,
+  type CommandName,
+  type GuardedCommandRequest,
+  type GuardedCommandResult,
+  type MissionPlan,
+  type MissionTransferState,
+  type MissionValidationResult,
+  type MockLinkState,
+  parseSessionSnapshot,
+  parseVehicleState,
+  type ReplayTimelineMessage,
+  type SessionSnapshotMessage,
+  type VehicleStateMessage
+} from './state';
 import './styles.css';
 
 type AnimusConfig = {
@@ -10,6 +26,7 @@ type AnimusConfig = {
   listenPort: number;
   qgcForwarding: boolean;
   qgcEndpoints: { host: string; port: number }[];
+  writableAnimus: boolean;
 };
 
 type AnimusApi = {
@@ -21,12 +38,17 @@ type AnimusApi = {
   setListenPort: (port: number) => Promise<AnimusConfig>;
   selectVehicle?: (id: string) => Promise<SessionSnapshotMessage>;
   addMarker?: (label: string) => Promise<SessionSnapshotMessage>;
+  validateMission?: (plan: MissionPlan) => Promise<MissionValidationResult>;
+  saveMission?: (plan: MissionPlan) => Promise<{ saved: boolean; path?: string; reason?: string; validation: MissionValidationResult }>;
+  loadMission?: () => Promise<{ loaded: boolean; path?: string; plan?: MissionPlan; validation?: MissionValidationResult }>;
+  uploadMissionToSitl?: (plan: MissionPlan, vehicleId?: string) => Promise<MissionTransferState>;
+  downloadMissionFromSitl?: (vehicleId?: string) => Promise<MissionTransferState>;
   onReplayState?: (callback: (message: ReplayTimelineMessage) => void) => () => void;
   openReplay?: () => Promise<ReplayTimelineMessage>;
   importLog?: () => Promise<ReplayTimelineMessage>;
   exportSessionLog?: () => Promise<{ saved: boolean; path?: string }>;
   startMockLink?: (vehicleCount: number) => Promise<MockLinkState>;
-  issueCommand?: (request: GuardedCommandRequest) => Promise<GuardedCommandResult>;
+  issueCommand?: (request: GuardedCommandRequest) => Promise<GuardedCommandResult | CommandDispatchResult>;
   replayPlay?: () => Promise<ReplayTimelineMessage>;
   replayPause?: () => Promise<ReplayTimelineMessage>;
   replaySeek?: (timestampS: number) => Promise<ReplayTimelineMessage>;
@@ -140,7 +162,7 @@ root.innerHTML = `
     </section>
     <section class="workspace-panel inspector-workspace" data-panel="plan">
       <div class="analysis-grid">
-        <section><h2>Mission</h2><div id="mission-list" class="tool-list"></div><div class="inspector-actions"><button id="plan-save" type="button">Save</button><button id="plan-restore" type="button">Restore</button></div></section>
+        <section><h2>Mission</h2><div id="mission-list" class="tool-list"></div><div id="mission-validation" class="tool-list"></div><div class="inspector-actions"><button id="plan-add" type="button">Add WP</button><button id="plan-save" type="button">Save</button><button id="plan-restore" type="button">Load</button><button id="plan-upload" type="button">Upload SITL</button></div></section>
         <section><h2>Geofence / Rally</h2><div id="fence-list" class="tool-list"></div><div class="command-grid"><button data-plan-tool="waypoint" type="button">Waypoint</button><button data-plan-tool="geofence" type="button">Fence</button><button data-plan-tool="rally" type="button">Rally</button><button data-plan-tool="survey" type="button">Survey</button><button data-plan-tool="corridor" type="button">Corridor</button><button data-plan-tool="structure" type="button">Structure</button><button data-plan-tool="landing" type="button">Landing</button></div></section>
       </div>
     </section>
@@ -226,6 +248,7 @@ const state = {
   showYaw: false,
   snapshot: null as SessionSnapshotMessage | null,
   selected: null as VehicleStateMessage | null,
+  mission: createEmptyMissionPlan(),
   replay: null as ReplayTimelineMessage | null,
   syncInspection: true
 };
@@ -256,7 +279,7 @@ function updateConfig(config: AnimusConfig): void {
   document.querySelector<HTMLInputElement>('#listen-port')!.value = String(config.listenPort);
   document.querySelector<HTMLInputElement>('#qgc')!.checked = config.qgcForwarding;
   const endpoints = config.qgcEndpoints.map((endpoint) => `${endpoint.host}:${endpoint.port}`).join(', ');
-  document.querySelector<HTMLElement>('#config')!.textContent = `UDP ${config.listenHost}:${config.listenPort} / QGC ${config.qgcForwarding ? endpoints : 'off'}`;
+  document.querySelector<HTMLElement>('#config')!.textContent = `UDP ${config.listenHost}:${config.listenPort} / QGC ${config.qgcForwarding ? endpoints : 'off'} / ${config.writableAnimus ? 'SITL writable' : 'read-only'}`;
 }
 
 function setWorkspace(name: string): void {
@@ -359,10 +382,33 @@ function updateCameraStreams(vehicle: VehicleStateMessage | null): void {
 }
 
 function updatePlanSurface(vehicle: VehicleStateMessage | null): void {
-  const mission = vehicle?.mission;
-  document.querySelector<HTMLElement>('#mission-list')!.innerHTML = mission?.waypoints?.map((item) => `
-    <div><strong>#${item.seq}</strong><span>${escapeHtml(item.command ?? 'WAYPOINT')}</span><span>${item.altitudeM?.toFixed(1) ?? '--'} m</span></div>
-  `).join('') || '<p class="empty">No downloaded mission items</p>';
+  const validation = validateMission(state.mission);
+  document.querySelector<HTMLElement>('#mission-list')!.innerHTML = state.mission.waypoints.map((item) => `
+    <div class="mission-edit-row" data-waypoint="${item.seq}">
+      <strong>#${item.seq}</strong>
+      <label>Lat <input data-mission-field="lat_deg" data-waypoint="${item.seq}" type="number" step="0.000001" value="${item.lat_deg}" /></label>
+      <label>Lon <input data-mission-field="lon_deg" data-waypoint="${item.seq}" type="number" step="0.000001" value="${item.lon_deg}" /></label>
+      <label>Alt <input data-mission-field="alt_m" data-waypoint="${item.seq}" type="number" step="1" value="${item.alt_m}" /></label>
+      <label>Thr <input data-mission-field="throttle" data-waypoint="${item.seq}" type="number" min="0" max="1" step="0.05" value="${item.throttle}" /></label>
+      <label>Rad <input data-mission-field="acceptance_radius_m" data-waypoint="${item.seq}" type="number" min="0.1" step="1" value="${item.acceptance_radius_m}" /></label>
+    </div>
+  `).join('') || '<p class="empty">No local mission waypoints</p>';
+  document.querySelector<HTMLElement>('#mission-validation')!.innerHTML = validation.issues
+    .map((issue) => `<div><strong>${escapeHtml(issue.severity)}</strong><span>${escapeHtml(issue.path)}</span><span>${escapeHtml(issue.message)}</span></div>`)
+    .join('') || `<div><strong>Valid</strong><span>${validation.waypointCount} waypoint${validation.waypointCount === 1 ? '' : 's'}</span><span>${vehicle?.commandCapabilities?.writableLink ? 'SITL writable' : 'read-only link'}</span></div>`;
+  document.querySelectorAll<HTMLInputElement>('[data-mission-field]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const seq = Number(input.dataset.waypoint);
+      const field = input.dataset.missionField as keyof MissionPlan['waypoints'][number];
+      const waypoint = state.mission.waypoints[seq];
+      if (waypoint && field !== 'seq') {
+        waypoint[field] = Number(input.value) as never;
+        updatePlanSurface(state.selected);
+      }
+    });
+  });
+  const upload = document.querySelector<HTMLButtonElement>('#plan-upload');
+  if (upload) upload.disabled = !validation.valid || !vehicle?.commandCapabilities?.writableLink;
   const fences = vehicle?.geofences ?? [];
   const rally = vehicle?.rallyPoints ?? [];
   document.querySelector<HTMLElement>('#fence-list')!.innerHTML = [
@@ -479,6 +525,41 @@ document.querySelector<HTMLButtonElement>('#mock-start')!.addEventListener('clic
   const count = Number(document.querySelector<HTMLInputElement>('#mock-count')!.value);
   void window.altairAnimus?.startMockLink?.(count).then((mock) => {
     document.querySelector<HTMLElement>('#mock-status')!.textContent = `${mock.label} / ${mock.diagnostics.status}`;
+  });
+});
+document.querySelector<HTMLButtonElement>('#plan-add')!.addEventListener('click', () => {
+  const vehicle = state.selected;
+  const seq = state.mission.waypoints.length;
+  if (seq >= 16) return;
+  state.mission.waypoints.push({
+    seq,
+    lat_deg: vehicle?.globalPosition.latDeg ?? 37.4275,
+    lon_deg: vehicle?.globalPosition.lonDeg ?? -122.1697,
+    alt_m: vehicle?.globalPosition.altitudeM ?? 120,
+    throttle: 0.5,
+    acceptance_radius_m: 25
+  });
+  updatePlanSurface(state.selected);
+});
+document.querySelector<HTMLButtonElement>('#plan-save')!.addEventListener('click', () => {
+  void window.altairAnimus?.saveMission?.(state.mission).then((result) => {
+    document.querySelector<HTMLElement>('#status')!.textContent = result.saved ? `Mission saved ${result.path ?? ''}` : result.reason ?? 'Mission save canceled';
+  });
+});
+document.querySelector<HTMLButtonElement>('#plan-restore')!.addEventListener('click', () => {
+  void window.altairAnimus?.loadMission?.().then((result) => {
+    if (result.loaded && result.plan) {
+      state.mission = result.plan;
+      updatePlanSurface(state.selected);
+    }
+  });
+});
+document.querySelector<HTMLButtonElement>('#plan-upload')!.addEventListener('click', () => {
+  const vehicleId = state.selected?.id ?? `${state.selected?.systemId ?? '--'}:${state.selected?.componentId ?? '--'}`;
+  if (!window.confirm(`Upload ${state.mission.waypoints.length} waypoint mission to ${vehicleId}?`)) return;
+  void window.altairAnimus?.uploadMissionToSitl?.(state.mission, vehicleId).then((result) => {
+    document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
+    updatePlanSurface(state.selected);
   });
 });
 document.querySelector<HTMLInputElement>('#parameter-filter')!.addEventListener('input', () => {

@@ -1,6 +1,21 @@
 import dgram from 'node:dgram';
 import { afterEach, describe, expect, it } from 'vitest';
-import { decodeMavlinkMessage, LiveVehicleState, MavlinkTelemetryService, MavlinkV1Parser, mavlinkV1Frame, mavTypeLabel, VehicleRegistry } from './mavlink';
+import {
+  decodeCommandAck,
+  decodeMavlinkMessage,
+  decodeMissionAck,
+  decodeMissionRequestInt,
+  encodeCommandLong,
+  encodeMissionClearAll,
+  encodeMissionCount,
+  encodeMissionItemInt,
+  LiveVehicleState,
+  MavlinkTelemetryService,
+  MavlinkV1Parser,
+  mavlinkV1Frame,
+  mavTypeLabel,
+  VehicleRegistry
+} from './mavlink';
 
 const sockets: dgram.Socket[] = [];
 
@@ -161,6 +176,42 @@ describe('Electron MAVLink service', () => {
     expect(decoded[5].fields.text).toBe('Ready');
   });
 
+  it('encodes command and mission write packets behind MAVLink v1 CRCs', () => {
+    const parser = new MavlinkV1Parser();
+    const frames = [
+      encodeCommandLong(400, 1, 1, [1]),
+      encodeMissionClearAll(1, 1),
+      encodeMissionCount(1, 1, 1),
+      encodeMissionItemInt({ seq: 0, lat_deg: 37.5, lon_deg: -122.2, alt_m: 120, throttle: 0.55, acceptance_radius_m: 20 }, 1, 1)
+    ];
+    const decoded = parser.feed(Buffer.concat(frames)).map((message) => decodeMavlinkMessage(message));
+    expect(decoded.map((message) => message.name)).toEqual(['COMMAND_LONG', 'MISSION_CLEAR_ALL', 'MISSION_COUNT', 'MISSION_ITEM_INT']);
+    expect(decoded[0].fields.command).toBe(400);
+    expect(decoded[2].fields.count).toBe(1);
+    expect(decoded[3].fields.xLatE7).toBe(375000000);
+    expect(decoded[3].fields.throttle).toBeCloseTo(0.55);
+  });
+
+  it('decodes command and mission acknowledgements', () => {
+    const commandAckPayload = Buffer.alloc(3);
+    commandAckPayload.writeUInt16LE(400, 0);
+    commandAckPayload.writeUInt8(0, 2);
+    const missionRequestPayload = Buffer.alloc(4);
+    missionRequestPayload.writeUInt16LE(3, 0);
+    missionRequestPayload.writeUInt8(255, 2);
+    missionRequestPayload.writeUInt8(190, 3);
+    const missionAckPayload = Buffer.from([255, 190, 0]);
+    const parser = new MavlinkV1Parser();
+    const [commandAck, missionRequest, missionAck] = parser.feed(Buffer.concat([
+      mavlinkV1Frame(77, commandAckPayload),
+      mavlinkV1Frame(51, missionRequestPayload),
+      mavlinkV1Frame(47, missionAckPayload)
+    ]));
+    expect(decodeCommandAck(commandAck)).toEqual({ command: 400, result: 0, label: 'accepted' });
+    expect(decodeMissionRequestInt(missionRequest)).toEqual({ seq: 3, targetSystem: 255, targetComponent: 190 });
+    expect(decodeMissionAck(missionAck)).toEqual({ targetSystem: 255, targetComponent: 190, type: 0 });
+  });
+
   it('keeps vehicles separate and computes deterministic message rates', () => {
     const parser = new MavlinkV1Parser();
     const registry = new VehicleRegistry();
@@ -215,5 +266,19 @@ describe('Electron MAVLink service', () => {
     service.setQgcForwarding(false);
     expect(service.getConfig().qgcForwarding).toBe(false);
     await service.stop();
+  });
+
+  it('rejects writes unless the live link is explicitly writable', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: false });
+    service.handlePacket(heartbeat());
+    expect(service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true })).toMatchObject({
+      accepted: false,
+      reason: 'Animus writes require a SITL session started with --writable-animus.'
+    });
+    expect(service.uploadMissionToSitl({
+      schemaVersion: 1,
+      source: 'bayek-v1',
+      waypoints: [{ seq: 0, lat_deg: 37, lon_deg: -122, alt_m: 120, throttle: 0.5, acceptance_radius_m: 25 }]
+    }, '1:1')).toMatchObject({ accepted: false, state: 'rejected' });
   });
 });

@@ -6,7 +6,9 @@ import {
   parseVehicleState,
   trailPointFromState,
   TrailBuffer,
+  validateMission,
   yawDegFromRad,
+  type MissionPlan,
   type VehicleStateMessage
 } from './state';
 
@@ -80,5 +82,22 @@ describe('Animus state', () => {
     expect(headingDegFromYaw(Math.PI / 2)).toBe(0);
     expect(yawDegFromRad(Math.PI)).toBe(-180);
     expect(yawDegFromRad(-Math.PI / 2)).toBe(-90);
+  });
+
+  it('validates Bayek v1 missions', () => {
+    const valid: MissionPlan = {
+      schemaVersion: 1,
+      source: 'bayek-v1',
+      waypoints: [
+        { seq: 0, lat_deg: 37, lon_deg: -122, alt_m: 120, throttle: 0.5, acceptance_radius_m: 25 },
+        { seq: 1, lat_deg: 37.001, lon_deg: -122.001, alt_m: 140, throttle: 0.6, acceptance_radius_m: 30 }
+      ]
+    };
+    expect(validateMission(valid)).toMatchObject({ valid: true, waypointCount: 2, issues: [] });
+    expect(validateMission({ ...valid, waypoints: valid.waypoints.map((wp, index) => ({ ...wp, seq: index + 1 })) }).valid).toBe(false);
+    expect(validateMission({ ...valid, waypoints: [{ ...valid.waypoints[0], throttle: 1.1 }] }).issues[0].path).toBe('waypoints.0.throttle');
+    expect(validateMission({ ...valid, waypoints: [{ ...valid.waypoints[0], acceptance_radius_m: 0 }] }).valid).toBe(false);
+    expect(validateMission({ ...valid, waypoints: Array.from({ length: 17 }, (_, seq) => ({ ...valid.waypoints[0], seq })) }).valid).toBe(false);
+    expect(validateMission({ ...valid, waypoints: [{ ...valid.waypoints[0], lat_deg: Number.NaN }] }).valid).toBe(false);
   });
 });

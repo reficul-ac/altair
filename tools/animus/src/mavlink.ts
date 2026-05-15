@@ -1,7 +1,20 @@
 import dgram, { type RemoteInfo, type Socket } from 'node:dgram';
 import { EventEmitter } from 'node:events';
 import { buildMultiVehicleAnalysis, defaultCommandCapabilities } from './parity.js';
-import type { CameraStream, CommandCapabilityState, LinkDiagnostics, MockLinkState, MultiVehicleAnalysis } from './state.js';
+import { validateMission } from './state.js';
+import type {
+  CameraStream,
+  CommandCapabilityState,
+  CommandDispatchResult,
+  CommandName,
+  GuardedCommandRequest,
+  LinkDiagnostics,
+  MissionPlan,
+  MissionTransferState,
+  MockLinkState,
+  MultiVehicleAnalysis,
+  WritableLinkState
+} from './state.js';
 
 export const MAVLINK_V1_STX = 0xfe;
 export const DEFAULT_LISTEN_HOST = '127.0.0.1';
@@ -18,8 +31,15 @@ export const MAVLINK_CRC_EXTRA: Record<number, number> = {
   33: 104,
   36: 222,
   42: 28,
+  44: 221,
+  45: 232,
+  47: 153,
+  51: 196,
   65: 118,
+  73: 38,
   74: 20,
+  76: 152,
+  77: 143,
   115: 4,
   147: 154,
   253: 83
@@ -48,6 +68,7 @@ export type MavlinkServiceConfig = {
   listenPort: number;
   qgcForwarding: boolean;
   qgcEndpoints: Endpoint[];
+  writableAnimus: boolean;
 };
 
 export type VehicleStatePayload = {
@@ -168,6 +189,104 @@ export function mavlinkV1Frame(msgId: number, payload: Buffer, seq = 1, systemId
   }
   const crc = x25Crc(Buffer.from([extra]), x25Crc(Buffer.concat([header.subarray(1), payload])));
   return Buffer.concat([header, payload, Buffer.from([crc & 0xff, crc >> 8])]);
+}
+
+export const MAV_CMD = {
+  NAV_WAYPOINT: 16,
+  NAV_RETURN_TO_LAUNCH: 20,
+  NAV_LAND: 21,
+  NAV_TAKEOFF: 22,
+  COMPONENT_ARM_DISARM: 400,
+  DO_GO_AROUND: 191,
+  DO_PAUSE_CONTINUE: 193,
+  MISSION_START: 300,
+  DO_CHANGE_ALTITUDE: 186
+} as const;
+
+export const MAV_RESULT_LABELS: Record<number, string> = {
+  0: 'accepted',
+  1: 'temporarily rejected',
+  2: 'denied',
+  3: 'unsupported',
+  4: 'failed',
+  5: 'in progress'
+};
+
+export function encodeCommandLong(command: number, targetSystem: number, targetComponent: number, params: number[] = [], confirmation = 0, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
+  const payload = Buffer.alloc(33);
+  for (let index = 0; index < 7; index += 1) {
+    payload.writeFloatLE(Number.isFinite(params[index]) ? params[index] : 0, index * 4);
+  }
+  payload.writeUInt16LE(command, 28);
+  payload.writeUInt8(targetSystem, 30);
+  payload.writeUInt8(targetComponent, 31);
+  payload.writeUInt8(confirmation, 32);
+  return mavlinkV1Frame(76, payload, seq, sourceSystem, sourceComponent);
+}
+
+export function encodeMissionCount(count: number, targetSystem: number, targetComponent: number, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
+  const payload = Buffer.alloc(4);
+  payload.writeUInt16LE(count, 0);
+  payload.writeUInt8(targetSystem, 2);
+  payload.writeUInt8(targetComponent, 3);
+  return mavlinkV1Frame(44, payload, seq, sourceSystem, sourceComponent);
+}
+
+export function encodeMissionClearAll(targetSystem: number, targetComponent: number, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
+  return mavlinkV1Frame(45, Buffer.from([targetSystem, targetComponent]), seq, sourceSystem, sourceComponent);
+}
+
+export function encodeMissionItemInt(waypoint: MissionPlan['waypoints'][number], targetSystem: number, targetComponent: number, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
+  const payload = Buffer.alloc(37);
+  payload.writeFloatLE(waypoint.acceptance_radius_m, 0);
+  payload.writeFloatLE(waypoint.throttle, 4);
+  payload.writeFloatLE(0, 8);
+  payload.writeFloatLE(Number.NaN, 12);
+  payload.writeInt32LE(Math.round(waypoint.lat_deg * 1e7), 16);
+  payload.writeInt32LE(Math.round(waypoint.lon_deg * 1e7), 20);
+  payload.writeFloatLE(waypoint.alt_m, 24);
+  payload.writeUInt16LE(waypoint.seq, 28);
+  payload.writeUInt16LE(MAV_CMD.NAV_WAYPOINT, 30);
+  payload.writeUInt8(targetSystem, 32);
+  payload.writeUInt8(targetComponent, 33);
+  payload.writeUInt8(6, 34);
+  payload.writeUInt8(waypoint.seq === 0 ? 1 : 0, 35);
+  payload.writeUInt8(1, 36);
+  return mavlinkV1Frame(73, payload, seq, sourceSystem, sourceComponent);
+}
+
+export function decodeCommandAck(message: MavlinkMessage): { command: number; result: number; label: string } | null {
+  if (message.msgId !== 77 || message.payload.length < 3) {
+    return null;
+  }
+  const result = message.payload.readUInt8(2);
+  return {
+    command: message.payload.readUInt16LE(0),
+    result,
+    label: MAV_RESULT_LABELS[result] ?? `result ${result}`
+  };
+}
+
+export function decodeMissionRequestInt(message: MavlinkMessage): { seq: number; targetSystem: number; targetComponent: number } | null {
+  if (message.msgId !== 51 || message.payload.length < 4) {
+    return null;
+  }
+  return {
+    seq: message.payload.readUInt16LE(0),
+    targetSystem: message.payload.readUInt8(2),
+    targetComponent: message.payload.readUInt8(3)
+  };
+}
+
+export function decodeMissionAck(message: MavlinkMessage): { targetSystem: number; targetComponent: number; type: number } | null {
+  if (message.msgId !== 47 || message.payload.length < 3) {
+    return null;
+  }
+  return {
+    targetSystem: message.payload.readUInt8(0),
+    targetComponent: message.payload.readUInt8(1),
+    type: message.payload.readUInt8(2)
+  };
 }
 
 export class MavlinkV1Parser {
@@ -372,6 +491,28 @@ const DECODERS: Record<number, Decoder> = {
     if (p.length < 2) return null;
     return decodeWithFields(message, 'MISSION_CURRENT', { seq: readUInt16(p, 0) });
   },
+  44: (message) => {
+    const p = message.payload;
+    if (p.length < 4) return null;
+    return decodeWithFields(message, 'MISSION_COUNT', {
+      count: readUInt16(p, 0),
+      targetSystem: readUInt8(p, 2),
+      targetComponent: readUInt8(p, 3)
+    });
+  },
+  45: (message) => {
+    const p = message.payload;
+    if (p.length < 2) return null;
+    return decodeWithFields(message, 'MISSION_CLEAR_ALL', { targetSystem: readUInt8(p, 0), targetComponent: readUInt8(p, 1) });
+  },
+  47: (message) => {
+    const ack = decodeMissionAck(message);
+    return ack ? decodeWithFields(message, 'MISSION_ACK', ack) : null;
+  },
+  51: (message) => {
+    const request = decodeMissionRequestInt(message);
+    return request ? decodeWithFields(message, 'MISSION_REQUEST_INT', request) : null;
+  },
   65: (message) => {
     const p = message.payload;
     if (p.length < 42) return null;
@@ -389,6 +530,24 @@ const DECODERS: Record<number, Decoder> = {
       rssi: readUInt8(p, 41)
     });
   },
+  73: (message) => {
+    const p = message.payload;
+    if (p.length < 37) return null;
+    return decodeWithFields(message, 'MISSION_ITEM_INT', {
+      acceptanceRadiusM: readFloat(p, 0),
+      throttle: readFloat(p, 4),
+      xLatE7: readInt32(p, 16),
+      yLonE7: readInt32(p, 20),
+      zAltM: readFloat(p, 24),
+      seq: readUInt16(p, 28),
+      command: readUInt16(p, 30),
+      targetSystem: readUInt8(p, 32),
+      targetComponent: readUInt8(p, 33),
+      frame: readUInt8(p, 34),
+      current: readUInt8(p, 35),
+      autocontinue: readUInt8(p, 36)
+    });
+  },
   74: (message) => {
     const p = message.payload;
     if (p.length < 20) return null;
@@ -400,6 +559,27 @@ const DECODERS: Record<number, Decoder> = {
       altM: readFloat(p, 12),
       climbMps: readFloat(p, 16)
     });
+  },
+  76: (message) => {
+    const p = message.payload;
+    if (p.length < 33) return null;
+    return decodeWithFields(message, 'COMMAND_LONG', {
+      param1: readFloat(p, 0),
+      param2: readFloat(p, 4),
+      param3: readFloat(p, 8),
+      param4: readFloat(p, 12),
+      param5: readFloat(p, 16),
+      param6: readFloat(p, 20),
+      param7: readFloat(p, 24),
+      command: readUInt16(p, 28),
+      targetSystem: readUInt8(p, 30),
+      targetComponent: readUInt8(p, 31),
+      confirmation: readUInt8(p, 32)
+    });
+  },
+  77: (message) => {
+    const ack = decodeCommandAck(message);
+    return ack ? decodeWithFields(message, 'COMMAND_ACK', ack) : null;
   },
   115: (message) => {
     const p = message.payload;
@@ -1045,6 +1225,8 @@ export class MavlinkTelemetryService extends EventEmitter {
   private socket: Socket | null = null;
   private forwarder = new UdpForwarder();
   private config: MavlinkServiceConfig;
+  private lastRemote: Endpoint | null = null;
+  private txSeq = 1;
 
   constructor(config: Partial<MavlinkServiceConfig> = {}) {
     super();
@@ -1126,7 +1308,20 @@ export class MavlinkTelemetryService extends EventEmitter {
     this.emit('config', this.getConfig());
   }
 
-  handlePacket(packet: Buffer, _remote?: RemoteInfo): VehicleStatePayload {
+  linkState(): WritableLinkState {
+    return {
+      liveLink: this.registry.selectedVehicle().connected,
+      writable: this.config.writableAnimus,
+      transport: 'udp',
+      mode: this.config.writableAnimus ? 'sitl-writable' : 'read-only',
+      blockedReason: this.config.writableAnimus ? null : 'Animus writes require a SITL session started with --writable-animus.'
+    };
+  }
+
+  handlePacket(packet: Buffer, remote?: RemoteInfo): VehicleStatePayload {
+    if (remote) {
+      this.lastRemote = { host: remote.address, port: remote.port };
+    }
     this.forwarder.forward(packet);
     const nowS = performanceNowS();
     for (const message of this.parser.feed(packet)) {
@@ -1135,28 +1330,154 @@ export class MavlinkTelemetryService extends EventEmitter {
     }
     const payload = this.registry.selectedVehicle(nowS);
     const snapshot = this.registry.snapshot(nowS);
+    this.applyWritableCapabilities(payload);
+    for (const vehicle of snapshot.vehicles) this.applyWritableCapabilities(vehicle);
     this.emit('vehicle-state', payload);
     this.emit('session-snapshot', snapshot);
     return payload;
   }
 
+  dispatchCommand(request: GuardedCommandRequest): CommandDispatchResult {
+    const vehicle = this.registry.selectedVehicle();
+    const target = parseVehicleTarget(request.vehicleId, vehicle);
+    const blocked = this.writeBlocked(request.confirmed, target);
+    if (blocked) {
+      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason: blocked, mock: false, sentPackets: 0, ack: null };
+    }
+    if (!target) {
+      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason: 'no live vehicle link advertises command support', mock: false, sentPackets: 0, ack: null };
+    }
+    const command = commandSpec(request.command, request.params);
+    if (!command) {
+      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason: `${request.command} is not supported by the SITL dispatcher`, mock: false, sentPackets: 0, ack: null };
+    }
+    const frame = encodeCommandLong(command.command, target.systemId, target.componentId, command.params, 0, this.nextSeq());
+    this.sendFrame(frame);
+    this.registry.addMarker(`Command ${request.command} sent`, performanceNowS(), request.vehicleId);
+    this.emit('session-snapshot', this.registry.snapshot());
+    return { accepted: true, command: request.command, vehicleId: request.vehicleId, reason: 'command sent on writable SITL link', mock: false, sentPackets: 1, ack: null };
+  }
+
+  uploadMissionToSitl(plan: MissionPlan, vehicleId = this.registry.selectedVehicleId ?? ''): MissionTransferState {
+    const validation = validateMission(plan);
+    const vehicle = this.registry.selectedVehicle();
+    const target = parseVehicleTarget(vehicleId, vehicle);
+    const blocked = this.writeBlocked(true, target);
+    if (!validation.valid || blocked) {
+      return {
+        accepted: false,
+        direction: 'upload',
+        vehicleId,
+        waypointCount: plan.waypoints.length,
+        state: 'rejected',
+        reason: blocked ?? validation.issues.map((issue) => issue.message).join('; '),
+        sentPackets: 0,
+        validation
+      };
+    }
+    if (!target) {
+      return {
+        accepted: false,
+        direction: 'upload',
+        vehicleId,
+        waypointCount: plan.waypoints.length,
+        state: 'rejected',
+        reason: 'no live vehicle link advertises mission support',
+        sentPackets: 0,
+        validation
+      };
+    }
+    const frames = [
+      encodeMissionClearAll(target.systemId, target.componentId, this.nextSeq()),
+      encodeMissionCount(plan.waypoints.length, target.systemId, target.componentId, this.nextSeq()),
+      ...plan.waypoints.map((waypoint) => encodeMissionItemInt(waypoint, target.systemId, target.componentId, this.nextSeq()))
+    ];
+    for (const frame of frames) this.sendFrame(frame);
+    this.registry.addMarker(`Mission upload sent (${plan.waypoints.length} waypoint${plan.waypoints.length === 1 ? '' : 's'})`, performanceNowS(), vehicleId);
+    this.emit('session-snapshot', this.registry.snapshot());
+    return {
+      accepted: true,
+      direction: 'upload',
+      vehicleId,
+      waypointCount: plan.waypoints.length,
+      state: 'waiting-ack',
+      reason: 'mission transfer packets sent on writable SITL link',
+      sentPackets: frames.length,
+      validation
+    };
+  }
+
+  downloadMissionFromSitl(vehicleId = this.registry.selectedVehicleId ?? ''): MissionTransferState {
+    const validation = validateMission({ schemaVersion: 1, source: 'bayek-v1', waypoints: [{ seq: 0, lat_deg: 0, lon_deg: 0, alt_m: 1, throttle: 0, acceptance_radius_m: 1 }] });
+    return {
+      accepted: false,
+      direction: 'download',
+      vehicleId,
+      waypointCount: 0,
+      state: 'failed',
+      reason: 'mission download is not implemented for the SITL v1 bridge yet',
+      sentPackets: 0,
+      validation
+    };
+  }
+
   selectVehicle(id: string): SessionSnapshotPayload {
     this.registry.select(id);
     const snapshot = this.registry.snapshot();
+    for (const vehicle of snapshot.vehicles) this.applyWritableCapabilities(vehicle);
     this.emit('session-snapshot', snapshot);
-    this.emit('vehicle-state', this.registry.selectedVehicle());
+    const selected = this.registry.selectedVehicle();
+    this.applyWritableCapabilities(selected);
+    this.emit('vehicle-state', selected);
     return snapshot;
   }
 
   addMarker(label: string): SessionSnapshotPayload {
     this.registry.addMarker(label);
     const snapshot = this.registry.snapshot();
+    for (const vehicle of snapshot.vehicles) this.applyWritableCapabilities(vehicle);
     this.emit('session-snapshot', snapshot);
     return snapshot;
   }
 
   private activeForwardTargets(): Endpoint[] {
     return this.config.qgcForwarding ? this.config.qgcEndpoints : [];
+  }
+
+  private nextSeq(): number {
+    const seq = this.txSeq;
+    this.txSeq = (this.txSeq + 1) & 0xff;
+    return seq;
+  }
+
+  private sendFrame(frame: Buffer): void {
+    if (!this.socket || !this.lastRemote) {
+      throw new Error('no live MAVLink remote endpoint is available');
+    }
+    this.socket.send(frame, this.lastRemote.port, this.lastRemote.host);
+  }
+
+  private applyWritableCapabilities(payload: VehicleStatePayload): void {
+    payload.commandCapabilities = defaultCommandCapabilities(payload.connected, this.config.writableAnimus);
+    if (this.config.writableAnimus && payload.commandCapabilities.blockedReason) {
+      payload.commandCapabilities.blockedReason = null;
+    }
+  }
+
+  private writeBlocked(confirmed: boolean, target: { systemId: number; componentId: number } | null): string | null {
+    if (!confirmed) {
+      return 'operator confirmation is required';
+    }
+    if (!target || !this.registry.selectedVehicle().connected) {
+      return 'no live vehicle link advertises command support';
+    }
+    if (!this.config.writableAnimus) {
+      return 'Animus writes require a SITL session started with --writable-animus.';
+    }
+    if (!this.socket || !this.lastRemote) {
+      return 'no writable MAVLink remote endpoint is available';
+    }
+    return null;
   }
 }
 
@@ -1174,8 +1495,50 @@ export function normalizeConfig(config: Partial<MavlinkServiceConfig>): MavlinkS
     listenHost: config.listenHost ?? DEFAULT_LISTEN_HOST,
     listenPort: config.listenPort ?? DEFAULT_LISTEN_PORT,
     qgcForwarding: config.qgcForwarding ?? true,
-    qgcEndpoints: config.qgcEndpoints ?? [{ host: DEFAULT_QGC_HOST, port: DEFAULT_QGC_PORT }]
+    qgcEndpoints: config.qgcEndpoints ?? [{ host: DEFAULT_QGC_HOST, port: DEFAULT_QGC_PORT }],
+    writableAnimus: config.writableAnimus ?? false
   };
+}
+
+function parseVehicleTarget(vehicleId: string, fallback: VehicleStatePayload): { systemId: number; componentId: number } | null {
+  const [systemText, componentText] = vehicleId.split(':');
+  const systemId = Number(systemText);
+  const componentId = Number(componentText);
+  if (Number.isInteger(systemId) && Number.isInteger(componentId) && systemId > 0 && systemId <= 255 && componentId >= 0 && componentId <= 255) {
+    return { systemId, componentId };
+  }
+  if (fallback.systemId !== null && fallback.componentId !== null) {
+    return { systemId: fallback.systemId, componentId: fallback.componentId };
+  }
+  return null;
+}
+
+function commandSpec(command: CommandName, params: GuardedCommandRequest['params']): { command: number; params: number[] } | null {
+  const altitude = typeof params?.altitudeM === 'number' ? params.altitudeM : 0;
+  switch (command) {
+    case 'arm':
+      return { command: MAV_CMD.COMPONENT_ARM_DISARM, params: [1] };
+    case 'disarm':
+      return { command: MAV_CMD.COMPONENT_ARM_DISARM, params: [0] };
+    case 'emergency-stop':
+      return { command: MAV_CMD.COMPONENT_ARM_DISARM, params: [0, 21196] };
+    case 'takeoff':
+      return { command: MAV_CMD.NAV_TAKEOFF, params: [0, 0, 0, 0, 0, 0, altitude || 50] };
+    case 'land':
+      return { command: MAV_CMD.NAV_LAND, params: [] };
+    case 'return-to-launch':
+      return { command: MAV_CMD.NAV_RETURN_TO_LAUNCH, params: [] };
+    case 'pause':
+      return { command: MAV_CMD.DO_PAUSE_CONTINUE, params: [0] };
+    case 'mission-start':
+    case 'mission-continue':
+    case 'mission-resume':
+      return { command: MAV_CMD.MISSION_START, params: [] };
+    case 'change-altitude':
+      return { command: MAV_CMD.DO_CHANGE_ALTITUDE, params: [altitude] };
+    default:
+      return null;
+  }
 }
 
 function performanceNowS(): number {

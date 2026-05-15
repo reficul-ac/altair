@@ -21,7 +21,14 @@ MAVLINK_CRC_EXTRA = {
     0: 50,
     30: 39,
     33: 104,
+    44: 221,
+    45: 232,
+    47: 153,
+    51: 196,
+    73: 38,
     74: 20,
+    76: 152,
+    77: 143,
 }
 
 
@@ -119,6 +126,7 @@ class LiveVehicleState:
     origin_lat_deg: float | None = None
     origin_lon_deg: float | None = None
     origin_altitude_m: float | None = None
+    writable_animus: bool = False
 
     def apply(self, message: MavlinkMessage, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
@@ -211,6 +219,28 @@ class LiveVehicleState:
                 "groundspeedMps": self.groundspeed_mps,
                 "climbMps": self.climb_mps,
                 "throttlePct": self.throttle_pct,
+            },
+            "commandCapabilities": {
+                "liveLink": self.connected and (packet_age is None or packet_age < 2.0),
+                "writableLink": self.writable_animus,
+                "supported": [
+                    "arm",
+                    "disarm",
+                    "emergency-stop",
+                    "takeoff",
+                    "land",
+                    "return-to-launch",
+                    "pause",
+                    "change-altitude",
+                    "mission-start",
+                    "mission-continue",
+                    "mission-resume",
+                ]
+                if self.writable_animus and self.connected and (packet_age is None or packet_age < 2.0)
+                else [],
+                "blockedReason": None
+                if self.writable_animus and self.connected and (packet_age is None or packet_age < 2.0)
+                else "Animus writes require a SITL session started with --writable-animus.",
             },
         }
 
@@ -393,6 +423,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--ws-host", default="127.0.0.1")
     parser.add_argument("--ws-port", type=int, default=8765)
+    parser.add_argument(
+        "--writable-animus",
+        action="store_true",
+        help="advertise guarded SITL-only write support to browser Animus clients",
+    )
     args = parser.parse_args(argv)
     if args.no_forward:
         args.forward = []
@@ -403,7 +438,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 async def serve(args: argparse.Namespace) -> None:
     parser = MavlinkV1Parser()
-    state = LiveVehicleState()
+    state = LiveVehicleState(writable_animus=args.writable_animus)
     forwarder = UdpForwarder(args.forward)
     clients: set[WebSocketClient] = set()
 

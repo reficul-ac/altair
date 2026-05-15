@@ -161,6 +161,68 @@ export type MissionState = {
   progressPct: number | null;
 };
 
+export const BAYEK_MISSION_MAX_WAYPOINTS = 16;
+
+export type MissionWaypoint = {
+  seq: number;
+  lat_deg: number;
+  lon_deg: number;
+  alt_m: number;
+  throttle: number;
+  acceptance_radius_m: number;
+};
+
+export type MissionPlan = {
+  schemaVersion: 1;
+  source: 'bayek-v1';
+  waypoints: MissionWaypoint[];
+};
+
+export type MissionValidationIssue = {
+  path: string;
+  severity: 'error' | 'warning';
+  message: string;
+};
+
+export type MissionValidationResult = {
+  valid: boolean;
+  waypointCount: number;
+  issues: MissionValidationIssue[];
+};
+
+export type WritableLinkState = {
+  liveLink: boolean;
+  writable: boolean;
+  transport: 'udp' | 'tcp' | 'serial' | 'mock' | 'replay';
+  mode: 'read-only' | 'sitl-writable';
+  blockedReason: string | null;
+};
+
+export type CommandDispatchResult = {
+  accepted: boolean;
+  command: CommandName;
+  vehicleId: string;
+  reason: string;
+  mock: false;
+  sentPackets: number;
+  ack?: {
+    command: number;
+    result: number;
+    label: string;
+  } | null;
+};
+
+export type MissionTransferState = {
+  accepted: boolean;
+  direction: 'upload' | 'download';
+  vehicleId: string;
+  waypointCount: number;
+  state: 'idle' | 'validating' | 'sending' | 'waiting-ack' | 'complete' | 'rejected' | 'failed';
+  reason: string;
+  sentPackets: number;
+  validation: MissionValidationResult;
+};
+
 export type RallyPoint = {
   id: string;
   latDeg: number;
@@ -376,4 +438,51 @@ export function headingDegFromYaw(yawRad: number): number {
 export function yawDegFromRad(yawRad: number): number {
   const deg = (yawRad * 180) / Math.PI;
   return ((((deg + 180) % 360) + 360) % 360) - 180;
+}
+
+export function createEmptyMissionPlan(): MissionPlan {
+  return { schemaVersion: 1, source: 'bayek-v1', waypoints: [] };
+}
+
+export function validateMission(plan: MissionPlan): MissionValidationResult {
+  const issues: MissionValidationIssue[] = [];
+  const waypoints = Array.isArray(plan.waypoints) ? plan.waypoints : [];
+  if (plan.schemaVersion !== 1) {
+    issues.push({ path: 'schemaVersion', severity: 'error', message: 'mission schemaVersion must be 1' });
+  }
+  if (plan.source !== 'bayek-v1') {
+    issues.push({ path: 'source', severity: 'error', message: 'mission source must be bayek-v1' });
+  }
+  if (waypoints.length === 0) {
+    issues.push({ path: 'waypoints', severity: 'error', message: 'mission requires at least one waypoint' });
+  }
+  if (waypoints.length > BAYEK_MISSION_MAX_WAYPOINTS) {
+    issues.push({ path: 'waypoints', severity: 'error', message: `mission supports at most ${BAYEK_MISSION_MAX_WAYPOINTS} waypoints` });
+  }
+  waypoints.forEach((waypoint, index) => {
+    const prefix = `waypoints.${index}`;
+    if (waypoint.seq !== index) {
+      issues.push({ path: `${prefix}.seq`, severity: 'error', message: `waypoint seq must be contiguous and equal ${index}` });
+    }
+    validateFinite(issues, `${prefix}.lat_deg`, waypoint.lat_deg, -90, 90);
+    validateFinite(issues, `${prefix}.lon_deg`, waypoint.lon_deg, -180, 180);
+    validateFinite(issues, `${prefix}.alt_m`, waypoint.alt_m);
+    validateFinite(issues, `${prefix}.throttle`, waypoint.throttle, 0, 1);
+    validateFinite(issues, `${prefix}.acceptance_radius_m`, waypoint.acceptance_radius_m, Number.MIN_VALUE);
+  });
+  return {
+    valid: !issues.some((issue) => issue.severity === 'error'),
+    waypointCount: waypoints.length,
+    issues
+  };
+}
+
+function validateFinite(issues: MissionValidationIssue[], path: string, value: number, min = -Infinity, max = Infinity): void {
+  if (!Number.isFinite(value)) {
+    issues.push({ path, severity: 'error', message: `${path} must be finite` });
+    return;
+  }
+  if (value < min || value > max) {
+    issues.push({ path, severity: 'error', message: `${path} must be between ${min} and ${max}` });
+  }
 }

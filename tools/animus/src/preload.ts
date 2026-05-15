@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { MavlinkServiceConfig, SessionSnapshotPayload, VehicleStatePayload } from './mavlink.js';
 import type { ReplayTimelineMessage } from './state.js';
-import type { GuardedCommandRequest, GuardedCommandResult, MockLinkState } from './state.js';
+import type { CommandDispatchResult, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MissionTransferState, MissionValidationResult, MockLinkState } from './state.js';
 
 export type AltairAnimusApi = {
   onVehicleState: (callback: (message: VehicleStatePayload) => void) => () => void;
@@ -12,12 +12,17 @@ export type AltairAnimusApi = {
   setListenPort: (port: number) => Promise<MavlinkServiceConfig>;
   selectVehicle: (id: string) => Promise<SessionSnapshotPayload>;
   addMarker: (label: string) => Promise<SessionSnapshotPayload>;
+  validateMission: (plan: MissionPlan) => Promise<MissionValidationResult>;
+  saveMission: (plan: MissionPlan) => Promise<{ saved: boolean; path?: string; reason?: string; validation: MissionValidationResult }>;
+  loadMission: () => Promise<{ loaded: boolean; path?: string; plan?: MissionPlan; validation?: MissionValidationResult }>;
+  uploadMissionToSitl: (plan: MissionPlan, vehicleId?: string) => Promise<MissionTransferState>;
+  downloadMissionFromSitl: (vehicleId?: string) => Promise<MissionTransferState>;
   onReplayState: (callback: (message: ReplayTimelineMessage) => void) => () => void;
   openReplay: () => Promise<ReplayTimelineMessage>;
   importLog: () => Promise<ReplayTimelineMessage>;
   exportSessionLog: () => Promise<{ saved: boolean; path?: string }>;
   startMockLink: (vehicleCount: number) => Promise<MockLinkState>;
-  issueCommand: (request: GuardedCommandRequest) => Promise<GuardedCommandResult>;
+  issueCommand: (request: GuardedCommandRequest) => Promise<GuardedCommandResult | CommandDispatchResult>;
   replayPlay: () => Promise<ReplayTimelineMessage>;
   replayPause: () => Promise<ReplayTimelineMessage>;
   replaySeek: (timestampS: number) => Promise<ReplayTimelineMessage>;
@@ -61,6 +66,21 @@ const api: AltairAnimusApi = {
   },
   addMarker(label) {
     return ipcRenderer.invoke('mavlink:add-marker', label);
+  },
+  validateMission(plan) {
+    return ipcRenderer.invoke('mission:validate', plan);
+  },
+  saveMission(plan) {
+    return ipcRenderer.invoke('mission:save', plan);
+  },
+  loadMission() {
+    return ipcRenderer.invoke('mission:load');
+  },
+  uploadMissionToSitl(plan, vehicleId) {
+    return ipcRenderer.invoke('mission:upload-sitl', plan, vehicleId);
+  },
+  downloadMissionFromSitl(vehicleId) {
+    return ipcRenderer.invoke('mission:download-sitl', vehicleId);
   },
   openReplay() {
     return ipcRenderer.invoke('replay:open');
