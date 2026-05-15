@@ -72,7 +72,7 @@ def git_files(repo_root: Path) -> list[Path]:
         if is_excluded(raw_path):
             continue
         path = Path(raw_path)
-        if is_formattable(path):
+        if (repo_root / path).exists() and is_formattable(path):
             files.append(path)
     return files
 
@@ -141,9 +141,12 @@ def check_cmake(repo_root: Path, files: list[Path]) -> int:
 
 
 def check_black(repo_root: Path, files: list[Path]) -> int:
-    if not files:
-        return 0
-    return run(["black", "--check", "--quiet", *map(str, files)], cwd=repo_root).returncode
+    status = 0
+    for path in files:
+        result = run(["black", "--check", "--quiet", str(path)], cwd=repo_root)
+        if result.returncode != 0:
+            status = result.returncode
+    return status
 
 
 def fix_files(

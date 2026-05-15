@@ -2,10 +2,10 @@
 """Plot Altair SITL CSV logs."""
 
 import argparse
-import csv
-import math
 import sys
 from pathlib import Path
+
+from sitl_csv import finite_column, load_dict_rows, require_columns
 
 SUPPORTED_PLOTS = ("velocities", "attitudes", "rates", "position", "ecef")
 
@@ -31,33 +31,8 @@ def expand_plots(plot_names):
     return expanded
 
 
-def load_rows(csv_path):
-    with open(csv_path, newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        rows = list(reader)
-    if not rows:
-        raise ValueError(f"{csv_path}: no data rows")
-    return rows
-
-
 def column_values(rows, column):
-    values = []
-    for index, row in enumerate(rows, start=2):
-        try:
-            value = float(row[column])
-        except ValueError as exc:
-            raise ValueError(f"row {index}: column {column} is not numeric: {row[column]}") from exc
-        if not math.isfinite(value):
-            raise ValueError(f"row {index}: column {column} is not finite: {row[column]}")
-        values.append(value)
-    return values
-
-
-def require_columns(rows, columns, plot_name):
-    available = set(rows[0].keys())
-    missing = [column for column in columns if column not in available]
-    if missing:
-        raise ValueError(f"plot {plot_name} requires missing column(s): {', '.join(missing)}")
+    return finite_column(rows, column)
 
 
 def save_figure(fig, out_dir, name):
@@ -69,7 +44,7 @@ def save_figure(fig, out_dir, name):
 
 
 def plot_three_axis(rows, pyplot, plot_name, columns, labels, title, out_dir):
-    require_columns(rows, ("time_s",) + columns, plot_name)
+    require_columns(rows, ("time_s",) + columns, f"plot {plot_name}")
     time_s = column_values(rows, "time_s")
     fig, axes = pyplot.subplots(3, 1, sharex=True, figsize=(9, 7))
     fig.suptitle(title)
@@ -84,7 +59,9 @@ def plot_three_axis(rows, pyplot, plot_name, columns, labels, title, out_dir):
 
 
 def plot_position(rows, pyplot, out_dir):
-    require_columns(rows, ("lat_deg", "lon_deg", "pos_n_m", "pos_e_m", "altitude_m"), "position")
+    require_columns(
+        rows, ("lat_deg", "lon_deg", "pos_n_m", "pos_e_m", "altitude_m"), "plot position"
+    )
     lat = column_values(rows, "lat_deg")
     lon = column_values(rows, "lon_deg")
     north = column_values(rows, "pos_n_m")
@@ -161,48 +138,54 @@ def import_pyplot(show):
     return pyplot
 
 
+def plot_selected(rows, pyplot, plot_name, out_dir):
+    if plot_name == "velocities":
+        plot_three_axis(
+            rows,
+            pyplot,
+            "velocities",
+            ("vel_n_mps", "vel_e_mps", "vel_d_mps"),
+            ("north_mps", "east_mps", "down_mps"),
+            "NED Velocity",
+            out_dir,
+        )
+    elif plot_name == "attitudes":
+        plot_three_axis(
+            rows,
+            pyplot,
+            "attitudes",
+            ("roll_rad", "pitch_rad", "yaw_rad"),
+            ("roll_rad", "pitch_rad", "yaw_rad"),
+            "Attitude",
+            out_dir,
+        )
+    elif plot_name == "rates":
+        plot_three_axis(
+            rows,
+            pyplot,
+            "rates",
+            ("p_rps", "q_rps", "r_rps"),
+            ("p_rps", "q_rps", "r_rps"),
+            "Body Rates",
+            out_dir,
+        )
+    elif plot_name == "position":
+        plot_position(rows, pyplot, out_dir)
+    elif plot_name == "ecef":
+        plot_ecef(rows, pyplot, out_dir)
+    else:
+        raise ValueError(f"unsupported plot: {plot_name}")
+
+
 def main():
     args = parse_args()
     if args.out_dir is None and not args.show:
         raise SystemExit("--out-dir or --show is required")
     try:
-        rows = load_rows(args.csv_path)
+        rows = load_dict_rows(args.csv_path)
         pyplot = import_pyplot(args.show)
         for plot_name in expand_plots(args.plot):
-            if plot_name == "velocities":
-                plot_three_axis(
-                    rows,
-                    pyplot,
-                    "velocities",
-                    ("vel_n_mps", "vel_e_mps", "vel_d_mps"),
-                    ("north_mps", "east_mps", "down_mps"),
-                    "NED Velocity",
-                    args.out_dir,
-                )
-            elif plot_name == "attitudes":
-                plot_three_axis(
-                    rows,
-                    pyplot,
-                    "attitudes",
-                    ("roll_rad", "pitch_rad", "yaw_rad"),
-                    ("roll_rad", "pitch_rad", "yaw_rad"),
-                    "Attitude",
-                    args.out_dir,
-                )
-            elif plot_name == "rates":
-                plot_three_axis(
-                    rows,
-                    pyplot,
-                    "rates",
-                    ("p_rps", "q_rps", "r_rps"),
-                    ("p_rps", "q_rps", "r_rps"),
-                    "Body Rates",
-                    args.out_dir,
-                )
-            elif plot_name == "position":
-                plot_position(rows, pyplot, args.out_dir)
-            elif plot_name == "ecef":
-                plot_ecef(rows, pyplot, args.out_dir)
+            plot_selected(rows, pyplot, plot_name, args.out_dir)
         if args.show:
             pyplot.show()
     except (OSError, RuntimeError, ValueError) as exc:

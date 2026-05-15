@@ -135,23 +135,14 @@ For routine local runs, `tools/python/run_sitl.py` wraps the compiled runner and
 ```sh
 python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv
 python3 tools/python/run_sitl.py --scenario cruise6dof --profile turn --initial cruise6dof_initial.ini --duration 20 --dt 0.01 --output sitl_turn6dof.csv
+python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --plot all --plots-dir plots/sitl
 python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --realtime
 python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --mavlink --mavlink-port 14551
 ```
 
-To run the offline playback workflow in one command, use `run_sitl_workflow.py`. Its defaults are the routine `cruise6dof` case, the repository initial-condition file, `duration=60`, `dt=0.01`, non-realtime execution, all plots saved under `plots/sitl`, and `sitl_3d.html` generation:
+`--plot` accepts `velocities`, `attitudes`, `rates`, `position`, `ecef`, or `all`. Static plots are saved to `--plots-dir`, which defaults to `plots/sitl` when plotting is requested.
 
-```sh
-tools/python/run_sitl_workflow.py
-```
-
-The same script accepts overrides for less common runs:
-
-```sh
-tools/python/run_sitl_workflow.py --duration 10 --output /tmp/sitl.csv --plots-dir /tmp/plots --html /tmp/sitl_3d.html
-tools/python/run_sitl_workflow.py --realtime
-tools/python/run_sitl_workflow.py --mavlink --mavlink-port 14551
-```
+For offline trajectory playback and analysis, use the browser/Electron live viewer. Start `tools/live_viewer`, select `Import`, and load the SITL CSV log. The viewer converts delimited CSV logs into deterministic replay frames for scrub/playback inspection.
 
 For a live session with both the browser viewer and QGroundControl forwarding:
 
@@ -240,23 +231,20 @@ The runner exits `0` when all runs pass, `3` when any run fails a metric gate, a
 
 Python scripts in `tools/python` are orchestration helpers only:
 
-- `run_sitl.py` invokes the compiled SITL runner and prints summary metrics.
-- `run_sitl_workflow.py` runs the offline playback workflow: SITL, CSV plots, and standalone 3D playback HTML with routine defaults.
+- `run_sitl.py` invokes the compiled SITL runner, prints summary metrics, and can save static plots.
 - `run_sitl_session.py` runs the live workflow: MAVLink bridge, browser live viewer, optional QGroundControl forwarding, and realtime SITL.
 - `mavlink_live_bridge.py` listens for MAVLink v1 UDP packets, forwards raw packets to one or more UDP endpoints such as QGroundControl, and publishes decoded live state over WebSocket for `tools/live_viewer`.
 - `compare_sitl_replay.py` compares two replay CSV files with identical headers, identical row counts, and numeric tolerances.
-- `run_mc.py` invokes the compiled runner and writes CSV.
-- `plot_mc.py` prints simple summary statistics.
 - `plot_sitl.py` plots selected `cruise6dof` trajectory views from a SITL CSV.
-- `visualize_sitl_3d.py` writes a standalone browser playback page for `cruise6dof` trajectory CSV logs.
 
 Example plotting commands:
 
 ```sh
 python3 tools/python/plot_sitl.py sitl_cruise6dof.csv --plot velocities --plot attitudes --plot position --out-dir plots
 python3 tools/python/plot_sitl.py sitl_cruise6dof.csv --plot all --show
-python3 tools/python/visualize_sitl_3d.py sitl_cruise6dof.csv --output sitl_3d.html
 ```
+
+Monte Carlo post-processing remains direct CSV inspection. Run `./build/vehicle/mc_runner --seed 1 --runs 100 --scenario smoke --output mc_summary.csv` and inspect the generated summary with your preferred CSV tool.
 
 Python is intentionally not used for core simulation logic. That keeps simulation behavior close to what C tests and embedded builds exercise.
 

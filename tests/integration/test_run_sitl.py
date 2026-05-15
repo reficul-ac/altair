@@ -15,6 +15,11 @@ def parse_metrics(text):
 
 
 def main():
+    try:
+        import matplotlib  # noqa: F401
+    except ImportError:
+        return 77
+
     if len(sys.argv) != 4:
         print("usage: test_run_sitl.py <repo-root> <build-dir> <tmp-dir>", file=sys.stderr)
         return 2
@@ -24,6 +29,7 @@ def main():
     tmp_dir = Path(sys.argv[3])
     tmp_dir.mkdir(parents=True, exist_ok=True)
     csv_path = tmp_dir / "sitl_cruise6dof.csv"
+    plots_dir = tmp_dir / "plots"
 
     result = subprocess.run(
         [
@@ -41,6 +47,10 @@ def main():
             "0.01",
             "--output",
             str(csv_path),
+            "--plot",
+            "all",
+            "--plots-dir",
+            str(plots_dir),
         ],
         check=False,
         capture_output=True,
@@ -79,6 +89,19 @@ def main():
         return 1
     if not csv_path.exists():
         print(f"{csv_path} was not created", file=sys.stderr)
+        return 1
+    expected_plots = (
+        "velocities.png",
+        "attitudes.png",
+        "rates.png",
+        "position_latlon.png",
+        "position_3d.png",
+        "ecef_position.png",
+        "ecef_velocity.png",
+    )
+    missing_plots = [name for name in expected_plots if not (plots_dir / name).exists()]
+    if missing_plots:
+        print(f"missing plot(s): {', '.join(missing_plots)}", file=sys.stderr)
         return 1
     return 0
 

@@ -2,9 +2,10 @@
 """Compare two SITL replay CSV files with numeric tolerances."""
 
 import argparse
-import csv
 import math
 import sys
+
+from sitl_csv import load_csv_rows, parse_finite_number
 
 
 def parse_args():
@@ -16,27 +17,8 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_csv(path):
-    with open(path, newline="", encoding="utf-8") as handle:
-        reader = csv.reader(handle)
-        rows = list(reader)
-    if not rows:
-        raise ValueError(f"{path}: empty CSV")
-    if len(rows) < 2:
-        raise ValueError(f"{path}: CSV has no data rows")
-    return rows[0], rows[1:]
-
-
 def parse_number(path, row_number, column, value):
-    try:
-        parsed = float(value)
-    except ValueError as exc:
-        raise ValueError(
-            f"{path}: row {row_number}, column {column}: not numeric: {value}"
-        ) from exc
-    if not math.isfinite(parsed):
-        raise ValueError(f"{path}: row {row_number}, column {column}: non-finite value: {value}")
-    return parsed
+    return parse_finite_number(value, f"{path}: row {row_number}, column {column}")
 
 
 def compare_rows(expected_path, actual_path, header, expected_rows, actual_rows, abs_tol, rel_tol):
@@ -69,8 +51,8 @@ def compare_rows(expected_path, actual_path, header, expected_rows, actual_rows,
 def main():
     args = parse_args()
     try:
-        expected_header, expected_rows = load_csv(args.expected)
-        actual_header, actual_rows = load_csv(args.actual)
+        expected_header, expected_rows = load_csv_rows(args.expected)
+        actual_header, actual_rows = load_csv_rows(args.actual)
         if actual_header != expected_header:
             raise ValueError(
                 "CSV headers differ:\n"

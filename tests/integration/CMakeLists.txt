@@ -331,6 +331,7 @@ if(Python3_Interpreter_FOUND)
         COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_run_sitl.py"
                 "${CMAKE_SOURCE_DIR}" "${CMAKE_BINARY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/run_sitl"
     )
+    set_tests_properties(integration_run_sitl_cruise6dof_summary PROPERTIES SKIP_RETURN_CODE 77)
 
     add_test(
         NAME integration_mavlink_live_bridge
@@ -349,16 +350,4 @@ if(Python3_Interpreter_FOUND)
     )
     set_tests_properties(integration_plot_sitl_velocities PROPERTIES SKIP_RETURN_CODE 77)
 
-    add_test(NAME integration_visualize_sitl_3d
-             COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_visualize_sitl_3d.py"
-                     "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/visualize_sitl_3d"
-    )
-
-    add_test(
-        NAME integration_sitl_workflow
-        COMMAND
-            ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_sitl_workflow.py"
-            "${CMAKE_SOURCE_DIR}" "${CMAKE_BINARY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/sitl_workflow"
-    )
-    set_tests_properties(integration_sitl_workflow PROPERTIES SKIP_RETURN_CODE 77)
 endif()
