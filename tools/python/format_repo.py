@@ -17,8 +17,9 @@ CMAKE_EXTENSIONS = {".cmake"}
 EXCLUDED_PREFIXES = (
     "bayek/",
     "build/",
-    "tools/live_viewer/node_modules/",
-    "tools/live_viewer/dist/",
+    "tools/animus/node_modules/",
+    "tools/animus/dist/",
+    "tools/animus/dist-electron/",
 )
 EXCLUDED_PARTS = {
     "__pycache__",

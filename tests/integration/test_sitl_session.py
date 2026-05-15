@@ -37,7 +37,7 @@ def main():
         print("session did not forward to QGC by default", file=sys.stderr)
         return 1
     if "npm run dev -- --host 127.0.0.1 --port 5173" not in result.stdout:
-        print("session did not start the live viewer by default", file=sys.stderr)
+        print("session did not start Animus by default", file=sys.stderr)
         return 1
     if "--mavlink-port 14551" not in result.stdout or "--realtime" not in result.stdout:
         print("session did not route realtime SITL through the bridge", file=sys.stderr)
@@ -58,7 +58,7 @@ def main():
         print(result.stderr, end="", file=sys.stderr)
         return result.returncode
     if "app: (cd" not in result.stdout or "npm run app -- --listen-host 127.0.0.1 --listen-port 14551" not in result.stdout:
-        print("session did not start the Electron visualizer with --app", file=sys.stderr)
+        print("session did not start the Electron Animus with --app", file=sys.stderr)
         return 1
     if "mavlink_live_bridge.py" in result.stdout or "npm run dev" in result.stdout:
         print("session started the browser bridge path despite --app", file=sys.stderr)

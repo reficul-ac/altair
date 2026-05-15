@@ -46,7 +46,7 @@ const message: VehicleStateMessage = {
   }
 };
 
-describe('live viewer state', () => {
+describe('Animus state', () => {
   it('parses vehicle state messages', () => {
     expect(parseVehicleState(JSON.stringify(message))?.metrics.airspeedMps).toBe(18.5);
     expect(parseVehicleState(JSON.stringify({ type: 'other' }))).toBeNull();

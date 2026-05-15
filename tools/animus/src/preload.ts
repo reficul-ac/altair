@@ -3,7 +3,7 @@ import type { MavlinkServiceConfig, SessionSnapshotPayload, VehicleStatePayload 
 import type { ReplayTimelineMessage } from './state.js';
 import type { GuardedCommandRequest, GuardedCommandResult, MockLinkState } from './state.js';
 
-export type AltairVisualizerApi = {
+export type AltairAnimusApi = {
   onVehicleState: (callback: (message: VehicleStatePayload) => void) => () => void;
   onSessionSnapshot: (callback: (message: SessionSnapshotPayload) => void) => () => void;
   onConfig: (callback: (config: MavlinkServiceConfig) => void) => () => void;
@@ -26,7 +26,7 @@ export type AltairVisualizerApi = {
   replayMarker: (direction: -1 | 1) => Promise<ReplayTimelineMessage>;
 };
 
-const api: AltairVisualizerApi = {
+const api: AltairAnimusApi = {
   onVehicleState(callback) {
     const listener = (_event: Electron.IpcRendererEvent, message: VehicleStatePayload): void => callback(message);
     ipcRenderer.on('vehicle-state', listener);
@@ -97,4 +97,4 @@ const api: AltairVisualizerApi = {
   }
 };
 
-contextBridge.exposeInMainWorld('altairVisualizer', api);
+contextBridge.exposeInMainWorld('altairAnimus', api);

@@ -140,9 +140,9 @@ Acceptance check:
 
 - [ ] A SITL or Monte Carlo run can produce data that is replayable in a regression test.
 
-## 9. Live Viewer / Ground Station Parity
+## 9. Animus / Ground Station Parity
 
-The live viewer already supports live MAVLink UDP ingest, QGroundControl forwarding, a 3D view, HUD, map trail, multi-vehicle selection, a basic MAVLink inspector, events, and Electron packaging. The work below tracks missing parity against PX4 Hawkeye and QGroundControl without implying that every ground-station feature belongs in the short-term debugger workflow.
+Animus already supports live MAVLink UDP ingest, QGroundControl forwarding, a 3D view, HUD, map trail, multi-vehicle selection, a basic MAVLink inspector, events, and Electron packaging. The work below tracks missing parity against PX4 Hawkeye and QGroundControl without implying that every ground-station feature belongs in the short-term debugger workflow.
 
 Viewer/debug parity against PX4 Hawkeye:
 
@@ -151,7 +151,7 @@ Viewer/debug parity against PX4 Hawkeye:
 - [x] Add richer camera and view controls for chase, orbit, top-down, side, and free-camera.
 - [x] Add synchronized multi-vehicle inspection controls beyond selected-vehicle focus and fleet display.
 - [x] Add vehicle-type-specific 3D models and select fixed-wing, VTOL/tailsitter, multirotor, and generic models from MAVLink heartbeat data where available.
-- [x] Document live-viewer shortcuts and operator controls for camera movement, vehicle selection, replay placeholders, map focus, and inspector navigation.
+- [x] Document animus shortcuts and operator controls for camera movement, vehicle selection, replay placeholders, map focus, and inspector navigation.
 - [x] Add live SITL swarm workflows and CLI flags that cover common single-vehicle and multi-instance launch cases.
 
 Replay/analysis parity against Hawkeye and QGroundControl:
@@ -171,7 +171,7 @@ Full QGroundControl parity, long-term/high-risk:
 - [x] Add Plan View waypoint editing, mission item lists, upload, download, save, restore, mission statistics, terrain altitude overlays, geofence editing, rally points, survey, corridor scan, structure scan, and fixed-wing landing patterns.
 - [x] Add vehicle setup and configuration surfaces for firmware and airframe placeholders, radio, sensors, flight modes, power, motors, safety, tuning, camera, joystick, parameter browsing and editing, and application settings.
 - [x] Add Analyze tools for MAVLink console access, richer message inspection, log management, link diagnostics, and repeatable troubleshooting workflows.
-- [x] Decide which full-GCS features should remain out of scope for the debugger-oriented live viewer, and document any intentionally unsupported QGroundControl parity items.
+- [x] Decide which full-GCS features should remain out of scope for the debugger-oriented Animus, and document any intentionally unsupported QGroundControl parity items.
 
 Acceptance check:
 

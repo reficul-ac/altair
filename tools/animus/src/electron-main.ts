@@ -59,7 +59,7 @@ function createWindow(): BrowserWindow {
     height: 820,
     minWidth: 960,
     minHeight: 620,
-    title: 'Altair Visualizer',
+    title: 'Altair Animus',
     backgroundColor: '#0b1116',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

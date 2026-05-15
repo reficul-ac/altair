@@ -1,19 +1,19 @@
-# Live Viewer Operator Controls
+# Animus Operator Controls
 
-The Altair live viewer is read-only by default. Vehicle-affecting actions are exposed only through guarded command controls: the selected live link must advertise the capability, the link must be writable, and the operator must confirm the action.
+The Altair Animus is read-only by default. Vehicle-affecting actions are exposed only through guarded command controls: the selected live link must advertise the capability, the link must be writable, and the operator must confirm the action.
 
 ## Launch
 
 From the repository root:
 
 ```sh
-npm run dev --prefix tools/live_viewer
+npm run dev --prefix tools/animus
 ```
 
 For the Electron app:
 
 ```sh
-npm run app --prefix tools/live_viewer
+npm run app --prefix tools/animus
 ```
 
 For a Python bridge session:

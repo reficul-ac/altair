@@ -1,12 +1,12 @@
 {
-  "name": "altair-visualizer",
-  "productName": "Altair Visualizer",
-  "description": "Desktop MAVLink 3D visualizer for Altair SITL.",
+  "name": "altair-animus",
+  "productName": "Altair Animus",
+  "description": "Desktop MAVLink 3D viewer for Altair SITL.",
   "author": "Altair",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/reficul-ac/altair.git",
-    "directory": "tools/live_viewer"
+    "directory": "tools/animus"
   },
   "version": "0.1.0",
   "private": true,
@@ -32,8 +32,8 @@
     "vitest": "^1.6.0"
   },
   "build": {
-    "appId": "ac.reficul.altair.visualizer",
-    "productName": "Altair Visualizer",
+    "appId": "ac.reficul.altair.animus",
+    "productName": "Altair Animus",
     "files": [
       "dist/**",
       "dist-electron/**",

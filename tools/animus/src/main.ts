@@ -5,20 +5,20 @@ import { SceneRenderer, nextCameraMode, type CameraMode, type ThemeName } from '
 import { parseSessionSnapshot, parseVehicleState, type CommandName, type GuardedCommandRequest, type GuardedCommandResult, type MockLinkState, type ReplayTimelineMessage, type SessionSnapshotMessage, type VehicleStateMessage } from './state';
 import './styles.css';
 
-type VisualizerConfig = {
+type AnimusConfig = {
   listenHost: string;
   listenPort: number;
   qgcForwarding: boolean;
   qgcEndpoints: { host: string; port: number }[];
 };
 
-type VisualizerApi = {
+type AnimusApi = {
   onVehicleState: (callback: (message: VehicleStateMessage) => void) => () => void;
   onSessionSnapshot?: (callback: (message: SessionSnapshotMessage) => void) => () => void;
-  onConfig: (callback: (config: VisualizerConfig) => void) => () => void;
-  getConfig: () => Promise<VisualizerConfig>;
-  setQgcForwarding: (enabled: boolean) => Promise<VisualizerConfig>;
-  setListenPort: (port: number) => Promise<VisualizerConfig>;
+  onConfig: (callback: (config: AnimusConfig) => void) => () => void;
+  getConfig: () => Promise<AnimusConfig>;
+  setQgcForwarding: (enabled: boolean) => Promise<AnimusConfig>;
+  setListenPort: (port: number) => Promise<AnimusConfig>;
   selectVehicle?: (id: string) => Promise<SessionSnapshotMessage>;
   addMarker?: (label: string) => Promise<SessionSnapshotMessage>;
   onReplayState?: (callback: (message: ReplayTimelineMessage) => void) => () => void;
@@ -37,7 +37,7 @@ type VisualizerApi = {
 
 declare global {
   interface Window {
-    altairVisualizer?: VisualizerApi;
+    altairAnimus?: AnimusApi;
   }
 }
 
@@ -244,7 +244,7 @@ function applySnapshot(snapshot: SessionSnapshotMessage): void {
   const selected = snapshot.vehicles.find((vehicle) => vehicle.id === snapshot.selectedVehicleId) ?? snapshot.vehicles[0] ?? null;
   if (selected) applyVehicle(selected);
   scene.applyFleet(snapshot.vehicles, snapshot.selectedVehicleId, snapshot.events);
-  updateVehicleList(snapshot, (id) => void window.altairVisualizer?.selectVehicle?.(id).then(applySnapshot));
+  updateVehicleList(snapshot, (id) => void window.altairAnimus?.selectVehicle?.(id).then(applySnapshot));
   updateInspector(snapshot);
   drawMap(snapshot);
   updateVehicleComparison(snapshot);
@@ -252,7 +252,7 @@ function applySnapshot(snapshot: SessionSnapshotMessage): void {
   updateGcsSurfaces(snapshot);
 }
 
-function updateConfig(config: VisualizerConfig): void {
+function updateConfig(config: AnimusConfig): void {
   document.querySelector<HTMLInputElement>('#listen-port')!.value = String(config.listenPort);
   document.querySelector<HTMLInputElement>('#qgc')!.checked = config.qgcForwarding;
   const endpoints = config.qgcEndpoints.map((endpoint) => `${endpoint.host}:${endpoint.port}`).join(', ');
@@ -266,12 +266,12 @@ function setWorkspace(name: string): void {
 }
 
 function connect(): void {
-  if (window.altairVisualizer) {
-    window.altairVisualizer.onVehicleState(applyVehicle);
-    window.altairVisualizer.onSessionSnapshot?.(applySnapshot);
-    window.altairVisualizer.onReplayState?.(updateReplayControls);
-    window.altairVisualizer.onConfig(updateConfig);
-    window.altairVisualizer.getConfig().then(updateConfig).catch(() => {
+  if (window.altairAnimus) {
+    window.altairAnimus.onVehicleState(applyVehicle);
+    window.altairAnimus.onSessionSnapshot?.(applySnapshot);
+    window.altairAnimus.onReplayState?.(updateReplayControls);
+    window.altairAnimus.onConfig(updateConfig);
+    window.altairAnimus.getConfig().then(updateConfig).catch(() => {
       document.querySelector<HTMLElement>('#status')!.textContent = 'MAVLink service unavailable';
     });
     document.querySelector<HTMLElement>('#status')!.textContent = 'Listening for MAVLink';
@@ -402,7 +402,7 @@ function renderGuardedCommands(vehicle: VehicleStateMessage | null): void {
       const command = button.dataset.command as CommandName;
       const vehicleId = vehicle?.id ?? `${vehicle?.systemId ?? '--'}:${vehicle?.componentId ?? '--'}`;
       if (!window.confirm(`Send ${command} to ${vehicleId}?`)) return;
-      void window.altairVisualizer?.issueCommand?.({ command, vehicleId, confirmed: true }).then((result) => {
+      void window.altairAnimus?.issueCommand?.({ command, vehicleId, confirmed: true }).then((result) => {
         document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
       });
     });
@@ -446,38 +446,38 @@ document.querySelector<HTMLButtonElement>('#theme-toggle')!.addEventListener('cl
   const next: Record<ThemeName, ThemeName> = { grid: 'rez', rez: 'snow', snow: 'grid' };
   scene.setTheme(next[scene.theme]);
 });
-document.querySelector<HTMLButtonElement>('#marker')!.addEventListener('click', () => void window.altairVisualizer?.addMarker?.('Manual marker').then(applySnapshot));
+document.querySelector<HTMLButtonElement>('#marker')!.addEventListener('click', () => void window.altairAnimus?.addMarker?.('Manual marker').then(applySnapshot));
 document.querySelector<HTMLButtonElement>('#replay-open')!.addEventListener('click', () => {
   clearInspectorLog();
-  void window.altairVisualizer?.openReplay?.().then(updateReplayControls);
+  void window.altairAnimus?.openReplay?.().then(updateReplayControls);
 });
 document.querySelector<HTMLButtonElement>('#log-import')!.addEventListener('click', () => {
   clearInspectorLog();
-  void window.altairVisualizer?.importLog?.().then(updateReplayControls);
+  void window.altairAnimus?.importLog?.().then(updateReplayControls);
 });
 document.querySelector<HTMLButtonElement>('#log-download')!.addEventListener('click', () => {
-  void window.altairVisualizer?.exportSessionLog?.();
+  void window.altairAnimus?.exportSessionLog?.();
 });
 document.querySelector<HTMLButtonElement>('#replay-play')!.addEventListener('click', () => {
   const replay = state.replay;
-  const command = replay?.playing ? window.altairVisualizer?.replayPause : window.altairVisualizer?.replayPlay;
+  const command = replay?.playing ? window.altairAnimus?.replayPause : window.altairAnimus?.replayPlay;
   void command?.().then(updateReplayControls);
 });
-document.querySelector<HTMLButtonElement>('#replay-reset')!.addEventListener('click', () => void window.altairVisualizer?.replayReset?.().then(updateReplayControls));
+document.querySelector<HTMLButtonElement>('#replay-reset')!.addEventListener('click', () => void window.altairAnimus?.replayReset?.().then(updateReplayControls));
 document.querySelector<HTMLInputElement>('#replay-timeline')!.addEventListener('input', (event) => {
-  void window.altairVisualizer?.replaySeek?.(Number((event.currentTarget as HTMLInputElement).value)).then(updateReplayControls);
+  void window.altairAnimus?.replaySeek?.(Number((event.currentTarget as HTMLInputElement).value)).then(updateReplayControls);
 });
 document.querySelector<HTMLSelectElement>('#replay-speed')!.addEventListener('change', (event) => {
-  void window.altairVisualizer?.replaySetSpeed?.(Number((event.currentTarget as HTMLSelectElement).value)).then(updateReplayControls);
+  void window.altairAnimus?.replaySetSpeed?.(Number((event.currentTarget as HTMLSelectElement).value)).then(updateReplayControls);
 });
-document.querySelector<HTMLButtonElement>('#replay-prev-marker')!.addEventListener('click', () => void window.altairVisualizer?.replayMarker?.(-1).then(updateReplayControls));
-document.querySelector<HTMLButtonElement>('#replay-next-marker')!.addEventListener('click', () => void window.altairVisualizer?.replayMarker?.(1).then(updateReplayControls));
+document.querySelector<HTMLButtonElement>('#replay-prev-marker')!.addEventListener('click', () => void window.altairAnimus?.replayMarker?.(-1).then(updateReplayControls));
+document.querySelector<HTMLButtonElement>('#replay-next-marker')!.addEventListener('click', () => void window.altairAnimus?.replayMarker?.(1).then(updateReplayControls));
 document.querySelector<HTMLInputElement>('#sync-inspection')!.addEventListener('change', (event) => {
   state.syncInspection = (event.currentTarget as HTMLInputElement).checked;
 });
 document.querySelector<HTMLButtonElement>('#mock-start')!.addEventListener('click', () => {
   const count = Number(document.querySelector<HTMLInputElement>('#mock-count')!.value);
-  void window.altairVisualizer?.startMockLink?.(count).then((mock) => {
+  void window.altairAnimus?.startMockLink?.(count).then((mock) => {
     document.querySelector<HTMLElement>('#mock-status')!.textContent = `${mock.label} / ${mock.diagnostics.status}`;
   });
 });
@@ -508,10 +508,10 @@ document.querySelector<HTMLElement>('#status-strip')!.addEventListener('click', 
   detail.classList.remove('hidden');
 });
 document.querySelector<HTMLInputElement>('#qgc')!.addEventListener('change', (event) => {
-  void window.altairVisualizer?.setQgcForwarding((event.currentTarget as HTMLInputElement).checked).then(updateConfig);
+  void window.altairAnimus?.setQgcForwarding((event.currentTarget as HTMLInputElement).checked).then(updateConfig);
 });
 document.querySelector<HTMLInputElement>('#listen-port')!.addEventListener('change', (event) => {
-  void window.altairVisualizer?.setListenPort(Number((event.currentTarget as HTMLInputElement).value)).then(updateConfig);
+  void window.altairAnimus?.setListenPort(Number((event.currentTarget as HTMLInputElement).value)).then(updateConfig);
 });
 window.addEventListener('keydown', (event) => {
   if (event.code === 'KeyC') scene.setCameraMode(nextCameraMode(scene.cameraMode));

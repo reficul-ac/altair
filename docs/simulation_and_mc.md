@@ -102,7 +102,7 @@ For simultaneous browser visualization and QGroundControl monitoring, use the li
 tools/python/run_sitl_session.py
 ```
 
-The launcher starts `mavlink_live_bridge.py`, forwards raw packets to QGroundControl at `127.0.0.1:14550`, starts the browser live viewer at `http://127.0.0.1:5173`, and runs realtime `cruise6dof` SITL pointed at bridge UDP port `14551`. If the live viewer dependencies are not installed, rerun with `--install-viewer-deps`. Use `--no-qgc` or `--no-viewer` to disable either side of the live session.
+The launcher starts `mavlink_live_bridge.py`, forwards raw packets to QGroundControl at `127.0.0.1:14550`, starts the browser Animus at `http://127.0.0.1:5173`, and runs realtime `cruise6dof` SITL pointed at bridge UDP port `14551`. If Animus dependencies are not installed, rerun with `--install-viewer-deps`. Use `--no-qgc` or `--no-viewer` to disable either side of the live session.
 
 Latitude, longitude, and altitude in `cruise6dof` logs are derived from the spherical-Earth ECEF truth state in ECEF mode. The local `pos_n_m`, `pos_e_m`, `pos_d_m`, `vel_n_mps`, `vel_e_mps`, and `vel_d_mps` columns remain available as derived compatibility outputs relative to the configured initial origin. The appended `pos_ecef_x_m`, `pos_ecef_y_m`, `pos_ecef_z_m`, `vel_ecef_x_mps`, `vel_ecef_y_mps`, and `vel_ecef_z_mps` columns expose the ECEF truth state directly.
 
@@ -142,7 +142,7 @@ python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_init
 
 `--plot` accepts `velocities`, `attitudes`, `rates`, `position`, `ecef`, or `all`. Static plots are saved to `--plots-dir`, which defaults to `plots/sitl` when plotting is requested.
 
-For offline trajectory playback and analysis, use the browser/Electron live viewer. Start `tools/live_viewer`, select `Import`, and load the SITL CSV log. The viewer converts delimited CSV logs into deterministic replay frames for scrub/playback inspection.
+For offline trajectory playback and analysis, use the browser/Electron Animus. Start `tools/animus`, select `Import`, and load the SITL CSV log. The viewer converts delimited CSV logs into deterministic replay frames for scrub/playback inspection.
 
 For a live session with both the browser viewer and QGroundControl forwarding:
 
@@ -232,8 +232,8 @@ The runner exits `0` when all runs pass, `3` when any run fails a metric gate, a
 Python scripts in `tools/python` are orchestration helpers only:
 
 - `run_sitl.py` invokes the compiled SITL runner, prints summary metrics, and can save static plots.
-- `run_sitl_session.py` runs the live workflow: MAVLink bridge, browser live viewer, optional QGroundControl forwarding, and realtime SITL.
-- `mavlink_live_bridge.py` listens for MAVLink v1 UDP packets, forwards raw packets to one or more UDP endpoints such as QGroundControl, and publishes decoded live state over WebSocket for `tools/live_viewer`.
+- `run_sitl_session.py` runs the live workflow: MAVLink bridge, browser Animus, optional QGroundControl forwarding, and realtime SITL.
+- `mavlink_live_bridge.py` listens for MAVLink v1 UDP packets, forwards raw packets to one or more UDP endpoints such as QGroundControl, and publishes decoded live state over WebSocket for `tools/animus`.
 - `compare_sitl_replay.py` compares two replay CSV files with identical headers, identical row counts, and numeric tolerances.
 - `plot_sitl.py` plots selected `cruise6dof` trajectory views from a SITL CSV.
 

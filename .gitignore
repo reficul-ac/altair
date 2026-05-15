@@ -6,6 +6,6 @@ plots/
 /sitl_3d.html
 __pycache__/
 *.py[cod]
-tools/live_viewer/dist/
-tools/live_viewer/dist-electron/
-tools/live_viewer/node_modules/
+tools/animus/dist/
+tools/animus/dist-electron/
+tools/animus/node_modules/

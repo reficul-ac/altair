@@ -82,20 +82,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         dest="viewer",
         action="store_true",
         default=True,
-        help="start the browser live viewer dev server",
+        help="start the browser Animus dev server",
     )
     parser.add_argument("--no-viewer", dest="viewer", action="store_false")
     parser.add_argument(
         "--app",
         action="store_true",
-        help="start the packaged Electron visualizer instead of the browser viewer and Python bridge",
+        help="start the packaged Electron Animus instead of the browser viewer and Python bridge",
     )
     parser.add_argument("--viewer-host", default="127.0.0.1")
     parser.add_argument("--viewer-port", type=int, default=5173)
     parser.add_argument(
         "--install-viewer-deps",
         action="store_true",
-        help="run npm install in tools/live_viewer before starting the viewer",
+        help="run npm install in tools/animus before starting the viewer",
     )
     parser.add_argument(
         "--dry-run",
@@ -234,16 +234,16 @@ def swarm_output_path(output: str, system_id: int) -> str:
 
 
 def require_viewer_ready(root: pathlib.Path, install_deps: bool, dry_run: bool) -> None:
-    viewer_dir = root / "tools" / "live_viewer"
+    viewer_dir = root / "tools" / "animus"
     if dry_run:
         return
     if shutil.which("npm") is None:
-        raise RuntimeError("npm is required to start the live viewer")
+        raise RuntimeError("npm is required to start Animus")
     if install_deps:
         return
     if not (viewer_dir / "node_modules").exists():
         raise RuntimeError(
-            "tools/live_viewer/node_modules is missing; rerun with --install-viewer-deps"
+            "tools/animus/node_modules is missing; rerun with --install-viewer-deps"
         )
 
 
@@ -263,7 +263,7 @@ def terminate(processes: list[subprocess.Popen]) -> None:
 
 def run(args: argparse.Namespace) -> int:
     root = repo_root()
-    viewer_dir = root / "tools" / "live_viewer"
+    viewer_dir = root / "tools" / "animus"
     commands: list[tuple[str, list[str], pathlib.Path | None]] = []
     if args.app:
         require_viewer_ready(root, args.install_viewer_deps, args.dry_run)
