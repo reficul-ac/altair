@@ -12,7 +12,7 @@ Altair currently uses Bayek's deterministic toy plant for `smoke` and an Altair-
 - simple airspeed and altitude evolution
 - simulated IMU, GPS, baro, and airspeed samples
 
-The fixed-wing model is a first-pass deterministic simulation contract, not a validated Altair flight dynamics model. Bayek's sim structs remain generic, while Altair's concrete physical values, including mass and wing area, are compile-time constants under `params/sim/` for this milestone. The plant exists to validate:
+The fixed-wing model is a first-pass deterministic simulation contract, not a validated Altair flight dynamics model. Bayek's sim structs remain generic, while Altair's concrete physical values, including mass and wing area, start from safe defaults under `params/sim/` and can be loaded or changed at runtime by host SITL. The plant exists to validate:
 
 - build and link boundaries
 - deterministic closed-loop stepping
@@ -154,12 +154,22 @@ tools/python/run_sitl_session.py --no-qgc
 
 Case files are an Altair one-time setup layer for initial conditions, run configuration,
 vehicle parameters, sim parameters, and missions. The initial-condition data type and
-parser are Bayek-owned and shared with the standalone `--initial` path. `cruise6dof`
-also supports a separate per-step condition file through `[run] condition_file =
-path/to/conditions.ini` in a case file or the CLI override `--conditions
-path/to/conditions.ini`. Conditions are parsed by Bayek once and evaluated every
-simulation step after the profile command and truth-derived FSW input are generated, but
-before `altair_fsw_step()` and `sim_fixedwing_step()`.
+parser are Bayek-owned and shared with the standalone `--initial` path.
+
+Parameter load order for `cruise6dof` is:
+
+1. compiled safe defaults from `params/altair_params.c` and `params/sim/altair_sim_params.c`
+2. inline case-file `[vehicle_params]` and `[sim_params]` sections
+3. separate `[run] vehicle_param_file = ...` or `[run] flight_param_file = ...` and `[run] sim_param_file = ...` files, when present
+4. per-step condition-file updates, staged and committed between simulation steps
+
+The flight parameter file uses `[vehicle_params]`; the sim parameter file uses `[sim_params]`. Unknown keys, malformed values, and invalid complete parameter sets fail the load or update. Runtime updates are volatile in v1 and are not written back to disk.
+
+`cruise6dof` also supports a separate per-step condition file through `[run]
+condition_file = path/to/conditions.ini` in a case file or the CLI override
+`--conditions path/to/conditions.ini`. Conditions are parsed by Bayek once and evaluated
+every simulation step after the profile command and truth-derived FSW input are
+generated, but before `altair_fsw_step()` and `sim_fixedwing_step()`.
 
 Condition files use rule sections with a single v1 comparison over `t_s` or `step`:
 
@@ -178,6 +188,12 @@ registry: `rc.*`, `input.*`, `vehicle_params.*`, `sim_params.*`, selected `plant
 fixed-wing/6DOF state fields, `trim.*`, and mission fields such as `mission.enabled`,
 `mission.waypoint_count`, and `mission.waypoint.N.*`. Altair supplies the concrete
 parameter values and runner policy those assignments act on.
+
+`vehicle_params.*` and `sim_params.*` condition assignments are not applied directly to
+the active sets. The runner stages all matching assignments for that step, validates the
+complete vehicle/sim combination, and commits the new active sets before the FSW and
+plant step. A failed validation aborts the run with an error and leaves the previous
+active parameter sets unchanged.
 
 Expected output is a stable `key=value` summary that can be pasted into notes or checked in scripts:
 

@@ -28,6 +28,11 @@ target_link_libraries(test_altair_vehicle_interface PRIVATE altair_vehicle bayek
 altair_enable_warnings(test_altair_vehicle_interface)
 add_test(NAME unit_altair_vehicle_interface COMMAND test_altair_vehicle_interface)
 
+add_executable(test_altair_params test_altair_params.c)
+target_link_libraries(test_altair_params PRIVATE altair_vehicle bayek_common)
+altair_enable_warnings(test_altair_params)
+add_test(NAME unit_altair_params COMMAND test_altair_params)
+
 add_executable(test_sim6dof test_sim6dof.c)
 target_link_libraries(test_sim6dof PRIVATE bayek_sim bayek_common)
 altair_enable_warnings(test_sim6dof)
@@ -52,6 +57,11 @@ add_executable(test_altair_sim_model test_altair_sim_model.c)
 target_link_libraries(test_altair_sim_model PRIVATE altair_sim_model bayek_common)
 altair_enable_warnings(test_altair_sim_model)
 add_test(NAME unit_altair_sim_model COMMAND test_altair_sim_model)
+
+add_executable(test_altair_sim_params test_altair_sim_params.c)
+target_link_libraries(test_altair_sim_params PRIVATE altair_sim_model bayek_common)
+altair_enable_warnings(test_altair_sim_params)
+add_test(NAME unit_altair_sim_params COMMAND test_altair_sim_params)
 
 add_executable(test_sitl_initial_conditions test_sitl_initial_conditions.c)
 target_link_libraries(test_sitl_initial_conditions PRIVATE altair_sitl bayek_common)

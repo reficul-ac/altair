@@ -346,50 +346,19 @@ static int apply_rc_key(
 
 static int apply_vehicle_param_key(vehicle_params_t *params,
                                    const char *key,
-                                   real_t value,
+                                   const char *value_text,
                                    char *error,
                                    size_t error_size,
                                    int line_number)
 {
-    if (strcmp(key, "max_airspeed_mps") == 0)
+    if (!altair_vehicle_params_apply(params, key, value_text, error, error_size))
     {
-        params->max_airspeed_mps = value;
-    }
-    else if (strcmp(key, "min_airspeed_mps") == 0)
-    {
-        params->min_airspeed_mps = value;
-    }
-    else if (strcmp(key, "max_roll_rad") == 0)
-    {
-        params->max_roll_rad = value;
-    }
-    else if (strcmp(key, "max_pitch_rad") == 0)
-    {
-        params->max_pitch_rad = value;
-    }
-    else if (strcmp(key, "max_yaw_rate_rps") == 0)
-    {
-        params->max_yaw_rate_rps = value;
-    }
-    else if (strcmp(key, "max_actuator") == 0)
-    {
-        params->max_actuator = value;
-    }
-    else if (strcmp(key, "min_actuator") == 0)
-    {
-        params->min_actuator = value;
-    }
-    else if (strcmp(key, "safe_motor") == 0)
-    {
-        params->safe_motor = value;
-    }
-    else if (strcmp(key, "safe_surface") == 0)
-    {
-        params->safe_surface = value;
-    }
-    else
-    {
-        set_error(error, error_size, "unknown vehicle param", key, line_number);
+        if (error != NULL && error_size > 0U)
+        {
+            char detail[96];
+            (void)snprintf(detail, sizeof(detail), "%s", error);
+            set_error(error, error_size, detail, NULL, line_number);
+        }
         return 0;
     }
     return 1;
@@ -402,126 +371,14 @@ static int apply_sim_param_key(sim_fixedwing_params_t *params,
                                size_t error_size,
                                int line_number)
 {
-    real_t value;
-    if (strcmp(key, "core.frame_mode") == 0)
+    if (!altair_sim_params_apply(params, key, value_text, error, error_size))
     {
-        int frame_mode;
-        if (!parse_frame_mode_text(value_text, &frame_mode))
+        if (error != NULL && error_size > 0U)
         {
-            set_error(error, error_size, "invalid frame mode", value_text, line_number);
-            return 0;
+            char detail[96];
+            (void)snprintf(detail, sizeof(detail), "%s", error);
+            set_error(error, error_size, detail, NULL, line_number);
         }
-        params->core.frame_mode = frame_mode;
-        return 1;
-    }
-    if (!parse_scalar(value_text, &value))
-    {
-        set_error(error, error_size, "invalid numeric value", value_text, line_number);
-        return 0;
-    }
-    if (strcmp(key, "core.mass_kg") == 0)
-    {
-        params->core.mass_kg = value;
-    }
-    else if (strcmp(key, "core.inertia_kgm2.x") == 0)
-    {
-        params->core.inertia_kgm2.x = value;
-    }
-    else if (strcmp(key, "core.inertia_kgm2.y") == 0)
-    {
-        params->core.inertia_kgm2.y = value;
-    }
-    else if (strcmp(key, "core.inertia_kgm2.z") == 0)
-    {
-        params->core.inertia_kgm2.z = value;
-    }
-    else if (strcmp(key, "core.gravity_mps2") == 0)
-    {
-        params->core.gravity_mps2 = value;
-    }
-    else if (strcmp(key, "core.air_density_kgpm3") == 0)
-    {
-        params->core.air_density_kgpm3 = value;
-    }
-    else if (strcmp(key, "core.actuator_lag_hz") == 0)
-    {
-        params->core.actuator_lag_hz = value;
-    }
-    else if (strcmp(key, "core.earth_model") == 0)
-    {
-        params->core.earth_model = (int)value;
-    }
-    else if (strcmp(key, "core.earth_radius_m") == 0)
-    {
-        params->core.earth_radius_m = value;
-    }
-    else if (strcmp(key, "wing_area_m2") == 0)
-    {
-        params->wing_area_m2 = value;
-    }
-    else if (strcmp(key, "wing_span_m") == 0)
-    {
-        params->wing_span_m = value;
-    }
-    else if (strcmp(key, "mean_chord_m") == 0)
-    {
-        params->mean_chord_m = value;
-    }
-    else if (strcmp(key, "max_thrust_n") == 0)
-    {
-        params->max_thrust_n = value;
-    }
-    else if (strcmp(key, "drag_cd0") == 0)
-    {
-        params->drag_cd0 = value;
-    }
-    else if (strcmp(key, "drag_cd_alpha") == 0)
-    {
-        params->drag_cd_alpha = value;
-    }
-    else if (strcmp(key, "lift_cl0") == 0)
-    {
-        params->lift_cl0 = value;
-    }
-    else if (strcmp(key, "lift_cl_alpha") == 0)
-    {
-        params->lift_cl_alpha = value;
-    }
-    else if (strcmp(key, "lift_cl_elevator") == 0)
-    {
-        params->lift_cl_elevator = value;
-    }
-    else if (strcmp(key, "stall_alpha_rad") == 0)
-    {
-        params->stall_alpha_rad = value;
-    }
-    else if (strcmp(key, "roll_aileron_nm") == 0)
-    {
-        params->roll_aileron_nm = value;
-    }
-    else if (strcmp(key, "pitch_elevator_nm") == 0)
-    {
-        params->pitch_elevator_nm = value;
-    }
-    else if (strcmp(key, "yaw_rudder_nm") == 0)
-    {
-        params->yaw_rudder_nm = value;
-    }
-    else if (strcmp(key, "rate_damping_nms.x") == 0)
-    {
-        params->rate_damping_nms.x = value;
-    }
-    else if (strcmp(key, "rate_damping_nms.y") == 0)
-    {
-        params->rate_damping_nms.y = value;
-    }
-    else if (strcmp(key, "rate_damping_nms.z") == 0)
-    {
-        params->rate_damping_nms.z = value;
-    }
-    else
-    {
-        set_error(error, error_size, "unknown sim param", key, line_number);
         return 0;
     }
     return 1;
@@ -632,6 +489,25 @@ static int apply_run_key(sitl_case_run_t *run,
         }
         run->has_condition_file = 1U;
     }
+    else if (strcmp(key, "vehicle_param_file") == 0 || strcmp(key, "flight_param_file") == 0)
+    {
+        if (!copy_text(run->vehicle_param_file, sizeof(run->vehicle_param_file), value_text))
+        {
+            set_error(
+                error, error_size, "invalid vehicle param file value", value_text, line_number);
+            return 0;
+        }
+        run->has_vehicle_param_file = 1U;
+    }
+    else if (strcmp(key, "sim_param_file") == 0)
+    {
+        if (!copy_text(run->sim_param_file, sizeof(run->sim_param_file), value_text))
+        {
+            set_error(error, error_size, "invalid sim param file value", value_text, line_number);
+            return 0;
+        }
+        run->has_sim_param_file = 1U;
+    }
     else
     {
         set_error(error, error_size, "unknown run key", key, line_number);
@@ -671,14 +547,9 @@ static int apply_key_value(sitl_case_t *case_file,
         case_file->has_initial = 1U;
         return apply_rc_key(&case_file->initial.rc, key, value, error, error_size, line_number);
     case CASE_SECTION_VEHICLE_PARAMS:
-        if (!parse_scalar(value_text, &value))
-        {
-            set_error(error, error_size, "invalid numeric value", value_text, line_number);
-            return 0;
-        }
         case_file->has_vehicle_params = 1U;
         return apply_vehicle_param_key(
-            &case_file->vehicle_params, key, value, error, error_size, line_number);
+            &case_file->vehicle_params, key, value_text, error, error_size, line_number);
     case CASE_SECTION_SIM_PARAMS:
         case_file->has_sim_params = 1U;
         return apply_sim_param_key(
@@ -847,6 +718,38 @@ int sitl_case_load(const char *path, sitl_case_t *case_file, char *error, size_t
     if (fclose(file) != 0)
     {
         set_error(error, error_size, "failed to close case file", path, 0);
+        return 0;
+    }
+    if (case_file->run.has_vehicle_param_file)
+    {
+        if (!altair_vehicle_params_load(
+                case_file->run.vehicle_param_file, &case_file->vehicle_params, error, error_size))
+        {
+            return 0;
+        }
+        case_file->has_vehicle_params = 1U;
+    }
+    if (case_file->run.has_sim_param_file)
+    {
+        if (!altair_sim_params_load(case_file->run.sim_param_file,
+                                    &case_file->sim_params,
+                                    &case_file->vehicle_params,
+                                    error,
+                                    error_size))
+        {
+            return 0;
+        }
+        case_file->has_sim_params = 1U;
+    }
+    if (case_file->has_vehicle_params &&
+        !altair_vehicle_params_validate(&case_file->vehicle_params, error, error_size))
+    {
+        return 0;
+    }
+    if (case_file->has_sim_params &&
+        !altair_sim_params_validate(
+            &case_file->sim_params, &case_file->vehicle_params, error, error_size))
+    {
         return 0;
     }
     return finalize_waypoints(case_file, waypoint_present, error, error_size);

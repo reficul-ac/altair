@@ -1,4 +1,5 @@
 #include "altair_vehicle.h"
+#include "altair_sim_params.h"
 #include "altair_sim_model.h"
 #include "altair_fsw.h"
 #include "math_utils.h"
@@ -894,12 +895,14 @@ static bayek_mission_plan_t make_cruise6dof_mission(const sitl_initial_condition
 static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
 {
     sim_fixedwing_params_t params;
+    altair_sim_param_store_t sim_param_store;
     sim_fixedwing_state_t plant;
     fsw_input_t input;
     fsw_output_t output;
     altair_fsw_t fsw;
     sitl_initial_conditions_t initial;
     vehicle_params_t vehicle_params;
+    altair_vehicle_param_store_t vehicle_param_store;
     bayek_mission_plan_t mission = {0};
     uint8_t mission_enabled = 0U;
     sitl_trim_config_t trim_config;
@@ -919,15 +922,17 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
     {
         vehicle_params = cfg->case_file->vehicle_params;
     }
-    altair_fsw_init(&fsw, altair_vehicle_interface_with_params(&vehicle_params));
+    altair_vehicle_param_store_init(&vehicle_param_store, &vehicle_params);
+    altair_fsw_init(&fsw, altair_vehicle_interface_with_params(&vehicle_param_store.active));
     altair_fixedwing_sim_params(&params);
     if (cfg->case_file != NULL && cfg->case_file->has_sim_params)
     {
         params = cfg->case_file->sim_params;
     }
     params.core.frame_mode = cfg->frame_mode;
+    altair_sim_param_store_init(&sim_param_store, &params);
     if (!altair_fixedwing_sim_params_are_valid(
-            &params, &vehicle_params, model_error, sizeof(model_error)))
+            &sim_param_store.active, &vehicle_param_store.active, model_error, sizeof(model_error)))
     {
         fprintf(stderr, "invalid fixed-wing sim model: %s\n", model_error);
         return 1;
@@ -947,7 +952,7 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
     {
         initial = cfg->case_file->initial;
     }
-    apply_initial_conditions(&plant, &params.core, &initial);
+    apply_initial_conditions(&plant, &sim_param_store.active.core, &initial);
     if (!qgc_open(cfg, &qgc))
     {
         return 1;
@@ -1004,8 +1009,11 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
         uint32_t gps_fix_valid = 1U;
         sim_fixedwing_make_fsw_input(
             &plant, &rc, (real_t)cfg->dt_s, (uint32_t)(i * cfg->dt_s * 1000000.0), &input);
-        truth_geo_from_state(
-            &plant.body, params.core.earth_radius_m, &lat_deg, &lon_deg, &altitude_m);
+        truth_geo_from_state(&plant.body,
+                             sim_param_store.active.core.earth_radius_m,
+                             &lat_deg,
+                             &lon_deg,
+                             &altitude_m);
         input.gps.lat_deg = lat_deg;
         input.gps.lon_deg = lon_deg;
         input.gps.alt_m = altitude_m;
@@ -1023,8 +1031,10 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
             condition_ctx.step = (uint32_t)i;
             condition_ctx.rc = &rc;
             condition_ctx.input = &input;
-            condition_ctx.vehicle_params = &vehicle_params;
-            condition_ctx.sim_params = &params;
+            altair_vehicle_param_store_begin(&vehicle_param_store);
+            altair_sim_param_store_begin(&sim_param_store);
+            condition_ctx.vehicle_params = &vehicle_param_store.staged;
+            condition_ctx.sim_params = &sim_param_store.staged;
             condition_ctx.plant = &plant;
             condition_ctx.trim = &trim_config;
             condition_ctx.mission_enabled = &mission_enabled;
@@ -1041,16 +1051,18 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
             gps_fix_valid = input.gps.fix_valid;
             if (condition_ctx.plant_ecef_dirty)
             {
-                sim6dof_sync_ned_from_ecef(&plant.body, params.core.earth_radius_m);
+                sim6dof_sync_ned_from_ecef(&plant.body, sim_param_store.active.core.earth_radius_m);
             }
             if (condition_ctx.plant_ned_dirty)
             {
-                sim6dof_sync_ecef_from_ned(&plant.body, params.core.earth_radius_m);
+                sim6dof_sync_ecef_from_ned(&plant.body, sim_param_store.active.core.earth_radius_m);
             }
             if (condition_ctx.vehicle_params_dirty || condition_ctx.sim_params_dirty)
             {
-                if (!altair_fixedwing_sim_params_are_valid(
-                        &params, &vehicle_params, model_error, sizeof(model_error)))
+                if (!altair_fixedwing_sim_params_are_valid(&sim_param_store.staged,
+                                                           &vehicle_param_store.staged,
+                                                           model_error,
+                                                           sizeof(model_error)))
                 {
                     fprintf(stderr,
                             "invalid fixed-wing sim model after conditions at step %d: %s\n",
@@ -1058,6 +1070,38 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
                             model_error);
                     qgc_close(&qgc);
                     return 1;
+                }
+                if (condition_ctx.vehicle_params_dirty &&
+                    !altair_vehicle_param_store_commit(
+                        &vehicle_param_store, model_error, sizeof(model_error)))
+                {
+                    fprintf(stderr,
+                            "invalid vehicle params after conditions at step %d: %s\n",
+                            i,
+                            model_error);
+                    qgc_close(&qgc);
+                    return 1;
+                }
+                else if (!condition_ctx.vehicle_params_dirty)
+                {
+                    vehicle_param_store.staged_valid = 0U;
+                }
+                if (condition_ctx.sim_params_dirty &&
+                    !altair_sim_param_store_commit(&sim_param_store,
+                                                   &vehicle_param_store.active,
+                                                   model_error,
+                                                   sizeof(model_error)))
+                {
+                    fprintf(stderr,
+                            "invalid sim params after conditions at step %d: %s\n",
+                            i,
+                            model_error);
+                    qgc_close(&qgc);
+                    return 1;
+                }
+                else if (!condition_ctx.sim_params_dirty)
+                {
+                    sim_param_store.staged_valid = 0U;
                 }
             }
             if (condition_ctx.mission_dirty)
@@ -1075,8 +1119,8 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
         if (trim_config.enabled && !trim_status.achieved && !trim_status.failed)
         {
             if (!sitl_trim_fixedwing_level(&plant,
-                                           &params,
-                                           &vehicle_params,
+                                           &sim_param_store.active,
+                                           &vehicle_param_store.active,
                                            &trim_config,
                                            &trim_status,
                                            trim_error,
@@ -1093,15 +1137,19 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
             {
                 initial.rc.throttle = trim_status.actuators.motor;
                 initial.rc.roll = trim_status.actuators.aileron;
-                initial.rc.pitch = vehicle_params.max_pitch_rad > 0.0f
-                                       ? trim_status.pitch_rad / vehicle_params.max_pitch_rad
-                                       : initial.rc.pitch;
+                initial.rc.pitch =
+                    vehicle_param_store.active.max_pitch_rad > 0.0f
+                        ? trim_status.pitch_rad / vehicle_param_store.active.max_pitch_rad
+                        : initial.rc.pitch;
                 initial.rc.yaw = trim_status.actuators.rudder;
                 rc = initial.rc;
                 sim_fixedwing_make_fsw_input(
                     &plant, &rc, (real_t)cfg->dt_s, (uint32_t)(i * cfg->dt_s * 1000000.0), &input);
-                truth_geo_from_state(
-                    &plant.body, params.core.earth_radius_m, &lat_deg, &lon_deg, &altitude_m);
+                truth_geo_from_state(&plant.body,
+                                     sim_param_store.active.core.earth_radius_m,
+                                     &lat_deg,
+                                     &lon_deg,
+                                     &altitude_m);
                 input.gps.lat_deg = lat_deg;
                 input.gps.lon_deg = lon_deg;
                 input.gps.alt_m = altitude_m;
@@ -1117,15 +1165,19 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
             qgc_close(&qgc);
             return 2;
         }
-        if (!sim_fixedwing_step(&plant, &params, &output.actuators, (real_t)cfg->dt_s))
+        if (!sim_fixedwing_step(
+                &plant, &sim_param_store.active, &output.actuators, (real_t)cfg->dt_s))
         {
             fprintf(stderr, "invalid_sim_state at step %d\n", i);
             qgc_close(&qgc);
             return 2;
         }
         euler = euler_from_quat(plant.body.attitude_body_to_ned);
-        truth_geo_from_state(
-            &plant.body, params.core.earth_radius_m, &lat_deg, &lon_deg, &altitude_m);
+        truth_geo_from_state(&plant.body,
+                             sim_param_store.active.core.earth_radius_m,
+                             &lat_deg,
+                             &lon_deg,
+                             &altitude_m);
         qgc_send_state(&qgc, cfg, i, &plant, lat_deg, lon_deg, altitude_m, euler);
         if (fprintf(csv,
                     "%d,%.3f,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"

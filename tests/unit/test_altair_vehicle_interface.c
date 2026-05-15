@@ -1,4 +1,5 @@
 #include "altair_params.h"
+#include "altair_fsw.h"
 #include "altair_vehicle.h"
 
 #include <stdio.h>
@@ -32,6 +33,19 @@ int main(void)
     vehicle = altair_vehicle_interface();
     CHECK(vehicle->params == altair_default_params());
     CHECK(vehicle->params->max_airspeed_mps != 31.0f);
+
+    {
+        altair_fsw_t fsw;
+        vehicle_params_t runtime = *altair_default_params();
+        const bayek_vehicle_interface_t *runtime_vehicle;
+
+        runtime.max_airspeed_mps = 29.0f;
+        runtime_vehicle = altair_vehicle_interface_with_params(&runtime);
+        altair_fsw_init(&fsw, runtime_vehicle);
+        CHECK(fsw.params == &runtime);
+        altair_fsw_reset(&fsw);
+        CHECK(fsw.params == &runtime);
+    }
 
     return 0;
 }

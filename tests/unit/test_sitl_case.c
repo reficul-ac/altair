@@ -140,5 +140,23 @@ int main(void)
     CHECK(!sitl_case_load("sitl_case_bad_section.ini", &case_file, error, sizeof(error)));
     CHECK(strstr(error, "line 1") != NULL);
 
+    CHECK(write_file("sitl_vehicle_params.ini",
+                     "[vehicle_params]\n"
+                     "max_airspeed_mps = 33\n"
+                     "min_airspeed_mps = 9\n"));
+    CHECK(write_file("sitl_sim_params.ini",
+                     "[sim_params]\n"
+                     "core.mass_kg = 3.0\n"
+                     "max_thrust_n = 22\n"));
+    CHECK(write_file("sitl_case_param_files.ini",
+                     "[run]\n"
+                     "vehicle_param_file = sitl_vehicle_params.ini\n"
+                     "sim_param_file = sitl_sim_params.ini\n"));
+    CHECK(sitl_case_load("sitl_case_param_files.ini", &case_file, error, sizeof(error)));
+    CHECK(case_file.has_vehicle_params == 1U);
+    CHECK(case_file.has_sim_params == 1U);
+    CHECK(near_real(case_file.vehicle_params.max_airspeed_mps, 33.0f));
+    CHECK(near_real(case_file.sim_params.core.mass_kg, 3.0f));
+
     return 0;
 }

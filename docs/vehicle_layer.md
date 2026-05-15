@@ -33,8 +33,15 @@ This is intentionally simple. More complex mixing can be added here without chan
 
 ## Parameter Design
 
-`altair_default_params()` returns a pointer to a static const parameter block for values intended to be loaded by onboard flight software. This avoids allocation and gives host and embedded builds the same flight-facing defaults.
+`altair_default_params()` returns a pointer to a static const parameter block for values intended to be loaded by onboard flight software. `altair_vehicle_params_default()` copies the same compiled safe defaults into caller-owned storage. These defaults are always the fallback source when no file or runtime update is supplied.
+
+Flight-facing GNC parameters and host-only simulation parameters are intentionally separate:
+
+- `params/altair_params.c/h` owns `vehicle_params_t` defaults, validation, `[vehicle_params]` INI loading, and the runtime vehicle-parameter store.
+- `params/sim/altair_sim_params.c/h` owns fixed-wing `sim_fixedwing_params_t` defaults, validation, `[sim_params]` INI loading, and the runtime sim-parameter store.
 
 SITL-only physical model constants, such as fixed-wing mass and wing area, live under `params/sim/`. Host simulation callers continue to use `altair_fixedwing_sim_params()`, which delegates to those sim-only defaults. The current PlatformIO source filter includes `params/*.c` but not `params/sim/*.c`, so these sim-only values are kept out of the Arduino firmware build path.
 
-`altair_vehicle_interface()` attaches these parameters to Bayek's generic vehicle interface. If runtime parameter loading is needed later, it should occur outside `bayek/fsw` and be supplied through that interface.
+Runtime parameter updates use a staged C API: begin from the active set, apply one or more named key/value updates, validate the complete staged set, then commit atomically. Invalid staged updates are rejected and the active set remains unchanged. V1 runtime changes are volatile only; there is no auto-save or save-on-command behavior.
+
+`altair_vehicle_interface()` attaches the active `vehicle_params_t` storage to Bayek's generic vehicle interface. `altair_fsw_reset()` preserves the active parameter pointer so a reset does not silently discard runtime-loaded parameters.

@@ -32,6 +32,10 @@ extern "C"
         int frame_mode;
         uint8_t has_condition_file;
         char condition_file[SITL_CASE_PATH_MAX];
+        uint8_t has_vehicle_param_file;
+        char vehicle_param_file[SITL_CASE_PATH_MAX];
+        uint8_t has_sim_param_file;
+        char sim_param_file[SITL_CASE_PATH_MAX];
     } sitl_case_run_t;
 
     typedef struct

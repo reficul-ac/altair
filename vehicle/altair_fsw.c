@@ -37,7 +37,6 @@ void altair_fsw_reset(altair_fsw_t *fsw) {
     if (!fsw) {
         return;
     }
-    fsw->params = fsw->vehicle ? fsw->vehicle->params : 0;
     bayek_control_reset(&fsw->control);
     bayek_nav_reset(&fsw->estimate);
     altair_relative_launch_reset(&fsw->relative_launch);
