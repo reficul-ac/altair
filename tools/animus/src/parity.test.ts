@@ -50,6 +50,30 @@ function readyStatus(overrides: Partial<NonNullable<VehicleStateMessage['status'
   };
 }
 
+function protocolReadyDiagnostics(): NonNullable<VehicleStateMessage['diagnostics']> {
+  return {
+    linkId: 'test',
+    transport: 'udp',
+    status: 'connected',
+    packetsRx: 1,
+    packetsTx: 0,
+    decodedRx: 1,
+    drops: 0,
+    lastError: null,
+    protocol: {
+      mavlinkVersion: 'v1',
+      signed: false,
+      signingRequired: false,
+      dialectCoverage: 'supported',
+      incompatFlags: 0,
+      v1Frames: 1,
+      v2Frames: 0,
+      unsupportedDialectMessages: 0,
+      unsupportedMessageIds: []
+    }
+  };
+}
+
 describe('ground station parity helpers', () => {
   it('blocks commands unless live writable capability and confirmation are present', () => {
     expect(evaluateGuardedCommand({ command: 'arm', vehicleId: '1:1', confirmed: false }, defaultCommandCapabilities(true, true)).accepted).toBe(false);
@@ -70,6 +94,14 @@ describe('ground station parity helpers', () => {
     });
   });
 
+  it('uses firmware-specific readiness profiles and blocks unsupported autopilots', () => {
+    expect(buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus({ firmware: firmwareIdentity(12), modeState: normalizeFlightMode(12, 0, 0) }) }).checks.find((check) => check.key === 'firmware')).toMatchObject({ state: 'ready', detail: 'PX4 readiness profile' });
+    expect(buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus({ firmware: firmwareIdentity(3), modeState: normalizeFlightMode(3, 0, 0) }) }).checks.find((check) => check.key === 'firmware')).toMatchObject({ state: 'ready', detail: 'ArduPilot readiness profile' });
+    expect(buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus({ firmware: firmwareIdentity(0), modeState: normalizeFlightMode(0, 0, 0) }) }).checks.find((check) => check.key === 'firmware')).toMatchObject({ state: 'blocked' });
+    expect(buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus({ firmware: firmwareIdentity(null), modeState: normalizeFlightMode(null, null, null) }) }).checks.find((check) => check.key === 'firmware')).toMatchObject({ state: 'unknown' });
+    expect(buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus({ firmware: firmwareIdentity(99), modeState: normalizeFlightMode(99, 1, 0x80) }) }).checks.find((check) => check.key === 'firmware')).toMatchObject({ state: 'blocked' });
+  });
+
   it('uses explicit stale and readiness block reasons for command capabilities', () => {
     const readiness = buildVehicleReadiness({ connected: true, packetAgeS: 3, status: vehicle.status });
     const capability = defaultCommandCapabilities(true, true, { packetAgeS: 3, readiness });
@@ -77,6 +109,16 @@ describe('ground station parity helpers', () => {
     expect(capability.supported).toEqual([]);
     expect(capability.blockedReason).toContain('stale');
     expect(evaluateGuardedCommand({ command: 'arm', vehicleId: '1:1', confirmed: true }, capability).reason).toContain('stale');
+  });
+
+  it('blocks unsupported authority modes and undispatched command surfaces', () => {
+    const readiness = buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus(), diagnostics: protocolReadyDiagnostics() });
+    const capability = defaultCommandCapabilities(true, true, { packetAgeS: 0, readiness, authority: 'trusted-live-writable' });
+    expect(capability.supported).toEqual([]);
+    expect(capability.blockedReason).toContain('trusted-live-writable');
+    const writable = defaultCommandCapabilities(true, true, { packetAgeS: 0, readiness });
+    expect(writable.supported).not.toContain('go-to');
+    expect(writable.blockedCommands?.['go-to']).toContain('protocol-backed acceptance test');
   });
 
   it('reports estimator readiness from SYS_STATUS sensor health', () => {

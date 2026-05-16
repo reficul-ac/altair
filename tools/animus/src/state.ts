@@ -226,7 +226,7 @@ export type CommandDispatchResult = {
   } | null;
 };
 
-export type CommandTransactionState = 'blocked' | 'sent' | 'acknowledged' | 'timeout' | 'failed';
+export type CommandTransactionState = 'blocked' | 'sent' | 'acknowledged' | 'timeout' | 'failed' | 'cancelled';
 
 export type CommandTransaction = {
   id: string;
@@ -246,6 +246,7 @@ export type CommandTransaction = {
   } | null;
   retryCount: number;
   failureReason: string | null;
+  cancellationEligible?: boolean;
 };
 
 export type CommandConfirmationType = 'browser-confirm' | 'typed-vehicle-id';
@@ -255,6 +256,7 @@ export type CommandAuditEventKind =
   | 'dispatch-sent'
   | 'ack'
   | 'timeout'
+  | 'cancelled'
   | 'send-failed'
   | 'guard-rejected'
   | 'confirmation-rejected';
@@ -263,15 +265,19 @@ export type CommandAuditEntry = {
   schemaVersion: 1;
   eventKind: CommandAuditEventKind;
   transactionId: string | null;
+  sessionId: string;
+  operatorId: string;
   timestamp: string;
   vehicleId: string;
   commandName: CommandName;
   commandId: number | null;
   params: number[];
+  payload: Record<string, unknown>;
   confirmationType: CommandConfirmationType;
   accepted: boolean;
   state: CommandTransactionState;
   reason: string;
+  failureReason?: string | null;
   ack: {
     command: number;
     result: number;
@@ -354,6 +360,10 @@ export type CommandCapabilityState = {
   supported: CommandName[];
   blockedReason: string | null;
   blockedCommands?: Partial<Record<CommandName, string>>;
+  cancellationEligible?: Partial<Record<CommandName, boolean>>;
+  qgcForwarding?: boolean;
+  selectedWritableEndpoint?: string | null;
+  duplicateGcsForwardingRisk?: boolean;
   readiness?: VehicleReadiness;
 };
 
@@ -419,7 +429,7 @@ export type NormalizedFailsafeState = {
 };
 
 export type ReadinessCheck = {
-  key: 'link' | 'gps' | 'estimator' | 'battery' | 'failsafe' | 'mission' | 'firmware';
+  key: 'link' | 'gps' | 'estimator' | 'battery' | 'failsafe' | 'mission' | 'firmware' | 'mode' | 'protocol';
   label: string;
   state: 'ready' | 'warning' | 'blocked' | 'unknown';
   detail: string;
@@ -450,6 +460,22 @@ export type LinkDiagnostics = {
   decodedRx: number;
   drops: number;
   lastError: string | null;
+  protocol?: MavlinkProtocolDiagnostics;
+  qgcForwarding?: boolean;
+  selectedWritableEndpoint?: string | null;
+  duplicateGcsForwardingRisk?: boolean;
+};
+
+export type MavlinkProtocolDiagnostics = {
+  mavlinkVersion: 'none' | 'v1' | 'v2' | 'mixed';
+  signed: boolean;
+  signingRequired: boolean;
+  dialectCoverage: 'unknown' | 'supported' | 'partial' | 'unsupported';
+  incompatFlags: number;
+  v1Frames: number;
+  v2Frames: number;
+  unsupportedDialectMessages: number;
+  unsupportedMessageIds: number[];
 };
 
 export type LogSourceMetadata = {

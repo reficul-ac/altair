@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { MavlinkServiceConfig, SessionSnapshotPayload, VehicleStatePayload } from './mavlink.js';
 import type { ReplayTimelineMessage } from './state.js';
-import type { CommandAuditEntry, CommandDispatchResult, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MissionTransferState, MissionValidationResult, MockLinkState } from './state.js';
+import type { CommandAuditEntry, CommandDispatchResult, CommandTransaction, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MissionTransferState, MissionValidationResult, MockLinkState } from './state.js';
 
 export type AltairAnimusApi = {
   onVehicleState: (callback: (message: VehicleStatePayload) => void) => () => void;
@@ -23,6 +23,7 @@ export type AltairAnimusApi = {
   exportSessionLog: () => Promise<{ saved: boolean; path?: string }>;
   startMockLink: (vehicleCount: number) => Promise<MockLinkState>;
   issueCommand: (request: GuardedCommandRequest) => Promise<GuardedCommandResult | CommandDispatchResult>;
+  cancelCommand: (transactionId: string) => Promise<CommandTransaction | null>;
   auditCommandRejection: (request: GuardedCommandRequest, reason: string) => Promise<CommandAuditEntry>;
   replayPlay: () => Promise<ReplayTimelineMessage>;
   replayPause: () => Promise<ReplayTimelineMessage>;
@@ -97,6 +98,9 @@ const api: AltairAnimusApi = {
   },
   issueCommand(request) {
     return ipcRenderer.invoke('command:issue', request);
+  },
+  cancelCommand(transactionId) {
+    return ipcRenderer.invoke('command:cancel', transactionId);
   },
   auditCommandRejection(request, reason) {
     return ipcRenderer.invoke('command:audit-rejection', request, reason);

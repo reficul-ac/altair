@@ -9,9 +9,11 @@ import {
   encodeMissionClearAll,
   encodeMissionCount,
   encodeMissionItemInt,
+  inspectMavlinkProtocolFrames,
   LiveVehicleState,
   MavlinkTelemetryService,
   MavlinkV1Parser,
+  MAVLINK_V2_STX,
   mavlinkV1Frame,
   mavTypeLabel,
   VehicleRegistry
@@ -42,6 +44,25 @@ function commandAck(command: number, result: number, seq = 20, systemId = 1, com
   payload.writeUInt16LE(command, 0);
   payload.writeUInt8(result, 2);
   return mavlinkV1Frame(77, payload, seq, systemId, componentId);
+}
+
+function mavlinkV2Frame(msgId: number, payload = Buffer.alloc(0), options: { signed?: boolean; incompatFlags?: number; seq?: number; systemId?: number; componentId?: number } = {}): Buffer {
+  const incompatFlags = (options.incompatFlags ?? 0) | (options.signed ? 1 : 0);
+  const header = Buffer.from([
+    MAVLINK_V2_STX,
+    payload.length,
+    incompatFlags,
+    0,
+    options.seq ?? 1,
+    options.systemId ?? 1,
+    options.componentId ?? 1,
+    msgId & 0xff,
+    (msgId >> 8) & 0xff,
+    (msgId >> 16) & 0xff
+  ]);
+  const checksum = Buffer.from([0, 0]);
+  const signature = options.signed ? Buffer.alloc(13, 1) : Buffer.alloc(0);
+  return Buffer.concat([header, payload, checksum, signature]);
 }
 
 function makeWritable(service: MavlinkTelemetryService): Buffer[] {
@@ -190,6 +211,17 @@ describe('Electron MAVLink service', () => {
     expect(parser.feed(frame)[0]).toMatchObject({ msgId: 30, systemId: 1, componentId: 1 });
   });
 
+  it('identifies MAVLink v2 protocol frames without granting decode/write support', () => {
+    const unsigned = mavlinkV2Frame(0);
+    const signedUnsupported = mavlinkV2Frame(42000, Buffer.from([1, 2, 3]), { signed: true });
+    expect(inspectMavlinkProtocolFrames(Buffer.concat([unsigned, signedUnsupported]))).toEqual([
+      { mavlinkVersion: 2, msgId: 0, incompatFlags: 0, signed: false, supportedDialect: true },
+      { mavlinkVersion: 2, msgId: 42000, incompatFlags: 1, signed: true, supportedDialect: false }
+    ]);
+    const parser = new MavlinkV1Parser();
+    expect(parser.feed(unsigned)).toHaveLength(0);
+  });
+
   it('decodes supported messages and anchors local position at first global fix', () => {
     const parser = new MavlinkV1Parser();
     const state = new LiveVehicleState();
@@ -272,6 +304,24 @@ describe('Electron MAVLink service', () => {
     expect(payload.commandCapabilities?.supported).toEqual(expect.arrayContaining(['disarm', 'emergency-stop']));
     expect(payload.commandCapabilities?.supported).not.toContain('arm');
     expect(payload.commandCapabilities?.blockedCommands?.arm).toContain('Estimator blocks commands');
+  });
+
+  it('surfaces MAVLink v2 signing and dialect diagnostics in live payloads', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true, qgcForwarding: true });
+    makeWritable(service);
+    const payload = service.handlePacket(Buffer.concat([readyVehicle(), mavlinkV2Frame(42000, Buffer.alloc(1), { signed: true })]));
+    expect(payload.diagnostics?.protocol).toMatchObject({
+      mavlinkVersion: 'mixed',
+      signed: true,
+      signingRequired: true,
+      dialectCoverage: 'partial',
+      unsupportedMessageIds: [42000]
+    });
+    expect(payload.commandCapabilities).toMatchObject({
+      qgcForwarding: true,
+      selectedWritableEndpoint: '127.0.0.1:14540',
+      duplicateGcsForwardingRisk: true
+    });
   });
 
   it('encodes command and mission write packets behind MAVLink v1 CRCs', () => {
@@ -535,6 +585,21 @@ describe('Electron MAVLink service', () => {
       ack: null,
       failureReason: 'no COMMAND_ACK received within 2s'
     });
+  });
+
+  it('cancels sent command transactions before ACK and ignores terminal transactions', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true });
+    makeWritable(service);
+    service.handlePacket(readyVehicle());
+    const audit: CommandAuditEntry[] = [];
+    service.on('command-audit', (entry) => audit.push(entry as CommandAuditEntry));
+    const result = service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true });
+    const cancelled = service.cancelCommandTransaction(result.transactionId ?? '');
+    expect(cancelled).toMatchObject({ id: result.transactionId, state: 'cancelled', cancellationEligible: false });
+    expect(audit.at(-1)).toMatchObject({ eventKind: 'cancelled', transactionId: result.transactionId, state: 'cancelled' });
+    service.handlePacket(commandAck(400, 0));
+    const afterAck = service.cancelCommandTransaction(result.transactionId ?? '');
+    expect(afterAck).toMatchObject({ id: result.transactionId, state: 'cancelled' });
   });
 
   it('emits audit event for command timeout', () => {

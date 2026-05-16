@@ -11,6 +11,7 @@ import type {
   CommandTransaction,
   GuardedCommandRequest,
   LinkDiagnostics,
+  MavlinkProtocolDiagnostics,
   MissionPlan,
   MissionState,
   MissionTransferState,
@@ -25,6 +26,7 @@ import type {
 } from './state.js';
 
 export const MAVLINK_V1_STX = 0xfe;
+export const MAVLINK_V2_STX = 0xfd;
 export const DEFAULT_LISTEN_HOST = '127.0.0.1';
 export const DEFAULT_LISTEN_PORT = 14551;
 export const DEFAULT_QGC_HOST = '127.0.0.1';
@@ -69,6 +71,14 @@ export type MavlinkMessage = {
 export type DecodedMavlinkMessage = MavlinkMessage & {
   name: string;
   fields: Record<string, number | string | null>;
+};
+
+export type MavlinkProtocolFrameInfo = {
+  mavlinkVersion: 1 | 2;
+  msgId: number;
+  incompatFlags: number;
+  signed: boolean;
+  supportedDialect: boolean;
 };
 
 export type MavlinkServiceConfig = {
@@ -357,6 +367,74 @@ export class MavlinkV1Parser {
       });
     }
     return messages;
+  }
+}
+
+export function inspectMavlinkProtocolFrames(data: Uint8Array): MavlinkProtocolFrameInfo[] {
+  const frames: MavlinkProtocolFrameInfo[] = [];
+  for (let index = 0; index < data.length;) {
+    const stx = data[index];
+    if (stx === MAVLINK_V1_STX) {
+      if (index + 8 > data.length) break;
+      const payloadLen = data[index + 1];
+      const frameLen = 6 + payloadLen + 2;
+      if (index + frameLen > data.length) break;
+      const msgId = data[index + 5];
+      frames.push({ mavlinkVersion: 1, msgId, incompatFlags: 0, signed: false, supportedDialect: MAVLINK_CRC_EXTRA[msgId] !== undefined });
+      index += frameLen;
+      continue;
+    }
+    if (stx === MAVLINK_V2_STX) {
+      if (index + 12 > data.length) break;
+      const payloadLen = data[index + 1];
+      const incompatFlags = data[index + 2];
+      const signed = (incompatFlags & 0x01) !== 0;
+      const frameLen = 10 + payloadLen + 2 + (signed ? 13 : 0);
+      if (index + frameLen > data.length) break;
+      const msgId = data[index + 7] | (data[index + 8] << 8) | (data[index + 9] << 16);
+      frames.push({ mavlinkVersion: 2, msgId, incompatFlags, signed, supportedDialect: MAVLINK_CRC_EXTRA[msgId] !== undefined });
+      index += frameLen;
+      continue;
+    }
+    index += 1;
+  }
+  return frames;
+}
+
+class MavlinkProtocolTracker {
+  private v1Frames = 0;
+  private v2Frames = 0;
+  private signedFrames = 0;
+  private incompatFlags = 0;
+  private unsupportedDialectMessages = 0;
+  private readonly unsupportedMessageIds = new Set<number>();
+
+  observe(packet: Uint8Array): void {
+    for (const frame of inspectMavlinkProtocolFrames(packet)) {
+      if (frame.mavlinkVersion === 1) this.v1Frames += 1;
+      else this.v2Frames += 1;
+      if (frame.signed) this.signedFrames += 1;
+      this.incompatFlags |= frame.incompatFlags;
+      if (!frame.supportedDialect) {
+        this.unsupportedDialectMessages += 1;
+        this.unsupportedMessageIds.add(frame.msgId);
+      }
+    }
+  }
+
+  snapshot(): MavlinkProtocolDiagnostics {
+    const total = this.v1Frames + this.v2Frames;
+    return {
+      mavlinkVersion: total === 0 ? 'none' : this.v1Frames > 0 && this.v2Frames > 0 ? 'mixed' : this.v2Frames > 0 ? 'v2' : 'v1',
+      signed: this.signedFrames > 0,
+      signingRequired: (this.incompatFlags & 0x01) !== 0,
+      dialectCoverage: total === 0 ? 'unknown' : this.unsupportedDialectMessages === 0 ? 'supported' : this.unsupportedDialectMessages >= total ? 'unsupported' : 'partial',
+      incompatFlags: this.incompatFlags,
+      v1Frames: this.v1Frames,
+      v2Frames: this.v2Frames,
+      unsupportedDialectMessages: this.unsupportedDialectMessages,
+      unsupportedMessageIds: [...this.unsupportedMessageIds].sort((a, b) => a - b).slice(0, 12)
+    };
   }
 }
 
@@ -1302,6 +1380,9 @@ export class MavlinkTelemetryService extends EventEmitter {
   private commandTransactionSeq = 1;
   private readonly commandTransactions: CommandTransaction[] = [];
   private readonly commandAudit: CommandAuditEntry[] = [];
+  private readonly protocolTracker = new MavlinkProtocolTracker();
+  private readonly sessionId = `animus-${Date.now().toString(36)}`;
+  private readonly operatorId = process.env.USER ?? process.env.USERNAME ?? 'unknown';
 
   constructor(config: Partial<MavlinkServiceConfig> = {}) {
     super();
@@ -1384,7 +1465,7 @@ export class MavlinkTelemetryService extends EventEmitter {
   }
 
   linkState(): WritableLinkState {
-    const selected = this.registry.selectedVehicle();
+    const selected = this.selectedVehiclePayload();
     return {
       liveLink: selected.connected,
       writable: this.config.writableAnimus,
@@ -1402,6 +1483,7 @@ export class MavlinkTelemetryService extends EventEmitter {
       this.lastRemote = { host: remote.address, port: remote.port };
     }
     this.forwarder.forward(packet);
+    this.protocolTracker.observe(packet);
     const nowS = performanceNowS();
     this.expireCommandTransactionsForSnapshot(nowS);
     for (const message of this.parser.feed(packet)) {
@@ -1412,6 +1494,7 @@ export class MavlinkTelemetryService extends EventEmitter {
     this.expireCommandTransactionsForSnapshot(nowS);
     const payload = this.registry.selectedVehicle(nowS);
     const snapshot = this.snapshot(nowS);
+    this.applyLinkDiagnostics(payload);
     this.applyWritableCapabilities(payload);
     this.emit('vehicle-state', payload);
     this.emit('session-snapshot', snapshot);
@@ -1419,7 +1502,7 @@ export class MavlinkTelemetryService extends EventEmitter {
   }
 
   dispatchCommand(request: GuardedCommandRequest): CommandDispatchResult {
-    const vehicle = this.registry.selectedVehicle();
+    const vehicle = this.selectedVehiclePayload();
     const target = parseVehicleTarget(request.vehicleId, vehicle);
     const command = commandSpec(request.command, request.params);
     const blocked = this.writeBlocked(request.confirmed, target, request.command);
@@ -1509,6 +1592,35 @@ export class MavlinkTelemetryService extends EventEmitter {
     }
   }
 
+  cancelCommandTransaction(transactionId: string, reason = 'operator cancelled pending command'): CommandTransaction | null {
+    const nowS = performanceNowS();
+    const transaction = this.commandTransactions.find((candidate) => candidate.id === transactionId);
+    if (!transaction || transaction.state !== 'sent') {
+      return transaction ? { ...transaction, params: [...transaction.params], ack: transaction.ack ? { ...transaction.ack } : null, cancellationEligible: false } : null;
+    }
+    transaction.state = 'cancelled';
+    transaction.updatedAtS = nowS;
+    transaction.failureReason = reason;
+    this.registry.addMarker(`Command ${transaction.commandName} cancelled`, nowS, transaction.vehicleId);
+    this.pushCommandAudit(this.createCommandAuditEntry({
+      eventKind: 'cancelled',
+      request: {
+        command: transaction.commandName,
+        vehicleId: transaction.vehicleId,
+        confirmed: true,
+        confirmationType: transaction.confirmationType
+      },
+      transaction,
+      commandId: transaction.commandId,
+      params: transaction.params,
+      accepted: false,
+      state: 'cancelled',
+      reason
+    }));
+    this.emit('session-snapshot', this.snapshot(nowS));
+    return { ...transaction, params: [...transaction.params], ack: transaction.ack ? { ...transaction.ack } : null, cancellationEligible: false };
+  }
+
   uploadMissionToSitl(plan: MissionPlan, vehicleId = this.registry.selectedVehicleId ?? ''): MissionTransferState {
     const validation = validateMission(plan);
     const vehicle = this.registry.selectedVehicle();
@@ -1576,8 +1688,7 @@ export class MavlinkTelemetryService extends EventEmitter {
     this.registry.select(id);
     const snapshot = this.snapshot();
     this.emit('session-snapshot', snapshot);
-    const selected = this.registry.selectedVehicle();
-    this.applyWritableCapabilities(selected);
+    const selected = this.selectedVehiclePayload();
     this.emit('vehicle-state', selected);
     return snapshot;
   }
@@ -1610,18 +1721,62 @@ export class MavlinkTelemetryService extends EventEmitter {
     payload.commandCapabilities = defaultCommandCapabilities(payload.connected, this.config.writableAnimus, {
       packetAgeS: payload.packetAgeS,
       readiness: payload.status?.readiness,
-      authority: this.config.writableAnimus ? 'sitl-writable' : 'read-only'
+      authority: this.config.writableAnimus ? 'sitl-writable' : 'read-only',
+      qgcForwarding: this.config.qgcForwarding,
+      selectedWritableEndpoint: this.lastRemote ? `${this.lastRemote.host}:${this.lastRemote.port}` : null
     });
+  }
+
+  private selectedVehiclePayload(nowS = performanceNowS()): VehicleStatePayload {
+    const selected = this.registry.selectedVehicle(nowS);
+    this.applyLinkDiagnostics(selected);
+    this.applyWritableCapabilities(selected);
+    return selected;
+  }
+
+  private applyLinkDiagnostics(payload: VehicleStatePayload): void {
+    const selectedWritableEndpoint = this.lastRemote ? `${this.lastRemote.host}:${this.lastRemote.port}` : null;
+    const protocol = this.protocolTracker.snapshot();
+    payload.diagnostics = {
+      ...(payload.diagnostics ?? {
+        linkId: `${payload.systemId ?? 'unknown'}:${payload.componentId ?? 'unknown'}`,
+        transport: 'udp',
+        status: payload.connected ? 'connected' : 'degraded',
+        packetsRx: 0,
+        packetsTx: 0,
+        decodedRx: 0,
+        drops: 0,
+        lastError: null
+      }),
+      protocol,
+      qgcForwarding: this.config.qgcForwarding,
+      selectedWritableEndpoint,
+      duplicateGcsForwardingRisk: Boolean(this.config.writableAnimus && this.config.qgcForwarding && selectedWritableEndpoint)
+    };
+    if (payload.status) {
+      const readiness = buildVehicleReadiness({
+        connected: payload.connected,
+        packetAgeS: payload.packetAgeS,
+        status: payload.status,
+        diagnostics: payload.diagnostics
+      });
+      payload.status.readiness = readiness;
+      payload.status.armingState = normalizeArmingState(payload.status.armed, readiness);
+    }
   }
 
   private snapshot(nowS = performanceNowS()): SessionSnapshotPayload {
     this.expireCommandTransactionsForSnapshot(nowS);
     const snapshot = this.registry.snapshot(nowS);
-    for (const vehicle of snapshot.vehicles) this.applyWritableCapabilities(vehicle);
+    for (const vehicle of snapshot.vehicles) {
+      this.applyLinkDiagnostics(vehicle);
+      this.applyWritableCapabilities(vehicle);
+    }
     snapshot.commandTransactions = this.commandTransactions.slice(-MAX_COMMAND_TRANSACTIONS).reverse().map((transaction) => ({
       ...transaction,
       params: [...transaction.params],
-      ack: transaction.ack ? { ...transaction.ack } : null
+      ack: transaction.ack ? { ...transaction.ack } : null,
+      cancellationEligible: transaction.state === 'sent'
     }));
     snapshot.commandAudit = this.commandAudit.slice(-MAX_COMMAND_AUDIT_SNAPSHOT_ENTRIES).reverse().map((entry) => ({
       ...entry,
@@ -1733,15 +1888,19 @@ export class MavlinkTelemetryService extends EventEmitter {
       schemaVersion: 1,
       eventKind: options.eventKind,
       transactionId: options.transaction?.id ?? null,
+      sessionId: this.sessionId,
+      operatorId: this.operatorId,
       timestamp: new Date().toISOString(),
       vehicleId: options.request.vehicleId,
       commandName: options.request.command,
       commandId: options.commandId,
       params: [...options.params],
+      payload: { params: { ...(options.request.params ?? {}) }, encodedParams: [...options.params] },
       confirmationType: options.request.confirmationType ?? 'browser-confirm',
       accepted: options.accepted,
       state: options.state,
       reason: options.reason,
+      failureReason: options.accepted ? null : options.reason,
       ack: options.ack ? { ...options.ack } : null,
       authority: config.writableAnimus ? 'sitl-writable' : 'read-only',
       writable: config.writableAnimus,
@@ -1761,7 +1920,7 @@ export class MavlinkTelemetryService extends EventEmitter {
     if (!confirmed) {
       return 'operator confirmation is required';
     }
-    const selected = this.registry.selectedVehicle();
+    const selected = this.selectedVehiclePayload();
     const capability = defaultCommandCapabilities(selected.connected, this.config.writableAnimus, {
       packetAgeS: selected.packetAgeS,
       readiness: selected.status?.readiness,

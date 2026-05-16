@@ -8,6 +8,7 @@ import {
   type CommandAuditEntry,
   type CommandDispatchResult,
   type CommandName,
+  type CommandTransaction,
   type GuardedCommandRequest,
   type GuardedCommandResult,
   type MissionPlan,
@@ -51,6 +52,7 @@ type AnimusApi = {
   exportSessionLog?: () => Promise<{ saved: boolean; path?: string }>;
   startMockLink?: (vehicleCount: number) => Promise<MockLinkState>;
   issueCommand?: (request: GuardedCommandRequest) => Promise<GuardedCommandResult | CommandDispatchResult>;
+  cancelCommand?: (transactionId: string) => Promise<CommandTransaction | null>;
   auditCommandRejection?: (request: GuardedCommandRequest, reason: string) => Promise<CommandAuditEntry>;
   replayPlay?: () => Promise<ReplayTimelineMessage>;
   replayPause?: () => Promise<ReplayTimelineMessage>;
@@ -275,7 +277,9 @@ function updateSetupSurface(vehicle: VehicleStateMessage | null, snapshot = stat
     .join('') || '<p class="empty">No parameters loaded</p>';
   const diag = vehicle?.diagnostics;
   document.querySelector<HTMLElement>('#diagnostics-list')!.innerHTML = diag
-    ? `<div><strong>${escapeHtml(diag.linkId)}</strong><span>${escapeHtml(diag.transport)}</span><span>${escapeHtml(diag.status)}</span><span>${diag.packetsRx} rx</span></div>`
+    ? `<div><strong>${escapeHtml(diag.linkId)}</strong><span>${escapeHtml(diag.transport)}</span><span>${escapeHtml(diag.status)}</span><span>${diag.packetsRx} rx</span></div>
+       <div><strong>Protocol</strong><span>${escapeHtml(diag.protocol?.mavlinkVersion ?? 'unknown')}</span><span>${escapeHtml(diag.protocol?.signed ? 'signed' : diag.protocol?.signingRequired ? 'signing required' : 'unsigned')}</span><span>${escapeHtml(diag.protocol?.dialectCoverage ?? 'unknown')}</span></div>
+       <div><strong>Forwarding</strong><span>${escapeHtml(diag.qgcForwarding ? 'QGC on' : 'QGC off')}</span><span>${escapeHtml(diag.selectedWritableEndpoint ?? 'no writable endpoint')}</span><span>${escapeHtml(diag.duplicateGcsForwardingRisk ? 'duplicate GCS risk' : 'single writer')}</span></div>`
     : '<p class="empty">No link diagnostics</p>';
   renderGuardedCommands(vehicle);
   renderCommandHistory(snapshot);
@@ -284,7 +288,9 @@ function updateSetupSurface(vehicle: VehicleStateMessage | null, snapshot = stat
 function renderCommandHistory(snapshot: SessionSnapshotMessage | null): void {
   const container = document.querySelector<HTMLElement>('#command-history')!;
   const audit = snapshot?.commandAudit ?? [];
-  if (audit.length > 0) {
+  const transactions = snapshot?.commandTransactions ?? [];
+  const cancellable = transactions.filter((transaction) => transaction.cancellationEligible);
+  if (audit.length > 0 && cancellable.length === 0) {
     container.innerHTML = audit.slice(0, 8)
       .map((entry) => {
         const detail = entry.ack?.label ?? entry.reason;
@@ -293,13 +299,20 @@ function renderCommandHistory(snapshot: SessionSnapshotMessage | null): void {
       .join('');
     return;
   }
-  const transactions = snapshot?.commandTransactions ?? [];
   container.innerHTML = transactions.slice(0, 8)
     .map((transaction) => {
       const detail = transaction.ack?.label ?? transaction.failureReason ?? 'awaiting COMMAND_ACK';
-      return `<div><strong>${escapeHtml(transaction.commandName)}</strong><span>${escapeHtml(transaction.state)}</span><span>${escapeHtml(detail)}</span><span>${formatTime(transaction.updatedAtS)}</span></div>`;
+      const cancel = transaction.cancellationEligible ? `<button type="button" data-cancel-command="${escapeHtml(transaction.id)}">Cancel</button>` : `<span>${formatTime(transaction.updatedAtS)}</span>`;
+      return `<div><strong>${escapeHtml(transaction.commandName)}</strong><span>${escapeHtml(transaction.state)}</span><span>${escapeHtml(detail)}</span>${cancel}</div>`;
     })
     .join('') || '<p class="empty">No command transactions</p>';
+  container.querySelectorAll<HTMLButtonElement>('[data-cancel-command]').forEach((button) => {
+    button.addEventListener('click', () => {
+      void window.altairAnimus?.cancelCommand?.(button.dataset.cancelCommand ?? '').then(() => {
+        document.querySelector<HTMLElement>('#status')!.textContent = 'Command cancellation recorded';
+      });
+    });
+  });
 }
 
 function renderGuardedCommands(vehicle: VehicleStateMessage | null): void {

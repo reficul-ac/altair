@@ -84,15 +84,19 @@ function buildRejectedCommandAuditEntry(request: GuardedCommandRequest, reason: 
     schemaVersion: 1,
     eventKind,
     transactionId: null,
+    sessionId: process.env.ANIMUS_SESSION_ID ?? `electron-${process.pid}`,
+    operatorId: process.env.USER ?? process.env.USERNAME ?? 'unknown',
     timestamp: new Date().toISOString(),
     vehicleId: request.vehicleId,
     commandName: request.command,
     commandId: spec?.command ?? null,
     params: spec?.params ?? [],
+    payload: { params: { ...(request.params ?? {}) }, encodedParams: spec?.params ?? [] },
     confirmationType: request.confirmationType ?? 'browser-confirm',
     accepted: false,
     state: 'blocked',
     reason,
+    failureReason: reason,
     ack: null,
     authority: writable ? 'sitl-writable' : 'read-only',
     writable,
@@ -258,6 +262,7 @@ ipcMain.handle('command:audit-rejection', async (_event, request: GuardedCommand
   } as SessionSnapshotPayload);
   return entry;
 });
+ipcMain.handle('command:cancel', (_event, transactionId: string) => telemetry.cancelCommandTransaction(String(transactionId)));
 
 telemetry.on('vehicle-state', (payload: VehicleStatePayload) => sendToWindows('vehicle-state', payload));
 telemetry.on('config', (config: MavlinkServiceConfig) => sendToWindows('mavlink-config', config));

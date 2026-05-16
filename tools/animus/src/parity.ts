@@ -53,21 +53,41 @@ const SAFETY_RESPONSE_COMMANDS: CommandName[] = [
   'return-to-launch'
 ];
 
-export function defaultCommandCapabilities(liveLink: boolean, writableLink = false, options: { packetAgeS?: number | null; readiness?: VehicleReadiness; authority?: CommandAuthorityMode } = {}): CommandCapabilityState {
+const SITL_DISPATCHED_COMMANDS = new Set<CommandName>([
+  'arm',
+  'disarm',
+  'emergency-stop',
+  'takeoff',
+  'land',
+  'return-to-launch',
+  'pause',
+  'change-altitude',
+  'mission-start',
+  'mission-continue',
+  'mission-resume'
+]);
+
+export function defaultCommandCapabilities(liveLink: boolean, writableLink = false, options: {
+  packetAgeS?: number | null;
+  readiness?: VehicleReadiness;
+  authority?: CommandAuthorityMode;
+  qgcForwarding?: boolean;
+  selectedWritableEndpoint?: string | null;
+} = {}): CommandCapabilityState {
   const stale = options.packetAgeS === null || options.packetAgeS === undefined ? false : options.packetAgeS >= 2;
   const authority = options.authority ?? (writableLink ? 'sitl-writable' : 'read-only');
   const baseReady = liveLink && writableLink && !stale && authority === 'sitl-writable';
   const preflightReady = !options.readiness || options.readiness.overall === 'ready' || options.readiness.overall === 'warning';
-  const supported = baseReady
+  const supported = (baseReady
     ? [
         ...SAFETY_RESPONSE_COMMANDS,
         ...(preflightReady ? PREFLIGHT_GATED_COMMANDS : [])
       ]
-    : [];
+    : []).filter((command) => SITL_DISPATCHED_COMMANDS.has(command));
   const blockedCommands = commandBlockedReasons(liveLink, writableLink, stale, options.readiness, authority);
-  const blockedReason = supported.length === LIVE_COMMANDS.length
-    ? null
-    : commandBlockReason(liveLink, writableLink, stale, options.readiness, authority);
+  const blockedReason = !baseReady || readinessBlockReason(options.readiness)
+    ? commandBlockReason(liveLink, writableLink, stale, options.readiness, authority)
+    : null;
   return {
     liveLink,
     writableLink,
@@ -76,6 +96,10 @@ export function defaultCommandCapabilities(liveLink: boolean, writableLink = fal
     supported,
     blockedReason,
     blockedCommands,
+    cancellationEligible: Object.fromEntries(LIVE_COMMANDS.map((command) => [command, false])) as Partial<Record<CommandName, boolean>>,
+    qgcForwarding: options.qgcForwarding ?? false,
+    selectedWritableEndpoint: options.selectedWritableEndpoint ?? null,
+    duplicateGcsForwardingRisk: Boolean(writableLink && options.qgcForwarding && options.selectedWritableEndpoint),
     readiness: options.readiness
   };
 }
@@ -240,7 +264,7 @@ export function normalizeMissionState(input: {
   };
 }
 
-export function buildVehicleReadiness(vehicle: Pick<VehicleStateMessage, 'connected' | 'packetAgeS' | 'status'>): VehicleReadiness {
+export function buildVehicleReadiness(vehicle: Pick<VehicleStateMessage, 'connected' | 'packetAgeS' | 'status' | 'diagnostics'>): VehicleReadiness {
   const checks: VehicleReadiness['checks'] = [];
   const stale = vehicle.packetAgeS === null || vehicle.packetAgeS >= 2;
   checks.push({
@@ -291,13 +315,66 @@ export function buildVehicleReadiness(vehicle: Pick<VehicleStateMessage, 'connec
     detail: mission.detail
   });
   const firmware = vehicle.status?.firmware;
+  const firmwareProfile = readinessFirmwareProfile(firmware);
   checks.push({
     key: 'firmware',
     label: 'Firmware',
-    state: !firmware || firmware.family === 'unknown' ? 'unknown' : firmware.family === 'unsupported' ? 'warning' : 'ready',
-    detail: firmware?.unsupportedReason ?? firmware?.label ?? 'firmware identity has not been decoded'
+    state: firmwareProfile.state,
+    detail: firmwareProfile.detail
   });
+  const mode = vehicle.status?.modeState;
+  checks.push({
+    key: 'mode',
+    label: 'Mode compatibility',
+    state: modeCompatibilityState(firmware, mode),
+    detail: mode?.unsupportedReason ?? mode?.label ?? 'flight mode has not been decoded'
+  });
+  const protocol = vehicle.diagnostics?.protocol;
+  if (protocol) {
+    checks.push({
+      key: 'protocol',
+      label: 'MAVLink protocol',
+      state: protocol.signingRequired && !protocol.signed ? 'blocked' : protocol.dialectCoverage === 'unsupported' ? 'blocked' : protocol.dialectCoverage === 'partial' ? 'warning' : protocol.mavlinkVersion === 'none' ? 'unknown' : 'ready',
+      detail: protocolDetail(protocol)
+    });
+  } else {
+    checks.push({
+      key: 'protocol',
+      label: 'MAVLink protocol',
+      state: 'unknown',
+      detail: 'MAVLink protocol version has not been observed'
+    });
+  }
   return { checks, overall: overallReadiness(checks.map((check) => check.state)) };
+}
+
+function readinessFirmwareProfile(firmware: FirmwareIdentity | null | undefined): { state: VehicleReadiness['checks'][number]['state']; detail: string } {
+  if (!firmware || firmware.family === 'unknown') {
+    return { state: 'unknown', detail: firmware?.unsupportedReason ?? 'firmware identity has not been decoded' };
+  }
+  if (firmware.family === 'unsupported' || firmware.family === 'generic') {
+    return { state: 'blocked', detail: firmware.unsupportedReason ?? `${firmware.label} has no Animus command readiness profile` };
+  }
+  if (firmware.family === 'px4') {
+    return { state: 'ready', detail: 'PX4 readiness profile' };
+  }
+  if (firmware.family === 'ardupilot') {
+    return { state: 'ready', detail: 'ArduPilot readiness profile' };
+  }
+  return { state: 'warning', detail: `${firmware.label} readiness profile is limited` };
+}
+
+function modeCompatibilityState(firmware: FirmwareIdentity | null | undefined, mode: NormalizedFlightMode | null | undefined): VehicleReadiness['checks'][number]['state'] {
+  if (!firmware || firmware.family === 'unknown' || !mode) return 'unknown';
+  if (firmware.family === 'unsupported' || firmware.family === 'generic') return 'blocked';
+  if (!mode.known || mode.category === 'unknown' || mode.category === 'unsupported') return 'warning';
+  return 'ready';
+}
+
+function protocolDetail(protocol: NonNullable<LinkDiagnostics['protocol']>): string {
+  const signing = protocol.signed ? 'signed' : protocol.signingRequired ? 'signing required' : 'unsigned';
+  const unsupported = protocol.unsupportedMessageIds.length > 0 ? ` / unsupported ${protocol.unsupportedMessageIds.join(', ')}` : '';
+  return `${protocol.mavlinkVersion} / ${signing} / ${protocol.dialectCoverage} dialect${unsupported}`;
 }
 
 function undecodedMission(mission: MissionState): boolean {
@@ -409,6 +486,11 @@ function commandBlockedReasons(liveLink: boolean, writableLink: boolean, stale: 
   const readinessReason = readinessBlockReason(readiness);
   if (readinessReason) {
     for (const command of PREFLIGHT_GATED_COMMANDS) reasons[command] = readinessReason;
+  }
+  for (const command of LIVE_COMMANDS) {
+    if (!SITL_DISPATCHED_COMMANDS.has(command)) {
+      reasons[command] = `${command} requires a protocol-backed acceptance test before live dispatch is enabled`;
+    }
   }
   return reasons;
 }
