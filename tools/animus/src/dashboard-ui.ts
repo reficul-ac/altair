@@ -1,4 +1,12 @@
-import { createDefaultDashboardLayout, type AnimusDashboardLayout, type AnimusWidgetConfig, type AnimusWidgetKind } from './dashboard-types';
+import {
+  createDefaultDashboardLayout,
+  isAnimusWidgetSpan,
+  moveDashboardWidget,
+  setDashboardWidgetSpan,
+  type AnimusDashboardLayout,
+  type AnimusWidgetConfig,
+  type AnimusWidgetKind
+} from './dashboard-types';
 import {
   DASHBOARD_COMMANDS,
   DASHBOARD_WIDGET_CATALOG,
@@ -33,7 +41,8 @@ export function createDashboardController(options: DashboardControllerOptions): 
   const state = {
     layout: createDefaultDashboardLayout(),
     snapshot: null as SessionSnapshotMessage | null,
-    drawerOpen: false
+    drawerOpen: false,
+    draggingWidgetId: null as string | null
   };
   const grid = document.querySelector<HTMLElement>('#dashboard-grid');
   const drawer = document.querySelector<HTMLElement>('#dashboard-drawer');
@@ -65,10 +74,79 @@ export function createDashboardController(options: DashboardControllerOptions): 
         persist({ ...state.layout, widgets: state.layout.widgets.filter((widget) => widget.id !== id) });
       });
     });
+    grid?.querySelectorAll<HTMLButtonElement>('[data-widget-span]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.dataset.widgetId ?? '';
+        const span = button.dataset.widgetSpan;
+        if (!isAnimusWidgetSpan(span)) return;
+        persist(setDashboardWidgetSpan(state.layout, id, span));
+      });
+    });
     grid?.querySelectorAll<HTMLButtonElement>('[data-dashboard-command]').forEach((button) => {
       button.addEventListener('click', () => {
         options.issueCommand(button.dataset.dashboardCommand as CommandName, 'dashboard-guarded-controls');
       });
+    });
+    grid?.querySelectorAll<HTMLElement>('[data-widget-id]').forEach((widgetElement) => {
+      widgetElement.addEventListener('dragstart', (event) => {
+        const id = widgetElement.dataset.widgetId ?? '';
+        state.draggingWidgetId = id;
+        widgetElement.classList.add('dashboard-widget-dragging');
+        grid.classList.add('dashboard-grid-dragging');
+        event.dataTransfer?.setData('text/plain', id);
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+      });
+      widgetElement.addEventListener('dragend', () => {
+        state.draggingWidgetId = null;
+        clearDropIndicators();
+      });
+      widgetElement.addEventListener('dragover', (event) => {
+        if (!state.draggingWidgetId) return;
+        event.preventDefault();
+        clearDropIndicators();
+        widgetElement.classList.add('dashboard-widget-drop-before');
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      });
+      widgetElement.addEventListener('dragleave', () => {
+        widgetElement.classList.remove('dashboard-widget-drop-before');
+      });
+      widgetElement.addEventListener('drop', (event) => {
+        if (!state.draggingWidgetId) return;
+        event.preventDefault();
+        const beforeId = widgetElement.dataset.widgetId ?? '';
+        persist(moveDashboardWidget(state.layout, state.draggingWidgetId, beforeId));
+        state.draggingWidgetId = null;
+        clearDropIndicators();
+      });
+    });
+    if (grid && grid.dataset.dashboardDropBound !== 'true') {
+      grid.dataset.dashboardDropBound = 'true';
+      grid.addEventListener('dragover', (event) => {
+        if (!state.draggingWidgetId) return;
+        event.preventDefault();
+        if (event.target === grid) {
+          clearDropIndicators();
+          grid.classList.add('dashboard-grid-drop-end');
+        }
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      });
+      grid.addEventListener('dragleave', (event) => {
+        if (!grid.contains(event.relatedTarget as Node | null)) clearDropIndicators();
+      });
+      grid.addEventListener('drop', (event) => {
+        if (!state.draggingWidgetId) return;
+        event.preventDefault();
+        if (event.target === grid) persist(moveDashboardWidget(state.layout, state.draggingWidgetId, null));
+        state.draggingWidgetId = null;
+        clearDropIndicators();
+      });
+    }
+  }
+
+  function clearDropIndicators(): void {
+    grid?.classList.remove('dashboard-grid-dragging', 'dashboard-grid-drop-end');
+    grid?.querySelectorAll<HTMLElement>('.dashboard-widget-dragging, .dashboard-widget-drop-before').forEach((element) => {
+      element.classList.remove('dashboard-widget-dragging', 'dashboard-widget-drop-before');
     });
   }
 
@@ -138,13 +216,40 @@ function renderWidget(widget: AnimusWidgetConfig, snapshot: SessionSnapshotMessa
     ? `${renderDashboardWidgetRows(view)}${renderCommandButtons(snapshot)}`
     : renderDashboardWidgetRows(view);
   return `
-    <section class="dashboard-widget dashboard-span-${widget.span}" data-widget-kind="${widget.kind}">
+    <section class="dashboard-widget dashboard-span-${widget.span}" data-widget-kind="${widget.kind}" data-widget-id="${escapeHtml(widget.id)}" draggable="true">
       <header>
+        <span class="dashboard-drag-handle" title="Drag to reorder" aria-hidden="true">::::</span>
         <h2>${escapeHtml(view.title)}</h2>
-        <button type="button" title="Remove widget" aria-label="Remove ${escapeHtml(view.title)}" data-widget-remove="${escapeHtml(widget.id)}">x</button>
+        <div class="dashboard-widget-controls">
+          ${renderSpanButtons(widget)}
+          <button type="button" title="Remove widget" aria-label="Remove ${escapeHtml(view.title)}" data-widget-remove="${escapeHtml(widget.id)}">x</button>
+        </div>
       </header>
       <div class="dashboard-widget-body">${body}</div>
     </section>
+  `;
+}
+
+function renderSpanButtons(widget: AnimusWidgetConfig): string {
+  const spans = [
+    { value: 'compact', label: 'C', title: 'Compact width' },
+    { value: 'wide', label: 'W', title: 'Wide width' },
+    { value: 'full', label: 'F', title: 'Full width' }
+  ] as const;
+  return `
+    <div class="dashboard-span-controls" aria-label="Widget width">
+      ${spans.map((span) => `
+        <button
+          type="button"
+          class="${widget.span === span.value ? 'active' : ''}"
+          title="${span.title}"
+          aria-label="${span.title}"
+          aria-pressed="${widget.span === span.value ? 'true' : 'false'}"
+          data-widget-id="${escapeHtml(widget.id)}"
+          data-widget-span="${span.value}"
+        >${span.label}</button>
+      `).join('')}
+    </div>
   `;
 }
 

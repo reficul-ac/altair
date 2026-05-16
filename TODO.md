@@ -51,7 +51,7 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Add broader dialect-driven MAVLink decoding beyond the currently supported message set.
 - [x] Add typed command workflows for high-consequence live actions.
 - [x] Add richer protocol-backed GCS workflows for parameter editing, mission transfer, map/terrain, log, and camera operations.
-- [ ] Add dashboard drag-and-drop widget reordering and per-widget resizing.
+- [x] Add dashboard drag-and-drop widget reordering and per-widget resizing.
 - [ ] Add dashboard profile import/export for sharing operator layouts.
 - [ ] Add dashboard widget groups or presets for flight test, mission planning, and maintenance workflows.
 - [ ] Add richer dashboard widget configuration such as thresholds, units, and selected vehicle/fleet scoping.

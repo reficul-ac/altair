@@ -71,12 +71,40 @@
   align-items: start;
 }
 
+.dashboard-grid-dragging {
+  outline: 1px dashed color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: 6px;
+}
+
+.dashboard-grid-drop-end {
+  padding-bottom: 48px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--accent) 10%, transparent)
+  );
+}
+
 .dashboard-widget {
   min-width: 0;
   border: 1px solid var(--muted-border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--panel-elevated) 76%, transparent);
   padding: 12px;
+}
+
+.dashboard-widget[draggable='true'] {
+  cursor: grab;
+}
+
+.dashboard-widget-dragging {
+  opacity: 0.58;
+  cursor: grabbing;
+}
+
+.dashboard-widget-drop-before {
+  border-color: color-mix(in srgb, var(--accent) 78%, #ffffff);
+  box-shadow: inset 4px 0 0 color-mix(in srgb, var(--accent) 78%, #ffffff);
 }
 
 .dashboard-span-wide {
@@ -89,22 +117,68 @@
 
 .dashboard-widget header {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
 }
 
 .dashboard-widget h2 {
+  flex: 1 1 auto;
+  min-width: 80px;
   margin: 0;
+  overflow-wrap: anywhere;
   font-size: 0.92rem;
 }
 
-.dashboard-widget header button {
+.dashboard-drag-handle {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  line-height: 1;
+  cursor: grab;
+  user-select: none;
+}
+
+.dashboard-widget-controls {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+  align-items: center;
+}
+
+.dashboard-span-controls {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--muted-border);
+  border-radius: 7px;
+}
+
+.dashboard-widget-controls button {
   width: 30px;
   min-width: 30px;
   min-height: 30px;
   padding: 0;
+}
+
+.dashboard-span-controls button {
+  width: 28px;
+  min-width: 28px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.dashboard-span-controls button + button {
+  border-left: 1px solid var(--muted-border);
+}
+
+.dashboard-span-controls button.active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text);
 }
 
 .dashboard-widget-body {
