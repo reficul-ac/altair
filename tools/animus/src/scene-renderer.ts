@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { AmbientLight, ArrowHelper, AxesHelper, BoxGeometry, BufferAttribute, BufferGeometry, CapsuleGeometry, ConeGeometry, CylinderGeometry, DirectionalLight, Fog, GridHelper, Group, Line, LineBasicMaterial, Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Scene, SphereGeometry, Vector3, WebGLRenderer } from 'three';
 import { fmt } from './hud-ui';
 import { TrailBuffer, trailPointFromState, type SessionEvent, type VehicleStateMessage, type TrailPoint } from './state';
 
@@ -21,19 +21,19 @@ export function classifyVehicleModel(vehicleType: string | null | undefined): Ve
 
 export class SceneRenderer {
   readonly trail = new TrailBuffer(2200);
-  private readonly renderer: THREE.WebGLRenderer;
-  private readonly scene = new THREE.Scene();
-  private readonly camera = new THREE.PerspectiveCamera(55, 1, 0.1, 4000);
+  private readonly renderer: WebGLRenderer;
+  private readonly scene = new Scene();
+  private readonly camera = new PerspectiveCamera(55, 1, 0.1, 4000);
   private readonly freeControls = { yaw: 0, pitch: -0.35, keys: new Set<string>(), dragging: false, lastX: 0, lastY: 0 };
   private aircraft = makeVehicleModel('fixed-wing');
   private selectedModelKind: VehicleModelKind = 'fixed-wing';
-  private readonly otherAircraft = new Map<string, { group: THREE.Group; kind: VehicleModelKind }>();
-  private readonly headingCue = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 8), 42, 0xffc857, 10, 5);
-  private readonly trailGeometry = new THREE.BufferGeometry();
-  private readonly trailMaterial = new THREE.LineBasicMaterial({ color: 0x66e0a3 });
-  private readonly runwayMaterial = new THREE.MeshStandardMaterial({ color: 0x253640, roughness: 0.9 });
-  private readonly grid = new THREE.GridHelper(700, 28, 0x497287, 0x20323d);
-  private readonly markers = new Map<string, THREE.Mesh>();
+  private readonly otherAircraft = new Map<string, { group: Group; kind: VehicleModelKind }>();
+  private readonly headingCue = new ArrowHelper(new Vector3(1, 0, 0), new Vector3(0, 0, 8), 42, 0xffc857, 10, 5);
+  private readonly trailGeometry = new BufferGeometry();
+  private readonly trailMaterial = new LineBasicMaterial({ color: 0x66e0a3 });
+  private readonly runwayMaterial = new MeshStandardMaterial({ color: 0x253640, roughness: 0.9 });
+  private readonly grid = new GridHelper(700, 28, 0x497287, 0x20323d);
+  private readonly markers = new Map<string, Mesh>();
   private lastMessage: VehicleStateMessage | null = null;
   private lastPoint: TrailPoint | null = null;
   private frames = 0;
@@ -53,27 +53,27 @@ export class SceneRenderer {
     private readonly radarCanvas: HTMLCanvasElement,
     private readonly orthoCanvas: HTMLCanvasElement
   ) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    this.renderer = new WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(0x0b1116);
-    this.scene.fog = new THREE.Fog(0x0b1116, 420, 1500);
+    this.scene.fog = new Fog(0x0b1116, 420, 1500);
     this.camera.position.set(-80, -140, 80);
     this.camera.up.set(0, 0, 1);
     this.freeControls.yaw = Math.atan2(this.camera.position.x, this.camera.position.y);
-    const light = new THREE.DirectionalLight(0xffffff, 2.4);
+    const light = new DirectionalLight(0xffffff, 2.4);
     light.position.set(-180, -100, 250);
     this.scene.add(light);
-    this.scene.add(new THREE.AmbientLight(0x8aa1b2, 1.5));
+    this.scene.add(new AmbientLight(0x8aa1b2, 1.5));
     this.grid.rotation.x = Math.PI / 2;
     this.scene.add(this.grid);
-    const runway = new THREE.Mesh(new THREE.PlaneGeometry(240, 26), this.runwayMaterial);
+    const runway = new Mesh(new PlaneGeometry(240, 26), this.runwayMaterial);
     runway.rotation.x = Math.PI / 2;
     runway.position.z = -0.04;
     this.scene.add(runway);
-    this.scene.add(new THREE.AxesHelper(90));
+    this.scene.add(new AxesHelper(90));
     this.scene.add(this.aircraft);
     this.scene.add(this.headingCue);
-    this.scene.add(new THREE.Line(this.trailGeometry, this.trailMaterial));
+    this.scene.add(new Line(this.trailGeometry, this.trailMaterial));
     this.bindPointer();
   }
 
@@ -91,7 +91,7 @@ export class SceneRenderer {
       this.headingCue.position.set(point.eastM, point.northM, point.upM + 8);
     }
     this.applyPose(this.aircraft, message);
-    this.headingCue.setDirection(new THREE.Vector3(Math.sin(message.attitude.yawRad), Math.cos(message.attitude.yawRad), 0).normalize());
+    this.headingCue.setDirection(new Vector3(Math.sin(message.attitude.yawRad), Math.cos(message.attitude.yawRad), 0).normalize());
   }
 
   applyFleet(vehicles: VehicleStateMessage[], selectedId: string | null, events: SessionEvent[]): void {
@@ -134,7 +134,7 @@ export class SceneRenderer {
     };
     const next = palette[theme];
     this.renderer.setClearColor(next.bg);
-    this.scene.fog = new THREE.Fog(next.fog, 420, 1500);
+    this.scene.fog = new Fog(next.fog, 420, 1500);
     (Array.isArray(this.grid.material) ? this.grid.material : [this.grid.material]).forEach((material) => {
       if ('color' in material) material.color.setHex(next.grid);
     });
@@ -171,7 +171,7 @@ export class SceneRenderer {
     this.scene.add(this.aircraft);
   }
 
-  private applyPose(group: THREE.Group, message: VehicleStateMessage): void {
+  private applyPose(group: Group, message: VehicleStateMessage): void {
     const point = trailPointFromState(message);
     if (point) group.position.set(point.eastM, point.northM, point.upM);
     group.rotation.order = 'ZYX';
@@ -181,9 +181,9 @@ export class SceneRenderer {
   private updateMarkers(events: SessionEvent[]): void {
     for (const event of events) {
       if (!event.position || this.markers.has(event.id)) continue;
-      const marker = new THREE.Mesh(
-        new THREE.SphereGeometry(2.8, 12, 12),
-        new THREE.MeshStandardMaterial({ color: event.level === 'warning' ? 0xffc857 : event.level === 'error' ? 0xff6b7a : 0x3aa0ff })
+      const marker = new Mesh(
+        new SphereGeometry(2.8, 12, 12),
+        new MeshStandardMaterial({ color: event.level === 'warning' ? 0xffc857 : event.level === 'error' ? 0xff6b7a : 0x3aa0ff })
       );
       marker.position.set(event.position.eastM, event.position.northM, event.position.upM + 3);
       this.markers.set(event.id, marker);
@@ -206,7 +206,7 @@ export class SceneRenderer {
       positions[index * 3 + 1] = point.northM;
       positions[index * 3 + 2] = point.upM;
     });
-    this.trailGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    this.trailGeometry.setAttribute('position', new BufferAttribute(positions, 3));
     this.trailGeometry.computeBoundingSphere();
   }
 
@@ -237,42 +237,42 @@ export class SceneRenderer {
     }
     if (this.cameraMode === 'chase') {
       const yaw = this.lastMessage?.attitude.yawRad ?? 0;
-      const offset = new THREE.Vector3(-Math.sin(yaw) * 110, -Math.cos(yaw) * 110, 62);
+      const offset = new Vector3(-Math.sin(yaw) * 110, -Math.cos(yaw) * 110, 62);
       this.camera.position.lerp(target.clone().add(offset), 0.05);
       this.camera.lookAt(target.x, target.y, target.z + 6);
       return;
     }
     if (this.cameraMode === 'orbit') {
       const orbitYaw = performance.now() * 0.00008;
-      const offset = new THREE.Vector3(Math.sin(orbitYaw) * 145, Math.cos(orbitYaw) * 145, 86);
+      const offset = new Vector3(Math.sin(orbitYaw) * 145, Math.cos(orbitYaw) * 145, 86);
       this.camera.position.lerp(target.clone().add(offset), 0.035);
       this.camera.lookAt(target.x, target.y, target.z + 8);
       return;
     }
     if (this.cameraMode === 'top') {
       this.camera.up.set(0, 1, 0);
-      this.camera.position.lerp(target.clone().add(new THREE.Vector3(0, 0, 260)), 0.09);
+      this.camera.position.lerp(target.clone().add(new Vector3(0, 0, 260)), 0.09);
       this.camera.lookAt(target.x, target.y, target.z);
       return;
     }
     if (this.cameraMode === 'side') {
       const yaw = this.lastMessage?.attitude.yawRad ?? 0;
-      const offset = new THREE.Vector3(Math.cos(yaw) * 120, -Math.sin(yaw) * 120, 38);
+      const offset = new Vector3(Math.cos(yaw) * 120, -Math.sin(yaw) * 120, 38);
       this.camera.position.lerp(target.clone().add(offset), 0.06);
       this.camera.lookAt(target.x, target.y, target.z + 4);
       return;
     }
     const boost = this.freeControls.keys.has('ShiftLeft') || this.freeControls.keys.has('ShiftRight') ? 3 : 1;
     const speed = 70 * boost * deltaS;
-    const forward = new THREE.Vector3(Math.sin(this.freeControls.yaw), Math.cos(this.freeControls.yaw), 0);
-    const right = new THREE.Vector3(forward.y, -forward.x, 0);
+    const forward = new Vector3(Math.sin(this.freeControls.yaw), Math.cos(this.freeControls.yaw), 0);
+    const right = new Vector3(forward.y, -forward.x, 0);
     if (this.freeControls.keys.has('KeyW')) this.camera.position.addScaledVector(forward, speed);
     if (this.freeControls.keys.has('KeyS')) this.camera.position.addScaledVector(forward, -speed);
     if (this.freeControls.keys.has('KeyA')) this.camera.position.addScaledVector(right, -speed);
     if (this.freeControls.keys.has('KeyD')) this.camera.position.addScaledVector(right, speed);
     if (this.freeControls.keys.has('KeyQ')) this.camera.position.z -= speed;
     if (this.freeControls.keys.has('KeyE')) this.camera.position.z += speed;
-    const look = this.camera.position.clone().add(new THREE.Vector3(Math.sin(this.freeControls.yaw) * Math.cos(this.freeControls.pitch), Math.cos(this.freeControls.yaw) * Math.cos(this.freeControls.pitch), Math.sin(this.freeControls.pitch)));
+    const look = this.camera.position.clone().add(new Vector3(Math.sin(this.freeControls.yaw) * Math.cos(this.freeControls.pitch), Math.cos(this.freeControls.yaw) * Math.cos(this.freeControls.pitch), Math.sin(this.freeControls.pitch)));
     this.camera.lookAt(look);
   }
 
@@ -317,58 +317,58 @@ function setText(id: string, value: string): void {
   document.querySelector<HTMLElement>(`#${id}`)!.textContent = value;
 }
 
-function makeVehicleModel(kind: VehicleModelKind, accent = 0x3aa0ff): THREE.Group {
+function makeVehicleModel(kind: VehicleModelKind, accent = 0x3aa0ff): Group {
   if (kind === 'multirotor') return makeMultirotor(accent);
   if (kind === 'vtol') return makeVtol(accent);
   if (kind === 'generic') return makeGenericVehicle(accent);
   return makeFixedWing(accent);
 }
 
-function makeFixedWing(accent = 0x3aa0ff): THREE.Group {
-  const group = new THREE.Group();
-  const fuselage = new THREE.Mesh(new THREE.CapsuleGeometry(3.6, 24, 8, 16), new THREE.MeshStandardMaterial({ color: 0xf4f8fb, roughness: 0.38, metalness: 0.08 }));
+function makeFixedWing(accent = 0x3aa0ff): Group {
+  const group = new Group();
+  const fuselage = new Mesh(new CapsuleGeometry(3.6, 24, 8, 16), new MeshStandardMaterial({ color: 0xf4f8fb, roughness: 0.38, metalness: 0.08 }));
   fuselage.rotation.z = Math.PI / 2;
   group.add(fuselage);
-  group.add(new THREE.Mesh(new THREE.BoxGeometry(5, 46, 1.1), new THREE.MeshStandardMaterial({ color: accent, roughness: 0.45 })));
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(4, 15, 5), new THREE.MeshStandardMaterial({ color: 0xffc857, roughness: 0.5 }));
+  group.add(new Mesh(new BoxGeometry(5, 46, 1.1), new MeshStandardMaterial({ color: accent, roughness: 0.45 })));
+  const tail = new Mesh(new BoxGeometry(4, 15, 5), new MeshStandardMaterial({ color: 0xffc857, roughness: 0.5 }));
   tail.position.x = -11;
   group.add(tail);
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(3.7, 8, 24), new THREE.MeshStandardMaterial({ color: 0xfffbf0, roughness: 0.36 }));
+  const nose = new Mesh(new ConeGeometry(3.7, 8, 24), new MeshStandardMaterial({ color: 0xfffbf0, roughness: 0.36 }));
   nose.rotation.z = -Math.PI / 2;
   nose.position.x = 16;
   group.add(nose);
   return group;
 }
 
-function makeMultirotor(accent = 0x3aa0ff): THREE.Group {
-  const group = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(12, 8, 3), new THREE.MeshStandardMaterial({ color: 0xf4f8fb, roughness: 0.42 }));
+function makeMultirotor(accent = 0x3aa0ff): Group {
+  const group = new Group();
+  const body = new Mesh(new BoxGeometry(12, 8, 3), new MeshStandardMaterial({ color: 0xf4f8fb, roughness: 0.42 }));
   group.add(body);
-  const armMaterial = new THREE.MeshStandardMaterial({ color: accent, roughness: 0.5 });
-  const rotorMaterial = new THREE.MeshStandardMaterial({ color: 0xffc857, roughness: 0.32 });
+  const armMaterial = new MeshStandardMaterial({ color: accent, roughness: 0.5 });
+  const rotorMaterial = new MeshStandardMaterial({ color: 0xffc857, roughness: 0.32 });
   for (const [x, y] of [[14, 14], [14, -14], [-14, 14], [-14, -14]]) {
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(3, Math.hypot(x, y) * 2, 1), armMaterial);
+    const arm = new Mesh(new BoxGeometry(3, Math.hypot(x, y) * 2, 1), armMaterial);
     arm.rotation.z = Math.atan2(y, x) - Math.PI / 2;
     group.add(arm);
-    const rotor = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 0.4, 32), rotorMaterial);
+    const rotor = new Mesh(new CylinderGeometry(8, 8, 0.4, 32), rotorMaterial);
     rotor.position.set(x, y, 1.6);
     group.add(rotor);
   }
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(3.2, 7, 20), new THREE.MeshStandardMaterial({ color: 0xfffbf0, roughness: 0.36 }));
+  const nose = new Mesh(new ConeGeometry(3.2, 7, 20), new MeshStandardMaterial({ color: 0xfffbf0, roughness: 0.36 }));
   nose.rotation.z = -Math.PI / 2;
   nose.position.x = 9;
   group.add(nose);
   return group;
 }
 
-function makeVtol(accent = 0x3aa0ff): THREE.Group {
+function makeVtol(accent = 0x3aa0ff): Group {
   const group = makeFixedWing(accent);
-  const rotorMaterial = new THREE.MeshStandardMaterial({ color: 0xffc857, roughness: 0.35 });
+  const rotorMaterial = new MeshStandardMaterial({ color: 0xffc857, roughness: 0.35 });
   for (const y of [-18, 18]) {
-    const boom = new THREE.Mesh(new THREE.BoxGeometry(15, 2.4, 1.2), new THREE.MeshStandardMaterial({ color: 0xf4f8fb, roughness: 0.45 }));
+    const boom = new Mesh(new BoxGeometry(15, 2.4, 1.2), new MeshStandardMaterial({ color: 0xf4f8fb, roughness: 0.45 }));
     boom.position.set(3, y, 3);
     group.add(boom);
-    const rotor = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 6.5, 0.5, 32), rotorMaterial);
+    const rotor = new Mesh(new CylinderGeometry(6.5, 6.5, 0.5, 32), rotorMaterial);
     rotor.rotation.y = Math.PI / 2;
     rotor.position.set(10, y, 3);
     group.add(rotor);
@@ -376,11 +376,11 @@ function makeVtol(accent = 0x3aa0ff): THREE.Group {
   return group;
 }
 
-function makeGenericVehicle(accent = 0x3aa0ff): THREE.Group {
-  const group = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(16, 10, 8), new THREE.MeshStandardMaterial({ color: accent, roughness: 0.48 }));
+function makeGenericVehicle(accent = 0x3aa0ff): Group {
+  const group = new Group();
+  const body = new Mesh(new BoxGeometry(16, 10, 8), new MeshStandardMaterial({ color: accent, roughness: 0.48 }));
   group.add(body);
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(5, 10, 24), new THREE.MeshStandardMaterial({ color: 0xffc857, roughness: 0.4 }));
+  const nose = new Mesh(new ConeGeometry(5, 10, 24), new MeshStandardMaterial({ color: 0xffc857, roughness: 0.4 }));
   nose.rotation.z = -Math.PI / 2;
   nose.position.x = 12;
   group.add(nose);

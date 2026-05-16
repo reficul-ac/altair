@@ -57,9 +57,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--bridge-host", default="127.0.0.1", help="bridge UDP listen host")
     parser.add_argument("--bridge-port", type=int, default=14551, help="bridge UDP listen port")
-    parser.add_argument("--vehicles", type=int, default=1, help="number of SITL vehicle instances to launch")
-    parser.add_argument("--system-id-base", type=int, default=1, help="first MAVLink system id for swarm launches")
-    parser.add_argument("--mavlink-port-base", type=int, default=14600, help="first per-vehicle MAVLink UDP source port for swarm launches")
+    parser.add_argument(
+        "--vehicles", type=int, default=1, help="number of SITL vehicle instances to launch"
+    )
+    parser.add_argument(
+        "--system-id-base", type=int, default=1, help="first MAVLink system id for swarm launches"
+    )
+    parser.add_argument(
+        "--mavlink-port-base",
+        type=int,
+        default=14600,
+        help="first per-vehicle MAVLink UDP source port for swarm launches",
+    )
     parser.add_argument("--ws-host", default="127.0.0.1", help="viewer WebSocket host")
     parser.add_argument("--ws-port", type=int, default=8765, help="viewer WebSocket port")
     parser.add_argument(
@@ -251,9 +260,7 @@ def require_viewer_ready(root: pathlib.Path, install_deps: bool, dry_run: bool) 
     if install_deps:
         return
     if not (viewer_dir / "node_modules").exists():
-        raise RuntimeError(
-            "tools/animus/node_modules is missing; rerun with --install-viewer-deps"
-        )
+        raise RuntimeError("tools/animus/node_modules is missing; rerun with --install-viewer-deps")
 
 
 def terminate(processes: list[subprocess.Popen]) -> None:
@@ -309,9 +316,11 @@ def run(args: argparse.Namespace) -> int:
             (
                 "viewer=app"
                 if args.app
-                else f"viewer=http://{args.viewer_host}:{args.viewer_port}"
-                if args.viewer
-                else "viewer=disabled"
+                else (
+                    f"viewer=http://{args.viewer_host}:{args.viewer_port}"
+                    if args.viewer
+                    else "viewer=disabled"
+                )
             ),
             flush=True,
         )

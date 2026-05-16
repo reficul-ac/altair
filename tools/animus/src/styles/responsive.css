@@ -1,0 +1,85 @@
+@media (max-width: 980px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+
+  .viewport {
+    min-height: 70vh;
+  }
+
+  .metrics {
+    grid-column: 1;
+    grid-row: auto;
+    border-left: 0;
+    border-top: 1px solid var(--muted-border);
+  }
+
+  .map-workspace,
+  .inspector-workspace {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .inspector-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .topbar {
+    right: 16px;
+    top: 96px;
+  }
+
+  .status-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .status {
+    top: auto;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+  }
+
+  .hud-console {
+    left: 12px;
+    right: 12px;
+    bottom: 70px;
+    grid-template-columns: 1fr;
+  }
+
+  .attitude,
+  .heading-tape {
+    display: none;
+  }
+
+  .telemetry-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .telemetry-row div {
+    padding: 0.42rem 0.5rem;
+  }
+
+  .ortho,
+  #radar {
+    width: 150px;
+    height: 150px;
+  }
+
+  .debug {
+    left: 16px;
+    right: 16px;
+    width: auto;
+  }
+
+  .axis {
+    display: none;
+  }
+}

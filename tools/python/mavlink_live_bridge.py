@@ -223,24 +223,32 @@ class LiveVehicleState:
             "commandCapabilities": {
                 "liveLink": self.connected and (packet_age is None or packet_age < 2.0),
                 "writableLink": self.writable_animus,
-                "supported": [
-                    "arm",
-                    "disarm",
-                    "emergency-stop",
-                    "takeoff",
-                    "land",
-                    "return-to-launch",
-                    "pause",
-                    "change-altitude",
-                    "mission-start",
-                    "mission-continue",
-                    "mission-resume",
-                ]
-                if self.writable_animus and self.connected and (packet_age is None or packet_age < 2.0)
-                else [],
-                "blockedReason": None
-                if self.writable_animus and self.connected and (packet_age is None or packet_age < 2.0)
-                else "Animus writes require a SITL session started with --writable-animus.",
+                "supported": (
+                    [
+                        "arm",
+                        "disarm",
+                        "emergency-stop",
+                        "takeoff",
+                        "land",
+                        "return-to-launch",
+                        "pause",
+                        "change-altitude",
+                        "mission-start",
+                        "mission-continue",
+                        "mission-resume",
+                    ]
+                    if self.writable_animus
+                    and self.connected
+                    and (packet_age is None or packet_age < 2.0)
+                    else []
+                ),
+                "blockedReason": (
+                    None
+                    if self.writable_animus
+                    and self.connected
+                    and (packet_age is None or packet_age < 2.0)
+                    else "Animus writes require a SITL session started with --writable-animus."
+                ),
             },
         }
 

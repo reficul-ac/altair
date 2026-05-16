@@ -1,3 +1,38 @@
+function(
+    altair_add_csv_header_check
+    TEST_NAME
+    CSV_FILE
+    EXPECTED_HEADER
+    DEPENDS_ON
+)
+    add_test(NAME ${TEST_NAME}
+             COMMAND ${CMAKE_COMMAND} -DCSV_FILE=${CSV_FILE} -DEXPECTED_HEADER=${EXPECTED_HEADER}
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/check_csv.cmake"
+    )
+    set_tests_properties(${TEST_NAME} PROPERTIES DEPENDS ${DEPENDS_ON})
+endfunction()
+
+function(
+    altair_add_file_compare
+    TEST_NAME
+    EXPECTED_FILE
+    ACTUAL_FILE
+    SCRIPT
+    DEPENDS_ON
+)
+    add_test(NAME ${TEST_NAME}
+             COMMAND ${CMAKE_COMMAND} -DEXPECTED_FILE=${EXPECTED_FILE} -DACTUAL_FILE=${ACTUAL_FILE}
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/${SCRIPT}"
+    )
+    set_tests_properties(${TEST_NAME} PROPERTIES DEPENDS "${DEPENDS_ON}")
+endfunction()
+
+function(altair_add_sitl_cruise6dof TEST_NAME OUTPUT_CSV)
+    add_test(NAME ${TEST_NAME} COMMAND $<TARGET_FILE:sitl_runner> --scenario cruise6dof ${ARGN}
+                                       --output "${OUTPUT_CSV}"
+    )
+endfunction()
+
 add_executable(test_replay test_replay.c)
 target_link_libraries(test_replay PRIVATE altair_vehicle bayek_common)
 altair_enable_warnings(test_replay)
@@ -12,35 +47,31 @@ set(SITL_SMOKE_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_smoke.csv")
 add_test(NAME integration_sitl_runner_cli COMMAND $<TARGET_FILE:sitl_runner> --scenario smoke
                                                   --output "${SITL_SMOKE_CSV}"
 )
-add_test(
-    NAME integration_sitl_runner_cli_csv
-    COMMAND
-        ${CMAKE_COMMAND} -DCSV_FILE=${SITL_SMOKE_CSV}
-        -DEXPECTED_HEADER=step,time_s,mode,motor,aileron,elevator,rudder,airspeed_mps,altitude_m -P
-        "${CMAKE_CURRENT_SOURCE_DIR}/check_csv.cmake"
+altair_add_csv_header_check(
+    integration_sitl_runner_cli_csv "${SITL_SMOKE_CSV}"
+    "step,time_s,mode,motor,aileron,elevator,rudder,airspeed_mps,altitude_m"
+    integration_sitl_runner_cli
 )
-set_tests_properties(integration_sitl_runner_cli_csv PROPERTIES DEPENDS integration_sitl_runner_cli)
 
 set(SITL_CRUISE6DOF_HEADER
     "step,time_s,mode,motor,aileron,elevator,rudder,rc_throttle,rc_roll,rc_pitch,rc_yaw,gps_fix_valid,lat_deg,lon_deg,pos_n_m,pos_e_m,pos_d_m,vel_n_mps,vel_e_mps,vel_d_mps,roll_rad,pitch_rad,yaw_rad,quat_w,quat_x,quat_y,quat_z,p_rps,q_rps,r_rps,airspeed_mps,altitude_m,accel_x_mps2,accel_y_mps2,accel_z_mps2,force_x_n,force_y_n,force_z_n,moment_x_nm,moment_y_nm,moment_z_nm,pos_ecef_x_m,pos_ecef_y_m,pos_ecef_z_m,vel_ecef_x_mps,vel_ecef_y_mps,vel_ecef_z_mps,trim_active,trim_achieved,trim_failed,trim_iteration_count,trim_residual_norm,mission_loaded,mission_active_wp,mission_wp_count,mission_distance_m"
 )
 
 set(SITL_CRUISE6DOF_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof.csv")
-add_test(
-    NAME integration_sitl_cruise6dof
-    COMMAND
-        $<TARGET_FILE:sitl_runner> --scenario cruise6dof --initial
-        "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_initial.ini" --duration 10 --dt 0.01 --output
-        "${SITL_CRUISE6DOF_CSV}"
+altair_add_sitl_cruise6dof(
+    integration_sitl_cruise6dof
+    "${SITL_CRUISE6DOF_CSV}"
+    --initial
+    "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_initial.ini"
+    --duration
+    10
+    --dt
+    0.01
 )
-add_test(
-    NAME integration_sitl_cruise6dof_csv
-    COMMAND
-        ${CMAKE_COMMAND} -DCSV_FILE=${SITL_CRUISE6DOF_CSV}
-        -DEXPECTED_HEADER=${SITL_CRUISE6DOF_HEADER} -P
-        "${CMAKE_CURRENT_SOURCE_DIR}/check_csv.cmake"
+altair_add_csv_header_check(
+    integration_sitl_cruise6dof_csv "${SITL_CRUISE6DOF_CSV}" "${SITL_CRUISE6DOF_HEADER}"
+    integration_sitl_cruise6dof
 )
-set_tests_properties(integration_sitl_cruise6dof_csv PROPERTIES DEPENDS integration_sitl_cruise6dof)
 
 add_test(NAME integration_sitl_cruise6dof_trajectory
          COMMAND ${CMAKE_COMMAND} -DCSV_FILE=${SITL_CRUISE6DOF_CSV} -P
@@ -51,52 +82,53 @@ set_tests_properties(
 )
 
 set(SITL_CRUISE6DOF_CASE_INITIAL_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_case_initial.csv")
-add_test(
-    NAME integration_sitl_cruise6dof_case_initial
-    COMMAND
-        $<TARGET_FILE:sitl_runner> --scenario cruise6dof --case
-        "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_case_initial.ini" --duration 10 --dt 0.01 --output
-        "${SITL_CRUISE6DOF_CASE_INITIAL_CSV}"
+altair_add_sitl_cruise6dof(
+    integration_sitl_cruise6dof_case_initial
+    "${SITL_CRUISE6DOF_CASE_INITIAL_CSV}"
+    --case
+    "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_case_initial.ini"
+    --duration
+    10
+    --dt
+    0.01
 )
-add_test(
-    NAME integration_sitl_cruise6dof_case_initial_matches_initial
-    COMMAND
-        ${CMAKE_COMMAND} -DEXPECTED_FILE=${SITL_CRUISE6DOF_CSV}
-        -DACTUAL_FILE=${SITL_CRUISE6DOF_CASE_INITIAL_CSV} -P
-        "${CMAKE_CURRENT_SOURCE_DIR}/compare_files.cmake"
-)
-set_tests_properties(
+altair_add_file_compare(
     integration_sitl_cruise6dof_case_initial_matches_initial
-    PROPERTIES DEPENDS "integration_sitl_cruise6dof;integration_sitl_cruise6dof_case_initial"
+    "${SITL_CRUISE6DOF_CSV}"
+    "${SITL_CRUISE6DOF_CASE_INITIAL_CSV}"
+    compare_files.cmake
+    "integration_sitl_cruise6dof;integration_sitl_cruise6dof_case_initial"
 )
 
 set(SITL_CRUISE6DOF_CASE_SIM_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_case_sim.csv")
-add_test(
-    NAME integration_sitl_cruise6dof_case_sim_params
-    COMMAND
-        $<TARGET_FILE:sitl_runner> --scenario cruise6dof --case
-        "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_case_sim_params.ini" --duration 10 --dt 0.01
-        --output "${SITL_CRUISE6DOF_CASE_SIM_CSV}"
+altair_add_sitl_cruise6dof(
+    integration_sitl_cruise6dof_case_sim_params
+    "${SITL_CRUISE6DOF_CASE_SIM_CSV}"
+    --case
+    "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_case_sim_params.ini"
+    --duration
+    10
+    --dt
+    0.01
 )
-add_test(
-    NAME integration_sitl_cruise6dof_case_sim_changes_trajectory
-    COMMAND
-        ${CMAKE_COMMAND} -DEXPECTED_FILE=${SITL_CRUISE6DOF_CSV}
-        -DACTUAL_FILE=${SITL_CRUISE6DOF_CASE_SIM_CSV} -P
-        "${CMAKE_CURRENT_SOURCE_DIR}/compare_files_not_equal.cmake"
-)
-set_tests_properties(
+altair_add_file_compare(
     integration_sitl_cruise6dof_case_sim_changes_trajectory
-    PROPERTIES DEPENDS "integration_sitl_cruise6dof;integration_sitl_cruise6dof_case_sim_params"
+    "${SITL_CRUISE6DOF_CSV}"
+    "${SITL_CRUISE6DOF_CASE_SIM_CSV}"
+    compare_files_not_equal.cmake
+    "integration_sitl_cruise6dof;integration_sitl_cruise6dof_case_sim_params"
 )
 
 set(SITL_CRUISE6DOF_CASE_MISSION_CSV "${CMAKE_CURRENT_BINARY_DIR}/sitl_cruise6dof_case_mission.csv")
-add_test(
-    NAME integration_sitl_cruise6dof_case_mission
-    COMMAND
-        $<TARGET_FILE:sitl_runner> --scenario cruise6dof --case
-        "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_case_mission.ini" --duration 1 --dt 0.01 --output
-        "${SITL_CRUISE6DOF_CASE_MISSION_CSV}"
+altair_add_sitl_cruise6dof(
+    integration_sitl_cruise6dof_case_mission
+    "${SITL_CRUISE6DOF_CASE_MISSION_CSV}"
+    --case
+    "${CMAKE_CURRENT_SOURCE_DIR}/cruise6dof_case_mission.ini"
+    --duration
+    1
+    --dt
+    0.01
 )
 add_test(NAME integration_sitl_cruise6dof_case_mission_columns
          COMMAND ${CMAKE_COMMAND} -DCSV_FILE=${SITL_CRUISE6DOF_CASE_MISSION_CSV} -P

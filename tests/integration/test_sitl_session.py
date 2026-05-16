@@ -42,7 +42,10 @@ def main():
     if "--mavlink-port 14551" not in result.stdout or "--realtime" not in result.stdout:
         print("session did not route realtime SITL through the bridge", file=sys.stderr)
         return 1
-    if "--mavlink-system-id 1" not in result.stdout or "--mavlink-source-port 14600" not in result.stdout:
+    if (
+        "--mavlink-system-id 1" not in result.stdout
+        or "--mavlink-source-port 14600" not in result.stdout
+    ):
         print("session did not assign predictable MAVLink system id/source port", file=sys.stderr)
         return 1
     if "tests/integration/cruise6dof_initial.ini" not in result.stdout:
@@ -57,7 +60,10 @@ def main():
         print(result.stdout, end="")
         print(result.stderr, end="", file=sys.stderr)
         return result.returncode
-    if "app: (cd" not in result.stdout or "npm run app -- --listen-host 127.0.0.1 --listen-port 14551" not in result.stdout:
+    if (
+        "app: (cd" not in result.stdout
+        or "npm run app -- --listen-host 127.0.0.1 --listen-port 14551" not in result.stdout
+    ):
         print("session did not start the Electron Animus with --app", file=sys.stderr)
         return 1
     if "mavlink_live_bridge.py" in result.stdout or "npm run dev" in result.stdout:
@@ -98,8 +104,13 @@ def main():
         if f"sitl sys{system_id}:" not in result.stdout:
             print(f"swarm did not include system {system_id}", file=sys.stderr)
             return 1
-        if f"--mavlink-system-id {system_id}" not in result.stdout or f"--mavlink-source-port {source_port}" not in result.stdout:
-            print(f"swarm did not assign predictable id/port for system {system_id}", file=sys.stderr)
+        if (
+            f"--mavlink-system-id {system_id}" not in result.stdout
+            or f"--mavlink-source-port {source_port}" not in result.stdout
+        ):
+            print(
+                f"swarm did not assign predictable id/port for system {system_id}", file=sys.stderr
+            )
             return 1
         if f"swarm_sys{system_id}.csv" not in result.stdout:
             print(f"swarm did not isolate output for system {system_id}", file=sys.stderr)
