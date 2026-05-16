@@ -34,18 +34,48 @@ const LIVE_COMMANDS: CommandName[] = [
   'mission-resume'
 ];
 
+const PREFLIGHT_GATED_COMMANDS: CommandName[] = [
+  'arm',
+  'takeoff',
+  'go-to',
+  'orbit',
+  'change-altitude',
+  'mission-start',
+  'mission-continue',
+  'mission-resume'
+];
+
+const SAFETY_RESPONSE_COMMANDS: CommandName[] = [
+  'disarm',
+  'emergency-stop',
+  'pause',
+  'land',
+  'return-to-launch'
+];
+
 export function defaultCommandCapabilities(liveLink: boolean, writableLink = false, options: { packetAgeS?: number | null; readiness?: VehicleReadiness; authority?: CommandAuthorityMode } = {}): CommandCapabilityState {
   const stale = options.packetAgeS === null || options.packetAgeS === undefined ? false : options.packetAgeS >= 2;
   const authority = options.authority ?? (writableLink ? 'sitl-writable' : 'read-only');
-  const ready = !options.readiness || options.readiness.overall === 'ready' || options.readiness.overall === 'warning';
-  const commandReady = liveLink && writableLink && !stale && ready && authority === 'sitl-writable';
+  const baseReady = liveLink && writableLink && !stale && authority === 'sitl-writable';
+  const preflightReady = !options.readiness || options.readiness.overall === 'ready' || options.readiness.overall === 'warning';
+  const supported = baseReady
+    ? [
+        ...SAFETY_RESPONSE_COMMANDS,
+        ...(preflightReady ? PREFLIGHT_GATED_COMMANDS : [])
+      ]
+    : [];
+  const blockedCommands = commandBlockedReasons(liveLink, writableLink, stale, options.readiness, authority);
+  const blockedReason = supported.length === LIVE_COMMANDS.length
+    ? null
+    : commandBlockReason(liveLink, writableLink, stale, options.readiness, authority);
   return {
     liveLink,
     writableLink,
     authority,
     stale,
-    supported: commandReady ? LIVE_COMMANDS : [],
-    blockedReason: commandReady ? null : commandBlockReason(liveLink, writableLink, stale, options.readiness, authority),
+    supported,
+    blockedReason,
+    blockedCommands,
     readiness: options.readiness
   };
 }
@@ -63,11 +93,8 @@ export function evaluateGuardedCommand(request: GuardedCommandRequest, capabilit
   if (!capability.writableLink) {
     return rejected(request, capability.blockedReason ?? 'link is read-only');
   }
-  if (capability.readiness?.overall === 'blocked' || capability.readiness?.overall === 'unknown') {
-    return rejected(request, capability.blockedReason ?? 'vehicle readiness is not sufficient for commands');
-  }
   if (!capability.supported.includes(request.command)) {
-    return rejected(request, `${request.command} is not advertised by the selected vehicle`);
+    return rejected(request, capability.blockedCommands?.[request.command] ?? `${request.command} is not advertised by the selected vehicle`);
   }
   return {
     accepted: true,
@@ -229,12 +256,21 @@ export function buildVehicleReadiness(vehicle: Pick<VehicleStateMessage, 'connec
     state: gps === null || gps === undefined ? 'unknown' : /3D|DGPS|RTK/.test(gps) ? 'ready' : 'warning',
     detail: gps ?? 'GPS fix has not been decoded'
   });
+  const estimator = vehicle.status?.onboardControlSensorsHealth;
+  checks.push({
+    key: 'estimator',
+    label: 'Estimator',
+    state: estimator === null || estimator === undefined ? 'unknown' : estimator === 0 ? 'blocked' : 'ready',
+    detail: estimator === null || estimator === undefined ? 'SYS_STATUS sensor health has not been decoded' : estimator === 0 ? 'SYS_STATUS reports no healthy onboard control sensors' : `sensor health mask ${estimator}`
+  });
   const battery = vehicle.status?.batteryRemainingPct;
+  const voltage = vehicle.status?.batteryVoltageV;
+  const invalidVoltage = voltage !== null && voltage !== undefined && (!Number.isFinite(voltage) || voltage <= 0);
   checks.push({
     key: 'battery',
-    label: 'Battery',
-    state: battery === null || battery === undefined ? 'unknown' : battery < 20 ? 'warning' : 'ready',
-    detail: battery === null || battery === undefined ? 'battery remaining has not been decoded' : `${battery}% remaining`
+    label: 'Battery / power',
+    state: invalidVoltage ? 'blocked' : battery === null || battery === undefined ? 'unknown' : battery < 10 ? 'blocked' : battery < 20 ? 'warning' : 'ready',
+    detail: batteryPowerDetail(battery, voltage, invalidVoltage)
   });
   const failsafe = vehicle.status?.failsafeState ?? normalizeFailsafeState(vehicle.status?.firmware?.autopilot, vehicle.status?.systemStatus);
   checks.push({
@@ -361,6 +397,36 @@ function commandBlockReason(liveLink: boolean, writableLink: boolean, stale: boo
   if (blocked) return `${blocked.label} blocks commands: ${blocked.detail}`;
   if (readiness?.overall === 'unknown') return 'Vehicle readiness is unknown.';
   return 'Live command actions are blocked.';
+}
+
+function commandBlockedReasons(liveLink: boolean, writableLink: boolean, stale: boolean, readiness: VehicleReadiness | undefined, authority: CommandAuthorityMode): Partial<Record<CommandName, string>> {
+  const globalReason = commandBlockReason(liveLink, writableLink, stale, readiness, authority);
+  const reasons: Partial<Record<CommandName, string>> = {};
+  if (!liveLink || stale || !writableLink || authority !== 'sitl-writable') {
+    for (const command of LIVE_COMMANDS) reasons[command] = globalReason;
+    return reasons;
+  }
+  const readinessReason = readinessBlockReason(readiness);
+  if (readinessReason) {
+    for (const command of PREFLIGHT_GATED_COMMANDS) reasons[command] = readinessReason;
+  }
+  return reasons;
+}
+
+function readinessBlockReason(readiness: VehicleReadiness | undefined): string | null {
+  const blocked = readiness?.checks.find((check) => check.state === 'blocked');
+  if (blocked) return `${blocked.label} blocks commands: ${blocked.detail}`;
+  if (readiness?.overall === 'unknown') return 'Vehicle readiness is unknown.';
+  return null;
+}
+
+function batteryPowerDetail(battery: number | null | undefined, voltage: number | null | undefined, invalidVoltage: boolean): string {
+  if (invalidVoltage) return `invalid battery voltage ${voltage} V`;
+  const parts = [];
+  if (battery === null || battery === undefined) parts.push('battery remaining has not been decoded');
+  else parts.push(`${battery}% remaining`);
+  if (voltage !== null && voltage !== undefined) parts.push(`${voltage.toFixed(2)} V`);
+  return parts.join(' / ');
 }
 
 function baseModeLabel(baseMode: number): string {

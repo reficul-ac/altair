@@ -811,6 +811,10 @@ select {
   overflow-wrap: anywhere;
 }
 
+.command-history div {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+}
+
 .command-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

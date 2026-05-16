@@ -168,7 +168,7 @@ root.innerHTML = `
     </section>
     <section class="workspace-panel inspector-workspace" data-panel="setup">
       <div class="analysis-grid">
-        <section><h2>Readiness</h2><div id="readiness-list" class="tool-list"></div><div class="command-grid" id="guarded-commands"></div></section>
+        <section><h2>Readiness</h2><div id="readiness-list" class="tool-list"></div><div class="command-grid" id="guarded-commands"></div><h2>Command History</h2><div id="command-history" class="tool-list command-history"></div></section>
         <section><h2>Parameters / Diagnostics</h2><input id="parameter-filter" type="search" placeholder="Filter parameters" /><div id="parameter-list" class="tool-list"></div><div id="setup-placeholder-list" class="tool-list"><div><strong>Setup edits</strong><span>disabled</span><span>roadmap</span></div><div><strong>Calibration</strong><span>disabled</span><span>roadmap</span></div></div><div id="diagnostics-list" class="tool-list"></div></section>
       </div>
     </section>
@@ -369,7 +369,7 @@ function updateGcsSurfaces(snapshot: SessionSnapshotMessage): void {
   const selected = snapshot.vehicles.find((vehicle) => vehicle.id === snapshot.selectedVehicleId) ?? snapshot.vehicles[0] ?? null;
   updateCameraStreams(selected);
   updatePlanSurface(selected);
-  updateSetupSurface(selected);
+  updateSetupSurface(selected, snapshot);
   const mock = snapshot.mockLinks?.[0];
   if (mock) document.querySelector<HTMLElement>('#mock-status')!.textContent = `${mock.label} / ${mock.diagnostics.status}`;
 }
@@ -417,7 +417,7 @@ function updatePlanSurface(vehicle: VehicleStateMessage | null): void {
   ].join('') || '<p class="empty">No geofence or rally points</p>';
 }
 
-function updateSetupSurface(vehicle: VehicleStateMessage | null): void {
+function updateSetupSurface(vehicle: VehicleStateMessage | null, snapshot = state.snapshot): void {
   const readiness = vehicle?.status?.readiness;
   const checks = readiness?.checks ?? [
     { label: 'Live link', state: vehicle?.connected ? 'ready' : 'blocked', detail: vehicle?.connected ? 'fresh MAVLink packets' : 'missing' },
@@ -443,6 +443,18 @@ function updateSetupSurface(vehicle: VehicleStateMessage | null): void {
     ? `<div><strong>${escapeHtml(diag.linkId)}</strong><span>${escapeHtml(diag.transport)}</span><span>${escapeHtml(diag.status)}</span><span>${diag.packetsRx} rx</span></div>`
     : '<p class="empty">No link diagnostics</p>';
   renderGuardedCommands(vehicle);
+  renderCommandHistory(snapshot);
+}
+
+function renderCommandHistory(snapshot: SessionSnapshotMessage | null): void {
+  const container = document.querySelector<HTMLElement>('#command-history')!;
+  const transactions = snapshot?.commandTransactions ?? [];
+  container.innerHTML = transactions.slice(0, 8)
+    .map((transaction) => {
+      const detail = transaction.ack?.label ?? transaction.failureReason ?? 'awaiting COMMAND_ACK';
+      return `<div><strong>${escapeHtml(transaction.commandName)}</strong><span>${escapeHtml(transaction.state)}</span><span>${escapeHtml(detail)}</span><span>${formatTime(transaction.updatedAtS)}</span></div>`;
+    })
+    .join('') || '<p class="empty">No command transactions</p>';
 }
 
 function renderGuardedCommands(vehicle: VehicleStateMessage | null): void {
@@ -450,7 +462,12 @@ function renderGuardedCommands(vehicle: VehicleStateMessage | null): void {
   const container = document.querySelector<HTMLElement>('#guarded-commands')!;
   const supported = vehicle?.commandCapabilities?.supported ?? [];
   const blockedReason = vehicle?.commandCapabilities?.blockedReason ?? 'command is not advertised by the selected vehicle';
-  container.innerHTML = commands.map((command) => `<button type="button" data-command="${command}" ${supported.includes(command) ? '' : 'disabled'} title="${escapeHtml(supported.includes(command) ? `Send ${command}` : blockedReason)}">${escapeHtml(command)}</button>`).join('');
+  const blockedCommands = vehicle?.commandCapabilities?.blockedCommands ?? {};
+  container.innerHTML = commands.map((command) => {
+    const enabled = supported.includes(command);
+    const title = enabled ? `Send ${command}` : blockedCommands[command] ?? blockedReason;
+    return `<button type="button" data-command="${command}" ${enabled ? '' : 'disabled'} title="${escapeHtml(title)}">${escapeHtml(command)}</button>`;
+  }).join('');
   container.querySelectorAll<HTMLButtonElement>('[data-command]').forEach((button) => {
     button.addEventListener('click', () => {
       const command = button.dataset.command as CommandName;

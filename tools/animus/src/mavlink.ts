@@ -1,12 +1,13 @@
 import dgram, { type RemoteInfo, type Socket } from 'node:dgram';
 import { EventEmitter } from 'node:events';
-import { buildMultiVehicleAnalysis, buildVehicleReadiness, defaultCommandCapabilities, firmwareIdentity, normalizeArmingState, normalizeFailsafeState, normalizeFlightMode, normalizeMissionState } from './parity.js';
+import { buildMultiVehicleAnalysis, buildVehicleReadiness, defaultCommandCapabilities, evaluateGuardedCommand, firmwareIdentity, normalizeArmingState, normalizeFailsafeState, normalizeFlightMode, normalizeMissionState } from './parity.js';
 import { validateMission } from './state.js';
 import type {
   CameraStream,
   CommandCapabilityState,
   CommandDispatchResult,
   CommandName,
+  CommandTransaction,
   GuardedCommandRequest,
   LinkDiagnostics,
   MissionPlan,
@@ -186,6 +187,7 @@ export type SessionSnapshotPayload = {
   decodedCount: number;
   analysis?: MultiVehicleAnalysis;
   mockLinks?: MockLinkState[];
+  commandTransactions?: CommandTransaction[];
 };
 
 export function x25Crc(data: Uint8Array, crc = 0xffff): number {
@@ -219,6 +221,9 @@ export const MAV_CMD = {
   MISSION_START: 300,
   DO_CHANGE_ALTITUDE: 186
 } as const;
+
+const COMMAND_TRANSACTION_TIMEOUT_S = 2;
+const MAX_COMMAND_TRANSACTIONS = 80;
 
 export const MAV_RESULT_LABELS: Record<number, string> = {
   0: 'accepted',
@@ -1291,6 +1296,8 @@ export class MavlinkTelemetryService extends EventEmitter {
   private config: MavlinkServiceConfig;
   private lastRemote: Endpoint | null = null;
   private txSeq = 1;
+  private commandTransactionSeq = 1;
+  private readonly commandTransactions: CommandTransaction[] = [];
 
   constructor(config: Partial<MavlinkServiceConfig> = {}) {
     super();
@@ -1392,14 +1399,16 @@ export class MavlinkTelemetryService extends EventEmitter {
     }
     this.forwarder.forward(packet);
     const nowS = performanceNowS();
+    this.expireCommandTransactionsForSnapshot(nowS);
     for (const message of this.parser.feed(packet)) {
       this.state.apply(message, nowS);
       this.registry.apply(message, nowS);
+      this.applyCommandAck(message, nowS);
     }
+    this.expireCommandTransactionsForSnapshot(nowS);
     const payload = this.registry.selectedVehicle(nowS);
-    const snapshot = this.registry.snapshot(nowS);
+    const snapshot = this.snapshot(nowS);
     this.applyWritableCapabilities(payload);
-    for (const vehicle of snapshot.vehicles) this.applyWritableCapabilities(vehicle);
     this.emit('vehicle-state', payload);
     this.emit('session-snapshot', snapshot);
     return payload;
@@ -1408,22 +1417,31 @@ export class MavlinkTelemetryService extends EventEmitter {
   dispatchCommand(request: GuardedCommandRequest): CommandDispatchResult {
     const vehicle = this.registry.selectedVehicle();
     const target = parseVehicleTarget(request.vehicleId, vehicle);
-    const blocked = this.writeBlocked(request.confirmed, target);
+    const blocked = this.writeBlocked(request.confirmed, target, request.command);
     if (blocked) {
-      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason: blocked, mock: false, sentPackets: 0, ack: null };
+      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason: blocked, mock: false, sentPackets: 0, transactionId: null, state: 'blocked', ack: null };
     }
     if (!target) {
-      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason: 'no live vehicle link advertises command support', mock: false, sentPackets: 0, ack: null };
+      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason: 'no live vehicle link advertises command support', mock: false, sentPackets: 0, transactionId: null, state: 'blocked', ack: null };
     }
     const command = commandSpec(request.command, request.params);
     if (!command) {
-      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason: `${request.command} is not supported by the SITL dispatcher`, mock: false, sentPackets: 0, ack: null };
+      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason: `${request.command} is not supported by the SITL dispatcher`, mock: false, sentPackets: 0, transactionId: null, state: 'blocked', ack: null };
     }
+    const nowS = performanceNowS();
+    const transaction = this.createCommandTransaction(request, command.command, command.params, nowS);
     const frame = encodeCommandLong(command.command, target.systemId, target.componentId, command.params, 0, this.nextSeq());
     this.sendFrame(frame);
-    this.registry.addMarker(`Command ${request.command} sent`, performanceNowS(), request.vehicleId);
-    this.emit('session-snapshot', this.registry.snapshot());
-    return { accepted: true, command: request.command, vehicleId: request.vehicleId, reason: 'command sent on writable SITL link', mock: false, sentPackets: 1, ack: null };
+    this.registry.addMarker(`Command ${request.command} sent`, nowS, request.vehicleId);
+    this.emit('session-snapshot', this.snapshot(nowS));
+    return { accepted: true, command: request.command, vehicleId: request.vehicleId, reason: 'command sent on writable SITL link', mock: false, sentPackets: 1, transactionId: transaction.id, state: transaction.state, ack: null };
+  }
+
+  expireCommandTransactions(nowS = performanceNowS()): void {
+    const changed = this.expireCommandTransactionsForSnapshot(nowS);
+    if (changed) {
+      this.emit('session-snapshot', this.snapshot(nowS));
+    }
   }
 
   uploadMissionToSitl(plan: MissionPlan, vehicleId = this.registry.selectedVehicleId ?? ''): MissionTransferState {
@@ -1462,7 +1480,7 @@ export class MavlinkTelemetryService extends EventEmitter {
     ];
     for (const frame of frames) this.sendFrame(frame);
     this.registry.addMarker(`Mission upload sent (${plan.waypoints.length} waypoint${plan.waypoints.length === 1 ? '' : 's'})`, performanceNowS(), vehicleId);
-    this.emit('session-snapshot', this.registry.snapshot());
+    this.emit('session-snapshot', this.snapshot());
     return {
       accepted: true,
       direction: 'upload',
@@ -1491,8 +1509,7 @@ export class MavlinkTelemetryService extends EventEmitter {
 
   selectVehicle(id: string): SessionSnapshotPayload {
     this.registry.select(id);
-    const snapshot = this.registry.snapshot();
-    for (const vehicle of snapshot.vehicles) this.applyWritableCapabilities(vehicle);
+    const snapshot = this.snapshot();
     this.emit('session-snapshot', snapshot);
     const selected = this.registry.selectedVehicle();
     this.applyWritableCapabilities(selected);
@@ -1502,8 +1519,7 @@ export class MavlinkTelemetryService extends EventEmitter {
 
   addMarker(label: string): SessionSnapshotPayload {
     this.registry.addMarker(label);
-    const snapshot = this.registry.snapshot();
-    for (const vehicle of snapshot.vehicles) this.applyWritableCapabilities(vehicle);
+    const snapshot = this.snapshot();
     this.emit('session-snapshot', snapshot);
     return snapshot;
   }
@@ -1533,23 +1549,102 @@ export class MavlinkTelemetryService extends EventEmitter {
     });
   }
 
-  private writeBlocked(confirmed: boolean, target: { systemId: number; componentId: number } | null): string | null {
+  private snapshot(nowS = performanceNowS()): SessionSnapshotPayload {
+    this.expireCommandTransactionsForSnapshot(nowS);
+    const snapshot = this.registry.snapshot(nowS);
+    for (const vehicle of snapshot.vehicles) this.applyWritableCapabilities(vehicle);
+    snapshot.commandTransactions = this.commandTransactions.slice(-MAX_COMMAND_TRANSACTIONS).reverse().map((transaction) => ({
+      ...transaction,
+      params: [...transaction.params],
+      ack: transaction.ack ? { ...transaction.ack } : null
+    }));
+    return snapshot;
+  }
+
+  private createCommandTransaction(request: GuardedCommandRequest, commandId: number, params: number[], nowS: number): CommandTransaction {
+    const transaction: CommandTransaction = {
+      id: `cmd-${Math.round(nowS * 1000)}-${this.commandTransactionSeq++}`,
+      vehicleId: request.vehicleId,
+      commandName: request.command,
+      commandId,
+      params: [...params],
+      createdAtS: nowS,
+      sentAtS: nowS,
+      updatedAtS: nowS,
+      state: 'sent',
+      ack: null,
+      retryCount: 0,
+      failureReason: null
+    };
+    this.commandTransactions.push(transaction);
+    if (this.commandTransactions.length > MAX_COMMAND_TRANSACTIONS) {
+      this.commandTransactions.splice(0, this.commandTransactions.length - MAX_COMMAND_TRANSACTIONS);
+    }
+    return transaction;
+  }
+
+  private applyCommandAck(message: MavlinkMessage, nowS: number): void {
+    const ack = decodeCommandAck(message);
+    if (!ack) {
+      return;
+    }
+    const id = vehicleId(message.systemId, message.componentId);
+    const transaction = [...this.commandTransactions].reverse().find((candidate) => candidate.vehicleId === id && candidate.commandId === ack.command && candidate.state === 'sent');
+    if (!transaction) {
+      return;
+    }
+    transaction.ack = ack;
+    transaction.updatedAtS = nowS;
+    transaction.state = ack.result === 0 ? 'acknowledged' : 'failed';
+    transaction.failureReason = ack.result === 0 ? null : ack.label;
+    this.registry.addMarker(`Command ${transaction.commandName} ${transaction.state}: ${ack.label}`, nowS, transaction.vehicleId);
+  }
+
+  private expireCommandTransactionsForSnapshot(nowS: number): boolean {
+    let changed = false;
+    for (const transaction of this.commandTransactions) {
+      if (transaction.state !== 'sent' || transaction.sentAtS === null || nowS - transaction.sentAtS < COMMAND_TRANSACTION_TIMEOUT_S) {
+        continue;
+      }
+      transaction.state = 'timeout';
+      transaction.updatedAtS = nowS;
+      transaction.failureReason = `no COMMAND_ACK received within ${COMMAND_TRANSACTION_TIMEOUT_S}s`;
+      this.registry.addMarker(`Command ${transaction.commandName} timed out`, nowS, transaction.vehicleId);
+      changed = true;
+    }
+    return changed;
+  }
+
+  private writeBlocked(confirmed: boolean, target: { systemId: number; componentId: number } | null, command?: CommandName): string | null {
     if (!confirmed) {
       return 'operator confirmation is required';
     }
     const selected = this.registry.selectedVehicle();
-    if (!target || !selected.connected) {
-      return 'no live vehicle link advertises command support';
-    }
-    if (selected.packetAgeS === null || selected.packetAgeS >= 2) {
-      return 'Live command actions are blocked because the selected link is stale.';
-    }
-    const blockedReadiness = selected.status?.readiness?.checks.find((check) => check.state === 'blocked');
-    if (blockedReadiness) {
-      return `${blockedReadiness.label} blocks commands: ${blockedReadiness.detail}`;
-    }
+    const capability = defaultCommandCapabilities(selected.connected, this.config.writableAnimus, {
+      packetAgeS: selected.packetAgeS,
+      readiness: selected.status?.readiness,
+      authority: this.config.writableAnimus ? 'sitl-writable' : 'read-only'
+    });
     if (!this.config.writableAnimus) {
       return 'Animus writes require a SITL session started with --writable-animus.';
+    }
+    if (command) {
+      const vehicleId = target ? `${target.systemId}:${target.componentId}` : `${selected.systemId ?? '--'}:${selected.componentId ?? '--'}`;
+      const result = evaluateGuardedCommand({ command, vehicleId, confirmed }, capability);
+      if (!result.accepted) {
+        return result.reason;
+      }
+    } else {
+      if (!target || !selected.connected) {
+        return 'no live vehicle link advertises command support';
+      }
+      if (selected.packetAgeS === null || selected.packetAgeS >= 2) {
+        return 'Live command actions are blocked because the selected link is stale.';
+      }
+      const blockedReadiness = selected.status?.readiness?.checks.find((check) => check.state === 'blocked');
+      if (blockedReadiness) {
+        return `${blockedReadiness.label} blocks commands: ${blockedReadiness.detail}`;
+      }
     }
     if (!this.socket || !this.lastRemote) {
       return 'no writable MAVLink remote endpoint is available';

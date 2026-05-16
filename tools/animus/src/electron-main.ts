@@ -16,7 +16,7 @@ import {
 import { parseAltairReplayJson, ReplaySession, type ReplayPlaybackState } from './replay.js';
 import { createMockLink, defaultCommandCapabilities, evaluateGuardedCommand } from './parity.js';
 import { validateMission } from './state.js';
-import type { GuardedCommandRequest, GuardedCommandResult, MissionPlan, MockLinkState } from './state.js';
+import type { CommandDispatchResult, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MockLinkState } from './state.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, '..');
@@ -177,21 +177,23 @@ ipcMain.handle('mock-link:start', (_event, vehicleCount: number) => {
   sendToWindows('session-snapshot', snapshot);
   return mockLink;
 });
-ipcMain.handle('command:issue', (_event, request: GuardedCommandRequest): GuardedCommandResult => {
+ipcMain.handle('command:issue', (_event, request: GuardedCommandRequest): GuardedCommandResult | CommandDispatchResult => {
   const selected = telemetry.registry.selectedVehicle();
   const capability = selected.commandCapabilities ?? defaultCommandCapabilities(selected.connected, telemetry.getConfig().writableAnimus);
   const guard = evaluateGuardedCommand(request, capability);
   const result = guard.accepted ? telemetry.dispatchCommand(request) : guard;
-  sendToWindows('session-snapshot', {
-    type: 'session_snapshot',
-    vehicles: [],
-    selectedVehicleId: null,
-    messages: [],
-    events: [{ id: `command-${Date.now()}`, timestampS: 0, vehicleId: request.vehicleId, level: result.accepted ? 'warning' : 'info', kind: 'command', label: result.reason, position: null }],
-    packetCount: 0,
-    decodedCount: 0,
-    mockLinks: mockLink ? [mockLink] : []
-  } as SessionSnapshotPayload);
+  if (!result.accepted) {
+    sendToWindows('session-snapshot', {
+      type: 'session_snapshot',
+      vehicles: [],
+      selectedVehicleId: null,
+      messages: [],
+      events: [{ id: `command-${Date.now()}`, timestampS: 0, vehicleId: request.vehicleId, level: 'info', kind: 'command', label: result.reason, position: null }],
+      packetCount: 0,
+      decodedCount: 0,
+      mockLinks: mockLink ? [mockLink] : []
+    } as SessionSnapshotPayload);
+  }
   return result;
 });
 

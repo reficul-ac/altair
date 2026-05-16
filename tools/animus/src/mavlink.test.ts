@@ -25,7 +25,7 @@ afterEach(() => {
   }
 });
 
-function heartbeat(seq = 1, options: { autopilot?: number; baseMode?: number; customMode?: number; systemStatus?: number } = {}): Buffer {
+function heartbeat(seq = 1, options: { autopilot?: number; baseMode?: number; customMode?: number; systemStatus?: number; systemId?: number; componentId?: number } = {}): Buffer {
   const payload = Buffer.alloc(9);
   payload.writeUInt32LE(options.customMode ?? 0, 0);
   payload.writeUInt8(1, 4);
@@ -33,7 +33,25 @@ function heartbeat(seq = 1, options: { autopilot?: number; baseMode?: number; cu
   payload.writeUInt8(options.baseMode ?? 0, 6);
   payload.writeUInt8(options.systemStatus ?? 4, 7);
   payload.writeUInt8(3, 8);
-  return mavlinkV1Frame(0, payload, seq);
+  return mavlinkV1Frame(0, payload, seq, options.systemId ?? 1, options.componentId ?? 1);
+}
+
+function commandAck(command: number, result: number, seq = 20, systemId = 1, componentId = 1): Buffer {
+  const payload = Buffer.alloc(3);
+  payload.writeUInt16LE(command, 0);
+  payload.writeUInt8(result, 2);
+  return mavlinkV1Frame(77, payload, seq, systemId, componentId);
+}
+
+function makeWritable(service: MavlinkTelemetryService): Buffer[] {
+  const sent: Buffer[] = [];
+  const writable = service as unknown as {
+    socket: { send: (frame: Buffer, port: number, host: string) => void };
+    lastRemote: { host: string; port: number };
+  };
+  writable.socket = { send: (frame: Buffer) => sent.push(frame) };
+  writable.lastRemote = { host: '127.0.0.1', port: 14540 };
+  return sent;
 }
 
 function attitude(seq = 2): Buffer {
@@ -85,19 +103,19 @@ function localPosition(seq = 5, systemId = 1, componentId = 1): Buffer {
   return mavlinkV1Frame(32, payload, seq, systemId, componentId);
 }
 
-function sysStatus(seq = 6): Buffer {
+function sysStatus(seq = 6, options: { sensorHealth?: number; voltageMv?: number; batteryRemainingPct?: number; systemId?: number; componentId?: number } = {}): Buffer {
   const payload = Buffer.alloc(31);
   payload.writeUInt32LE(7, 0);
   payload.writeUInt32LE(7, 4);
-  payload.writeUInt32LE(5, 8);
+  payload.writeUInt32LE(options.sensorHealth ?? 5, 8);
   payload.writeUInt16LE(320, 12);
-  payload.writeUInt16LE(12100, 14);
+  payload.writeUInt16LE(options.voltageMv ?? 12100, 14);
   payload.writeInt16LE(340, 16);
-  payload.writeInt8(72, 30);
-  return mavlinkV1Frame(1, payload, seq);
+  payload.writeInt8(options.batteryRemainingPct ?? 72, 30);
+  return mavlinkV1Frame(1, payload, seq, options.systemId ?? 1, options.componentId ?? 1);
 }
 
-function gpsRaw(seq = 7): Buffer {
+function gpsRaw(seq = 7, systemId = 1, componentId = 1): Buffer {
   const payload = Buffer.alloc(30);
   payload.writeBigUInt64LE(1000n, 0);
   payload.writeInt32LE(Math.round(37.5 * 1e7), 8);
@@ -109,21 +127,21 @@ function gpsRaw(seq = 7): Buffer {
   payload.writeUInt16LE(9000, 26);
   payload.writeUInt8(3, 28);
   payload.writeUInt8(11, 29);
-  return mavlinkV1Frame(24, payload, seq);
+  return mavlinkV1Frame(24, payload, seq, systemId, componentId);
 }
 
-function missionCurrent(seq = 8): Buffer {
+function missionCurrent(seq = 8, systemId = 1, componentId = 1): Buffer {
   const payload = Buffer.alloc(2);
   payload.writeUInt16LE(4, 0);
-  return mavlinkV1Frame(42, payload, seq);
+  return mavlinkV1Frame(42, payload, seq, systemId, componentId);
 }
 
-function missionCount(count = 6, seq = 11): Buffer {
+function missionCount(count = 6, seq = 11, systemId = 1, componentId = 1): Buffer {
   const payload = Buffer.alloc(4);
   payload.writeUInt16LE(count, 0);
-  payload.writeUInt8(1, 2);
-  payload.writeUInt8(1, 3);
-  return mavlinkV1Frame(44, payload, seq);
+  payload.writeUInt8(systemId, 2);
+  payload.writeUInt8(componentId, 3);
+  return mavlinkV1Frame(44, payload, seq, systemId, componentId);
 }
 
 function missionAck(type = 0, seq = 12): Buffer {
@@ -150,6 +168,15 @@ function statustext(seq = 10): Buffer {
   payload.writeUInt8(4, 0);
   payload.write('Ready', 1, 'utf8');
   return mavlinkV1Frame(253, payload, seq);
+}
+
+function readyVehicle(systemId = 1, componentId = 1, seq = 1): Buffer {
+  return Buffer.concat([
+    heartbeat(seq, { autopilot: 12, systemStatus: 4, systemId, componentId }),
+    gpsRaw(seq + 1, systemId, componentId),
+    sysStatus(seq + 2, { sensorHealth: 5, batteryRemainingPct: 72, voltageMv: 12100, systemId, componentId }),
+    missionCount(2, seq + 3, systemId, componentId)
+  ]);
 }
 
 describe('Electron MAVLink service', () => {
@@ -228,6 +255,22 @@ describe('Electron MAVLink service', () => {
     expect(payload.status?.missionState?.progressPct).toBeCloseTo(83.333, 2);
     expect(payload.status?.readiness?.overall).toBe('blocked');
     expect(payload.status?.readiness?.checks.find((check) => check.key === 'failsafe')).toMatchObject({ state: 'blocked' });
+  });
+
+  it('propagates SYS_STATUS estimator and power gates into readiness and command capabilities', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true });
+    makeWritable(service);
+    const payload = service.handlePacket(Buffer.concat([
+      heartbeat(1, { autopilot: 12, systemStatus: 4 }),
+      gpsRaw(2),
+      sysStatus(3, { sensorHealth: 0, batteryRemainingPct: 8, voltageMv: 12100 }),
+      missionCount(2, 4)
+    ]));
+    expect(payload.status?.readiness?.checks.find((check) => check.key === 'estimator')).toMatchObject({ state: 'blocked' });
+    expect(payload.status?.readiness?.checks.find((check) => check.key === 'battery')).toMatchObject({ state: 'blocked' });
+    expect(payload.commandCapabilities?.supported).toEqual(expect.arrayContaining(['disarm', 'emergency-stop']));
+    expect(payload.commandCapabilities?.supported).not.toContain('arm');
+    expect(payload.commandCapabilities?.blockedCommands?.arm).toContain('Estimator blocks commands');
   });
 
   it('encodes command and mission write packets behind MAVLink v1 CRCs', () => {
@@ -334,5 +377,99 @@ describe('Electron MAVLink service', () => {
       source: 'bayek-v1',
       waypoints: [{ seq: 0, lat_deg: 37, lon_deg: -122, alt_m: 120, throttle: 0.5, acceptance_radius_m: 25 }]
     }, '1:1')).toMatchObject({ accepted: false, state: 'rejected' });
+  });
+
+  it('creates a sent command transaction for writable SITL commands', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true });
+    makeWritable(service);
+    let snapshot = service.handlePacket(readyVehicle());
+    expect(snapshot.connected).toBe(true);
+    let session = null as ReturnType<VehicleRegistry['snapshot']> | null;
+    service.on('session-snapshot', (next) => {
+      session = next;
+    });
+    const result = service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true });
+    expect(result).toMatchObject({ accepted: true, state: 'sent', transactionId: expect.any(String), ack: null });
+    expect(session?.commandTransactions?.[0]).toMatchObject({
+      id: result.transactionId,
+      vehicleId: '1:1',
+      commandName: 'arm',
+      commandId: 400,
+      params: [1],
+      state: 'sent'
+    });
+  });
+
+  it('marks accepted COMMAND_ACK as acknowledged on the matching transaction', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true });
+    makeWritable(service);
+    service.handlePacket(readyVehicle());
+    let session = null as ReturnType<VehicleRegistry['snapshot']> | null;
+    service.on('session-snapshot', (next) => {
+      session = next;
+    });
+    const result = service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true });
+    service.handlePacket(commandAck(400, 0));
+    expect(session?.commandTransactions?.[0]).toMatchObject({
+      id: result.transactionId,
+      state: 'acknowledged',
+      ack: { command: 400, result: 0, label: 'accepted' },
+      failureReason: null
+    });
+  });
+
+  it('maps rejected COMMAND_ACK results to failed transactions with labels', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true });
+    makeWritable(service);
+    service.handlePacket(readyVehicle());
+    let session = null as ReturnType<VehicleRegistry['snapshot']> | null;
+    service.on('session-snapshot', (next) => {
+      session = next;
+    });
+    const result = service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true });
+    service.handlePacket(commandAck(400, 2));
+    expect(session?.commandTransactions?.[0]).toMatchObject({
+      id: result.transactionId,
+      state: 'failed',
+      ack: { command: 400, result: 2, label: 'denied' },
+      failureReason: 'denied'
+    });
+  });
+
+  it('times out stale sent command transactions', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true });
+    makeWritable(service);
+    service.handlePacket(readyVehicle());
+    let session = null as ReturnType<VehicleRegistry['snapshot']> | null;
+    service.on('session-snapshot', (next) => {
+      session = next;
+    });
+    const result = service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true });
+    const sentAtS = session?.commandTransactions?.[0]?.sentAtS;
+    expect(sentAtS).toEqual(expect.any(Number));
+    service.expireCommandTransactions((sentAtS ?? 0) + 2.1);
+    expect(session?.commandTransactions?.[0]).toMatchObject({
+      id: result.transactionId,
+      state: 'timeout',
+      ack: null,
+      failureReason: 'no COMMAND_ACK received within 2s'
+    });
+  });
+
+  it('matches COMMAND_ACK to the correct vehicle transaction', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true });
+    makeWritable(service);
+    service.handlePacket(Buffer.concat([readyVehicle(1, 1, 1), localPosition(5, 1, 1)]));
+    service.handlePacket(Buffer.concat([readyVehicle(2, 1, 6), localPosition(10, 2, 1)]));
+    let session = null as ReturnType<VehicleRegistry['snapshot']> | null;
+    service.on('session-snapshot', (next) => {
+      session = next;
+    });
+    const first = service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true });
+    const second = service.dispatchCommand({ command: 'arm', vehicleId: '2:1', confirmed: true });
+    service.handlePacket(commandAck(400, 0, 21, 2, 1));
+    const transactions = session?.commandTransactions ?? [];
+    expect(transactions.find((transaction) => transaction.id === second.transactionId)).toMatchObject({ vehicleId: '2:1', state: 'acknowledged' });
+    expect(transactions.find((transaction) => transaction.id === first.transactionId)).toMatchObject({ vehicleId: '1:1', state: 'sent' });
   });
 });

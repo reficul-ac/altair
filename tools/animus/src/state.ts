@@ -122,6 +122,7 @@ export type SessionSnapshotMessage = {
   logSources?: LogSourceMetadata[];
   console?: ConsoleLogEntry[];
   mockLinks?: MockLinkState[];
+  commandTransactions?: CommandTransaction[];
 };
 
 export type ReplaySourceType = 'altair-session' | 'ulog-import' | 'mavlink-live' | 'mock-link' | 'csv-import';
@@ -215,11 +216,34 @@ export type CommandDispatchResult = {
   reason: string;
   mock: false;
   sentPackets: number;
+  transactionId: string | null;
+  state: CommandTransactionState;
   ack?: {
     command: number;
     result: number;
     label: string;
   } | null;
+};
+
+export type CommandTransactionState = 'blocked' | 'sent' | 'acknowledged' | 'timeout' | 'failed';
+
+export type CommandTransaction = {
+  id: string;
+  vehicleId: string;
+  commandName: CommandName;
+  commandId: number;
+  params: number[];
+  createdAtS: number;
+  sentAtS: number | null;
+  updatedAtS: number;
+  state: CommandTransactionState;
+  ack: {
+    command: number;
+    result: number;
+    label: string;
+  } | null;
+  retryCount: number;
+  failureReason: string | null;
 };
 
 export type MissionTransferState = {
@@ -293,6 +317,7 @@ export type CommandCapabilityState = {
   stale: boolean;
   supported: CommandName[];
   blockedReason: string | null;
+  blockedCommands?: Partial<Record<CommandName, string>>;
   readiness?: VehicleReadiness;
 };
 
@@ -357,7 +382,7 @@ export type NormalizedFailsafeState = {
 };
 
 export type ReadinessCheck = {
-  key: 'link' | 'gps' | 'battery' | 'failsafe' | 'mission' | 'firmware';
+  key: 'link' | 'gps' | 'estimator' | 'battery' | 'failsafe' | 'mission' | 'firmware';
   label: string;
   state: 'ready' | 'warning' | 'blocked' | 'unknown';
   detail: string;

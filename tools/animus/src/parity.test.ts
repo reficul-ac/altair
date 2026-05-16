@@ -30,6 +30,26 @@ function snapshot(vehicles: VehicleStateMessage[]): SessionSnapshotMessage {
   };
 }
 
+function readyStatus(overrides: Partial<NonNullable<VehicleStateMessage['status']>> = {}): NonNullable<VehicleStateMessage['status']> {
+  return {
+    armed: false,
+    mode: 'Auto',
+    firmware: firmwareIdentity(12),
+    baseMode: 0,
+    customMode: 0,
+    systemStatus: 4,
+    gpsFix: '3D fix',
+    satellitesVisible: 10,
+    batteryRemainingPct: 80,
+    batteryVoltageV: 12,
+    onboardControlSensorsHealth: 1,
+    missionSeq: 0,
+    missionState: normalizeMissionState({ activeSeq: 0, totalItems: 2 }),
+    lastStatusText: null,
+    ...overrides
+  };
+}
+
 describe('ground station parity helpers', () => {
   it('blocks commands unless live writable capability and confirmation are present', () => {
     expect(evaluateGuardedCommand({ command: 'arm', vehicleId: '1:1', confirmed: false }, defaultCommandCapabilities(true, true)).accepted).toBe(false);
@@ -57,6 +77,29 @@ describe('ground station parity helpers', () => {
     expect(capability.supported).toEqual([]);
     expect(capability.blockedReason).toContain('stale');
     expect(evaluateGuardedCommand({ command: 'arm', vehicleId: '1:1', confirmed: true }, capability).reason).toContain('stale');
+  });
+
+  it('reports estimator readiness from SYS_STATUS sensor health', () => {
+    expect(buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus({ onboardControlSensorsHealth: null }) }).checks.find((check) => check.key === 'estimator')).toMatchObject({ state: 'unknown' });
+    expect(buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus({ onboardControlSensorsHealth: 0 }) }).checks.find((check) => check.key === 'estimator')).toMatchObject({ state: 'blocked' });
+    expect(buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus({ onboardControlSensorsHealth: 5 }) }).checks.find((check) => check.key === 'estimator')).toMatchObject({ state: 'ready' });
+  });
+
+  it('warns and blocks on battery and power thresholds', () => {
+    expect(buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus({ batteryRemainingPct: null, batteryVoltageV: null }) }).checks.find((check) => check.key === 'battery')).toMatchObject({ state: 'unknown' });
+    expect(buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus({ batteryRemainingPct: 15 }) }).checks.find((check) => check.key === 'battery')).toMatchObject({ state: 'warning' });
+    expect(buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus({ batteryRemainingPct: 9 }) }).checks.find((check) => check.key === 'battery')).toMatchObject({ state: 'blocked' });
+    expect(buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus({ batteryVoltageV: 0 }) }).checks.find((check) => check.key === 'battery')).toMatchObject({ state: 'blocked' });
+  });
+
+  it('keeps safety response commands available when preflight readiness is blocked', () => {
+    const readiness = buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus({ onboardControlSensorsHealth: 0 }) });
+    const capability = defaultCommandCapabilities(true, true, { packetAgeS: 0, readiness });
+    expect(capability.supported).not.toContain('arm');
+    expect(capability.supported).toEqual(expect.arrayContaining(['disarm', 'emergency-stop', 'pause', 'land', 'return-to-launch']));
+    expect(capability.blockedCommands?.arm).toContain('Estimator blocks commands');
+    expect(evaluateGuardedCommand({ command: 'arm', vehicleId: '1:1', confirmed: true }, capability)).toMatchObject({ accepted: false, reason: expect.stringContaining('Estimator blocks commands') });
+    expect(evaluateGuardedCommand({ command: 'emergency-stop', vehicleId: '1:1', confirmed: true }, capability)).toMatchObject({ accepted: true });
   });
 
   it('normalizes MAVLink system status into typed failsafe states', () => {

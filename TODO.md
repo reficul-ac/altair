@@ -159,7 +159,8 @@ Audit and scope:
 Operational safety:
 
 - [x] Define command authority states for read-only, SITL-writable, trusted live-link writable, and maintenance/setup modes, with visible UI state and clear downgrade behavior.
-- [ ] Add arming and preflight gates for GPS/estimator health, link freshness, failsafe state, battery/power, mission validity, operator confirmation, and firmware-specific readiness checks.
+- [x] Add practical arming and preflight gates for decoded GPS/estimator health, link freshness, failsafe state, battery/power, mission validity, operator confirmation, and command-specific SITL safety responses.
+- [ ] Add firmware-specific readiness checks beyond decoded generic MAVLink telemetry.
 - [ ] Design emergency action UX for disarm, kill/emergency stop, hold/pause, return-to-launch, land, and command cancellation, including accidental-click protection and post-action feedback.
 - [ ] Add a durable command audit log covering operator identity/session, vehicle, link, command payload, confirmation, ACK/NACK/result, retries, timeout, and failure reason.
 - [ ] Prevent unsafe writes on stale links, reconnect races, conflicting vehicle IDs, unsupported modes, or duplicate-GCS conflicts; surface blocked actions as explicit states rather than silent failures.
