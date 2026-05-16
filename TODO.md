@@ -8,6 +8,9 @@ This file tracks near-term repository work. Roadmap and design context live in:
 - [Testing](docs/testing.md)
 - [Animus operator controls](docs/animus_operator_controls.md)
 
+Reusable Bayek framework follow-up is tracked separately in
+[`bayek/TODO.md`](bayek/TODO.md).
+
 ## Baseline Health
 
 - [ ] Keep CI green for formatting, Debug/Release CMake, CTest, and Animus.
@@ -20,14 +23,18 @@ This file tracks near-term repository work. Roadmap and design context live in:
 - [ ] Document mass, wing area, speed limits, control limits, safe actuator positions, and aero data provenance.
 - [ ] Expand mixer tests for edge cases, saturation, sign conventions, and failsafe/disarmed outputs.
 - [ ] Improve state estimation beyond direct placeholder field assignment.
-- [ ] Add deterministic wind, turbulence, sensor noise, bias hooks, and randomized Monte Carlo inputs.
-- [ ] Extend trim coverage beyond the initial fixed-wing level-flight case.
-- [ ] Add aero database lookup, interpolation, validation, and provenance before replacing scalar aero formulas.
+- [ ] Wire Bayek wind, turbulence, sensor noise, and bias hooks into Altair SITL
+  and Monte Carlo scenarios after the reusable hooks exist.
+- [ ] Add randomized Monte Carlo inputs for Altair-owned dispersions, guardrails,
+  and summary CSV semantics.
+- [ ] Document Altair aero data provenance before replacing scalar aero formulas
+  with reusable Bayek aero database helpers.
 
 ## Telemetry And Replay
 
 - [ ] Define required telemetry packets for SITL, embedded, and log replay.
-- [ ] Add packet versioning and compatibility checks.
+- [ ] Add Altair replay schema compatibility checks around imported telemetry
+  and live viewer session snapshots.
 - [ ] Add log-to-replay tooling for deterministic regression tests.
 
 ## Animus
@@ -48,7 +55,6 @@ This file tracks near-term repository work. Roadmap and design context live in:
 ## Test Ownership
 
 - [ ] Keep Altair tests focused on Altair params, mixer, vehicle interface, SITL runners/cases/conditions, telemetry integration, and Animus.
-- [ ] Move generic Bayek math/control/sim/trim/host-SITL unit coverage into the Bayek repo when that submodule is ready to accept the tests.
-- [ ] Until then, keep only minimal Altair-side Bayek contract coverage needed to protect integration assumptions.
+- [ ] Keep only minimal Altair-side Bayek contract coverage needed to protect integration assumptions.
 - [ ] Add path-aware verification selection so agent and human checks can map changed files to the smallest defensible command set.
 - [ ] Build richer visual verification reports that combine metrics, plots, screenshots, logs, and manifests in one reviewable artifact.

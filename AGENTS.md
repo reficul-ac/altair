@@ -18,6 +18,20 @@ compatible with eventual real hardware use. Avoid hidden global state, heap use
 in flight software, nondeterministic time sources in deterministic paths, and
 host-only dependencies in portable code.
 
+## Backlog Hygiene
+
+Treat `TODO.md` as the active repository backlog. At the end of every work item,
+including Plan mode investigations, review `TODO.md` before finalizing:
+
+- check off any item that the completed work fully resolves
+- add a concise unchecked item for any real bug, missing test, or improvement
+  discovered during the work but left outside the current scope
+- avoid duplicates; update an existing item when that is clearer than adding a
+  new one
+
+Keep entries specific enough for a future agent to act on, and place them under
+the closest existing heading.
+
 ## Repository Boundaries
 
 Altair owns vehicle-specific integration:
