@@ -1,6 +1,6 @@
 # Animus Operator Controls
 
-The Altair Animus is a debugger-oriented MAVLink/SITL viewer. It is read-only by default. Vehicle-affecting actions are limited to guarded SITL command controls and simple waypoint mission upload packet emission when the selected link is explicitly writable, fresh, and the operator confirms the action.
+The Altair Animus is a debugger-oriented MAVLink/SITL viewer. It is read-only by default. Vehicle-affecting actions are limited to guarded protocol operations when the selected link is explicitly writable, fresh, and the operator confirms the action.
 
 ## Launch
 
@@ -15,6 +15,15 @@ For the Electron app:
 ```sh
 npm run app --prefix tools/animus
 ```
+
+Writable launches are opt-in:
+
+```sh
+npm run app --prefix tools/animus -- --writable-animus
+npm run app --prefix tools/animus -- --trusted-live-writable
+```
+
+`--writable-animus` is intended for SITL. `--trusted-live-writable` exposes live-vehicle protocol writes only after an operator intentionally chooses that authority mode at launch; Animus still displays endpoint, QGC forwarding, duplicate-GCS risk, and MAVLink signing status in Setup.
 
 For a Python bridge session:
 
@@ -40,8 +49,7 @@ Vehicle meshes are chosen from heartbeat vehicle type: fixed-wing, multirotor, V
 - `Focus` recenters on the selected vehicle and resumes selected-vehicle follow.
 - `+` and `-` adjust zoom.
 
-The map renders selected and fleet trails, event markers, an origin/home marker when available, and mission waypoint paths when a session snapshot includes waypoint coordinates.
-It can render geofence polygons/circles and rally points when those records are already present in the session snapshot. Creating or editing geofences and rally points is not implemented. The offline grid map remains available for replay and mock-link testing without hardware or SITL.
+The map renders selected and fleet trails, event markers, an origin/home marker when available, mission waypoint paths, terrain reports, geofence polygons/circles, and rally points when decoded records are present. Terrain check requests are protocol-backed and appear in the operation history. Creating or editing geofences, rally points, or terrain tiles remains out of scope unless a decoded MAVLink path is added for that operation.
 
 ## Inspector View
 
@@ -57,20 +65,21 @@ It can render geofence polygons/circles and rally points when those records are 
 - `Open` loads native Altair replay JSON.
 - `Import` accepts native replay JSON plus CSV-style delimited logs and ULog-labeled imports that can be reduced to the currently supported deterministic replay frame fields.
 - Replay controls support pause/play, scrub, speed selection, reset, and marker navigation.
-- `Download` saves the current replay/session metadata path exposed by Electron. Onboard MAVLink log listing, download, deletion, and `.tlog` recording are roadmap items.
+- `Download` saves the current replay/session metadata path exposed by Electron.
+- Setup can request the onboard MAVLink log list, start per-log download operations, and erase onboard logs behind typed confirmation. Progress is reported by operation id and received-byte counters from `LOG_DATA`; imported replay behavior is unchanged.
 
 ## Analysis And GCS Parity
 
 - Target multi-vehicle analysis count: 12 simultaneous vehicles. Above that, the viewer should still display fleet basics, but correlation, formation, and deconfliction inspection are optimized for the first 12 active vehicles.
 - Analysis panels align streams by takeoff by default, expose formation offsets, and report minimum separation conflicts.
-- The Plan workspace supports local waypoint list editing, local save/load, validation, guarded SITL waypoint upload packet emission, and read-only mission progress from decoded MAVLink mission status. Survey, corridor scan, structure scan, fixed-wing landing pattern, geofence editing, rally editing, full mission download, full mission ACK synchronization, and terrain-following workflows are disabled roadmap surfaces. Mission request/item/ACK, terrain, and home-position messages are decoded for inspection when present.
-- The Setup workspace shows readiness, preflight status, guarded SITL Fly actions, parameter values, and link diagnostics. Parameter rows are inspect-only: parameter fetch/cache/edit/validate/upload, firmware setup, airframe selection, radio setup, sensor calibration, flight-mode edits, power setup, motor/actuator setup, safety edits, tuning, camera setup, joystick setup, and persisted application settings are disabled roadmap surfaces. Parameter, camera-metadata, and log-list/download messages are decoded for inspection when present.
-- Command authority is normalized into explicit states: `read-only`, `sitl-writable`, `trusted-live-writable`, `maintenance-setup`, `unsupported`, or `unknown`. Current writable behavior is limited to `sitl-writable`; trusted live-link and maintenance/setup authority remain disabled roadmap states.
+- The Plan workspace supports local waypoint list editing, local save/load, validation, MAVLink mission upload/download/clear, mission item request sequencing, ACK/status progress, and decoded mission/home overlays. Survey, corridor scan, structure scan, fixed-wing landing pattern, geofence editing, and rally editing remain outside the current editor.
+- The Setup workspace shows readiness, preflight status, guarded Fly actions, parameter refresh/edit controls, onboard logs, operation history, and link diagnostics. Firmware setup, airframe selection, radio setup, sensor calibration, flight-mode edits, power setup, motor/actuator setup, safety edits, tuning, joystick setup, and persisted application settings remain outside the current setup editor.
+- Command authority is normalized into explicit states: `read-only`, `sitl-writable`, `trusted-live-writable`, `maintenance-setup`, `unsupported`, or `unknown`. The default remains `read-only`; both writable modes require an explicit launch flag and current link guards.
 - Firmware and mode display keeps both raw MAVLink values and normalized UI labels where supported. PX4 and ArduPilot heartbeat/custom modes have initial mappings; generic, unsupported, or unknown firmware states remain visible as explicit unsupported/unknown states instead of being treated as safe command capability.
 - Readiness currently uses decoded link freshness, GPS fix, battery remaining, firmware identity, MAVLink system/failsafe state, and normalized mission state/progress. Estimator health, power-domain checks, firmware-specific preflight checks, and field-operation acceptance remain roadmap work.
-- The Video workspace lists advertised camera or camera-metadata records for inspection. Video display, real RTP/RTSP/UVC stream plumbing, MAVLink camera settings, still capture, local recording, map/video switching, and telemetry subtitle export are disabled until protocol-backed stream support exists.
+- The Video workspace lists advertised camera or camera-metadata records and exposes guarded MAVLink still capture, recording start/stop, zoom, and focus commands when a writable authority and camera metadata are present. Video display, new RTP/RTSP/UVC playback dependencies, map/video switching, and telemetry subtitle export are still out of scope.
 - Guarded command buttons are command stubs for SITL-only safety experiments. High-consequence commands require typed confirmation, altitude commands require typed target altitude, and failed or timed-out command transactions can be manually retried after current guards are re-evaluated. Full GCS command forms, firmware capability discovery, and live-vehicle write authority remain roadmap work.
-- MAVLink console access is intentionally limited to diagnostics and captured status text in this debugger-oriented viewer. Raw command console writes are out of scope unless a future operator safety review approves them.
+- MAVLink console access is intentionally limited to diagnostics, captured status text, operation history, and audit trails in this debugger-oriented viewer. Raw command console writes are out of scope unless a future operator safety review approves them.
 
 ## Live SITL Swarms
 

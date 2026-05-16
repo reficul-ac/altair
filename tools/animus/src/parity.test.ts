@@ -111,11 +111,11 @@ describe('ground station parity helpers', () => {
     expect(evaluateGuardedCommand({ command: 'arm', vehicleId: '1:1', confirmed: true }, capability).reason).toContain('stale');
   });
 
-  it('blocks unsupported authority modes and undispatched command surfaces', () => {
+  it('enables trusted-live authority and keeps undispatched command surfaces blocked', () => {
     const readiness = buildVehicleReadiness({ connected: true, packetAgeS: 0, status: readyStatus(), diagnostics: protocolReadyDiagnostics() });
     const capability = defaultCommandCapabilities(true, true, { packetAgeS: 0, readiness, authority: 'trusted-live-writable' });
-    expect(capability.supported).toEqual([]);
-    expect(capability.blockedReason).toContain('trusted-live-writable');
+    expect(capability.supported).toContain('disarm');
+    expect(capability.authority).toBe('trusted-live-writable');
     const writable = defaultCommandCapabilities(true, true, { packetAgeS: 0, readiness });
     expect(writable.supported).not.toContain('go-to');
     expect(writable.blockedCommands?.['go-to']).toContain('protocol-backed acceptance test');

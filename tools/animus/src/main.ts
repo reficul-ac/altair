@@ -15,6 +15,8 @@ import {
   type MissionTransferState,
   type MissionValidationResult,
   type MockLinkState,
+  type ParameterEditRequest,
+  type ParameterEditResult,
   parseSessionSnapshot,
   parseVehicleState,
   type ReplayTimelineMessage,
@@ -30,6 +32,7 @@ type AnimusConfig = {
   qgcForwarding: boolean;
   qgcEndpoints: { host: string; port: number }[];
   writableAnimus: boolean;
+  authorityMode: string;
 };
 
 type AnimusApi = {
@@ -46,6 +49,18 @@ type AnimusApi = {
   loadMission?: () => Promise<{ loaded: boolean; path?: string; plan?: MissionPlan; validation?: MissionValidationResult }>;
   uploadMissionToSitl?: (plan: MissionPlan, vehicleId?: string) => Promise<MissionTransferState>;
   downloadMissionFromSitl?: (vehicleId?: string) => Promise<MissionTransferState>;
+  refreshParameters?: (vehicleId?: string) => Promise<ParameterEditResult>;
+  setParameter?: (request: ParameterEditRequest) => Promise<ParameterEditResult>;
+  uploadMission?: (plan: MissionPlan, vehicleId?: string, confirmed?: boolean) => Promise<MissionTransferState>;
+  downloadMission?: (vehicleId?: string) => Promise<MissionTransferState>;
+  clearMission?: (vehicleId?: string, confirmed?: boolean) => Promise<MissionTransferState>;
+  listOnboardLogs?: (vehicleId?: string) => Promise<ParameterEditResult>;
+  downloadOnboardLog?: (logId: number, vehicleId?: string) => Promise<ParameterEditResult>;
+  eraseOnboardLogs?: (vehicleId?: string, confirmed?: boolean) => Promise<ParameterEditResult>;
+  requestTerrain?: (vehicleId?: string) => Promise<ParameterEditResult>;
+  cameraCapture?: (vehicleId?: string) => Promise<ParameterEditResult>;
+  cameraRecord?: (recording: boolean, vehicleId?: string) => Promise<ParameterEditResult>;
+  cameraSetSetting?: (setting: 'zoom' | 'focus', value: number, vehicleId?: string) => Promise<ParameterEditResult>;
   onReplayState?: (callback: (message: ReplayTimelineMessage) => void) => () => void;
   openReplay?: () => Promise<ReplayTimelineMessage>;
   importLog?: () => Promise<ReplayTimelineMessage>;
@@ -119,7 +134,7 @@ function updateConfig(config: AnimusConfig): void {
   document.querySelector<HTMLInputElement>('#listen-port')!.value = String(config.listenPort);
   document.querySelector<HTMLInputElement>('#qgc')!.checked = config.qgcForwarding;
   const endpoints = config.qgcEndpoints.map((endpoint) => `${endpoint.host}:${endpoint.port}`).join(', ');
-  document.querySelector<HTMLElement>('#config')!.textContent = `UDP ${config.listenHost}:${config.listenPort} / QGC ${config.qgcForwarding ? endpoints : 'off'} / ${config.writableAnimus ? 'SITL writable' : 'read-only'}`;
+  document.querySelector<HTMLElement>('#config')!.textContent = `UDP ${config.listenHost}:${config.listenPort} / QGC ${config.qgcForwarding ? endpoints : 'off'} / ${config.authorityMode}${config.qgcForwarding && config.writableAnimus ? ' / duplicate-GCS risk' : ''}`;
 }
 
 function setWorkspace(name: string): void {
@@ -240,8 +255,14 @@ function updateGcsSurfaces(snapshot: SessionSnapshotMessage): void {
 function updateCameraStreams(vehicle: VehicleStateMessage | null): void {
   const streams = vehicle?.cameraStreams ?? [];
   document.querySelector<HTMLElement>('#camera-streams')!.innerHTML = streams.map((stream) => `
-    <div><strong>${escapeHtml(stream.label)}</strong><span>${escapeHtml(stream.kind.toUpperCase())}</span><span>${escapeHtml(stream.status)} / inspect only</span></div>
+    <div><strong>${escapeHtml(stream.label)}</strong><span>${escapeHtml(stream.kind.toUpperCase())}</span><span>${escapeHtml(stream.status)}</span><span>${escapeHtml(stream.uri ?? stream.resolution ?? 'metadata')}</span></div>
   `).join('') || '<p class="empty">No RTP, RTSP, UVC, or MAVLink camera metadata streams advertised</p>';
+  document.querySelector<HTMLElement>('#camera-detail')!.innerHTML = operationRows('camera') || '<p class="empty">No camera operations</p>';
+  const writable = Boolean(vehicle?.commandCapabilities?.writableLink);
+  document.querySelectorAll<HTMLButtonElement>('[data-camera-action]').forEach((button) => {
+    button.disabled = !writable || streams.length === 0;
+    button.title = writable ? 'Send MAVLink camera operation' : vehicle?.commandCapabilities?.blockedReason ?? 'read-only link';
+  });
 }
 
 function updatePlanSurface(vehicle: VehicleStateMessage | null): void {
@@ -257,7 +278,7 @@ function updatePlanSurface(vehicle: VehicleStateMessage | null): void {
     </div>
   `).join('') || '<p class="empty">No local mission waypoints</p>';
   document.querySelector<HTMLElement>('#mission-validation')!.innerHTML = validation.issues
-    .map((issue) => `<div><strong>${escapeHtml(issue.severity)}</strong><span>${escapeHtml(issue.path)}</span><span>${escapeHtml(issue.message)}</span></div>`)
+    .map((issue) => `<div><strong>${escapeHtml(issue.severity)}</strong><span>${escapeHtml(`${issue.path}: ${issue.message}`)}</span></div>`)
     .join('') || `<div><strong>Valid</strong><span>${validation.waypointCount} waypoint${validation.waypointCount === 1 ? '' : 's'}</span><span>${vehicle?.commandCapabilities?.writableLink ? 'SITL writable' : 'read-only link'}</span></div>`;
   document.querySelectorAll<HTMLInputElement>('[data-mission-field]').forEach((input) => {
     input.addEventListener('change', () => {
@@ -272,12 +293,21 @@ function updatePlanSurface(vehicle: VehicleStateMessage | null): void {
   });
   const upload = document.querySelector<HTMLButtonElement>('#plan-upload');
   if (upload) upload.disabled = !validation.valid || !vehicle?.commandCapabilities?.writableLink;
+  const download = document.querySelector<HTMLButtonElement>('#plan-download');
+  if (download) download.disabled = !vehicle?.commandCapabilities?.liveLink;
+  const clear = document.querySelector<HTMLButtonElement>('#plan-clear');
+  if (clear) clear.disabled = !vehicle?.commandCapabilities?.writableLink;
+  document.querySelector<HTMLElement>('#mission-operations')!.innerHTML = operationRows('mission') || '<p class="empty">No mission transfers</p>';
   const fences = vehicle?.geofences ?? [];
   const rally = vehicle?.rallyPoints ?? [];
+  const terrain = vehicle?.terrain;
   document.querySelector<HTMLElement>('#fence-list')!.innerHTML = [
+    vehicle?.home ? `<div><strong>Home</strong><span>${vehicle.home.latDeg.toFixed(6)}</span><span>${vehicle.home.lonDeg.toFixed(6)}</span><span>${vehicle.home.altitudeM.toFixed(1)} m</span></div>` : '',
     ...fences.map((zone) => `<div><strong>${escapeHtml(zone.id)}</strong><span>${zone.kind}</span><span>${zone.inclusion ? 'include' : 'exclude'}</span></div>`),
-    ...rally.map((point) => `<div><strong>${escapeHtml(point.id)}</strong><span>rally</span><span>${point.altitudeM?.toFixed(1) ?? '--'} m</span></div>`)
-  ].join('') || '<p class="empty">No geofence or rally points</p>';
+    ...rally.map((point) => `<div><strong>${escapeHtml(point.id)}</strong><span>rally</span><span>${point.altitudeM?.toFixed(1) ?? '--'} m</span></div>`),
+    terrain ? `<div><strong>Terrain</strong><span>${terrain.spacingM ?? '--'} m</span><span>${terrain.terrainHeightM?.toFixed(1) ?? '--'} / ${terrain.currentHeightM?.toFixed(1) ?? '--'} m</span><span>${terrain.loaded ?? '--'} loaded</span></div>` : '',
+    operationRows('terrain')
+  ].join('') || '<p class="empty">No geofence, rally, or terrain records</p>';
 }
 
 function updateSetupSurface(vehicle: VehicleStateMessage | null, snapshot = state.snapshot): void {
@@ -299,8 +329,34 @@ function updateSetupSurface(vehicle: VehicleStateMessage | null, snapshot = stat
   const query = document.querySelector<HTMLInputElement>('#parameter-filter')?.value.toLowerCase() ?? '';
   document.querySelector<HTMLElement>('#parameter-list')!.innerHTML = parameters
     .filter((param) => param.name.toLowerCase().includes(query))
-    .map((param) => `<div><strong>${escapeHtml(param.name)}</strong><span>${escapeHtml(String(param.value))}</span><span>${param.readonly ? 'read-only' : 'inspect only'}</span></div>`)
+    .slice(0, 80)
+    .map((param) => `<div><strong>${escapeHtml(param.name)}</strong><span>${escapeHtml(String(param.value))}</span><span>${escapeHtml(param.type)}</span><button type="button" data-param-set="${escapeHtml(param.name)}" ${vehicle?.commandCapabilities?.writableLink && !param.readonly ? '' : 'disabled'}>Set</button></div>`)
     .join('') || '<p class="empty">No parameters loaded</p>';
+  document.querySelectorAll<HTMLButtonElement>('[data-param-set]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const name = button.dataset.paramSet ?? '';
+      const param = parameters.find((candidate) => candidate.name === name);
+      const raw = window.prompt(`Set ${name}`, String(param?.value ?? ''));
+      if (raw === null || !param || !state.selected) return;
+      const vehicleId = state.selected.id ?? `${state.selected.systemId ?? '--'}:${state.selected.componentId ?? '--'}`;
+      void window.altairAnimus?.setParameter?.({ vehicleId, name, value: Number(raw), confirmed: true, originSurface: 'setup-parameters' }).then((result) => {
+        document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
+      });
+    });
+  });
+  document.querySelector<HTMLElement>('#onboard-log-listing')!.innerHTML = [
+    ...(vehicle?.logs ?? []).map((log) => `<div><strong>Log ${log.id}</strong><span>${log.sizeBytes} bytes</span><span>${log.timeUtc ?? '--'}</span><button type="button" data-log-download="${log.id}">Download</button></div>`),
+    operationRows('logs'),
+    operationRows('parameters')
+  ].join('') || '<p class="empty">No onboard log list loaded</p>';
+  document.querySelectorAll<HTMLButtonElement>('[data-log-download]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const vehicleId = state.selected?.id ?? `${state.selected?.systemId ?? '--'}:${state.selected?.componentId ?? '--'}`;
+      void window.altairAnimus?.downloadOnboardLog?.(Number(button.dataset.logDownload), vehicleId).then((result) => {
+        document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
+      });
+    });
+  });
   const diag = vehicle?.diagnostics;
   document.querySelector<HTMLElement>('#diagnostics-list')!.innerHTML = diag
     ? `<div><strong>${escapeHtml(diag.linkId)}</strong><span>${escapeHtml(diag.transport)}</span><span>${escapeHtml(diag.status)}</span><span>${diag.packetsRx} rx</span></div>
@@ -353,6 +409,15 @@ function renderCommandHistory(snapshot: SessionSnapshotMessage | null): void {
       });
     });
   });
+}
+
+function operationRows(domain: string): string {
+  const operations = state.snapshot?.protocolOperations?.filter((operation) => operation.domain === domain).slice(0, 8) ?? [];
+  return operations.map((operation) => {
+    const progress = operation.progressPct === null ? '--' : `${operation.progressPct.toFixed(0)}%`;
+    const detail = operation.failureReason ?? operation.resultSummary ?? `${operation.sentPackets} tx / ${operation.receivedPackets} rx`;
+    return `<div><strong>${escapeHtml(operation.action)}</strong><span>${escapeHtml(operation.state)}</span><span>${escapeHtml(progress)}</span><span>${escapeHtml(detail)}</span></div>`;
+  }).join('');
 }
 
 function renderGuardedCommands(vehicle: VehicleStateMessage | null): void {
@@ -522,14 +587,68 @@ document.querySelector<HTMLButtonElement>('#plan-restore')!.addEventListener('cl
 document.querySelector<HTMLButtonElement>('#plan-upload')!.addEventListener('click', () => {
   const vehicleId = state.selected?.id ?? `${state.selected?.systemId ?? '--'}:${state.selected?.componentId ?? '--'}`;
   if (!window.confirm(`Upload ${state.mission.waypoints.length} waypoint mission to ${vehicleId}?`)) return;
-  void window.altairAnimus?.uploadMissionToSitl?.(state.mission, vehicleId).then((result) => {
+  void window.altairAnimus?.uploadMission?.(state.mission, vehicleId, true).then((result) => {
     document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
     updatePlanSurface(state.selected);
+  });
+});
+document.querySelector<HTMLButtonElement>('#plan-download')!.addEventListener('click', () => {
+  const vehicleId = state.selected?.id ?? `${state.selected?.systemId ?? '--'}:${state.selected?.componentId ?? '--'}`;
+  void window.altairAnimus?.downloadMission?.(vehicleId).then((result) => {
+    document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
+    if (result.plan) state.mission = result.plan;
+    updatePlanSurface(state.selected);
+  });
+});
+document.querySelector<HTMLButtonElement>('#plan-clear')!.addEventListener('click', () => {
+  const vehicleId = state.selected?.id ?? `${state.selected?.systemId ?? '--'}:${state.selected?.componentId ?? '--'}`;
+  if (window.prompt(`Type CLEAR MISSION to clear mission on ${vehicleId}`) !== 'CLEAR MISSION') return;
+  void window.altairAnimus?.clearMission?.(vehicleId, true).then((result) => {
+    document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
   });
 });
 document.querySelector<HTMLInputElement>('#parameter-filter')!.addEventListener('input', () => {
   if (state.snapshot) updateSetupSurface(state.selected);
 });
+document.querySelector<HTMLButtonElement>('#parameter-refresh')!.addEventListener('click', () => {
+  const vehicleId = state.selected?.id ?? `${state.selected?.systemId ?? '--'}:${state.selected?.componentId ?? '--'}`;
+  void window.altairAnimus?.refreshParameters?.(vehicleId).then((result) => {
+    document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
+  });
+});
+document.querySelector<HTMLButtonElement>('#onboard-log-list')!.addEventListener('click', () => {
+  const vehicleId = state.selected?.id ?? `${state.selected?.systemId ?? '--'}:${state.selected?.componentId ?? '--'}`;
+  void window.altairAnimus?.listOnboardLogs?.(vehicleId).then((result) => {
+    document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
+  });
+});
+document.querySelector<HTMLButtonElement>('#onboard-log-erase')!.addEventListener('click', () => {
+  const vehicleId = state.selected?.id ?? `${state.selected?.systemId ?? '--'}:${state.selected?.componentId ?? '--'}`;
+  if (window.prompt(`Type ERASE LOGS to erase onboard logs on ${vehicleId}`) !== 'ERASE LOGS') return;
+  void window.altairAnimus?.eraseOnboardLogs?.(vehicleId, true).then((result) => {
+    document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
+  });
+});
+document.querySelector<HTMLButtonElement>('#terrain-request')!.addEventListener('click', () => {
+  const vehicleId = state.selected?.id ?? `${state.selected?.systemId ?? '--'}:${state.selected?.componentId ?? '--'}`;
+  void window.altairAnimus?.requestTerrain?.(vehicleId).then((result) => {
+    document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
+  });
+});
+document.querySelectorAll<HTMLButtonElement>('[data-camera-action]').forEach((button) => button.addEventListener('click', () => {
+  const vehicleId = state.selected?.id ?? `${state.selected?.systemId ?? '--'}:${state.selected?.componentId ?? '--'}`;
+  const action = button.dataset.cameraAction;
+  const promise = action === 'capture'
+    ? window.altairAnimus?.cameraCapture?.(vehicleId)
+    : action === 'record-start'
+      ? window.altairAnimus?.cameraRecord?.(true, vehicleId)
+      : action === 'record-stop'
+        ? window.altairAnimus?.cameraRecord?.(false, vehicleId)
+        : window.altairAnimus?.cameraSetSetting?.(action === 'focus' ? 'focus' : 'zoom', Number(window.prompt(`Set ${action}`, '50') ?? '50'), vehicleId);
+  void promise?.then((result) => {
+    document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
+  });
+}));
 document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach((button) => button.addEventListener('click', () => scene.setCameraMode(button.dataset.camera as CameraMode)));
 document.querySelectorAll<HTMLButtonElement>('[data-hud]').forEach((button) => button.addEventListener('click', () => {
   state.hudMode = button.dataset.hud as HudMode;

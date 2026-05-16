@@ -6,7 +6,7 @@
 
 .hud-console {
   left: 24px;
-  right: 24px;
+  right: 258px;
   bottom: 22px;
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr);

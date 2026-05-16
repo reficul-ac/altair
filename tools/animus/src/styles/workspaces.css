@@ -345,7 +345,7 @@
 .tool-list div,
 .tool-list button {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -359,6 +359,12 @@
 
 .tool-list span {
   color: var(--muted);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.tool-list strong {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 

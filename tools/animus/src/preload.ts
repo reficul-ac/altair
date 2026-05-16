@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { MavlinkServiceConfig, SessionSnapshotPayload, VehicleStatePayload } from './mavlink.js';
 import type { ReplayTimelineMessage } from './state.js';
-import type { CommandAuditEntry, CommandDispatchResult, CommandTransaction, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MissionTransferState, MissionValidationResult, MockLinkState } from './state.js';
+import type { CommandAuditEntry, CommandDispatchResult, CommandTransaction, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MissionTransferState, MissionValidationResult, MockLinkState, ParameterEditRequest, ParameterEditResult } from './state.js';
 
 export type AltairAnimusApi = {
   onVehicleState: (callback: (message: VehicleStatePayload) => void) => () => void;
@@ -17,6 +17,18 @@ export type AltairAnimusApi = {
   loadMission: () => Promise<{ loaded: boolean; path?: string; plan?: MissionPlan; validation?: MissionValidationResult }>;
   uploadMissionToSitl: (plan: MissionPlan, vehicleId?: string) => Promise<MissionTransferState>;
   downloadMissionFromSitl: (vehicleId?: string) => Promise<MissionTransferState>;
+  refreshParameters: (vehicleId?: string) => Promise<ParameterEditResult>;
+  setParameter: (request: ParameterEditRequest) => Promise<ParameterEditResult>;
+  uploadMission: (plan: MissionPlan, vehicleId?: string, confirmed?: boolean) => Promise<MissionTransferState>;
+  downloadMission: (vehicleId?: string) => Promise<MissionTransferState>;
+  clearMission: (vehicleId?: string, confirmed?: boolean) => Promise<MissionTransferState>;
+  listOnboardLogs: (vehicleId?: string) => Promise<ParameterEditResult>;
+  downloadOnboardLog: (logId: number, vehicleId?: string) => Promise<ParameterEditResult>;
+  eraseOnboardLogs: (vehicleId?: string, confirmed?: boolean) => Promise<ParameterEditResult>;
+  requestTerrain: (vehicleId?: string) => Promise<ParameterEditResult>;
+  cameraCapture: (vehicleId?: string) => Promise<ParameterEditResult>;
+  cameraRecord: (recording: boolean, vehicleId?: string) => Promise<ParameterEditResult>;
+  cameraSetSetting: (setting: 'zoom' | 'focus', value: number, vehicleId?: string) => Promise<ParameterEditResult>;
   onReplayState: (callback: (message: ReplayTimelineMessage) => void) => () => void;
   openReplay: () => Promise<ReplayTimelineMessage>;
   importLog: () => Promise<ReplayTimelineMessage>;
@@ -84,6 +96,42 @@ const api: AltairAnimusApi = {
   },
   downloadMissionFromSitl(vehicleId) {
     return ipcRenderer.invoke('mission:download-sitl', vehicleId);
+  },
+  refreshParameters(vehicleId) {
+    return ipcRenderer.invoke('parameters:refresh', vehicleId);
+  },
+  setParameter(request) {
+    return ipcRenderer.invoke('parameters:set', request);
+  },
+  uploadMission(plan, vehicleId, confirmed) {
+    return ipcRenderer.invoke('mission:upload', plan, vehicleId, confirmed);
+  },
+  downloadMission(vehicleId) {
+    return ipcRenderer.invoke('mission:download', vehicleId);
+  },
+  clearMission(vehicleId, confirmed) {
+    return ipcRenderer.invoke('mission:clear', vehicleId, confirmed);
+  },
+  listOnboardLogs(vehicleId) {
+    return ipcRenderer.invoke('logs:list-onboard', vehicleId);
+  },
+  downloadOnboardLog(logId, vehicleId) {
+    return ipcRenderer.invoke('logs:download-onboard', logId, vehicleId);
+  },
+  eraseOnboardLogs(vehicleId, confirmed) {
+    return ipcRenderer.invoke('logs:erase-onboard', vehicleId, confirmed);
+  },
+  requestTerrain(vehicleId) {
+    return ipcRenderer.invoke('terrain:request', vehicleId);
+  },
+  cameraCapture(vehicleId) {
+    return ipcRenderer.invoke('camera:capture', vehicleId);
+  },
+  cameraRecord(recording, vehicleId) {
+    return ipcRenderer.invoke('camera:record', recording, vehicleId);
+  },
+  cameraSetSetting(setting, value, vehicleId) {
+    return ipcRenderer.invoke('camera:set-setting', setting, value, vehicleId);
   },
   openReplay() {
     return ipcRenderer.invoke('replay:open');

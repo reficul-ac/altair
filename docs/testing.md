@@ -75,6 +75,8 @@ npm run build --prefix tools/animus
 python3 tools/python/capture_animus_sitl.py
 ```
 
-The capture workflow starts a no-QGC live SITL session, opens Animus through Electron, captures the `flight`, `map`, and `inspector` workspaces at `1440x900`, and writes screenshots plus logs under `artifacts/animus-screenshots/<timestamp>/`.
+The capture workflow starts a no-QGC live SITL session, opens Animus through Electron, captures the `flight`, `map`, `inspector`, `plan`, `setup`, and `video` workspaces at `1440x900`, and writes screenshots plus logs under `artifacts/animus-screenshots/<timestamp>/`.
 
 Inspect the generated screenshots before review. Check that the 3D scene is nonblank, live link/telemetry state is visible, the selected workspace matches the file name, desktop layout is usable, and controls/text are not obviously clipped or overlapping. This workflow is required for Animus UI/layout changes even before it becomes a GitHub Actions status check; if it cannot run, note the reason and the residual visual risk in the review or final response.
+
+Protocol-backed GCS workflow changes should also include Vitest coverage for MAVLink encode/decode helpers, operation state transitions, authority blocking, timeouts, and confirmation rejection for the affected domains: parameters, mission transfer, terrain/map, onboard logs, and camera commands.

@@ -6,9 +6,14 @@ import {
   decodeMissionAck,
   decodeMissionRequestInt,
   encodeCommandLong,
+  encodeLogRequestData,
+  encodeLogRequestList,
   encodeMissionClearAll,
   encodeMissionCount,
   encodeMissionItemInt,
+  encodeParamRequestList,
+  encodeParamSet,
+  encodeTerrainCheck,
   inspectMavlinkProtocolFrames,
   LiveVehicleState,
   MavlinkTelemetryService,
@@ -340,6 +345,21 @@ describe('Electron MAVLink service', () => {
     expect(decoded[3].fields.throttle).toBeCloseTo(0.55);
   });
 
+  it('encodes parameter, log, and terrain operation packets behind MAVLink v1 CRCs', () => {
+    const parser = new MavlinkV1Parser();
+    const decoded = parser.feed(Buffer.concat([
+      encodeParamRequestList(1, 1),
+      encodeParamSet('ALT_HOLD', 12.5, 9, 1, 1),
+      encodeLogRequestList(1, 1, 0, 10),
+      encodeLogRequestData(7, 0, 900, 1, 1),
+      encodeTerrainCheck(37.5, -122.2)
+    ])).map((message) => decodeMavlinkMessage(message));
+    expect(decoded.map((message) => message.name)).toEqual(['PARAM_REQUEST_LIST', 'PARAM_SET', 'LOG_REQUEST_LIST', 'LOG_REQUEST_DATA', 'TERRAIN_CHECK']);
+    expect(decoded[1].fields.paramId).toBe('ALT_HOLD');
+    expect(decoded[3].fields.id).toBe(7);
+    expect(decoded[4].fields.latDeg).toBeCloseTo(37.5);
+  });
+
   it('decodes command and mission acknowledgements', () => {
     const commandAckPayload = Buffer.alloc(3);
     commandAckPayload.writeUInt16LE(400, 0);
@@ -421,13 +441,13 @@ describe('Electron MAVLink service', () => {
     service.handlePacket(heartbeat());
     expect(service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true })).toMatchObject({
       accepted: false,
-      reason: 'Animus writes require a SITL session started with --writable-animus.'
+      reason: 'Animus writes require --writable-animus or --trusted-live-writable at launch.'
     });
     expect(service.uploadMissionToSitl({
       schemaVersion: 1,
       source: 'bayek-v1',
       waypoints: [{ seq: 0, lat_deg: 37, lon_deg: -122, alt_m: 120, throttle: 0.5, acceptance_radius_m: 25 }]
-    }, '1:1')).toMatchObject({ accepted: false, state: 'rejected' });
+    }, '1:1')).toMatchObject({ accepted: false, state: 'blocked' });
   });
 
   it('creates a sent command transaction for writable SITL commands', () => {
@@ -449,6 +469,29 @@ describe('Electron MAVLink service', () => {
       params: [1],
       state: 'sent'
     });
+  });
+
+  it('creates protocol operations for parameter refresh and mission upload', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true });
+    const sent = makeWritable(service);
+    service.handlePacket(readyVehicle());
+    let session = null as ReturnType<VehicleRegistry['snapshot']> | null;
+    service.on('session-snapshot', (next) => {
+      session = next;
+    });
+
+    const parameters = service.refreshParameters('1:1');
+    const mission = service.uploadMission({
+      schemaVersion: 1,
+      source: 'bayek-v1',
+      waypoints: [{ seq: 0, lat_deg: 37, lon_deg: -122, alt_m: 120, throttle: 0.5, acceptance_radius_m: 25 }]
+    }, '1:1');
+
+    expect(parameters).toMatchObject({ accepted: true, state: 'waiting-ack', operationId: expect.any(String) });
+    expect(mission).toMatchObject({ accepted: true, state: 'waiting-ack', operationId: expect.any(String) });
+    expect(sent.length).toBeGreaterThanOrEqual(4);
+    expect(session?.protocolOperations?.map((operation) => operation.domain)).toEqual(expect.arrayContaining(['parameters', 'mission']));
+    expect(session?.operationAudit?.[0]).toMatchObject({ eventKind: 'operation-sent' });
   });
 
   it('emits audit event for successful command dispatch with transaction id', () => {

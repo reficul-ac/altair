@@ -76,7 +76,7 @@ export function defaultCommandCapabilities(liveLink: boolean, writableLink = fal
 } = {}): CommandCapabilityState {
   const stale = options.packetAgeS === null || options.packetAgeS === undefined ? false : options.packetAgeS >= 2;
   const authority = options.authority ?? (writableLink ? 'sitl-writable' : 'read-only');
-  const baseReady = liveLink && writableLink && !stale && authority === 'sitl-writable';
+  const baseReady = liveLink && writableLink && !stale && (authority === 'sitl-writable' || authority === 'trusted-live-writable' || authority === 'maintenance-setup');
   const preflightReady = !options.readiness || options.readiness.overall === 'ready' || options.readiness.overall === 'warning';
   const supported = (baseReady
     ? [

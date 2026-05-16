@@ -19,6 +19,7 @@ import { createMockLink, defaultCommandCapabilities, evaluateGuardedCommand } fr
 import { validateMission } from './state.js';
 import { createCommandAuditLog } from './command-audit.js';
 import type { CommandAuditEntry, CommandDispatchResult, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MockLinkState } from './state.js';
+import type { OperationAuditEntry, ParameterEditRequest } from './state.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, '..');
@@ -46,6 +47,13 @@ function parseArgs(argv: string[]): Partial<MavlinkServiceConfig> {
       config.qgcForwarding = true;
     } else if (arg === '--writable-animus') {
       config.writableAnimus = true;
+      config.authorityMode = 'sitl-writable';
+    } else if (arg === '--trusted-live-writable') {
+      config.writableAnimus = true;
+      config.authorityMode = 'trusted-live-writable';
+    } else if (arg === '--maintenance-setup') {
+      config.writableAnimus = true;
+      config.authorityMode = 'maintenance-setup';
     }
   }
   if (qgcEndpoints.length > 0) {
@@ -57,6 +65,7 @@ function parseArgs(argv: string[]): Partial<MavlinkServiceConfig> {
 const telemetry = new MavlinkTelemetryService(parseArgs(process.argv.slice(1)), animusSessionContext);
 const replay = new ReplaySession();
 const commandAuditLog = createCommandAuditLog(path.join(app.getPath('userData'), 'command-audit.jsonl'));
+const operationAuditLog = createCommandAuditLog(path.join(app.getPath('userData'), 'operation-audit.jsonl'));
 let recentCommandAudit: CommandAuditEntry[] = [];
 let mockLink: MockLinkState | null = null;
 
@@ -104,14 +113,14 @@ function buildRejectedCommandAuditEntry(request: GuardedCommandRequest, reason: 
     reason,
     failureReason: reason,
     ack: null,
-    authority: writable ? 'sitl-writable' : 'read-only',
+    authority: telemetry.getConfig().authorityMode,
     writable,
     retryCount: 0,
     appSource: animusSessionContext.appSource,
     processSource: animusSessionContext.processSource,
     commandOrigin: request.originSurface ?? 'unknown',
     vehicleTarget: request.vehicleId,
-    authorityMode: writable ? 'sitl-writable' : 'read-only',
+    authorityMode: telemetry.getConfig().authorityMode,
     writableEndpoint: telemetry.linkState().blockedReason ? null : undefined,
     qgcForwarding: telemetry.getConfig().qgcForwarding,
     confirmationResult: request.confirmationResult ?? (request.confirmed ? 'accepted' : 'rejected')
@@ -177,6 +186,19 @@ ipcMain.handle('mission:load', async () => {
 });
 ipcMain.handle('mission:upload-sitl', (_event, plan: MissionPlan, vehicleId?: string) => telemetry.uploadMissionToSitl(plan, vehicleId));
 ipcMain.handle('mission:download-sitl', (_event, vehicleId?: string) => telemetry.downloadMissionFromSitl(vehicleId));
+ipcMain.handle('parameters:refresh', (_event, vehicleId?: string) => telemetry.refreshParameters(vehicleId));
+ipcMain.handle('parameters:set', (_event, request: ParameterEditRequest) => telemetry.setParameter(request));
+ipcMain.handle('mission:upload', (_event, plan: MissionPlan, vehicleId?: string, confirmed?: boolean) => telemetry.uploadMission(plan, vehicleId, Boolean(confirmed)));
+ipcMain.handle('mission:download', (_event, vehicleId?: string) => telemetry.downloadMission(vehicleId));
+ipcMain.handle('mission:clear', (_event, vehicleId?: string, confirmed?: boolean) => telemetry.clearMission(vehicleId, Boolean(confirmed)));
+ipcMain.handle('logs:list-onboard', (_event, vehicleId?: string) => telemetry.listLogs(vehicleId));
+ipcMain.handle('logs:download-onboard', async (_event, logId: number, vehicleId?: string) => telemetry.downloadLog(Number(logId), vehicleId));
+ipcMain.handle('logs:erase-onboard', (_event, vehicleId?: string, confirmed?: boolean) => telemetry.eraseLogs(vehicleId, Boolean(confirmed)));
+ipcMain.handle('terrain:request', (_event, vehicleId?: string) => telemetry.requestTerrain(vehicleId));
+ipcMain.handle('terrain:check', (_event, vehicleId?: string) => telemetry.requestTerrain(vehicleId));
+ipcMain.handle('camera:capture', (_event, vehicleId?: string) => telemetry.cameraAction('capture', vehicleId));
+ipcMain.handle('camera:record', (_event, recording: boolean, vehicleId?: string) => telemetry.cameraAction(recording ? 'record-start' : 'record-stop', vehicleId));
+ipcMain.handle('camera:set-setting', (_event, setting: 'zoom' | 'focus', value: number, vehicleId?: string) => telemetry.cameraAction(setting === 'focus' ? 'focus' : 'zoom', vehicleId, Number(value)));
 ipcMain.handle('replay:open', async () => {
   const result = await dialog.showOpenDialog({
     title: 'Open Altair replay',
@@ -284,6 +306,9 @@ telemetry.on('config', (config: MavlinkServiceConfig) => sendToWindows('mavlink-
 telemetry.on('session-snapshot', (snapshot: SessionSnapshotPayload) => sendToWindows('session-snapshot', snapshot));
 telemetry.on('command-audit', (entry: CommandAuditEntry) => {
   void appendAudit(entry).catch((error) => console.error('Failed to append command audit entry', error));
+});
+telemetry.on('operation-audit', (entry: OperationAuditEntry) => {
+  void operationAuditLog.append(entry as unknown as CommandAuditEntry).catch((error) => console.error('Failed to append operation audit entry', error));
 });
 replay.on('session-snapshot', (snapshot) => sendToWindows('session-snapshot', snapshot as SessionSnapshotPayload));
 replay.on('state', (state) => sendToWindows('replay-state', state));

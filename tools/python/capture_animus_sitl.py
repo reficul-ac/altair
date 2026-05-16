@@ -53,7 +53,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--duration must be positive")
     if args.warmup < 0:
         parser.error("--warmup must be non-negative")
-    args.workspaces = args.workspaces or ["flight", "map", "inspector"]
+    args.workspaces = args.workspaces or ["flight", "map", "inspector", "plan", "setup", "video"]
     args.viewports = args.viewports or ["1440x900"]
     return args
 

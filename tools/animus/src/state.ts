@@ -81,6 +81,16 @@ export type VehicleStateMessage = {
   geofences?: GeofenceZone[];
   rallyPoints?: RallyPoint[];
   cameraStreams?: CameraStream[];
+  logs?: LogListEntry[];
+  terrain?: {
+    latDeg: number | null;
+    lonDeg: number | null;
+    spacingM: number | null;
+    terrainHeightM: number | null;
+    currentHeightM: number | null;
+    pending: number | null;
+    loaded: number | null;
+  };
   commandCapabilities?: CommandCapabilityState;
   parameters?: ParameterValue[];
   diagnostics?: LinkDiagnostics;
@@ -124,6 +134,8 @@ export type SessionSnapshotMessage = {
   mockLinks?: MockLinkState[];
   commandTransactions?: CommandTransaction[];
   commandAudit?: CommandAuditEntry[];
+  protocolOperations?: ProtocolOperation[];
+  operationAudit?: OperationAuditEntry[];
 };
 
 export type ReplaySourceType = 'altair-session' | 'ulog-import' | 'mavlink-live' | 'mock-link' | 'csv-import';
@@ -302,13 +314,135 @@ export type CommandAuditEntry = {
 
 export type MissionTransferState = {
   accepted: boolean;
-  direction: 'upload' | 'download';
+  direction: 'upload' | 'download' | 'clear';
   vehicleId: string;
   waypointCount: number;
-  state: 'idle' | 'validating' | 'sending' | 'waiting-ack' | 'complete' | 'rejected' | 'failed';
+  state: ProtocolOperationState;
   reason: string;
   sentPackets: number;
   validation: MissionValidationResult;
+  operationId?: string | null;
+  plan?: MissionPlan | null;
+};
+
+export type ProtocolOperationState =
+  | 'idle'
+  | 'validating'
+  | 'sending'
+  | 'waiting'
+  | 'waiting-ack'
+  | 'receiving'
+  | 'complete'
+  | 'blocked'
+  | 'rejected'
+  | 'failed'
+  | 'timeout'
+  | 'cancelled';
+
+export type ProtocolOperationDomain = 'parameters' | 'mission' | 'logs' | 'terrain' | 'camera';
+
+export type ProtocolOperation = {
+  id: string;
+  domain: ProtocolOperationDomain;
+  action: string;
+  vehicleId: string;
+  state: ProtocolOperationState;
+  createdAtS: number;
+  updatedAtS: number;
+  deadlineS: number | null;
+  retryCount: number;
+  timeoutS: number;
+  sentPackets: number;
+  receivedPackets: number;
+  progressPct: number | null;
+  resultSummary: string | null;
+  failureReason: string | null;
+  cancellationEligible?: boolean;
+  retryEligible?: boolean;
+  payload?: Record<string, unknown>;
+};
+
+export type OperationAuditEventKind =
+  | 'operation-blocked'
+  | 'operation-sent'
+  | 'operation-progress'
+  | 'operation-complete'
+  | 'operation-timeout'
+  | 'operation-cancelled'
+  | 'operation-failed';
+
+export type OperationAuditEntry = {
+  schemaVersion: 1;
+  eventKind: OperationAuditEventKind;
+  operationId: string | null;
+  sessionId: string;
+  operatorId: string;
+  timestamp: string;
+  vehicleId: string;
+  domain: ProtocolOperationDomain;
+  action: string;
+  payload: Record<string, unknown>;
+  accepted: boolean;
+  state: ProtocolOperationState;
+  reason: string;
+  failureReason?: string | null;
+  authority: CommandAuthorityMode;
+  writable: boolean;
+  retryCount: number;
+  appSource?: string;
+  processSource?: string;
+  originSurface?: string;
+  authorityMode?: CommandAuthorityMode;
+  writableEndpoint?: string | null;
+  qgcForwarding?: boolean;
+  protocolSummary?: string;
+  confirmationType?: CommandConfirmationType | 'typed-operation';
+  confirmationResult?: 'accepted' | 'rejected';
+};
+
+export type ParameterEditRequest = {
+  vehicleId: string;
+  name: string;
+  value: number | string | boolean;
+  paramType?: number | null;
+  confirmed: boolean;
+  confirmationType?: CommandConfirmationType | 'typed-operation';
+  originSurface?: string;
+};
+
+export type ParameterEditResult = {
+  accepted: boolean;
+  vehicleId: string;
+  name?: string;
+  state: ProtocolOperationState;
+  reason: string;
+  operationId: string | null;
+};
+
+export type LogListEntry = {
+  id: number;
+  numLogs: number | null;
+  lastLogNum: number | null;
+  timeUtc: number | null;
+  sizeBytes: number;
+};
+
+export type LogDownloadOperation = ProtocolOperation & {
+  domain: 'logs';
+  action: 'download';
+  logId: number;
+  receivedBytes: number;
+  sizeBytes: number | null;
+  filePath?: string | null;
+};
+
+export type TerrainOperation = ProtocolOperation & {
+  domain: 'terrain';
+  action: 'request' | 'check';
+};
+
+export type CameraOperation = ProtocolOperation & {
+  domain: 'camera';
 };
 
 export type RallyPoint = {
@@ -347,6 +481,12 @@ export type CameraStream = {
   captureSupported: boolean;
   recordingSupported: boolean;
   telemetrySubtitleSupported: boolean;
+  vendorName?: string | null;
+  modelName?: string | null;
+  resolution?: string | null;
+  zoomLevel?: number | null;
+  focusLevel?: number | null;
+  storageFreeMb?: number | null;
 };
 
 export type CommandName =

@@ -9,8 +9,10 @@ import type {
   CommandDispatchResult,
   CommandName,
   CommandTransaction,
+  CommandAuthorityMode,
   GuardedCommandRequest,
   LinkDiagnostics,
+  LogListEntry,
   MavlinkProtocolDiagnostics,
   MissionPlan,
   MissionState,
@@ -22,7 +24,14 @@ import type {
   NormalizedFlightMode,
   FirmwareIdentity,
   VehicleReadiness,
-  WritableLinkState
+  WritableLinkState,
+  OperationAuditEntry,
+  ParameterEditRequest,
+  ParameterEditResult,
+  ParameterValue,
+  ProtocolOperation,
+  ProtocolOperationDomain,
+  ProtocolOperationState
 } from './state.js';
 
 export const MAVLINK_V1_STX = 0xfe;
@@ -111,6 +120,7 @@ export type MavlinkServiceConfig = {
   qgcForwarding: boolean;
   qgcEndpoints: Endpoint[];
   writableAnimus: boolean;
+  authorityMode: CommandAuthorityMode;
 };
 
 export type AnimusSessionContext = {
@@ -122,6 +132,7 @@ export type AnimusSessionContext = {
 
 export type VehicleStatePayload = {
   type: 'vehicle_state';
+  id?: string;
   connected: boolean;
   packetAgeS: number | null;
   heartbeatAgeS: number | null;
@@ -185,7 +196,33 @@ export type VehicleStatePayload = {
   mission?: {
     activeSeq: number | null;
     state?: MissionState;
+    waypoints?: {
+      seq: number;
+      latDeg: number;
+      lonDeg: number;
+      altitudeM: number | null;
+      command?: string | null;
+      frame?: string | null;
+    }[];
   };
+  home?: {
+    latDeg: number;
+    lonDeg: number;
+    altitudeM: number;
+  };
+  parameters?: ParameterValue[];
+  logs?: LogListEntry[];
+  terrain?: {
+    latDeg: number | null;
+    lonDeg: number | null;
+    spacingM: number | null;
+    terrainHeightM: number | null;
+    currentHeightM: number | null;
+    pending: number | null;
+    loaded: number | null;
+  };
+  geofences?: [];
+  rallyPoints?: [];
   commandCapabilities?: CommandCapabilityState;
   diagnostics?: LinkDiagnostics;
   cameraStreams?: CameraStream[];
@@ -231,6 +268,8 @@ export type SessionSnapshotPayload = {
   mockLinks?: MockLinkState[];
   commandTransactions?: CommandTransaction[];
   commandAudit?: CommandAuditEntry[];
+  protocolOperations?: ProtocolOperation[];
+  operationAudit?: OperationAuditEntry[];
 };
 
 export function x25Crc(data: Uint8Array, crc = 0xffff): number {
@@ -258,6 +297,11 @@ export const MAV_CMD = {
   NAV_RETURN_TO_LAUNCH: 20,
   NAV_LAND: 21,
   NAV_TAKEOFF: 22,
+  IMAGE_START_CAPTURE: 2000,
+  VIDEO_START_CAPTURE: 2500,
+  VIDEO_STOP_CAPTURE: 2501,
+  SET_CAMERA_ZOOM: 531,
+  SET_CAMERA_FOCUS: 532,
   COMPONENT_ARM_DISARM: 400,
   DO_GO_AROUND: 191,
   DO_PAUSE_CONTINUE: 193,
@@ -266,8 +310,10 @@ export const MAV_CMD = {
 } as const;
 
 const COMMAND_TRANSACTION_TIMEOUT_S = 2;
+const PROTOCOL_OPERATION_TIMEOUT_S = 5;
 const MAX_COMMAND_TRANSACTIONS = 80;
 const MAX_COMMAND_AUDIT_SNAPSHOT_ENTRIES = 20;
+const MAX_PROTOCOL_OPERATIONS = 120;
 
 export const MAV_RESULT_LABELS: Record<number, string> = {
   0: 'accepted',
@@ -302,6 +348,18 @@ export function encodeMissionClearAll(targetSystem: number, targetComponent: num
   return mavlinkV1Frame(45, Buffer.from([targetSystem, targetComponent]), seq, sourceSystem, sourceComponent);
 }
 
+export function encodeMissionRequestList(targetSystem: number, targetComponent: number, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
+  return mavlinkV1Frame(43, Buffer.from([targetSystem, targetComponent]), seq, sourceSystem, sourceComponent);
+}
+
+export function encodeMissionRequestInt(itemSeq: number, targetSystem: number, targetComponent: number, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
+  const payload = Buffer.alloc(4);
+  payload.writeUInt16LE(itemSeq, 0);
+  payload.writeUInt8(targetSystem, 2);
+  payload.writeUInt8(targetComponent, 3);
+  return mavlinkV1Frame(51, payload, seq, sourceSystem, sourceComponent);
+}
+
 export function encodeMissionItemInt(waypoint: MissionPlan['waypoints'][number], targetSystem: number, targetComponent: number, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
   const payload = Buffer.alloc(37);
   payload.writeFloatLE(waypoint.acceptance_radius_m, 0);
@@ -319,6 +377,54 @@ export function encodeMissionItemInt(waypoint: MissionPlan['waypoints'][number],
   payload.writeUInt8(waypoint.seq === 0 ? 1 : 0, 35);
   payload.writeUInt8(1, 36);
   return mavlinkV1Frame(73, payload, seq, sourceSystem, sourceComponent);
+}
+
+export function encodeParamRequestList(targetSystem: number, targetComponent: number, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
+  return mavlinkV1Frame(21, Buffer.from([targetSystem, targetComponent]), seq, sourceSystem, sourceComponent);
+}
+
+export function encodeParamSet(name: string, value: number, paramType: number, targetSystem: number, targetComponent: number, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
+  const payload = Buffer.alloc(23);
+  payload.writeFloatLE(value, 0);
+  payload.writeUInt8(targetSystem, 4);
+  payload.writeUInt8(targetComponent, 5);
+  payload.write(name.slice(0, 16), 6, 'ascii');
+  payload.writeUInt8(paramType, 22);
+  return mavlinkV1Frame(23, payload, seq, sourceSystem, sourceComponent);
+}
+
+export function encodeLogRequestList(targetSystem: number, targetComponent: number, start = 0, end = 0xffff, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
+  const payload = Buffer.alloc(6);
+  payload.writeUInt16LE(start, 0);
+  payload.writeUInt16LE(end, 2);
+  payload.writeUInt8(targetSystem, 4);
+  payload.writeUInt8(targetComponent, 5);
+  return mavlinkV1Frame(117, payload, seq, sourceSystem, sourceComponent);
+}
+
+export function encodeLogRequestData(logId: number, offset: number, count: number, targetSystem: number, targetComponent: number, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
+  const payload = Buffer.alloc(12);
+  payload.writeUInt32LE(offset, 0);
+  payload.writeUInt32LE(count, 4);
+  payload.writeUInt16LE(logId, 8);
+  payload.writeUInt8(targetSystem, 10);
+  payload.writeUInt8(targetComponent, 11);
+  return mavlinkV1Frame(119, payload, seq, sourceSystem, sourceComponent);
+}
+
+export function encodeLogErase(targetSystem: number, targetComponent: number, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
+  return mavlinkV1Frame(121, Buffer.from([targetSystem, targetComponent]), seq, sourceSystem, sourceComponent);
+}
+
+export function encodeLogRequestEnd(targetSystem: number, targetComponent: number, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
+  return mavlinkV1Frame(122, Buffer.from([targetSystem, targetComponent]), seq, sourceSystem, sourceComponent);
+}
+
+export function encodeTerrainCheck(latDeg: number, lonDeg: number, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
+  const payload = Buffer.alloc(8);
+  payload.writeInt32LE(Math.round(latDeg * 1e7), 0);
+  payload.writeInt32LE(Math.round(lonDeg * 1e7), 4);
+  return mavlinkV1Frame(135, payload, seq, sourceSystem, sourceComponent);
 }
 
 export function decodeCommandAck(message: MavlinkMessage): { command: number; result: number; label: string } | null {
@@ -1034,6 +1140,19 @@ export class LiveVehicleState {
   missionCount: number | null = null;
   missionAckType: number | null = null;
   lastStatusText: string | null = null;
+  home: { latDeg: number; lonDeg: number; altitudeM: number } | null = null;
+  terrain: VehicleStatePayload['terrain'] | null = null;
+  readonly parameters = new Map<string, ParameterValue & { index?: number | null; count?: number | null; updatedAtS?: number }>();
+  readonly missionItems = new Map<number, {
+    seq: number;
+    latDeg: number;
+    lonDeg: number;
+    altitudeM: number | null;
+    command?: string | null;
+    frame?: string | null;
+  }>();
+  readonly logs = new Map<number, LogListEntry>();
+  camera: CameraStream | null = null;
   readonly trail: { eastM: number; northM: number; upM: number; timestampS: number }[] = [];
 
   apply(message: MavlinkMessage, nowS = performanceNowS()): void {
@@ -1163,8 +1282,17 @@ export class LiveVehicleState {
       },
       mission: {
         activeSeq: this.missionSeq,
-        state: missionState
+        state: missionState,
+        waypoints: [...this.missionItems.values()].sort((a, b) => a.seq - b.seq)
       },
+      home: this.home ? { ...this.home } : undefined,
+      parameters: [...this.parameters.values()]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((param) => ({ ...param })),
+      logs: [...this.logs.values()].sort((a, b) => a.id - b.id).map((entry) => ({ ...entry })),
+      terrain: this.terrain ? { ...this.terrain } : undefined,
+      geofences: [],
+      rallyPoints: [],
       commandCapabilities: defaultCommandCapabilities(connected, false, { packetAgeS, readiness }),
       diagnostics: {
         linkId: `${this.systemId ?? 'unknown'}:${this.componentId ?? 'unknown'}`,
@@ -1176,8 +1304,8 @@ export class LiveVehicleState {
         drops: 0,
         lastError: null
       },
-      cameraStreams: [{
-        id: `${this.systemId ?? 'unknown'}-mock-camera`,
+      cameraStreams: [this.camera ?? {
+        id: `${this.systemId ?? 'unknown'}-mavlink-camera`,
         label: 'MAVLink camera metadata',
         kind: 'mock',
         uri: null,
@@ -1213,13 +1341,114 @@ export class LiveVehicleState {
       this.missionSeq = num(f.seq);
     } else if (message.msgId === 44) {
       this.missionCount = num(f.count);
+    } else if (message.msgId === 22) {
+      const name = str(f.paramId);
+      const value = num(f.paramValue);
+      const type = num(f.paramType);
+      if (name && value !== null) {
+        this.parameters.set(name, {
+          name,
+          value,
+          type: mavParamTypeLabel(type),
+          readonly: false,
+          index: num(f.paramIndex),
+          count: num(f.paramCount),
+          updatedAtS: performanceNowS()
+        });
+      }
+    } else if (message.msgId === 39 || message.msgId === 73) {
+      const seq = num(f.seq);
+      const command = num(f.command);
+      if (seq !== null && command !== null) {
+        const latDeg = message.msgId === 73 ? (num(f.xLatE7) ?? 0) / 1e7 : num(f.x);
+        const lonDeg = message.msgId === 73 ? (num(f.yLonE7) ?? 0) / 1e7 : num(f.y);
+        const altitudeM = message.msgId === 73 ? num(f.zAltM) : num(f.z);
+        if (latDeg !== null && lonDeg !== null) {
+          this.missionItems.set(seq, {
+            seq,
+            latDeg,
+            lonDeg,
+            altitudeM,
+            command: command === MAV_CMD.NAV_WAYPOINT ? 'WAYPOINT' : `MAV_CMD ${command}`,
+            frame: f.frame === null || f.frame === undefined ? null : `MAV_FRAME ${f.frame}`
+          });
+        }
+      }
     } else if (message.msgId === 47) {
       this.missionAckType = num(f.type);
+    } else if (message.msgId === 118) {
+      const id = num(f.id);
+      const sizeBytes = num(f.sizeBytes);
+      if (id !== null && sizeBytes !== null) {
+        this.logs.set(id, {
+          id,
+          numLogs: num(f.numLogs),
+          lastLogNum: num(f.lastLogNum),
+          timeUtc: num(f.timeUtc),
+          sizeBytes
+        });
+      }
+    } else if (message.msgId === 136) {
+      this.terrain = {
+        latDeg: num(f.latDeg),
+        lonDeg: num(f.lonDeg),
+        spacingM: num(f.spacingM),
+        terrainHeightM: num(f.terrainHeightM),
+        currentHeightM: num(f.currentHeightM),
+        pending: num(f.pending),
+        loaded: num(f.loaded)
+      };
     } else if (message.msgId === 147) {
       this.batteryRemainingPct = num(f.batteryRemainingPct);
       this.batteryVoltageV = num(f.voltageBatteryV);
+    } else if (message.msgId === 242) {
+      const latDeg = num(f.latDeg);
+      const lonDeg = num(f.lonDeg);
+      const altitudeM = num(f.altitudeM);
+      if (latDeg !== null && lonDeg !== null && altitudeM !== null) {
+        this.home = { latDeg, lonDeg, altitudeM };
+      }
     } else if (message.msgId === 253) {
       this.lastStatusText = str(f.text);
+    } else if (message.msgId === 259) {
+      const vendorName = str(f.vendorName);
+      const modelName = str(f.modelName);
+      const resolutionH = num(f.resolutionH);
+      const resolutionV = num(f.resolutionV);
+      this.camera = {
+        id: `${message.systemId}-${message.componentId}-camera`,
+        label: [vendorName, modelName].filter(Boolean).join(' ') || 'MAVLink camera',
+        kind: 'mock',
+        uri: null,
+        status: 'available',
+        captureSupported: true,
+        recordingSupported: true,
+        telemetrySubtitleSupported: true,
+        vendorName,
+        modelName,
+        resolution: resolutionH && resolutionV ? `${resolutionH}x${resolutionV}` : null,
+        zoomLevel: this.camera?.zoomLevel ?? null,
+        focusLevel: this.camera?.focusLevel ?? null,
+        storageFreeMb: this.camera?.storageFreeMb ?? null
+      };
+    } else if (message.msgId === 260 || message.msgId === 262) {
+      const base = this.camera ?? {
+        id: `${message.systemId}-${message.componentId}-camera`,
+        label: 'MAVLink camera',
+        kind: 'mock' as const,
+        uri: null,
+        status: 'available' as const,
+        captureSupported: true,
+        recordingSupported: true,
+        telemetrySubtitleSupported: true
+      };
+      this.camera = {
+        ...base,
+        status: num(f.videoStatus) === 1 ? 'recording' : base.status,
+        zoomLevel: num(f.zoomLevel) ?? base.zoomLevel ?? null,
+        focusLevel: num(f.focusLevel) ?? base.focusLevel ?? null,
+        storageFreeMb: num(f.availableCapacityMb) ?? base.storageFreeMb ?? null
+      };
     }
   }
 
@@ -1395,6 +1624,27 @@ function boolish(value: number | string | null | undefined): boolean | null {
     return null;
   }
   return value !== 0;
+}
+
+function mavParamTypeLabel(paramType: number | null): ParameterValue['type'] {
+  switch (paramType) {
+    case 1:
+    case 2:
+      return 'int';
+    case 3:
+    case 4:
+      return 'int';
+    case 5:
+    case 6:
+      return 'int';
+    case 7:
+      return 'int';
+    case 8:
+    case 9:
+      return 'float';
+    default:
+      return 'float';
+  }
 }
 
 class MessageStatsStore {
@@ -1605,8 +1855,12 @@ export class MavlinkTelemetryService extends EventEmitter {
   private lastRemote: Endpoint | null = null;
   private txSeq = 1;
   private commandTransactionSeq = 1;
+  private operationSeq = 1;
   private readonly commandTransactions: CommandTransaction[] = [];
   private readonly commandAudit: CommandAuditEntry[] = [];
+  private readonly protocolOperations: ProtocolOperation[] = [];
+  private readonly operationAudit: OperationAuditEntry[] = [];
+  private readonly logDownloadBuffers = new Map<string, Buffer[]>();
   private readonly protocolTracker = new MavlinkProtocolTracker();
   private readonly sessionContext: AnimusSessionContext;
 
@@ -1702,10 +1956,11 @@ export class MavlinkTelemetryService extends EventEmitter {
       liveLink: selected.connected,
       writable: this.config.writableAnimus,
       transport: 'udp',
-      mode: this.config.writableAnimus ? 'sitl-writable' : 'read-only',
+      mode: this.config.authorityMode,
       blockedReason: defaultCommandCapabilities(selected.connected, this.config.writableAnimus, {
         packetAgeS: selected.packetAgeS,
-        readiness: selected.status?.readiness
+        readiness: selected.status?.readiness,
+        authority: this.config.authorityMode
       }).blockedReason
     };
   }
@@ -1722,6 +1977,7 @@ export class MavlinkTelemetryService extends EventEmitter {
       this.state.apply(message, nowS);
       this.registry.apply(message, nowS);
       this.applyCommandAck(message, nowS);
+      this.applyProtocolMessage(message, nowS);
     }
     this.expireCommandTransactionsForSnapshot(nowS);
     const payload = this.registry.selectedVehicle(nowS);
@@ -1969,67 +2225,174 @@ export class MavlinkTelemetryService extends EventEmitter {
     return { ...transaction, params: [...transaction.params], ack: transaction.ack ? { ...transaction.ack } : null, cancellationEligible: false };
   }
 
-  uploadMissionToSitl(plan: MissionPlan, vehicleId = this.registry.selectedVehicleId ?? ''): MissionTransferState {
-    const validation = validateMission(plan);
-    const vehicle = this.registry.selectedVehicle();
-    const target = parseVehicleTarget(vehicleId, vehicle);
-    const blocked = this.writeBlocked(true, target);
-    if (!validation.valid || blocked) {
-      return {
-        accepted: false,
-        direction: 'upload',
-        vehicleId,
-        waypointCount: plan.waypoints.length,
-        state: 'rejected',
-        reason: blocked ?? validation.issues.map((issue) => issue.message).join('; '),
-        sentPackets: 0,
-        validation
-      };
-    }
-    if (!target) {
-      return {
-        accepted: false,
-        direction: 'upload',
-        vehicleId,
-        waypointCount: plan.waypoints.length,
-        state: 'rejected',
-        reason: 'no live vehicle link advertises mission support',
-        sentPackets: 0,
-        validation
-      };
-    }
-    const frames = [
-      encodeMissionClearAll(target.systemId, target.componentId, this.nextSeq()),
-      encodeMissionCount(plan.waypoints.length, target.systemId, target.componentId, this.nextSeq()),
-      ...plan.waypoints.map((waypoint) => encodeMissionItemInt(waypoint, target.systemId, target.componentId, this.nextSeq()))
-    ];
-    for (const frame of frames) this.sendFrame(frame);
-    this.registry.addMarker(`Mission upload sent (${plan.waypoints.length} waypoint${plan.waypoints.length === 1 ? '' : 's'})`, performanceNowS(), vehicleId);
-    this.emit('session-snapshot', this.snapshot());
-    return {
-      accepted: true,
-      direction: 'upload',
+  refreshParameters(vehicleId = this.registry.selectedVehicleId ?? '', originSurface = 'setup-parameters'): ParameterEditResult {
+    return this.sendSimpleOperation({
+      domain: 'parameters',
+      action: 'refresh',
       vehicleId,
-      waypointCount: plan.waypoints.length,
-      state: 'waiting-ack',
-      reason: 'mission transfer packets sent on writable SITL link',
-      sentPackets: frames.length,
-      validation
-    };
+      confirmed: true,
+      originSurface,
+      frames: (target) => [encodeParamRequestList(target.systemId, target.componentId, this.nextSeq())],
+      resultSummary: 'parameter list refresh requested'
+    });
+  }
+
+  setParameter(request: ParameterEditRequest): ParameterEditResult {
+    const numericValue = typeof request.value === 'boolean' ? (request.value ? 1 : 0) : Number(request.value);
+    if (!Number.isFinite(numericValue) || request.name.trim().length === 0 || request.name.length > 16) {
+      return { accepted: false, vehicleId: request.vehicleId, name: request.name, state: 'rejected', reason: 'parameter edit requires a numeric value and a MAVLink parameter name up to 16 characters', operationId: null };
+    }
+    const result = this.sendSimpleOperation({
+      domain: 'parameters',
+      action: 'set',
+      vehicleId: request.vehicleId,
+      confirmed: request.confirmed,
+      originSurface: request.originSurface ?? 'setup-parameters',
+      confirmationType: request.confirmationType,
+      payload: { name: request.name, value: numericValue, paramType: request.paramType ?? 9 },
+      frames: (target) => [encodeParamSet(request.name, numericValue, request.paramType ?? 9, target.systemId, target.componentId, this.nextSeq())],
+      resultSummary: `parameter ${request.name} set requested`
+    });
+    return { ...result, name: request.name };
+  }
+
+  uploadMission(plan: MissionPlan, vehicleId = this.registry.selectedVehicleId ?? '', confirmed = true, originSurface = 'plan-mission'): MissionTransferState {
+    const validation = validateMission(plan);
+    if (!validation.valid) {
+      return { accepted: false, direction: 'upload', vehicleId, waypointCount: plan.waypoints.length, state: 'rejected', reason: validation.issues.map((issue) => issue.message).join('; '), sentPackets: 0, validation, operationId: null, plan: null };
+    }
+    const result = this.sendSimpleOperation({
+      domain: 'mission',
+      action: 'upload',
+      vehicleId,
+      confirmed,
+      originSurface,
+      payload: { waypointCount: plan.waypoints.length },
+      frames: (target) => [
+        encodeMissionClearAll(target.systemId, target.componentId, this.nextSeq()),
+        encodeMissionCount(plan.waypoints.length, target.systemId, target.componentId, this.nextSeq()),
+        ...plan.waypoints.map((waypoint) => encodeMissionItemInt(waypoint, target.systemId, target.componentId, this.nextSeq()))
+      ],
+      resultSummary: `mission upload started (${plan.waypoints.length} waypoints)`
+    });
+    return { accepted: result.accepted, direction: 'upload', vehicleId, waypointCount: plan.waypoints.length, state: result.state, reason: result.reason, sentPackets: this.protocolOperations.find((op) => op.id === result.operationId)?.sentPackets ?? 0, validation, operationId: result.operationId, plan: null };
+  }
+
+  downloadMission(vehicleId = this.registry.selectedVehicleId ?? '', confirmed = true, originSurface = 'plan-mission'): MissionTransferState {
+    const validation = validateMission({ schemaVersion: 1, source: 'bayek-v1', waypoints: [] });
+    const result = this.sendSimpleOperation({
+      domain: 'mission',
+      action: 'download',
+      vehicleId,
+      confirmed,
+      originSurface,
+      frames: (target) => [encodeMissionRequestList(target.systemId, target.componentId, this.nextSeq())],
+      resultSummary: 'mission download requested'
+    });
+    const plan = this.missionPlanFromVehicle(vehicleId);
+    return { accepted: result.accepted, direction: 'download', vehicleId, waypointCount: plan?.waypoints.length ?? 0, state: result.state, reason: result.reason, sentPackets: this.protocolOperations.find((op) => op.id === result.operationId)?.sentPackets ?? 0, validation, operationId: result.operationId, plan };
+  }
+
+  clearMission(vehicleId = this.registry.selectedVehicleId ?? '', confirmed = true, originSurface = 'plan-mission'): MissionTransferState {
+    const validation = validateMission({ schemaVersion: 1, source: 'bayek-v1', waypoints: [] });
+    const result = this.sendSimpleOperation({
+      domain: 'mission',
+      action: 'clear',
+      vehicleId,
+      confirmed,
+      originSurface,
+      confirmationType: 'typed-operation',
+      frames: (target) => [encodeMissionClearAll(target.systemId, target.componentId, this.nextSeq())],
+      resultSummary: 'mission clear requested'
+    });
+    return { accepted: result.accepted, direction: 'clear', vehicleId, waypointCount: 0, state: result.state, reason: result.reason, sentPackets: this.protocolOperations.find((op) => op.id === result.operationId)?.sentPackets ?? 0, validation, operationId: result.operationId, plan: null };
+  }
+
+  listLogs(vehicleId = this.registry.selectedVehicleId ?? '', originSurface = 'logs'): ParameterEditResult {
+    return this.sendSimpleOperation({
+      domain: 'logs',
+      action: 'list',
+      vehicleId,
+      confirmed: true,
+      originSurface,
+      frames: (target) => [encodeLogRequestList(target.systemId, target.componentId, 0, 0xffff, this.nextSeq())],
+      resultSummary: 'onboard log list requested'
+    });
+  }
+
+  downloadLog(logId: number, vehicleId = this.registry.selectedVehicleId ?? '', originSurface = 'logs'): ParameterEditResult {
+    const result = this.sendSimpleOperation({
+      domain: 'logs',
+      action: 'download',
+      vehicleId,
+      confirmed: true,
+      originSurface,
+      payload: { logId },
+      frames: (target) => [encodeLogRequestData(logId, 0, 900, target.systemId, target.componentId, this.nextSeq())],
+      resultSummary: `log ${logId} download requested`
+    });
+    if (result.operationId) this.logDownloadBuffers.set(result.operationId, []);
+    return result;
+  }
+
+  eraseLogs(vehicleId = this.registry.selectedVehicleId ?? '', confirmed = true, originSurface = 'logs'): ParameterEditResult {
+    return this.sendSimpleOperation({
+      domain: 'logs',
+      action: 'erase',
+      vehicleId,
+      confirmed,
+      originSurface,
+      confirmationType: 'typed-operation',
+      frames: (target) => [encodeLogErase(target.systemId, target.componentId, this.nextSeq())],
+      resultSummary: 'onboard log erase requested'
+    });
+  }
+
+  requestTerrain(vehicleId = this.registry.selectedVehicleId ?? '', originSurface = 'map-terrain'): ParameterEditResult {
+    const selected = this.selectedVehiclePayload();
+    const latDeg = selected.globalPosition.latDeg ?? selected.home?.latDeg ?? 0;
+    const lonDeg = selected.globalPosition.lonDeg ?? selected.home?.lonDeg ?? 0;
+    return this.sendSimpleOperation({
+      domain: 'terrain',
+      action: 'check',
+      vehicleId,
+      confirmed: true,
+      originSurface,
+      payload: { latDeg, lonDeg },
+      frames: () => [encodeTerrainCheck(latDeg, lonDeg, this.nextSeq())],
+      resultSummary: 'terrain check requested'
+    });
+  }
+
+  cameraAction(action: 'capture' | 'record-start' | 'record-stop' | 'zoom' | 'focus', vehicleId = this.registry.selectedVehicleId ?? '', value?: number, originSurface = 'video-camera'): ParameterEditResult {
+    const command = action === 'capture'
+      ? MAV_CMD.IMAGE_START_CAPTURE
+      : action === 'record-start'
+        ? MAV_CMD.VIDEO_START_CAPTURE
+        : action === 'record-stop'
+          ? MAV_CMD.VIDEO_STOP_CAPTURE
+          : action === 'zoom'
+            ? MAV_CMD.SET_CAMERA_ZOOM
+            : MAV_CMD.SET_CAMERA_FOCUS;
+    const params = action === 'zoom' || action === 'focus' ? [0, value ?? 0] : action === 'capture' ? [0, 0, 1] : [];
+    return this.sendSimpleOperation({
+      domain: 'camera',
+      action,
+      vehicleId,
+      confirmed: true,
+      originSurface,
+      payload: { value },
+      frames: (target) => [encodeCommandLong(command, target.systemId, target.componentId, params, 0, this.nextSeq())],
+      resultSummary: `camera ${action} command sent`
+    });
+  }
+
+  uploadMissionToSitl(plan: MissionPlan, vehicleId = this.registry.selectedVehicleId ?? ''): MissionTransferState {
+    return this.uploadMission(plan, vehicleId, true, 'plan-mission-legacy');
   }
 
   downloadMissionFromSitl(vehicleId = this.registry.selectedVehicleId ?? ''): MissionTransferState {
-    const validation = validateMission({ schemaVersion: 1, source: 'bayek-v1', waypoints: [{ seq: 0, lat_deg: 0, lon_deg: 0, alt_m: 1, throttle: 0, acceptance_radius_m: 1 }] });
-    return {
-      accepted: false,
-      direction: 'download',
-      vehicleId,
-      waypointCount: 0,
-      state: 'failed',
-      reason: 'mission download is not implemented for the SITL v1 bridge yet',
-      sentPackets: 0,
-      validation
-    };
+    return this.downloadMission(vehicleId, true, 'plan-mission-legacy');
   }
 
   selectVehicle(id: string): SessionSnapshotPayload {
@@ -2046,6 +2409,134 @@ export class MavlinkTelemetryService extends EventEmitter {
     const snapshot = this.snapshot();
     this.emit('session-snapshot', snapshot);
     return snapshot;
+  }
+
+  cancelOperation(operationId: string, reason = 'operator cancelled protocol operation'): ProtocolOperation | null {
+    const nowS = performanceNowS();
+    const operation = this.protocolOperations.find((candidate) => candidate.id === operationId);
+    if (!operation || (operation.state !== 'waiting' && operation.state !== 'waiting-ack' && operation.state !== 'receiving' && operation.state !== 'sending')) {
+      return operation ? { ...operation } : null;
+    }
+    operation.state = 'cancelled';
+    operation.updatedAtS = nowS;
+    operation.failureReason = reason;
+    operation.resultSummary = reason;
+    this.pushOperationAudit(this.createOperationAuditEntry({ eventKind: 'operation-cancelled', operation, accepted: false, reason }));
+    this.emit('session-snapshot', this.snapshot(nowS));
+    return { ...operation };
+  }
+
+  expireProtocolOperations(nowS = performanceNowS()): void {
+    const changed = this.expireProtocolOperationsForSnapshot(nowS);
+    if (changed) this.emit('session-snapshot', this.snapshot(nowS));
+  }
+
+  private sendSimpleOperation(options: {
+    domain: ProtocolOperationDomain;
+    action: string;
+    vehicleId: string;
+    confirmed: boolean;
+    originSurface?: string;
+    confirmationType?: OperationAuditEntry['confirmationType'];
+    payload?: Record<string, unknown>;
+    frames: (target: { systemId: number; componentId: number }) => Buffer[];
+    resultSummary: string;
+  }): ParameterEditResult {
+    const vehicle = this.selectedVehiclePayload();
+    const target = parseVehicleTarget(options.vehicleId, vehicle);
+    const blocked = this.writeBlocked(options.confirmed, target);
+    if (blocked || !target) {
+      const reason = blocked ?? 'no live vehicle link advertises protocol operation support';
+      this.pushOperationAudit(this.createOperationAuditEntry({
+        eventKind: 'operation-blocked',
+        operation: null,
+        accepted: false,
+        reason,
+        domain: options.domain,
+        action: options.action,
+        vehicleId: options.vehicleId,
+        payload: options.payload ?? {},
+        confirmationType: options.confirmationType,
+        originSurface: options.originSurface,
+        confirmed: options.confirmed
+      }));
+      return { accepted: false, vehicleId: options.vehicleId, state: 'blocked', reason, operationId: null };
+    }
+    const nowS = performanceNowS();
+    const operation = this.createProtocolOperation(options.domain, options.action, options.vehicleId, nowS, options.payload);
+    try {
+      const frames = options.frames(target);
+      for (const frame of frames) this.sendFrame(frame);
+      operation.sentPackets += frames.length;
+      operation.state = operation.domain === 'logs' && operation.action === 'download' ? 'receiving' : 'waiting-ack';
+      operation.resultSummary = options.resultSummary;
+      operation.updatedAtS = nowS;
+      this.registry.addMarker(options.resultSummary, nowS, options.vehicleId);
+      this.pushOperationAudit(this.createOperationAuditEntry({
+        eventKind: 'operation-sent',
+        operation,
+        accepted: true,
+        reason: options.resultSummary,
+        confirmationType: options.confirmationType,
+        originSurface: options.originSurface
+      }));
+      this.emit('session-snapshot', this.snapshot(nowS));
+      return { accepted: true, vehicleId: options.vehicleId, state: operation.state, reason: options.resultSummary, operationId: operation.id };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      operation.state = 'failed';
+      operation.failureReason = reason;
+      operation.resultSummary = reason;
+      operation.updatedAtS = nowS;
+      this.pushOperationAudit(this.createOperationAuditEntry({ eventKind: 'operation-failed', operation, accepted: false, reason }));
+      this.emit('session-snapshot', this.snapshot(nowS));
+      return { accepted: false, vehicleId: options.vehicleId, state: 'failed', reason, operationId: operation.id };
+    }
+  }
+
+  private createProtocolOperation(domain: ProtocolOperationDomain, action: string, vehicleId: string, nowS: number, payload: Record<string, unknown> = {}): ProtocolOperation {
+    const operation: ProtocolOperation = {
+      id: `op-${Math.round(nowS * 1000)}-${this.operationSeq++}`,
+      domain,
+      action,
+      vehicleId,
+      state: 'sending',
+      createdAtS: nowS,
+      updatedAtS: nowS,
+      deadlineS: nowS + PROTOCOL_OPERATION_TIMEOUT_S,
+      retryCount: 0,
+      timeoutS: PROTOCOL_OPERATION_TIMEOUT_S,
+      sentPackets: 0,
+      receivedPackets: 0,
+      progressPct: null,
+      resultSummary: null,
+      failureReason: null,
+      payload
+    };
+    this.protocolOperations.push(operation);
+    if (this.protocolOperations.length > MAX_PROTOCOL_OPERATIONS) {
+      this.protocolOperations.splice(0, this.protocolOperations.length - MAX_PROTOCOL_OPERATIONS);
+    }
+    return operation;
+  }
+
+  private missionPlanFromVehicle(vehicleId: string): MissionPlan | null {
+    const snapshot = this.registry.snapshot();
+    const vehicle = snapshot.vehicles.find((candidate) => candidate.id === vehicleId) ?? snapshot.vehicles[0];
+    const waypoints = vehicle?.mission?.waypoints;
+    if (!waypoints || waypoints.length === 0) return null;
+    return {
+      schemaVersion: 1,
+      source: 'bayek-v1',
+      waypoints: waypoints.map((waypoint, index) => ({
+        seq: index,
+        lat_deg: waypoint.latDeg,
+        lon_deg: waypoint.lonDeg,
+        alt_m: waypoint.altitudeM ?? 0,
+        throttle: 0.5,
+        acceptance_radius_m: 25
+      }))
+    };
   }
 
   private activeForwardTargets(): Endpoint[] {
@@ -2069,7 +2560,7 @@ export class MavlinkTelemetryService extends EventEmitter {
     payload.commandCapabilities = defaultCommandCapabilities(payload.connected, this.config.writableAnimus, {
       packetAgeS: payload.packetAgeS,
       readiness: payload.status?.readiness,
-      authority: this.config.writableAnimus ? 'sitl-writable' : 'read-only',
+      authority: this.config.authorityMode,
       qgcForwarding: this.config.qgcForwarding,
       selectedWritableEndpoint: this.lastRemote ? `${this.lastRemote.host}:${this.lastRemote.port}` : null
     });
@@ -2115,6 +2606,7 @@ export class MavlinkTelemetryService extends EventEmitter {
 
   private snapshot(nowS = performanceNowS()): SessionSnapshotPayload {
     this.expireCommandTransactionsForSnapshot(nowS);
+    this.expireProtocolOperationsForSnapshot(nowS);
     const snapshot = this.registry.snapshot(nowS);
     for (const vehicle of snapshot.vehicles) {
       this.applyLinkDiagnostics(vehicle);
@@ -2131,6 +2623,16 @@ export class MavlinkTelemetryService extends EventEmitter {
       ...entry,
       params: [...entry.params],
       ack: entry.ack ? { ...entry.ack } : null
+    }));
+    snapshot.protocolOperations = this.protocolOperations.slice(-MAX_PROTOCOL_OPERATIONS).reverse().map((operation) => ({
+      ...operation,
+      payload: { ...(operation.payload ?? {}) },
+      cancellationEligible: operation.state === 'waiting' || operation.state === 'waiting-ack' || operation.state === 'receiving',
+      retryEligible: operation.state === 'timeout' || operation.state === 'failed'
+    }));
+    snapshot.operationAudit = this.operationAudit.slice(-MAX_COMMAND_AUDIT_SNAPSHOT_ENTRIES).reverse().map((entry) => ({
+      ...entry,
+      payload: { ...entry.payload }
     }));
     return snapshot;
   }
@@ -2191,6 +2693,133 @@ export class MavlinkTelemetryService extends EventEmitter {
     }));
   }
 
+  private applyProtocolMessage(message: MavlinkMessage, nowS: number): void {
+    const id = vehicleId(message.systemId, message.componentId);
+    const decoded = decodeMavlinkMessage(message);
+    const activeFor = (domain: ProtocolOperationDomain, actions?: string[]): ProtocolOperation | undefined =>
+      [...this.protocolOperations].reverse().find((operation) =>
+        operation.vehicleId === id &&
+        operation.domain === domain &&
+        (actions ? actions.includes(operation.action) : true) &&
+        (operation.state === 'waiting' || operation.state === 'waiting-ack' || operation.state === 'receiving' || operation.state === 'sending'));
+    const complete = (operation: ProtocolOperation, summary: string): void => {
+      operation.receivedPackets += 1;
+      operation.updatedAtS = nowS;
+      operation.state = 'complete';
+      operation.progressPct = 100;
+      operation.resultSummary = summary;
+      this.pushOperationAudit(this.createOperationAuditEntry({ eventKind: 'operation-complete', operation, accepted: true, reason: summary }));
+    };
+    if (message.msgId === 22) {
+      const operation = activeFor('parameters', ['refresh', 'set']);
+      if (operation) {
+        operation.receivedPackets += 1;
+        operation.updatedAtS = nowS;
+        const count = num(decoded.fields.paramCount);
+        const index = num(decoded.fields.paramIndex);
+        operation.progressPct = count && index !== null ? Math.min(100, ((index + 1) / count) * 100) : operation.progressPct;
+        const targetName = typeof operation.payload?.name === 'string' ? operation.payload.name : null;
+        if (operation.action === 'set' && decoded.fields.paramId === targetName) {
+          complete(operation, `parameter ${targetName} confirmed`);
+        } else if (operation.action === 'refresh' && count !== null && index !== null && index + 1 >= count) {
+          complete(operation, `parameter cache refreshed (${count} values)`);
+        }
+      }
+    } else if (message.msgId === 44) {
+      const operation = activeFor('mission', ['download']);
+      const count = num(decoded.fields.count);
+      if (operation && count !== null) {
+        operation.receivedPackets += 1;
+        operation.updatedAtS = nowS;
+        operation.payload = { ...(operation.payload ?? {}), expectedCount: count };
+        operation.progressPct = count === 0 ? 100 : 0;
+        if (count === 0) complete(operation, 'mission download complete: vehicle mission is empty');
+        else {
+          try {
+            this.sendFrame(encodeMissionRequestInt(0, message.systemId, message.componentId, this.nextSeq()));
+            operation.sentPackets += 1;
+            operation.state = 'receiving';
+            operation.resultSummary = `mission download receiving ${count} item${count === 1 ? '' : 's'}`;
+          } catch (error) {
+            operation.state = 'failed';
+            operation.failureReason = error instanceof Error ? error.message : String(error);
+          }
+        }
+      }
+    } else if (message.msgId === 39 || message.msgId === 73) {
+      const operation = activeFor('mission', ['download']);
+      const expectedCount = typeof operation?.payload?.expectedCount === 'number' ? operation.payload.expectedCount : null;
+      const seq = num(decoded.fields.seq);
+      if (operation && expectedCount !== null && seq !== null) {
+        operation.receivedPackets += 1;
+        operation.updatedAtS = nowS;
+        operation.progressPct = Math.min(100, ((seq + 1) / expectedCount) * 100);
+        if (seq + 1 >= expectedCount) {
+          complete(operation, `mission download complete (${expectedCount} items)`);
+        } else {
+          try {
+            this.sendFrame(encodeMissionRequestInt(seq + 1, message.systemId, message.componentId, this.nextSeq()));
+            operation.sentPackets += 1;
+          } catch (error) {
+            operation.state = 'failed';
+            operation.failureReason = error instanceof Error ? error.message : String(error);
+          }
+        }
+      }
+    } else if (message.msgId === 47) {
+      const operation = activeFor('mission', ['upload', 'clear']);
+      const ack = decodeMissionAck(message);
+      if (operation && ack) {
+        if (ack.type === 0) complete(operation, operation.action === 'clear' ? 'mission cleared' : 'mission upload acknowledged');
+        else {
+          operation.state = 'failed';
+          operation.updatedAtS = nowS;
+          operation.failureReason = `MISSION_ACK type ${ack.type}`;
+          this.pushOperationAudit(this.createOperationAuditEntry({ eventKind: 'operation-failed', operation, accepted: false, reason: operation.failureReason }));
+        }
+      }
+    } else if (message.msgId === 118) {
+      const operation = activeFor('logs', ['list']);
+      if (operation) {
+        operation.receivedPackets += 1;
+        operation.updatedAtS = nowS;
+        const numLogs = num(decoded.fields.numLogs);
+        const lastLogNum = num(decoded.fields.lastLogNum);
+        operation.progressPct = numLogs && lastLogNum !== null ? Math.min(100, ((num(decoded.fields.id) ?? 0) + 1) / Math.max(1, lastLogNum + 1) * 100) : operation.progressPct;
+        if (numLogs !== null && this.registry.selectedVehicle().logs && this.registry.selectedVehicle().logs!.length >= numLogs) {
+          complete(operation, `log list refreshed (${numLogs} logs)`);
+        }
+      }
+    } else if (message.msgId === 120) {
+      const operation = activeFor('logs', ['download']);
+      if (operation) {
+        const count = num(decoded.fields.count) ?? 0;
+        operation.receivedPackets += 1;
+        operation.updatedAtS = nowS;
+        operation.payload = { ...(operation.payload ?? {}), receivedBytes: (Number(operation.payload?.receivedBytes ?? 0) + count) };
+        operation.resultSummary = `received ${operation.payload.receivedBytes} log bytes`;
+      }
+    } else if (message.msgId === 136) {
+      const operation = activeFor('terrain', ['check', 'request']);
+      if (operation) complete(operation, `terrain report ${decoded.fields.loaded ?? '--'} loaded / ${decoded.fields.pending ?? '--'} pending`);
+    } else if (message.msgId === 77) {
+      const ack = decodeCommandAck(message);
+      const operation = activeFor('camera');
+      if (operation && ack && [MAV_CMD.IMAGE_START_CAPTURE, MAV_CMD.VIDEO_START_CAPTURE, MAV_CMD.VIDEO_STOP_CAPTURE, MAV_CMD.SET_CAMERA_ZOOM, MAV_CMD.SET_CAMERA_FOCUS].some((command) => command === ack.command)) {
+        if (ack.result === 0) complete(operation, `camera ${operation.action} acknowledged`);
+        else {
+          operation.state = 'failed';
+          operation.updatedAtS = nowS;
+          operation.failureReason = ack.label;
+          this.pushOperationAudit(this.createOperationAuditEntry({ eventKind: 'operation-failed', operation, accepted: false, reason: ack.label }));
+        }
+      }
+    } else if (message.msgId === 259 || message.msgId === 260 || message.msgId === 262) {
+      const operation = activeFor('camera');
+      if (operation) complete(operation, `camera status updated from ${decoded.name}`);
+    }
+  }
+
   private expireCommandTransactionsForSnapshot(nowS: number): boolean {
     let changed = false;
     for (const transaction of this.commandTransactions) {
@@ -2216,6 +2845,23 @@ export class MavlinkTelemetryService extends EventEmitter {
         state: 'timeout',
         reason: transaction.failureReason
       }));
+      changed = true;
+    }
+    return changed;
+  }
+
+  private expireProtocolOperationsForSnapshot(nowS: number): boolean {
+    let changed = false;
+    for (const operation of this.protocolOperations) {
+      if ((operation.state !== 'waiting' && operation.state !== 'waiting-ack' && operation.state !== 'receiving' && operation.state !== 'sending') || operation.deadlineS === null || nowS < operation.deadlineS) {
+        continue;
+      }
+      operation.state = 'timeout';
+      operation.updatedAtS = nowS;
+      operation.failureReason = `no ${operation.domain} ${operation.action} response within ${operation.timeoutS}s`;
+      operation.resultSummary = operation.failureReason;
+      this.registry.addMarker(`${operation.domain} ${operation.action} timed out`, nowS, operation.vehicleId);
+      this.pushOperationAudit(this.createOperationAuditEntry({ eventKind: 'operation-timeout', operation, accepted: false, reason: operation.failureReason }));
       changed = true;
     }
     return changed;
@@ -2251,14 +2897,14 @@ export class MavlinkTelemetryService extends EventEmitter {
       reason: options.reason,
       failureReason: options.accepted ? null : options.reason,
       ack: options.ack ? { ...options.ack } : null,
-      authority: config.writableAnimus ? 'sitl-writable' : 'read-only',
+      authority: config.authorityMode,
       writable: config.writableAnimus,
       retryCount: options.transaction?.retryCount ?? 0,
       appSource: this.sessionContext.appSource,
       processSource: this.sessionContext.processSource,
       commandOrigin: options.request.originSurface ?? 'unknown',
       vehicleTarget: options.request.vehicleId,
-      authorityMode: config.writableAnimus ? 'sitl-writable' : 'read-only',
+      authorityMode: config.authorityMode,
       writableEndpoint: this.lastRemote ? `${this.lastRemote.host}:${this.lastRemote.port}` : null,
       qgcForwarding: config.qgcForwarding,
       protocolSummary: summarizeProtocol(this.protocolTracker.snapshot()),
@@ -2274,18 +2920,74 @@ export class MavlinkTelemetryService extends EventEmitter {
     this.emit('command-audit', entry);
   }
 
+  private createOperationAuditEntry(options: {
+    eventKind: OperationAuditEntry['eventKind'];
+    operation: ProtocolOperation | null;
+    accepted: boolean;
+    reason: string;
+    domain?: ProtocolOperationDomain;
+    action?: string;
+    vehicleId?: string;
+    payload?: Record<string, unknown>;
+    confirmationType?: OperationAuditEntry['confirmationType'];
+    originSurface?: string;
+    confirmed?: boolean;
+  }): OperationAuditEntry {
+    const config = this.getConfig();
+    return {
+      schemaVersion: 1,
+      eventKind: options.eventKind,
+      operationId: options.operation?.id ?? null,
+      sessionId: this.sessionContext.sessionId,
+      operatorId: this.sessionContext.operatorId,
+      timestamp: new Date().toISOString(),
+      vehicleId: options.operation?.vehicleId ?? options.vehicleId ?? '',
+      domain: options.operation?.domain ?? options.domain ?? 'parameters',
+      action: options.operation?.action ?? options.action ?? 'unknown',
+      payload: { ...(options.operation?.payload ?? options.payload ?? {}) },
+      accepted: options.accepted,
+      state: options.operation?.state ?? (options.accepted ? 'complete' : 'blocked'),
+      reason: options.reason,
+      failureReason: options.accepted ? null : options.reason,
+      authority: config.authorityMode,
+      writable: config.writableAnimus,
+      retryCount: options.operation?.retryCount ?? 0,
+      appSource: this.sessionContext.appSource,
+      processSource: this.sessionContext.processSource,
+      originSurface: options.originSurface,
+      authorityMode: config.authorityMode,
+      writableEndpoint: this.lastRemote ? `${this.lastRemote.host}:${this.lastRemote.port}` : null,
+      qgcForwarding: config.qgcForwarding,
+      protocolSummary: summarizeProtocol(this.protocolTracker.snapshot()),
+      confirmationType: options.confirmationType,
+      confirmationResult: options.confirmed === false ? 'rejected' : 'accepted'
+    };
+  }
+
+  private pushOperationAudit(entry: OperationAuditEntry): void {
+    this.operationAudit.push(entry);
+    if (this.operationAudit.length > MAX_COMMAND_AUDIT_SNAPSHOT_ENTRIES) {
+      this.operationAudit.splice(0, this.operationAudit.length - MAX_COMMAND_AUDIT_SNAPSHOT_ENTRIES);
+    }
+    this.emit('operation-audit', entry);
+  }
+
   private writeBlocked(confirmed: boolean, target: { systemId: number; componentId: number } | null, command?: CommandName): string | null {
     if (!confirmed) {
       return 'operator confirmation is required';
     }
     const selected = this.selectedVehiclePayload();
+    const authorityMode = this.config.authorityMode;
     const capability = defaultCommandCapabilities(selected.connected, this.config.writableAnimus, {
       packetAgeS: selected.packetAgeS,
       readiness: selected.status?.readiness,
-      authority: this.config.writableAnimus ? 'sitl-writable' : 'read-only'
+      authority: authorityMode
     });
     if (!this.config.writableAnimus) {
-      return 'Animus writes require a SITL session started with --writable-animus.';
+      return 'Animus writes require --writable-animus or --trusted-live-writable at launch.';
+    }
+    if (authorityMode === 'trusted-live-writable' && !this.protocolTracker.snapshot().signed) {
+      return 'trusted live writes require a signed MAVLink v2 link before Animus will send protocol operations.';
     }
     if (command) {
       const vehicleId = target ? `${target.systemId}:${target.componentId}` : `${selected.systemId ?? '--'}:${selected.componentId ?? '--'}`;
@@ -2327,7 +3029,8 @@ export function normalizeConfig(config: Partial<MavlinkServiceConfig>): MavlinkS
     listenPort: config.listenPort ?? DEFAULT_LISTEN_PORT,
     qgcForwarding: config.qgcForwarding ?? true,
     qgcEndpoints: config.qgcEndpoints ?? [{ host: DEFAULT_QGC_HOST, port: DEFAULT_QGC_PORT }],
-    writableAnimus: config.writableAnimus ?? false
+    authorityMode: config.authorityMode ?? (config.writableAnimus ? 'sitl-writable' : 'read-only'),
+    writableAnimus: config.writableAnimus ?? Boolean(config.authorityMode && config.authorityMode !== 'read-only')
   };
 }
 

@@ -50,7 +50,10 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Expand durable command audit history with operator and session identity.
 - [x] Add broader dialect-driven MAVLink decoding beyond the currently supported message set.
 - [x] Add typed command workflows for high-consequence live actions.
-- [ ] Add richer protocol-backed GCS workflows for parameter editing, mission transfer, map/terrain, log, and camera operations.
+- [x] Add richer protocol-backed GCS workflows for parameter editing, mission transfer, map/terrain, log, and camera operations.
+- [ ] Persist completed onboard MAVLink log downloads as raw `.tlog` or `.bin`
+  files once `LOG_DATA` byte assembly is promoted from operation progress to
+  durable file output.
 
 ## Test Ownership
 
