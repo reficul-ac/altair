@@ -157,19 +157,19 @@ root.innerHTML = `
     <section class="workspace-panel inspector-workspace" data-panel="video">
       <div class="analysis-grid">
         <section><h2>Camera Streams</h2><div id="camera-streams" class="tool-list"></div></section>
-        <section><h2>Capture</h2><div class="command-grid"><button data-camera-action="snapshot" type="button">Capture</button><button data-camera-action="record" type="button">Record</button><button data-camera-action="subtitle" type="button">Subtitle Export</button></div><p id="camera-detail" class="empty">No stream selected</p></section>
+        <section><h2>Capture</h2><div class="command-grid"><button data-camera-action="snapshot" type="button" disabled title="Still capture requires real camera stream plumbing.">Capture unavailable</button><button data-camera-action="record" type="button" disabled title="Local recording requires real camera stream plumbing.">Record unavailable</button><button data-camera-action="subtitle" type="button" disabled title="Telemetry subtitle export requires protocol-backed stream support.">Subtitle export unavailable</button></div><p id="camera-detail" class="empty">Capture, recording, settings, and subtitle export are disabled until real camera stream support exists.</p></section>
       </div>
     </section>
     <section class="workspace-panel inspector-workspace" data-panel="plan">
       <div class="analysis-grid">
         <section><h2>Mission</h2><div id="mission-list" class="tool-list"></div><div id="mission-validation" class="tool-list"></div><div class="inspector-actions"><button id="plan-add" type="button">Add WP</button><button id="plan-save" type="button">Save</button><button id="plan-restore" type="button">Load</button><button id="plan-upload" type="button">Upload SITL</button></div></section>
-        <section><h2>Geofence / Rally</h2><div id="fence-list" class="tool-list"></div><div class="command-grid"><button data-plan-tool="waypoint" type="button">Waypoint</button><button data-plan-tool="geofence" type="button">Fence</button><button data-plan-tool="rally" type="button">Rally</button><button data-plan-tool="survey" type="button">Survey</button><button data-plan-tool="corridor" type="button">Corridor</button><button data-plan-tool="structure" type="button">Structure</button><button data-plan-tool="landing" type="button">Landing</button></div></section>
+        <section><h2>Geofence / Rally</h2><div id="fence-list" class="tool-list"></div><div class="command-grid"><button data-plan-tool="geofence" type="button" disabled title="Geofence editing is roadmap-only.">Fence view only</button><button data-plan-tool="rally" type="button" disabled title="Rally editing is roadmap-only.">Rally view only</button><button data-plan-tool="survey" type="button" disabled title="Survey planning is roadmap-only.">Survey unavailable</button><button data-plan-tool="corridor" type="button" disabled title="Corridor scan planning is roadmap-only.">Corridor unavailable</button><button data-plan-tool="structure" type="button" disabled title="Structure scan planning is roadmap-only.">Structure unavailable</button><button data-plan-tool="landing" type="button" disabled title="Fixed-wing landing pattern planning is roadmap-only.">Landing unavailable</button></div></section>
       </div>
     </section>
     <section class="workspace-panel inspector-workspace" data-panel="setup">
       <div class="analysis-grid">
         <section><h2>Readiness</h2><div id="readiness-list" class="tool-list"></div><div class="command-grid" id="guarded-commands"></div></section>
-        <section><h2>Parameters / Diagnostics</h2><input id="parameter-filter" type="search" placeholder="Filter parameters" /><div id="parameter-list" class="tool-list"></div><div id="diagnostics-list" class="tool-list"></div></section>
+        <section><h2>Parameters / Diagnostics</h2><input id="parameter-filter" type="search" placeholder="Filter parameters" /><div id="parameter-list" class="tool-list"></div><div id="setup-placeholder-list" class="tool-list"><div><strong>Setup edits</strong><span>disabled</span><span>roadmap</span></div><div><strong>Calibration</strong><span>disabled</span><span>roadmap</span></div></div><div id="diagnostics-list" class="tool-list"></div></section>
       </div>
     </section>
     <aside class="metrics workspace-panel active" data-panel="session">
@@ -377,8 +377,8 @@ function updateGcsSurfaces(snapshot: SessionSnapshotMessage): void {
 function updateCameraStreams(vehicle: VehicleStateMessage | null): void {
   const streams = vehicle?.cameraStreams ?? [];
   document.querySelector<HTMLElement>('#camera-streams')!.innerHTML = streams.map((stream) => `
-    <button type="button" data-camera="${escapeAttr(stream.id)}"><strong>${escapeHtml(stream.label)}</strong><span>${escapeHtml(stream.kind.toUpperCase())}</span><span>${escapeHtml(stream.status)}</span></button>
-  `).join('') || '<p class="empty">No RTP, RTSP, or UVC streams advertised</p>';
+    <div><strong>${escapeHtml(stream.label)}</strong><span>${escapeHtml(stream.kind.toUpperCase())}</span><span>${escapeHtml(stream.status)} / inspect only</span></div>
+  `).join('') || '<p class="empty">No RTP, RTSP, UVC, or MAVLink camera metadata streams advertised</p>';
 }
 
 function updatePlanSurface(vehicle: VehicleStateMessage | null): void {
@@ -429,7 +429,7 @@ function updateSetupSurface(vehicle: VehicleStateMessage | null): void {
   const query = document.querySelector<HTMLInputElement>('#parameter-filter')?.value.toLowerCase() ?? '';
   document.querySelector<HTMLElement>('#parameter-list')!.innerHTML = parameters
     .filter((param) => param.name.toLowerCase().includes(query))
-    .map((param) => `<div><strong>${escapeHtml(param.name)}</strong><span>${escapeHtml(String(param.value))}</span><span>${param.readonly ? 'read-only' : 'editable'}</span></div>`)
+    .map((param) => `<div><strong>${escapeHtml(param.name)}</strong><span>${escapeHtml(String(param.value))}</span><span>${param.readonly ? 'read-only' : 'inspect only'}</span></div>`)
     .join('') || '<p class="empty">No parameters loaded</p>';
   const diag = vehicle?.diagnostics;
   document.querySelector<HTMLElement>('#diagnostics-list')!.innerHTML = diag
@@ -464,10 +464,6 @@ function formatTime(seconds: number): string {
 
 function escapeHtml(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
-}
-
-function escapeAttr(value: string): string {
-  return escapeHtml(value);
 }
 
 document.querySelector<HTMLButtonElement>('#pause')!.addEventListener('click', (event) => {

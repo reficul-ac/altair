@@ -1,6 +1,6 @@
 # Animus Operator Controls
 
-The Altair Animus is read-only by default. Vehicle-affecting actions are exposed only through guarded command controls: the selected live link must advertise the capability, the link must be writable, and the operator must confirm the action.
+The Altair Animus is a debugger-oriented MAVLink/SITL viewer. It is read-only by default. Vehicle-affecting actions are limited to guarded SITL command controls and simple waypoint mission upload packet emission when the selected link is explicitly writable and the operator confirms the action.
 
 ## Launch
 
@@ -40,8 +40,8 @@ Vehicle meshes are chosen from heartbeat vehicle type: fixed-wing, multirotor, V
 - `Focus` recenters on the selected vehicle and resumes selected-vehicle follow.
 - `+` and `-` adjust zoom.
 
-The map renders selected and fleet trails, event markers, an origin/home marker when available, and mission waypoint paths when future MAVLink session snapshots include waypoint coordinates.
-It also renders geofence polygons/circles and rally points when those records are present in the session snapshot. The offline grid map remains available for replay and mock-link testing without hardware or SITL.
+The map renders selected and fleet trails, event markers, an origin/home marker when available, and mission waypoint paths when a session snapshot includes waypoint coordinates.
+It can render geofence polygons/circles and rally points when those records are already present in the session snapshot. Creating or editing geofences and rally points is not implemented. The offline grid map remains available for replay and mock-link testing without hardware or SITL.
 
 ## Inspector View
 
@@ -55,18 +55,19 @@ It also renders geofence polygons/circles and rally points when those records ar
 ## Replay And Logs
 
 - `Open` loads native Altair replay JSON.
-- `Import` accepts native replay JSON plus ULog/CSV-style delimited logs and converts them to deterministic replay frames with source metadata.
+- `Import` accepts native replay JSON plus CSV-style delimited logs and ULog-labeled imports that can be reduced to the currently supported deterministic replay frame fields.
 - Replay controls support pause/play, scrub, speed selection, reset, and marker navigation.
-- `Download` saves the current replay/session metadata path exposed by Electron.
+- `Download` saves the current replay/session metadata path exposed by Electron. Onboard MAVLink log listing, download, deletion, and `.tlog` recording are roadmap items.
 
 ## Analysis And GCS Parity
 
 - Target multi-vehicle analysis count: 12 simultaneous vehicles. Above that, the viewer should still display fleet basics, but correlation, formation, and deconfliction inspection are optimized for the first 12 active vehicles.
 - Analysis panels align streams by takeoff by default, expose formation offsets, and report minimum separation conflicts.
-- The Plan workspace shows mission items, geofences, rally points, and placeholders for survey, corridor scan, structure scan, and fixed-wing landing pattern workflows. Upload/download vehicle writes remain disabled until a writable command-capable link is present.
-- The Setup workspace shows readiness, preflight checks, guarded Fly actions, parameters, and link diagnostics. Firmware, airframe, radio, sensors, flight modes, power, motors, safety, tuning, camera, joystick, and application settings are represented as inspectable surfaces; unsupported write actions stay disabled.
-- The Video workspace lists RTP, RTSP, UVC, and MAVLink camera metadata streams when advertised. Capture, local recording, MAVLink camera settings, map/video switching, and telemetry subtitle export controls are present but stay unavailable until a stream advertises support.
-- MAVLink console access is intentionally limited to diagnostics and captured status text in this debugger-oriented viewer. Raw command console writes remain out of scope unless a future operator safety review approves them.
+- The Plan workspace supports local waypoint list editing, local save/load, validation, and a guarded SITL waypoint upload path. Survey, corridor scan, structure scan, fixed-wing landing pattern, geofence editing, rally editing, full mission download, mission ACK synchronization, and terrain-following workflows are disabled roadmap surfaces.
+- The Setup workspace shows readiness, preflight status, guarded SITL Fly actions, parameter values, and link diagnostics. Parameter rows are inspect-only: parameter fetch/cache/edit/validate/upload, firmware setup, airframe selection, radio setup, sensor calibration, flight-mode edits, power setup, motor/actuator setup, safety edits, tuning, camera setup, joystick setup, and persisted application settings are disabled roadmap surfaces.
+- The Video workspace lists advertised camera or camera-metadata records for inspection. Video display, real RTP/RTSP/UVC stream plumbing, MAVLink camera settings, still capture, local recording, map/video switching, and telemetry subtitle export are disabled until protocol-backed stream support exists.
+- Guarded command buttons are command stubs for SITL-only safety experiments. Full GCS command forms, ACK/result history, retries, timeout handling, firmware capability discovery, and live-vehicle write authority remain roadmap work.
+- MAVLink console access is intentionally limited to diagnostics and captured status text in this debugger-oriented viewer. Raw command console writes are out of scope unless a future operator safety review approves them.
 
 ## Live SITL Swarms
 

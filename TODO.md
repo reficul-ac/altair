@@ -142,41 +142,118 @@ Acceptance check:
 
 ## 9. Animus / Ground Station Parity
 
-Animus already supports live MAVLink UDP ingest, QGroundControl forwarding, a 3D view, HUD, map trail, multi-vehicle selection, a basic MAVLink inspector, events, and Electron packaging. The work below tracks missing parity against PX4 Hawkeye and QGroundControl without implying that every ground-station feature belongs in the short-term debugger workflow.
+Animus currently provides a useful MAVLink/SITL debugger and viewer shell. Treat PX4 Hawkeye and QGroundControl parity as roadmap targets, not as completed replacement parity.
 
-Viewer/debug parity against PX4 Hawkeye:
+Current status split:
 
-- [x] Add ULog replay import with transport controls, timeline markers, pause, scrub, playback speed, and deterministic replay tests.
-- [x] Define and document a target multi-drone analysis count, then add ghost overlays, takeoff alignment, deconfliction views, formation views, and correlation comparison across vehicles.
-- [x] Add richer camera and view controls for chase, orbit, top-down, side, and free-camera.
-- [x] Add synchronized multi-vehicle inspection controls beyond selected-vehicle focus and fleet display.
-- [x] Add vehicle-type-specific 3D models and select fixed-wing, VTOL/tailsitter, multirotor, and generic models from MAVLink heartbeat data where available.
-- [x] Document animus shortcuts and operator controls for camera movement, vehicle selection, replay placeholders, map focus, and inspector navigation.
-- [x] Add live SITL swarm workflows and CLI flags that cover common single-vehicle and multi-instance launch cases.
+- Implemented: MAVLink v1 UDP ingest, QGroundControl forwarding, heartbeat/attitude/GPS/local/global position/VFR HUD/status/basic mission message decoding, 3D live view, map trail, replay import for Altair replay JSON and simple CSV/TSV logs, a basic MAVLink inspector with numeric field plotting and CSV export, local waypoint plan editing, guarded SITL-only command stubs, and simple waypoint mission upload packet emission.
+- Shell or placeholder only: Plan survey/corridor/structure/landing tools, geofence/rally editing, setup/calibration editing, parameter edit/upload workflows, camera capture/record/subtitle controls, full GCS command forms, full mission transfer state synchronization, and QGC-style Analyze tools.
+- Unsupported or out of scope today: raw MAVLink console writes, live-vehicle write authority, MAVLink signing/key management, MAVLink v2/signing parity, firmware setup/calibration changes, and onboard log management.
+- Roadmap parity: PX4 Hawkeye/QGroundControl-style planning, setup, video, logs, parameters, safety, persistence, firmware compatibility, release readiness, and live-vehicle acceptance.
 
-Replay/analysis parity against Hawkeye and QGroundControl:
+Audit and scope:
 
-- [x] Add a first-pass draggable and zoomable live map with persistent pan/zoom, selected-vehicle focus, vehicle trails, event markers, origin/home marker, and mission path rendering when waypoint fields are available.
-- [x] Add remaining map parity for rally points, geofence overlays, richer connected vehicle selection, and per-vehicle mission state beyond active sequence/path display.
-- [x] Add a richer MAVLink inspector with message filtering, multi-field numeric selection, multi-chart overlays, and browser-side CSV export for selected samples.
-- [x] Add remaining inspector parity for continuous CSV logging, console logging, and per-vehicle stream comparison.
-- [x] Add log download and log import workflows for live links and offline analysis, including clear metadata about vehicle, firmware, timestamps, and replay source.
-- [x] Add offline maps, mock link support, and troubleshooting workflows so viewer and replay behavior can be tested without active hardware or SITL.
-- [x] Add video/camera analysis support for RTP, RTSP, and UVC stream display, map/video switching, camera capture controls, MAVLink camera protocol settings, local recording, and telemetry subtitle overlay export.
+- [x] Re-audit Animus parity claims and mark placeholder/shell features separately from implemented features.
+- [ ] Decide which full-GCS features should stay out of scope for the debugger-oriented Altair/SITL workflow, and show explicit unsupported-feature states where needed.
 
-Full QGroundControl parity, long-term/high-risk:
+Operational safety:
 
-- [x] Add Fly View readiness state, preflight checklist, and confirmation UI for operator actions that can affect a live vehicle.
-- [x] Add guarded vehicle-command actions for arming, disarming, emergency stop, takeoff, land, return-to-launch, pause, change altitude, go-to, orbit, and mission start, continue, or resume.
-- [x] Add Plan View waypoint editing, mission item lists, upload, download, save, restore, mission statistics, terrain altitude overlays, geofence editing, rally points, survey, corridor scan, structure scan, and fixed-wing landing patterns.
-- [x] Add vehicle setup and configuration surfaces for firmware and airframe placeholders, radio, sensors, flight modes, power, motors, safety, tuning, camera, joystick, parameter browsing and editing, and application settings.
-- [x] Add Analyze tools for MAVLink console access, richer message inspection, log management, link diagnostics, and repeatable troubleshooting workflows.
-- [x] Decide which full-GCS features should remain out of scope for the debugger-oriented Animus, and document any intentionally unsupported QGroundControl parity items.
+- [ ] Define command authority states for read-only, SITL-writable, trusted live-link writable, and maintenance/setup modes, with visible UI state and clear downgrade behavior.
+- [ ] Add arming and preflight gates for GPS/estimator health, link freshness, failsafe state, battery/power, mission validity, operator confirmation, and firmware-specific readiness checks.
+- [ ] Design emergency action UX for disarm, kill/emergency stop, hold/pause, return-to-launch, land, and command cancellation, including accidental-click protection and post-action feedback.
+- [ ] Add a durable command audit log covering operator identity/session, vehicle, link, command payload, confirmation, ACK/NACK/result, retries, timeout, and failure reason.
+- [ ] Prevent unsafe writes on stale links, reconnect races, conflicting vehicle IDs, unsupported modes, or duplicate-GCS conflicts; surface blocked actions as explicit states rather than silent failures.
+- [ ] Define field-operation acceptance criteria for live-vehicle use, including preflight checklist completion, emergency action latency, stale-link protection, and safe failure behavior.
+
+Firmware compatibility:
+
+- [ ] Maintain a compatibility matrix for PX4, ArduPilot, and Altair covering supported vehicle types, firmware versions, MAVLink dialects, MAVLink v1/v2 coverage, and signing expectations.
+- [ ] Map firmware-specific flight modes, custom modes, arming states, failsafe states, mission states, and unsupported or unknown states into typed Animus UI models.
+- [ ] Add capability discovery from heartbeat, AUTOPILOT_VERSION, protocol version, parameters, mission support, camera support, log support, and component metadata where available.
+- [ ] Support parameter metadata sources and firmware-specific constraints for PX4, ArduPilot, and Altair, including units, ranges, reboot requirements, volatile parameters, and unknown metadata fallback.
+- [ ] Keep unsupported firmware workflows visible but disabled until protocol support, firmware mapping, and acceptance tests exist.
+
+MAVLink protocol and links:
+
+- [ ] Add MAVLink v2 support, packet signing awareness, dialect/schema-driven decoding, and broader message coverage.
+- [ ] Add robust link management: multiple UDP/TCP/serial links, per-link health, reconnect behavior, endpoint selection, and routing rules.
+- [ ] Add guarded GCS command workflows with typed action forms, ACK tracking, retries/timeouts, result history, and vehicle-specific capability gating.
+- [ ] Add MAVLink parameter protocol support: fetch, cache, search, edit, validate, upload, save/load parameter files, diff against defaults, and rollback failed edits.
+- [ ] Add complete mission protocol support: download, upload with request/ACK sequencing, clear, partial failure handling, resume/retry, and vehicle mission-state synchronization.
+
+Data persistence and project model:
+
+- [ ] Define durable models for `VehicleProfile`, `LinkProfile`, `MissionPlan`, `ParameterSet`, `LogSource`, `OperatorSettings`, and `FirmwareCapabilities`.
+- [ ] Persist saved vehicles, connection profiles, missions, geofences, rally points, parameter snapshots, imported/downloaded logs, operator settings, map/cache settings, and recent project state.
+- [ ] Add import/export, backup/restore, schema migrations, corruption recovery, and versioned project files suitable for sharing field setups between machines.
+- [ ] Preserve metadata for vehicle identity, firmware identity, link source, timestamps, coordinate frame, home/planned-home, parameter source, and mission upload/download history.
+
+Mission planning:
+
+- [ ] Expand mission planning beyond simple waypoints: map editing, item reorder/delete, altitude modes, fixed-wing takeoff/landing, survey, corridor scan, geofence, rally points, terrain hooks, mission statistics, and local save/restore.
+
+Maps and terrain:
+
+- [ ] Add online and offline map provider support with configurable tile sources, attribution/licensing metadata, local tile cache limits, cache eviction, and no-network behavior.
+- [ ] Add elevation and terrain infrastructure for terrain-following planning, terrain profiles, altitude validation, home/planned-home handling, and mission statistics.
+- [ ] Add geocoder/search, coordinate format conversion, datum/frame handling, local/NED/global coordinate transforms, and explicit no-map fallback workflows.
+- [ ] Add map data configuration and license documentation so packaged builds do not assume unavailable or unlicensed third-party services.
+
+Live view, replay, and logs:
+
+- [ ] Improve 3D visualization for live and replay: timeline-coupled playback, multiple vehicle ghost trails, camera presets, event overlays, attitude/trajectory diagnostics, and high-rate telemetry performance limits.
+- [ ] Add native log ingestion for ULog and MAVLink telemetry logs, preserving metadata, timestamps, topics/messages, parameters, events, and vehicle identity.
+- [ ] Add onboard log listing, download, cancel/resume, delete where safe, MAVLink `.tlog` recording/replay, PX4/ArduPilot log import, metadata retention, and large-log performance limits.
+- [ ] Add offline/mock workflows with realistic synthetic MAVLink streams, parameter sets, missions, logs, and regression fixtures.
+
+Analysis and troubleshooting:
+
+- [ ] Build an analysis workspace for arbitrary MAVLink/log signals: choose vehicles/messages/fields, overlay plots, derive signals, synchronize cursors with 3D/map replay, export CSV/PNG, and save plot presets.
+- [ ] Add QGC-style Analyze tools: MAVLink message browser, console/status text history, log download/import/export, link diagnostics, and troubleshooting capture bundles.
+
+Setup, calibration, and media:
+
+- [ ] Add setup/configuration surfaces only where safe for Altair: sensors/status, flight modes, safety, tuning, camera, joystick, app settings, and explicit unsupported-feature states.
+- [ ] Add real setup and calibration workflows for sensors, radio, flight modes, power, motors/actuators, safety, airframe, tuning, firmware/vehicle identity, and calibration result persistence.
+- [ ] Require protocol-backed setup transactions, firmware-specific validation, reversible edits where possible, and explicit unsupported states before enabling vehicle-affecting setup controls.
+- [ ] Add video/camera support only after real stream plumbing exists: RTP/RTSP/UVC display, MAVLink camera protocol metadata, capture/record controls, and telemetry subtitle export.
+
+Security and key management:
+
+- [ ] Add MAVLink signing key management with OS-backed secret storage where available, key import/export policy, key rotation, and clear unsigned-link warnings.
+- [ ] Define the link trust model for UDP/TCP/serial, local SITL, field radios, and replay files, including safe defaults for writable links and duplicate-GCS detection.
+- [ ] Redact secrets and sensitive link details from logs, crash reports, screenshots, exports, and troubleshooting bundles.
+- [ ] Document threat assumptions for field operation, lab/SITL use, shared project files, and untrusted log/replay imports.
+
+Release and platform readiness:
+
+- [ ] Produce packaged Linux, macOS, and Windows builds with reproducible release artifacts, installer/update path, settings migration, and platform-specific smoke tests.
+- [ ] Add code signing/notarization where applicable, crash reporting policy, dependency/license audit, bundled asset license review, and documented release gates.
+- [ ] Verify serial, UDP, TCP, file import/export, map cache, secret storage, and GPU/3D behavior on target desktop platforms.
+
+Operator documentation and training:
+
+- [ ] Add first-run setup, field checklist, emergency procedures, troubleshooting, supported/unsupported vehicle matrix, and QGroundControl migration guide.
+- [ ] Document operational limitations for each firmware family and keep UI unsupported states aligned with the published support matrix.
+
+Future interfaces:
+
+- [ ] Define a protocol boundary separating raw MAVLink transport from typed command, parameter, mission, geofence, rally, log, camera, setup, and calibration transactions.
+- [ ] Define a replay/log model capable of representing MAVLink streams, ULog topics, parameters, events, and derived signals.
+- [ ] Define an analysis UI model for selected signals, chart presets, synchronized cursors, and exports.
+
+Acceptance tests:
+
+- [ ] Add acceptance tests covering protocol encoders/decoders, parameter transactions, mission transfers, replay/log import, plotting, and guarded command failure modes.
+- [ ] Add protocol transaction tests for lossy links, retries, ACK/NACK handling, timeout recovery, reconnects, duplicate packet handling, and duplicate-GCS conflict handling.
+- [ ] Add hardware/SITL acceptance scenarios for arm/disarm, mode change, mission upload/download, parameter edit/rollback, log download, failsafe display, and emergency stop behavior.
+- [ ] Add packaged-app smoke tests on target desktop platforms and regression fixtures for PX4, ArduPilot, and Altair MAVLink streams.
 
 Acceptance check:
 
-- [x] The TODO list clearly separates viewer/debug parity, replay/analysis parity, and full GCS parity so later implementers can prioritize safely.
-- [x] The section mentions both PX4 Hawkeye and QGroundControl and does not describe planned parity work as if it already exists.
+- [x] The TODO list clearly separates implemented viewer/debug shell behavior from planned PX4 Hawkeye and QGroundControl parity.
+- [ ] The roadmap covers QGC controls, parameter upload/change, mission planning, 3D live/replay visualization, telemetry playback, and signal plotting without describing planned parity work as if it already exists.
+- [ ] The roadmap covers operational safety, firmware compatibility, setup/calibration, maps/terrain, persistence, release readiness, security, log parity, operator documentation, and live-vehicle validation.
 
 ## 10. Embedded And HAL
 

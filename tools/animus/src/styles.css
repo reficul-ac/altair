@@ -31,6 +31,16 @@ button.active {
   color: var(--accent);
 }
 
+button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+button:disabled:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
 input,
 select {
   width: 100%;
@@ -810,6 +820,11 @@ select {
 .command-grid button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+#setup-placeholder-list,
+#diagnostics-list {
+  margin-top: 10px;
 }
 
 #vehicle-list span {
