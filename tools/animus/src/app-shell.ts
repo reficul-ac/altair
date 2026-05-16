@@ -92,6 +92,8 @@ export function renderAppShell(root: HTMLElement): void {
         </div>
         <div class="dashboard-actions">
           <button id="dashboard-add" type="button">Add Widget</button>
+          <button id="dashboard-import" type="button">Import</button>
+          <button id="dashboard-export" type="button">Export</button>
           <button id="dashboard-reset" type="button">Reset Layout</button>
         </div>
       </div>

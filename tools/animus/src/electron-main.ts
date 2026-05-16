@@ -18,7 +18,7 @@ import { parseAltairReplayJson, ReplaySession, type ReplayPlaybackState } from '
 import { createMockLink, defaultCommandCapabilities, evaluateGuardedCommand } from './parity.js';
 import { validateMission } from './state.js';
 import { createCommandAuditLog } from './command-audit.js';
-import { dashboardLayoutPath, readDashboardLayout, resetDashboardLayout, writeDashboardLayout } from './dashboard-settings.js';
+import { dashboardLayoutPath, exportDashboardProfile, importDashboardProfile, readDashboardLayout, resetDashboardLayout, writeDashboardLayout } from './dashboard-settings.js';
 import type { AnimusDashboardLayout } from './dashboard-types.js';
 import type { CommandAuditEntry, CommandDispatchResult, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MockLinkState } from './state.js';
 import type { OperationAuditEntry, ParameterEditRequest } from './state.js';
@@ -167,6 +167,26 @@ ipcMain.handle('mavlink:add-marker', (_event, label: string) => telemetry.addMar
 ipcMain.handle('dashboard:get-layout', () => readDashboardLayout(dashboardLayoutFile));
 ipcMain.handle('dashboard:save-layout', (_event, layout: AnimusDashboardLayout) => writeDashboardLayout(dashboardLayoutFile, layout));
 ipcMain.handle('dashboard:reset-layout', () => resetDashboardLayout(dashboardLayoutFile));
+ipcMain.handle('dashboard:export-profile', async (_event, layout: AnimusDashboardLayout) => {
+  const result = await dialog.showSaveDialog({
+    title: 'Export dashboard profile',
+    defaultPath: 'altair-dashboard-profile.json',
+    filters: [{ name: 'Dashboard profile', extensions: ['json'] }]
+  });
+  if (result.canceled || !result.filePath) return { saved: false };
+  await exportDashboardProfile(result.filePath, layout);
+  return { saved: true, path: result.filePath };
+});
+ipcMain.handle('dashboard:import-profile', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Import dashboard profile',
+    properties: ['openFile'],
+    filters: [{ name: 'Dashboard profile', extensions: ['json'] }]
+  });
+  if (result.canceled || !result.filePaths[0]) return { imported: false };
+  const layout = await importDashboardProfile(result.filePaths[0]);
+  return { imported: true, path: result.filePaths[0], layout };
+});
 ipcMain.handle('mission:validate', (_event, plan: MissionPlan) => validateMission(plan));
 ipcMain.handle('mission:save', async (_event, plan: MissionPlan) => {
   const validation = validateMission(plan);

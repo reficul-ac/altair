@@ -26,3 +26,11 @@ export async function writeDashboardLayout(filePath: string, layout: AnimusDashb
 export async function resetDashboardLayout(filePath: string): Promise<AnimusDashboardLayout> {
   return writeDashboardLayout(filePath, createDefaultDashboardLayout());
 }
+
+export async function exportDashboardProfile(filePath: string, layout: AnimusDashboardLayout): Promise<AnimusDashboardLayout> {
+  return writeDashboardLayout(filePath, layout);
+}
+
+export async function importDashboardProfile(filePath: string): Promise<AnimusDashboardLayout> {
+  return readDashboardLayout(filePath);
+}

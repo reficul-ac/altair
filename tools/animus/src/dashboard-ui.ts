@@ -23,6 +23,8 @@ type DashboardApi = {
   getDashboardLayout?: () => Promise<AnimusDashboardLayout>;
   saveDashboardLayout?: (layout: AnimusDashboardLayout) => Promise<AnimusDashboardLayout>;
   resetDashboardLayout?: () => Promise<AnimusDashboardLayout>;
+  exportDashboardProfile?: (layout: AnimusDashboardLayout) => Promise<{ saved: boolean; path?: string }>;
+  importDashboardProfile?: () => Promise<{ imported: boolean; path?: string; layout?: AnimusDashboardLayout }>;
 };
 
 export type DashboardController = {
@@ -174,6 +176,36 @@ export function createDashboardController(options: DashboardControllerOptions): 
         state.drawerOpen = false;
         render();
       });
+    };
+    const importButton = document.querySelector<HTMLButtonElement>('#dashboard-import');
+    if (importButton) importButton.onclick = () => {
+      const importProfile = options.getApi()?.importDashboardProfile?.();
+      if (!importProfile) {
+        options.setStatus('Dashboard profile import is unavailable in this runtime');
+        return;
+      }
+      void importProfile.then((result) => {
+        if (!result.imported || !result.layout) {
+          options.setStatus('Dashboard profile import canceled');
+          return;
+        }
+        state.drawerOpen = false;
+        persist(result.layout);
+        options.setStatus(`Dashboard profile imported${result.path ? ` from ${result.path}` : ''}`);
+      }).catch(() => options.setStatus('Dashboard profile import failed'));
+    };
+    const exportButton = document.querySelector<HTMLButtonElement>('#dashboard-export');
+    if (exportButton) exportButton.onclick = () => {
+      const exportProfile = options.getApi()?.exportDashboardProfile?.(state.layout);
+      if (!exportProfile) {
+        options.setStatus('Dashboard profile export is unavailable in this runtime');
+        return;
+      }
+      void exportProfile.then((result) => {
+        options.setStatus(result.saved
+          ? `Dashboard profile exported${result.path ? ` to ${result.path}` : ''}`
+          : 'Dashboard profile export canceled');
+      }).catch(() => options.setStatus('Dashboard profile export failed'));
     };
     drawer?.querySelectorAll<HTMLButtonElement>('[data-widget-add]').forEach((button) => {
       button.addEventListener('click', () => {

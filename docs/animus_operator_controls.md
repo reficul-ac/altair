@@ -55,7 +55,8 @@ The map renders selected and fleet trails, event markers, an origin/home marker 
 
 - `Add Widget` opens the built-in widget catalog for fixed-grid status and guarded-control widgets.
 - Each widget can be dragged within the grid, resized between compact, wide, and full spans, or removed; `Reset Layout` restores the default dashboard.
-- Layout profiles and threshold customization are intentionally out of scope.
+- `Import` and `Export` share dashboard profiles as the same JSON layout shape persisted in `dashboard-layout.json`: `schemaVersion: 1` plus a `widgets` array. Import replaces the active layout after normalizing invalid, duplicate, or unsupported widget entries.
+- Threshold customization is intentionally out of scope.
 - The Electron app persists the layout as JSON at `path.join(app.getPath('userData'), 'dashboard-layout.json')`. Missing or invalid settings fall back to the default layout without overwriting the file until the operator changes or resets the layout.
 
 Status widgets read the same session snapshot used by Flight, Map, Inspector, and Setup. The guarded control widget uses the existing command authority, confirmation, dispatch, audit, retry, and guard evaluation path. Commands are disabled when the selected vehicle reports read-only authority, stale or non-live link state, unsupported command capability, or a decoded blocked-command reason.

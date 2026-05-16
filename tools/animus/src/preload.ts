@@ -16,6 +16,8 @@ export type AltairAnimusApi = {
   getDashboardLayout: () => Promise<AnimusDashboardLayout>;
   saveDashboardLayout: (layout: AnimusDashboardLayout) => Promise<AnimusDashboardLayout>;
   resetDashboardLayout: () => Promise<AnimusDashboardLayout>;
+  exportDashboardProfile: (layout: AnimusDashboardLayout) => Promise<{ saved: boolean; path?: string }>;
+  importDashboardProfile: () => Promise<{ imported: boolean; path?: string; layout?: AnimusDashboardLayout }>;
   validateMission: (plan: MissionPlan) => Promise<MissionValidationResult>;
   saveMission: (plan: MissionPlan) => Promise<{ saved: boolean; path?: string; reason?: string; validation: MissionValidationResult }>;
   loadMission: () => Promise<{ loaded: boolean; path?: string; plan?: MissionPlan; validation?: MissionValidationResult }>;
@@ -94,6 +96,12 @@ const api: AltairAnimusApi = {
   },
   resetDashboardLayout() {
     return ipcRenderer.invoke('dashboard:reset-layout');
+  },
+  exportDashboardProfile(layout) {
+    return ipcRenderer.invoke('dashboard:export-profile', layout);
+  },
+  importDashboardProfile() {
+    return ipcRenderer.invoke('dashboard:import-profile');
   },
   validateMission(plan) {
     return ipcRenderer.invoke('mission:validate', plan);
