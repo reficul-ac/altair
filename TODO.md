@@ -39,6 +39,7 @@ Reusable Bayek framework follow-up is tracked separately in
 
 ## Animus
 
+- [x] Add a Playwright-backed live SITL interaction harness for Animus workspace controls and checkpoint screenshots.
 - [x] Fix live capture flight workspace rendering so the 3D scene is nonblank under `python3 tools/python/capture_animus_sitl.py`.
 - [x] Resolve flight workspace topbar/status-strip overlap at the default `1440x900` capture viewport.
 - [x] Populate map and inspector live workspaces during SITL capture from browser bridge telemetry.

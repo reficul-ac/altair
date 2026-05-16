@@ -113,6 +113,19 @@ Inspect the generated screenshots under
 Treat this capture workflow like a pre-merge check for Animus UI changes even
 when it is not represented as a GitHub Actions status check.
 
+For deeper interaction changes, run:
+
+```bash
+python3 tools/python/interact_animus_sitl.py
+```
+
+Use `capture_animus_sitl.py` for broad workspace screenshot verification. Use
+`interact_animus_sitl.py` for direct UI interaction, dashboard widget workflows,
+workspace switches, guarded command/control gating, replay/session controls, and
+arbitrary checkpoint screenshots. The interaction workflow writes
+`run-manifest.json`, service logs, Playwright artifacts, and screenshots under
+`artifacts/animus-interactions/<timestamp>/`.
+
 Final responses for Animus UI changes must mention the screenshot artifact
 directory and any visual issues found. If the capture workflow cannot run, say
 why and describe the remaining visual risk.

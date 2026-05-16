@@ -79,4 +79,14 @@ The capture workflow starts a no-QGC live SITL session, opens Animus through Ele
 
 Inspect the generated screenshots before review. Check that the 3D scene is nonblank, live link/telemetry state is visible, the selected workspace matches the file name, desktop layout is usable, and controls/text are not obviously clipped or overlapping. This workflow is required for Animus UI/layout changes even before it becomes a GitHub Actions status check; if it cannot run, note the reason and the residual visual risk in the review or final response.
 
+For deeper interaction coverage, run the Playwright-backed live SITL harness:
+
+```sh
+python3 tools/python/interact_animus_sitl.py
+```
+
+The interaction workflow starts the same no-QGC live SITL, bridge, and Vite viewer stack, then runs Chromium Playwright scenarios across Flight, Dashboard, Map, Inspector, Video, Plan, Setup, and the session side panel. It exercises local buttons, workspace switches, dashboard widget add/resize/remove, gated command controls, mission waypoint editing, replay/sync controls, and arbitrary checkpoint screenshots. Artifacts are written under `artifacts/animus-interactions/<timestamp>/`, including `run-manifest.json`, service logs, `playwright.log`, `playwright-report/`, `playwright-results/`, and screenshots under `screenshots/`.
+
+Use `capture_animus_sitl.py` as the normal visual pre-merge check for Animus layout work. Use `interact_animus_sitl.py` for complex interaction changes, guarded command UX, dashboard widget workflows, workspace switching, or when checkpoint screenshots are needed after specific UI actions. The interaction harness is intentionally kept outside `verify_agent_work.py --animus` for now so the standard Animus check remains the faster screenshot workflow.
+
 Protocol-backed GCS workflow changes should also include Vitest coverage for MAVLink encode/decode helpers, operation state transitions, authority blocking, timeouts, and confirmation rejection for the affected domains: parameters, mission transfer, terrain/map, onboard logs, and camera commands.

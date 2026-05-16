@@ -31,6 +31,22 @@ For a Python bridge session:
 python3 tools/python/mavlink_live_bridge.py
 ```
 
+## Verification Workflows
+
+The lightweight visual workflow launches live SITL, opens Animus, and captures one screenshot per workspace:
+
+```sh
+python3 tools/python/capture_animus_sitl.py
+```
+
+The deeper interaction workflow launches the same live stack and drives Chromium through Playwright:
+
+```sh
+python3 tools/python/interact_animus_sitl.py
+```
+
+Use the interaction harness when changing workspace controls, dashboard widget workflows, guarded command surfaces, mission editing, replay/session controls, or any UI behavior that needs screenshots at specific checkpoints. It writes logs, the Playwright report, and checkpoint screenshots under `artifacts/animus-interactions/<timestamp>/`.
+
 ## Flight View
 
 - Camera buttons select `Chase`, `Orbit`, `Top`, `Side`, or `Free`.
