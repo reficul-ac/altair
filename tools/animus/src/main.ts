@@ -2,6 +2,8 @@ import { bindMapControls, drawMap } from './map-panel';
 import { clearInspectorLog, recordInspectorSnapshot, updateInspector } from './inspector-ui';
 import { setHudMode, updateHud, updateStatusStrip, updateVehicleList, type HudMode } from './hud-ui';
 import { SceneRenderer, nextCameraMode, type CameraMode, type ThemeName } from './scene-renderer';
+import { createDashboardController } from './dashboard-ui';
+import type { AnimusDashboardLayout } from './dashboard-types';
 import {
   createEmptyMissionPlan,
   validateMission,
@@ -44,6 +46,9 @@ type AnimusApi = {
   setListenPort: (port: number) => Promise<AnimusConfig>;
   selectVehicle?: (id: string) => Promise<SessionSnapshotMessage>;
   addMarker?: (label: string) => Promise<SessionSnapshotMessage>;
+  getDashboardLayout?: () => Promise<AnimusDashboardLayout>;
+  saveDashboardLayout?: (layout: AnimusDashboardLayout) => Promise<AnimusDashboardLayout>;
+  resetDashboardLayout?: () => Promise<AnimusDashboardLayout>;
   validateMission?: (plan: MissionPlan) => Promise<MissionValidationResult>;
   saveMission?: (plan: MissionPlan) => Promise<{ saved: boolean; path?: string; reason?: string; validation: MissionValidationResult }>;
   loadMission?: () => Promise<{ loaded: boolean; path?: string; plan?: MissionPlan; validation?: MissionValidationResult }>;
@@ -107,13 +112,23 @@ const state = {
   syncInspection: true
 };
 bindMapControls(() => state.snapshot);
+const dashboard = createDashboardController({
+  getSnapshot: () => state.snapshot,
+  getApi: () => window.altairAnimus,
+  issueCommand: (command, originSurface) => issueGuardedCommand(command, originSurface),
+  setStatus: (message) => {
+    document.querySelector<HTMLElement>('#status')!.textContent = message;
+  }
+});
 
 function applyVehicle(message: VehicleStateMessage): void {
   state.selected = message;
   updateHud(message, state.showYaw);
   updateStatusStrip(message);
   scene.applyVehicle(message);
-  drawMap(mapSnapshotForVehicle(message));
+  const snapshot = mapSnapshotForVehicle(message);
+  drawMap(snapshot);
+  dashboard.update(snapshot);
 }
 
 function applySnapshot(snapshot: SessionSnapshotMessage): void {
@@ -128,6 +143,7 @@ function applySnapshot(snapshot: SessionSnapshotMessage): void {
   updateVehicleComparison(snapshot);
   updateAnalysis(snapshot);
   updateGcsSurfaces(snapshot);
+  dashboard.update(snapshot);
 }
 
 function updateConfig(config: AnimusConfig): void {
@@ -438,17 +454,21 @@ function renderGuardedCommands(vehicle: VehicleStateMessage | null): void {
   `;
   container.querySelectorAll<HTMLButtonElement>('[data-command]').forEach((button) => {
     button.addEventListener('click', () => {
-      const command = button.dataset.command as CommandName;
-      const vehicleId = vehicle?.id ?? `${vehicle?.systemId ?? '--'}:${vehicle?.componentId ?? '--'}`;
-      const confirmation = confirmGuardedCommand(command, vehicleId);
-      if (!confirmation.confirmed) {
-        void window.altairAnimus?.auditCommandRejection?.({ command, vehicleId, confirmed: false, confirmationType: confirmation.confirmationType, confirmationResult: 'rejected', originSurface: 'setup-guarded-commands', params: confirmation.params }, 'operator confirmation was rejected');
-        return;
-      }
-      void window.altairAnimus?.issueCommand?.({ command, vehicleId, confirmed: true, confirmationType: confirmation.confirmationType, confirmationResult: 'accepted', originSurface: 'setup-guarded-commands', params: confirmation.params }).then((result) => {
-        document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
-      });
+      issueGuardedCommand(button.dataset.command as CommandName, 'setup-guarded-commands');
     });
+  });
+}
+
+function issueGuardedCommand(command: CommandName, originSurface: string): void {
+  const vehicle = state.selected;
+  const vehicleId = vehicle?.id ?? `${vehicle?.systemId ?? '--'}:${vehicle?.componentId ?? '--'}`;
+  const confirmation = confirmGuardedCommand(command, vehicleId);
+  if (!confirmation.confirmed) {
+    void window.altairAnimus?.auditCommandRejection?.({ command, vehicleId, confirmed: false, confirmationType: confirmation.confirmationType, confirmationResult: 'rejected', originSurface, params: confirmation.params }, 'operator confirmation was rejected');
+    return;
+  }
+  void window.altairAnimus?.issueCommand?.({ command, vehicleId, confirmed: true, confirmationType: confirmation.confirmationType, confirmationResult: 'accepted', originSurface, params: confirmation.params }).then((result) => {
+    document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
   });
 }
 
@@ -693,5 +713,6 @@ setHudMode('console');
 scene.setTheme('grid');
 document.querySelector<HTMLCanvasElement>('#ortho')!.classList.toggle('hidden', !scene.ortho);
 setWorkspace('flight');
+dashboard.load();
 connect();
 scene.start();

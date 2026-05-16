@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { MavlinkServiceConfig, SessionSnapshotPayload, VehicleStatePayload } from './mavlink.js';
 import type { ReplayTimelineMessage } from './state.js';
 import type { CommandAuditEntry, CommandDispatchResult, CommandTransaction, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MissionTransferState, MissionValidationResult, MockLinkState, ParameterEditRequest, ParameterEditResult } from './state.js';
+import type { AnimusDashboardLayout } from './dashboard-types.js';
 
 export type AltairAnimusApi = {
   onVehicleState: (callback: (message: VehicleStatePayload) => void) => () => void;
@@ -12,6 +13,9 @@ export type AltairAnimusApi = {
   setListenPort: (port: number) => Promise<MavlinkServiceConfig>;
   selectVehicle: (id: string) => Promise<SessionSnapshotPayload>;
   addMarker: (label: string) => Promise<SessionSnapshotPayload>;
+  getDashboardLayout: () => Promise<AnimusDashboardLayout>;
+  saveDashboardLayout: (layout: AnimusDashboardLayout) => Promise<AnimusDashboardLayout>;
+  resetDashboardLayout: () => Promise<AnimusDashboardLayout>;
   validateMission: (plan: MissionPlan) => Promise<MissionValidationResult>;
   saveMission: (plan: MissionPlan) => Promise<{ saved: boolean; path?: string; reason?: string; validation: MissionValidationResult }>;
   loadMission: () => Promise<{ loaded: boolean; path?: string; plan?: MissionPlan; validation?: MissionValidationResult }>;
@@ -81,6 +85,15 @@ const api: AltairAnimusApi = {
   },
   addMarker(label) {
     return ipcRenderer.invoke('mavlink:add-marker', label);
+  },
+  getDashboardLayout() {
+    return ipcRenderer.invoke('dashboard:get-layout');
+  },
+  saveDashboardLayout(layout) {
+    return ipcRenderer.invoke('dashboard:save-layout', layout);
+  },
+  resetDashboardLayout() {
+    return ipcRenderer.invoke('dashboard:reset-layout');
   },
   validateMission(plan) {
     return ipcRenderer.invoke('mission:validate', plan);

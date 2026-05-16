@@ -68,6 +68,7 @@
 
   .viewport,
   .map-workspace,
+  .dashboard-workspace,
   .inspector-workspace {
     grid-column: 1;
     grid-row: 2;
@@ -84,8 +85,14 @@
   }
 
   .inspector-grid,
-  .analysis-grid {
+  .analysis-grid,
+  .dashboard-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-span-wide,
+  .dashboard-span-full {
+    grid-column: span 1;
   }
 }
 
@@ -151,5 +158,17 @@
 
   .axis {
     display: none;
+  }
+
+  .dashboard-toolbar {
+    display: grid;
+  }
+
+  .dashboard-actions {
+    justify-content: stretch;
+  }
+
+  .dashboard-actions button {
+    flex: 1 1 130px;
   }
 }

@@ -33,7 +33,7 @@
   grid-column: 1;
   grid-row: 1;
   display: grid;
-  grid-template-rows: auto repeat(6, auto) minmax(0, 1fr);
+  grid-template-rows: auto repeat(7, auto) minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
   min-height: 0;

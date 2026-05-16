@@ -18,6 +18,8 @@ import { parseAltairReplayJson, ReplaySession, type ReplayPlaybackState } from '
 import { createMockLink, defaultCommandCapabilities, evaluateGuardedCommand } from './parity.js';
 import { validateMission } from './state.js';
 import { createCommandAuditLog } from './command-audit.js';
+import { dashboardLayoutPath, readDashboardLayout, resetDashboardLayout, writeDashboardLayout } from './dashboard-settings.js';
+import type { AnimusDashboardLayout } from './dashboard-types.js';
 import type { CommandAuditEntry, CommandDispatchResult, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MockLinkState } from './state.js';
 import type { OperationAuditEntry, ParameterEditRequest } from './state.js';
 
@@ -66,6 +68,7 @@ const telemetry = new MavlinkTelemetryService(parseArgs(process.argv.slice(1)), 
 const replay = new ReplaySession();
 const commandAuditLog = createCommandAuditLog(path.join(app.getPath('userData'), 'command-audit.jsonl'));
 const operationAuditLog = createCommandAuditLog(path.join(app.getPath('userData'), 'operation-audit.jsonl'));
+const dashboardLayoutFile = dashboardLayoutPath(app.getPath('userData'));
 let recentCommandAudit: CommandAuditEntry[] = [];
 let mockLink: MockLinkState | null = null;
 
@@ -161,6 +164,9 @@ ipcMain.handle('mavlink:set-listen-port', async (_event, port: number) => {
 });
 ipcMain.handle('mavlink:select-vehicle', (_event, id: string) => replay.isLoaded() ? replay.selectVehicle(String(id)) : telemetry.selectVehicle(String(id)));
 ipcMain.handle('mavlink:add-marker', (_event, label: string) => telemetry.addMarker(String(label || 'Marker')));
+ipcMain.handle('dashboard:get-layout', () => readDashboardLayout(dashboardLayoutFile));
+ipcMain.handle('dashboard:save-layout', (_event, layout: AnimusDashboardLayout) => writeDashboardLayout(dashboardLayoutFile, layout));
+ipcMain.handle('dashboard:reset-layout', () => resetDashboardLayout(dashboardLayoutFile));
 ipcMain.handle('mission:validate', (_event, plan: MissionPlan) => validateMission(plan));
 ipcMain.handle('mission:save', async (_event, plan: MissionPlan) => {
   const validation = validateMission(plan);

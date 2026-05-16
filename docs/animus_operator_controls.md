@@ -51,6 +51,15 @@ Vehicle meshes are chosen from heartbeat vehicle type: fixed-wing, multirotor, V
 
 The map renders selected and fleet trails, event markers, an origin/home marker when available, mission waypoint paths, terrain reports, geofence polygons/circles, and rally points when decoded records are present. Terrain check requests are protocol-backed and appear in the operation history. Creating or editing geofences, rally points, or terrain tiles remains out of scope unless a decoded MAVLink path is added for that operation.
 
+## Dashboard View
+
+- `Add Widget` opens the built-in widget catalog for fixed-grid status and guarded-control widgets.
+- Each widget has a remove control; `Reset Layout` restores the default dashboard.
+- V1 uses stable responsive grid spans. Dragging, resizing, layout profiles, and threshold customization are intentionally out of scope.
+- The Electron app persists the layout as JSON at `path.join(app.getPath('userData'), 'dashboard-layout.json')`. Missing or invalid settings fall back to the default layout without overwriting the file until the operator changes or resets the layout.
+
+Status widgets read the same session snapshot used by Flight, Map, Inspector, and Setup. The guarded control widget uses the existing command authority, confirmation, dispatch, audit, retry, and guard evaluation path. Commands are disabled when the selected vehicle reports read-only authority, stale or non-live link state, unsupported command capability, or a decoded blocked-command reason.
+
 ## Inspector View
 
 - Use the message filter to narrow by message name, message id, or `system:component`.

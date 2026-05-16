@@ -6,6 +6,7 @@ export function renderAppShell(root: HTMLElement): void {
         <span>Altair</span>
       </div>
       <button class="active" data-workspace="flight" type="button">Flight</button>
+      <button data-workspace="dashboard" type="button">Dashboard</button>
       <button data-workspace="map" type="button">Map</button>
       <button data-workspace="inspector" type="button">Inspector</button>
       <button data-workspace="video" type="button">Video</button>
@@ -82,6 +83,20 @@ export function renderAppShell(root: HTMLElement): void {
         <button id="map-zoom-out" type="button">-</button>
       </div>
       <canvas id="map-canvas" width="1200" height="760"></canvas>
+    </section>
+    <section class="workspace-panel dashboard-workspace" data-panel="dashboard">
+      <div class="dashboard-toolbar">
+        <div>
+          <h1>Dashboard</h1>
+          <p>Operator-selected telemetry and guarded controls</p>
+        </div>
+        <div class="dashboard-actions">
+          <button id="dashboard-add" type="button">Add Widget</button>
+          <button id="dashboard-reset" type="button">Reset Layout</button>
+        </div>
+      </div>
+      <div id="dashboard-grid" class="dashboard-grid"></div>
+      <aside id="dashboard-drawer" class="dashboard-drawer" aria-label="Add dashboard widget"></aside>
     </section>
     <section class="workspace-panel inspector-workspace" data-panel="inspector">
       <div class="inspector-grid">
