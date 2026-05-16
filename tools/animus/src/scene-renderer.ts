@@ -1,11 +1,19 @@
-import { AmbientLight, ArrowHelper, AxesHelper, BoxGeometry, BufferAttribute, BufferGeometry, CapsuleGeometry, ConeGeometry, CylinderGeometry, DirectionalLight, Fog, GridHelper, Group, Line, LineBasicMaterial, Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Scene, SphereGeometry, Vector3, WebGLRenderer } from 'three';
+import { AmbientLight, ArrowHelper, AxesHelper, BoxGeometry, BufferAttribute, BufferGeometry, CapsuleGeometry, ConeGeometry, CylinderGeometry, DirectionalLight, Euler, Fog, GridHelper, Group, Line, LineBasicMaterial, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Quaternion, Scene, SphereGeometry, TorusGeometry, Vector3, WebGLRenderer } from 'three';
 import { fmt } from './hud-ui';
 import { TrailBuffer, trailPointFromState, type SessionEvent, type VehicleStateMessage, type TrailPoint } from './state';
 
-export const CAMERA_MODES = ['chase', 'orbit', 'top', 'side', 'free'] as const;
+export const CAMERA_MODES = ['chase', 'orbit', 'top', 'side', 'fpv', 'free'] as const;
 export type CameraMode = (typeof CAMERA_MODES)[number];
 export type ThemeName = 'grid' | 'rez' | 'snow';
 export type VehicleModelKind = 'fixed-wing' | 'multirotor' | 'vtol' | 'generic';
+export type AircraftAttitude = Pick<VehicleStateMessage['attitude'], 'rollRad' | 'pitchRad' | 'yawRad'>;
+export type AircraftPose = {
+  quaternion: Quaternion;
+  euler: Euler;
+  heading: Vector3;
+  right: Vector3;
+  up: Vector3;
+};
 
 export function nextCameraMode(mode: CameraMode): CameraMode {
   return CAMERA_MODES[(CAMERA_MODES.indexOf(mode) + 1) % CAMERA_MODES.length];
@@ -19,6 +27,31 @@ export function classifyVehicleModel(vehicleType: string | null | undefined): Ve
   return 'generic';
 }
 
+export function aircraftPoseFromTelemetry(attitude: AircraftAttitude): AircraftPose {
+  const yaw = attitude.yawRad;
+  const pitch = attitude.pitchRad;
+  const roll = attitude.rollRad;
+  const flatHeading = new Vector3(Math.sin(yaw), Math.cos(yaw), 0).normalize();
+  const flatRight = new Vector3(Math.cos(yaw), -Math.sin(yaw), 0).normalize();
+  const worldUp = new Vector3(0, 0, 1);
+  const heading = flatHeading.clone().multiplyScalar(Math.cos(pitch)).addScaledVector(worldUp, Math.sin(pitch)).normalize();
+  const pitchUp = worldUp.clone().multiplyScalar(Math.cos(pitch)).addScaledVector(flatHeading, -Math.sin(pitch)).normalize();
+  const right = flatRight.clone().multiplyScalar(Math.cos(roll)).addScaledVector(pitchUp, -Math.sin(roll)).normalize();
+  const up = new Vector3().crossVectors(right, heading).normalize();
+  const matrix = new Matrix4().makeBasis(heading, right, up);
+  const quaternion = new Quaternion().setFromRotationMatrix(matrix);
+  return { quaternion, euler: new Euler().setFromQuaternion(quaternion, 'ZYX'), heading, right, up };
+}
+
+export function cameraPresetOffset(mode: Exclude<CameraMode, 'free'>, attitude: AircraftAttitude): Vector3 {
+  const pose = aircraftPoseFromTelemetry(attitude);
+  if (mode === 'chase') return pose.heading.clone().multiplyScalar(-110).add(new Vector3(0, 0, 62));
+  if (mode === 'orbit') return new Vector3(-120, -90, 86);
+  if (mode === 'top') return new Vector3(0, 0, 260);
+  if (mode === 'side') return pose.right.clone().multiplyScalar(120).add(new Vector3(0, 0, 38));
+  return pose.heading.clone().multiplyScalar(10).add(new Vector3(0, 0, 3.5));
+}
+
 export class SceneRenderer {
   readonly trail = new TrailBuffer(2200);
   private readonly renderer: WebGLRenderer;
@@ -26,6 +59,7 @@ export class SceneRenderer {
   private readonly camera = new PerspectiveCamera(55, 1, 0.1, 4000);
   private readonly freeControls = { yaw: 0, pitch: -0.35, keys: new Set<string>(), dragging: false, lastX: 0, lastY: 0 };
   private aircraft = makeVehicleModel('fixed-wing');
+  private readonly attitudeRings = makeAttitudeRings();
   private selectedModelKind: VehicleModelKind = 'fixed-wing';
   private readonly otherAircraft = new Map<string, { group: Group; kind: VehicleModelKind }>();
   private readonly headingCue = new ArrowHelper(new Vector3(1, 0, 0), new Vector3(0, 0, 8), 42, 0xffc857, 10, 5);
@@ -43,6 +77,7 @@ export class SceneRenderer {
   private lastAnimationMs = performance.now();
   paused = false;
   cameraMode: CameraMode = 'chase';
+  cameraLocked = false;
   theme: ThemeName = 'grid';
   ortho = true;
   debug = false;
@@ -72,12 +107,14 @@ export class SceneRenderer {
     this.scene.add(runway);
     this.scene.add(new AxesHelper(90));
     this.scene.add(this.aircraft);
+    this.scene.add(this.attitudeRings);
     this.scene.add(this.headingCue);
     this.scene.add(new Line(this.trailGeometry, this.trailMaterial));
     this.bindPointer();
   }
 
   applyVehicle(message: VehicleStateMessage): void {
+    const needsInitialCameraSnap = this.lastPoint === null;
     this.lastMessage = message;
     this.ensureSelectedVehicleModel(message.vehicleType);
     const point = trailPointFromState(message);
@@ -91,7 +128,12 @@ export class SceneRenderer {
       this.headingCue.position.set(point.eastM, point.northM, point.upM + 8);
     }
     this.applyPose(this.aircraft, message);
-    this.headingCue.setDirection(new Vector3(Math.sin(message.attitude.yawRad), Math.cos(message.attitude.yawRad), 0).normalize());
+    this.updateControlSurfaces(this.aircraft, message);
+    const pose = aircraftPoseFromTelemetry(message.attitude);
+    this.headingCue.setDirection(pose.heading.clone().setZ(0).normalize());
+    this.attitudeRings.position.copy(this.aircraft.position);
+    this.attitudeRings.quaternion.copy(pose.quaternion);
+    if (needsInitialCameraSnap && this.cameraMode !== 'free') this.snapCameraToPreset(this.cameraMode);
   }
 
   applyFleet(vehicles: VehicleStateMessage[], selectedId: string | null, events: SessionEvent[]): void {
@@ -112,6 +154,7 @@ export class SceneRenderer {
         this.scene.add(group);
       }
       this.applyPose(entry.group, vehicle);
+      this.updateControlSurfaces(entry.group, vehicle);
     }
     for (const [id, entry] of this.otherAircraft) {
       if (!vehicles.some((vehicle) => vehicle.id === id && vehicle.id !== selectedId)) {
@@ -147,6 +190,16 @@ export class SceneRenderer {
     document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach((button) => {
       button.classList.toggle('active', button.dataset.camera === mode);
     });
+    if (mode !== 'free') this.snapCameraToPreset(mode);
+  }
+
+  setCameraLocked(locked: boolean): void {
+    this.cameraLocked = locked;
+    const button = document.querySelector<HTMLButtonElement>('#camera-lock');
+    if (button) {
+      button.classList.toggle('active', locked);
+      button.textContent = locked ? 'Unlock Camera' : 'Lock Camera';
+    }
   }
 
   start(): void {
@@ -164,7 +217,7 @@ export class SceneRenderer {
     const previous = this.aircraft;
     const replacement = makeVehicleModel(kind);
     replacement.position.copy(previous.position);
-    replacement.rotation.copy(previous.rotation);
+    replacement.quaternion.copy(previous.quaternion);
     this.scene.remove(previous);
     this.aircraft = replacement;
     this.selectedModelKind = kind;
@@ -174,8 +227,22 @@ export class SceneRenderer {
   private applyPose(group: Group, message: VehicleStateMessage): void {
     const point = trailPointFromState(message);
     if (point) group.position.set(point.eastM, point.northM, point.upM);
-    group.rotation.order = 'ZYX';
-    group.rotation.set(message.attitude.pitchRad, -message.attitude.yawRad, -message.attitude.rollRad);
+    group.quaternion.copy(aircraftPoseFromTelemetry(message.attitude).quaternion);
+  }
+
+  private updateControlSurfaces(group: Group, message: VehicleStateMessage): void {
+    const surfaces = message.controlSurfaces;
+    const aileron = (surfaces?.aileron ?? 0) * 0.45;
+    const elevator = (surfaces?.elevator ?? 0) * 0.45;
+    const rudder = (surfaces?.rudder ?? 0) * 0.5;
+    const leftAileron = group.getObjectByName('aileron-left');
+    const rightAileron = group.getObjectByName('aileron-right');
+    const elevatorSurface = group.getObjectByName('elevator');
+    const rudderSurface = group.getObjectByName('rudder');
+    if (leftAileron) leftAileron.rotation.y = aileron;
+    if (rightAileron) rightAileron.rotation.y = -aileron;
+    if (elevatorSurface) elevatorSurface.rotation.y = elevator;
+    if (rudderSurface) rudderSurface.rotation.z = rudder;
   }
 
   private updateMarkers(events: SessionEvent[]): void {
@@ -216,6 +283,7 @@ export class SceneRenderer {
     this.lastAnimationMs = nowMs;
     this.resize();
     this.updateCamera(deltaS);
+    this.attitudeRings.visible = !document.querySelector<HTMLElement>('#hud-tactical')?.classList.contains('hidden');
     drawRadar(this.radarCanvas, this.shell);
     if (this.ortho) drawOrtho(this.orthoCanvas, this.shell, this.trail.values(), this.lastPoint);
     this.updateDebug(nowMs);
@@ -231,37 +299,11 @@ export class SceneRenderer {
   }
 
   private updateCamera(deltaS: number): void {
-    const target = this.aircraft.position;
-    if (this.cameraMode !== 'top') {
-      this.camera.up.set(0, 0, 1);
-    }
-    if (this.cameraMode === 'chase') {
-      const yaw = this.lastMessage?.attitude.yawRad ?? 0;
-      const offset = new Vector3(-Math.sin(yaw) * 110, -Math.cos(yaw) * 110, 62);
-      this.camera.position.lerp(target.clone().add(offset), 0.05);
-      this.camera.lookAt(target.x, target.y, target.z + 6);
+    if (this.cameraLocked && this.cameraMode !== 'free') {
+      this.applyPresetCamera(this.cameraMode, 1);
       return;
     }
-    if (this.cameraMode === 'orbit') {
-      const orbitYaw = performance.now() * 0.00008;
-      const offset = new Vector3(Math.sin(orbitYaw) * 145, Math.cos(orbitYaw) * 145, 86);
-      this.camera.position.lerp(target.clone().add(offset), 0.035);
-      this.camera.lookAt(target.x, target.y, target.z + 8);
-      return;
-    }
-    if (this.cameraMode === 'top') {
-      this.camera.up.set(0, 1, 0);
-      this.camera.position.lerp(target.clone().add(new Vector3(0, 0, 260)), 0.09);
-      this.camera.lookAt(target.x, target.y, target.z);
-      return;
-    }
-    if (this.cameraMode === 'side') {
-      const yaw = this.lastMessage?.attitude.yawRad ?? 0;
-      const offset = new Vector3(Math.cos(yaw) * 120, -Math.sin(yaw) * 120, 38);
-      this.camera.position.lerp(target.clone().add(offset), 0.06);
-      this.camera.lookAt(target.x, target.y, target.z + 4);
-      return;
-    }
+    this.camera.up.set(0, 0, 1);
     const boost = this.freeControls.keys.has('ShiftLeft') || this.freeControls.keys.has('ShiftRight') ? 3 : 1;
     const speed = 70 * boost * deltaS;
     const forward = new Vector3(Math.sin(this.freeControls.yaw), Math.cos(this.freeControls.yaw), 0);
@@ -276,6 +318,32 @@ export class SceneRenderer {
     this.camera.lookAt(look);
   }
 
+  private snapCameraToPreset(mode: Exclude<CameraMode, 'free'>): void {
+    this.applyPresetCamera(mode, 1);
+    this.syncFreeControlsFromCamera();
+  }
+
+  private applyPresetCamera(mode: Exclude<CameraMode, 'free'>, alpha: number): void {
+    const attitude = this.lastMessage?.attitude ?? { rollRad: 0, pitchRad: 0, yawRad: 0 };
+    const target = this.aircraft.position;
+    this.camera.up.set(0, 0, 1);
+    if (mode === 'top') this.camera.up.set(0, 1, 0);
+    const offset = cameraPresetOffset(mode, attitude);
+    const desired = target.clone().add(offset);
+    this.camera.position.lerp(desired, alpha);
+    const lookAhead = mode === 'fpv'
+      ? target.clone().add(aircraftPoseFromTelemetry(attitude).heading.multiplyScalar(95))
+      : target.clone().add(new Vector3(0, 0, mode === 'top' ? 0 : 6));
+    this.camera.lookAt(lookAhead);
+  }
+
+  private syncFreeControlsFromCamera(): void {
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+    this.freeControls.yaw = Math.atan2(direction.x, direction.y);
+    this.freeControls.pitch = Math.asin(Math.max(-1, Math.min(1, direction.z)));
+  }
+
   private updateDebug(nowMs: number): void {
     this.frames += 1;
     if (nowMs - this.lastFpsMs < 500) return;
@@ -285,7 +353,7 @@ export class SceneRenderer {
     setText('debug-fps', fmt(this.fps, '', 0));
     setText('debug-frame', fmt(this.lastFrameMs, ' ms', 1));
     setText('debug-trail', String(this.trail.values().length));
-    setText('debug-camera', this.cameraMode);
+    setText('debug-camera', `${this.cameraMode}${this.cameraLocked ? ' locked' : ''}`);
     setText('debug-position', this.lastPoint ? `${fmt(this.lastPoint.eastM)} E / ${fmt(this.lastPoint.northM)} N / ${fmt(this.lastPoint.upM)} U` : '--');
   }
 
@@ -293,7 +361,7 @@ export class SceneRenderer {
     window.addEventListener('keydown', (event) => this.freeControls.keys.add(event.code));
     window.addEventListener('keyup', (event) => this.freeControls.keys.delete(event.code));
     this.canvas.addEventListener('pointerdown', (event) => {
-      if (this.cameraMode !== 'free') return;
+      if (this.cameraLocked) return;
       this.freeControls.dragging = true;
       this.freeControls.lastX = event.clientX;
       this.freeControls.lastY = event.clientY;
@@ -310,6 +378,13 @@ export class SceneRenderer {
       this.freeControls.dragging = false;
       this.canvas.releasePointerCapture(event.pointerId);
     });
+    this.canvas.addEventListener('wheel', (event) => {
+      if (this.cameraLocked) return;
+      event.preventDefault();
+      const direction = new Vector3();
+      this.camera.getWorldDirection(direction);
+      this.camera.position.addScaledVector(direction, Math.max(-80, Math.min(80, event.deltaY * 0.12)));
+    }, { passive: false });
   }
 }
 
@@ -333,10 +408,40 @@ function makeFixedWing(accent = 0x3aa0ff): Group {
   const tail = new Mesh(new BoxGeometry(4, 15, 5), new MeshStandardMaterial({ color: 0xffc857, roughness: 0.5 }));
   tail.position.x = -11;
   group.add(tail);
+  const surfaceMaterial = new MeshStandardMaterial({ color: 0x1b2632, roughness: 0.52 });
+  const leftAileron = new Mesh(new BoxGeometry(2.6, 10, 0.55), surfaceMaterial);
+  leftAileron.name = 'aileron-left';
+  leftAileron.position.set(-1, 16.5, -0.2);
+  group.add(leftAileron);
+  const rightAileron = new Mesh(new BoxGeometry(2.6, 10, 0.55), surfaceMaterial);
+  rightAileron.name = 'aileron-right';
+  rightAileron.position.set(-1, -16.5, -0.2);
+  group.add(rightAileron);
+  const elevator = new Mesh(new BoxGeometry(2.2, 13, 0.5), surfaceMaterial);
+  elevator.name = 'elevator';
+  elevator.position.set(-14, 0, 1.7);
+  group.add(elevator);
+  const rudder = new Mesh(new BoxGeometry(0.6, 0.8, 5.8), surfaceMaterial);
+  rudder.name = 'rudder';
+  rudder.position.set(-13.4, 0, 4.3);
+  group.add(rudder);
   const nose = new Mesh(new ConeGeometry(3.7, 8, 24), new MeshStandardMaterial({ color: 0xfffbf0, roughness: 0.36 }));
   nose.rotation.z = -Math.PI / 2;
   nose.position.x = 16;
   group.add(nose);
+  return group;
+}
+
+function makeAttitudeRings(): Group {
+  const group = new Group();
+  const ringGeometry = new TorusGeometry(34, 0.32, 8, 96);
+  const roll = new Mesh(ringGeometry, new MeshStandardMaterial({ color: 0x0a84ff, emissive: 0x06264a, roughness: 0.4 }));
+  roll.rotation.y = Math.PI / 2;
+  const pitch = new Mesh(ringGeometry, new MeshStandardMaterial({ color: 0x64d2ff, emissive: 0x123342, roughness: 0.4 }));
+  pitch.rotation.x = Math.PI / 2;
+  const yaw = new Mesh(ringGeometry, new MeshStandardMaterial({ color: 0xffd60a, emissive: 0x443800, roughness: 0.4 }));
+  group.add(roll, pitch, yaw);
+  group.visible = false;
   return group;
 }
 

@@ -41,6 +41,11 @@ export type VehicleStateMessage = {
     climbMps: number | null;
     throttlePct: number | null;
   };
+  controlSurfaces?: {
+    aileron: number | null;
+    elevator: number | null;
+    rudder: number | null;
+  };
   status?: {
     armed: boolean | null;
     mode: string | null;

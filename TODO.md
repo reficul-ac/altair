@@ -59,27 +59,27 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Add persisted application settings beyond the dashboard layout.
 - [ ] Add real 2D and 3D terrain map views in Animus for clearer terrain and
   vehicle-position visualization.
-- [ ] Correct the flight-view 3D aircraft model heading so the nose points in
+- [x] Correct the flight-view 3D aircraft model heading so the nose points in
   the vehicle's telemetry-derived direction of travel.
-- [ ] Verify and fix 3D aircraft roll, pitch, and yaw rendering so the model
+- [x] Verify and fix 3D aircraft roll, pitch, and yaw rendering so the model
   attitude follows telemetry correctly across all axes.
-- [ ] Add finer 3D aircraft model details, including visible actuator surfaces
+- [x] Add finer 3D aircraft model details, including visible actuator surfaces
   that deflect from live actuator or control telemetry.
-- [ ] Rearrange the main flight-tab status strip so longer status labels remain
+- [x] Rearrange the main flight-tab status strip so longer status labels remain
   fully readable at the default capture viewport.
-- [ ] Add an FPV camera preset alongside Chase, Orbit, Top, Side, and Free.
-- [ ] Make camera preset views snap to useful positions without locking normal
+- [x] Add an FPV camera preset alongside Chase, Orbit, Top, Side, and Free.
+- [x] Make camera preset views snap to useful positions without locking normal
   rotate and zoom controls by default.
-- [ ] Add an explicit camera-view lock option near the view controls, defaulting
+- [x] Add an explicit camera-view lock option near the view controls, defaulting
   off, to enforce fixed preset views when desired.
-- [ ] Rework tactical attitude rings into three dimensional gyro-style rings
+- [x] Rework tactical attitude rings into three dimensional gyro-style rings
   around the aircraft that track roll, pitch, and yaw with vehicle motion.
 - [x] Fix the Electron screenshot capture hang so `capture_animus_sitl.py`
   produces screenshots reliably instead of relying on timeout failure.
-- [ ] Decide whether Animus capture artifacts should represent the requested
+- [x] Decide whether Animus capture artifacts should represent the requested
   outer viewport or Electron web contents size; current `1440x900` captures
   save `1440x835` PNGs.
-- [ ] Reduce unnecessary vertical scrollbars in default Animus `1440x900`
+- [x] Reduce unnecessary vertical scrollbars in default Animus `1440x900`
   capture views, especially the live debugger pane and longer workspace panels.
 - [ ] Persist completed onboard MAVLink log downloads as raw `.tlog` or `.bin`
   files once `LOG_DATA` byte assembly is promoted from operation progress to

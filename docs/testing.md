@@ -75,7 +75,7 @@ npm run build --prefix tools/animus
 python3 tools/python/capture_animus_sitl.py
 ```
 
-The capture workflow starts a no-QGC live SITL session, opens Animus through Electron, captures the `flight`, `map`, `inspector`, `plan`, `setup`, and `video` workspaces at `1440x900`, and writes screenshots plus logs under `artifacts/animus-screenshots/<timestamp>/`.
+The capture workflow starts a no-QGC live SITL session, opens Animus through Electron, captures the `flight`, `map`, `inspector`, `plan`, `setup`, and `video` workspaces with a requested `1440x900` Electron outer window, and writes screenshots plus logs under `artifacts/animus-screenshots/<timestamp>/`. The saved PNG dimensions reflect Electron's web contents area after the window frame is allocated; use that as the current visual contract unless a future capture mode explicitly requests web-contents sizing.
 
 Inspect the generated screenshots before review. Check that the 3D scene is nonblank, live link/telemetry state is visible, the selected workspace matches the file name, desktop layout is usable, and controls/text are not obviously clipped or overlapping. This workflow is required for Animus UI/layout changes even before it becomes a GitHub Actions status check; if it cannot run, note the reason and the residual visual risk in the review or final response.
 

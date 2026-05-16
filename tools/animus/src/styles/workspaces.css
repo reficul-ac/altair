@@ -7,7 +7,7 @@
   overflow-y: auto;
   border-left: 1px solid var(--muted-border);
   background: color-mix(in srgb, var(--panel-bg) 94%, #05070a);
-  padding: 22px;
+  padding: 16px;
 }
 
 .metrics.workspace-panel.workspace-visible {
@@ -307,14 +307,14 @@
 
 .inspector-workspace {
   overflow: auto;
-  padding: 20px;
+  padding: 16px;
 }
 
 .inspector-grid {
   display: grid;
   grid-template-columns: minmax(340px, 0.92fr) minmax(0, 1fr);
-  gap: 16px;
-  min-height: 100%;
+  gap: 12px;
+  min-height: 0;
 }
 
 .inspector-grid > section,
@@ -323,7 +323,7 @@
   border: 1px solid var(--muted-border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--panel-bg) 92%, transparent);
-  padding: 16px;
+  padding: 14px;
 }
 
 .inspector-grid h2,
@@ -417,7 +417,7 @@
 }
 
 .metrics h1 {
-  margin: 0 0 20px;
+  margin: 0 0 14px;
   font-size: 1.18rem;
   font-weight: 760;
 }
@@ -437,8 +437,8 @@
 .controls,
 .replay-controls {
   display: grid;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 9px;
+  margin-bottom: 10px;
 }
 
 .controls label,
@@ -524,7 +524,7 @@
 .vehicle-switcher,
 .event-section,
 .metrics > dl {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 #vehicle-list {
@@ -571,8 +571,8 @@
 .analysis-grid {
   display: grid;
   grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.1fr);
-  gap: 16px;
-  min-height: 100%;
+  gap: 12px;
+  min-height: 0;
 }
 
 .analysis-grid section {

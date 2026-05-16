@@ -672,6 +672,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-camera-action]').forEach((bu
   });
 }));
 document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach((button) => button.addEventListener('click', () => scene.setCameraMode(button.dataset.camera as CameraMode)));
+document.querySelector<HTMLButtonElement>('#camera-lock')!.addEventListener('click', () => scene.setCameraLocked(!scene.cameraLocked));
 document.querySelectorAll<HTMLButtonElement>('[data-hud]').forEach((button) => button.addEventListener('click', () => {
   state.hudMode = button.dataset.hud as HudMode;
   setHudMode(state.hudMode);
@@ -713,6 +714,7 @@ window.addEventListener('keydown', (event) => {
 
 setHudMode('console');
 scene.setTheme('grid');
+scene.setCameraLocked(false);
 document.querySelector<HTMLCanvasElement>('#ortho')!.classList.toggle('hidden', !scene.ortho);
 setWorkspace('flight');
 dashboard.load();

@@ -173,6 +173,11 @@ export type VehicleStatePayload = {
     climbMps: number | null;
     throttlePct: number | null;
   };
+  controlSurfaces?: {
+    aileron: number | null;
+    elevator: number | null;
+    rudder: number | null;
+  };
   status?: {
     armed: boolean | null;
     mode: string | null;
@@ -1094,6 +1099,11 @@ function readFloat(payload: Buffer, offset: number): number | null {
   return payload.length >= offset + 4 ? payload.readFloatLE(offset) : null;
 }
 
+function servoPwmToNormalized(raw: number | null): number | null {
+  if (raw === null || raw <= 0) return null;
+  return Math.max(-1, Math.min(1, (raw - 1500) / 500));
+}
+
 export class LiveVehicleState {
   connected = false;
   lastPacketTimeS: number | null = null;
@@ -1118,6 +1128,7 @@ export class LiveVehicleState {
   groundspeedMps: number | null = null;
   climbMps: number | null = null;
   throttlePct: number | null = null;
+  controlSurfaces: VehicleStatePayload['controlSurfaces'] = { aileron: null, elevator: null, rudder: null };
   originLatDeg: number | null = null;
   originLonDeg: number | null = null;
   originAltitudeM: number | null = null;
@@ -1260,6 +1271,7 @@ export class LiveVehicleState {
         climbMps: this.climbMps,
         throttlePct: this.throttlePct
       },
+      controlSurfaces: this.controlSurfaces,
       status: {
         armed: this.armed,
         mode: this.mode,
@@ -1339,6 +1351,12 @@ export class LiveVehicleState {
       if (typeof f.altM === 'number') this.altitudeM = f.altM;
     } else if (message.msgId === 42) {
       this.missionSeq = num(f.seq);
+    } else if (message.msgId === 36) {
+      this.controlSurfaces = {
+        aileron: servoPwmToNormalized(num(f.servo1Raw)),
+        elevator: servoPwmToNormalized(num(f.servo2Raw)),
+        rudder: servoPwmToNormalized(num(f.servo4Raw))
+      };
     } else if (message.msgId === 44) {
       this.missionCount = num(f.count);
     } else if (message.msgId === 22) {

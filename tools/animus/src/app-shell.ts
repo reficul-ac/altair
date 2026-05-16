@@ -23,6 +23,7 @@ export function renderAppShell(root: HTMLElement): void {
           <button data-camera="orbit" type="button">Orbit</button>
           <button data-camera="top" type="button">Top</button>
           <button data-camera="side" type="button">Side</button>
+          <button data-camera="fpv" type="button">FPV</button>
           <button data-camera="free" type="button">Free</button>
         </div>
         <div class="segmented" aria-label="HUD mode">
@@ -31,6 +32,7 @@ export function renderAppShell(root: HTMLElement): void {
           <button data-hud="off" type="button">Off</button>
         </div>
         <button id="ortho-toggle" type="button">Ortho</button>
+        <button id="camera-lock" type="button">Lock Camera</button>
         <button id="debug-toggle" type="button">Debug</button>
         <button id="theme-toggle" type="button">Grid</button>
         <button id="marker" type="button">Marker</button>
@@ -57,9 +59,6 @@ export function renderAppShell(root: HTMLElement): void {
       <div class="hud hud-tactical hidden" id="hud-tactical">
         <div class="tactical-tag left"><span>GS</span><strong id="tactical-gs">--</strong></div>
         <div class="tactical-tag right"><span>ALT</span><strong id="tactical-alt">--</strong></div>
-        <div class="gimbal-ring roll"></div>
-        <div class="gimbal-ring pitch"></div>
-        <div class="gimbal-ring yaw"></div>
         <canvas id="radar" width="180" height="180"></canvas>
       </div>
       <canvas class="ortho hidden" id="ortho" width="220" height="220"></canvas>
