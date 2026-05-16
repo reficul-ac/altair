@@ -154,11 +154,11 @@ Current status split:
 Audit and scope:
 
 - [x] Re-audit Animus parity claims and mark placeholder/shell features separately from implemented features.
-- [ ] Decide which full-GCS features should stay out of scope for the debugger-oriented Altair/SITL workflow, and show explicit unsupported-feature states where needed.
+- [x] Decide which full-GCS features should stay out of scope for the debugger-oriented Altair/SITL workflow, and show explicit unsupported-feature states where needed.
 
 Operational safety:
 
-- [ ] Define command authority states for read-only, SITL-writable, trusted live-link writable, and maintenance/setup modes, with visible UI state and clear downgrade behavior.
+- [x] Define command authority states for read-only, SITL-writable, trusted live-link writable, and maintenance/setup modes, with visible UI state and clear downgrade behavior.
 - [ ] Add arming and preflight gates for GPS/estimator health, link freshness, failsafe state, battery/power, mission validity, operator confirmation, and firmware-specific readiness checks.
 - [ ] Design emergency action UX for disarm, kill/emergency stop, hold/pause, return-to-launch, land, and command cancellation, including accidental-click protection and post-action feedback.
 - [ ] Add a durable command audit log covering operator identity/session, vehicle, link, command payload, confirmation, ACK/NACK/result, retries, timeout, and failure reason.
@@ -168,7 +168,7 @@ Operational safety:
 Firmware compatibility:
 
 - [ ] Maintain a compatibility matrix for PX4, ArduPilot, and Altair covering supported vehicle types, firmware versions, MAVLink dialects, MAVLink v1/v2 coverage, and signing expectations.
-- [ ] Map firmware-specific flight modes, custom modes, arming states, failsafe states, mission states, and unsupported or unknown states into typed Animus UI models.
+- [ ] Map firmware-specific flight modes, custom modes, arming states, failsafe states, mission states, and unsupported or unknown states into typed Animus UI models. Initial PX4/ArduPilot heartbeat mode, arming, readiness, and unsupported/unknown UI states are implemented; failsafe and full mission-state mapping remain.
 - [ ] Add capability discovery from heartbeat, AUTOPILOT_VERSION, protocol version, parameters, mission support, camera support, log support, and component metadata where available.
 - [ ] Support parameter metadata sources and firmware-specific constraints for PX4, ArduPilot, and Altair, including units, ranges, reboot requirements, volatile parameters, and unknown metadata fallback.
 - [ ] Keep unsupported firmware workflows visible but disabled until protocol support, firmware mapping, and acceptance tests exist.

@@ -45,8 +45,8 @@ export function updateHud(message: VehicleStateMessage, showYaw: boolean): void 
   setText('velocity', `${fmt(message.velocity.northMps, ' N')} / ${fmt(message.velocity.eastMps, ' E')} / ${fmt(-message.velocity.downMps, ' U')}`);
   setText('vehicle-type', message.vehicleType ?? 'Unknown vehicle');
   setText('vehicle-id', message.id ?? `sys ${message.systemId ?? '--'} comp ${message.componentId ?? '--'}`);
-  setText('armed', message.status?.armed === null || message.status?.armed === undefined ? '--' : message.status.armed ? 'Armed' : 'Disarmed');
-  setText('mode', message.status?.mode ?? '--');
+  setText('armed', message.status?.armingState?.label ?? (message.status?.armed === null || message.status?.armed === undefined ? '--' : message.status.armed ? 'Armed' : 'Disarmed'));
+  setText('mode', message.status?.modeState?.label ?? message.status?.mode ?? '--');
   setText('gps', `${message.status?.gpsFix ?? '--'} / ${fmt(message.status?.satellitesVisible, ' sats', 0)}`);
   setText('battery', `${fmt(message.status?.batteryVoltageV, ' V', 2)} / ${fmt(message.status?.batteryRemainingPct, '%', 0)}`);
   setText('mission', fmt(message.status?.missionSeq, '', 0));
@@ -65,7 +65,9 @@ export function updateStatusStrip(message: VehicleStateMessage | null): void {
     ['packet-age', `Packet ${fmt(message?.packetAgeS, 's')}`, levelForAge(message?.packetAgeS, 0.8, 2)],
     ['heartbeat-age', `Heartbeat ${fmt(message?.heartbeatAgeS, 's')}`, levelForAge(message?.heartbeatAgeS, 2, 5)],
     ['vehicle-kind', message?.vehicleType ?? '--', message?.vehicleType ? 'ok' : 'stale'],
+    ['authority-state', message?.commandCapabilities?.authority ?? 'unknown', message?.commandCapabilities?.blockedReason ? 'warning' : 'ok'],
     ['arm-state', message?.status?.armed ? 'Armed' : message?.status?.armed === false ? 'Disarmed' : '--', message?.status?.armed ? 'warning' : 'ok'],
+    ['mode-state', message?.status?.modeState?.label ?? message?.status?.mode ?? '--', message?.status?.modeState?.known === false ? 'warning' : 'ok'],
     ['gps-state', message?.status?.gpsFix ?? '--', message?.status?.gpsFix?.includes('3D') ? 'ok' : 'warning'],
     ['battery-state', `${fmt(message?.status?.batteryVoltageV, 'V', 2)} ${fmt(message?.status?.batteryRemainingPct, '%', 0)}`, message?.status?.batteryRemainingPct !== null && message?.status?.batteryRemainingPct !== undefined && message.status.batteryRemainingPct < 20 ? 'warning' : 'ok']
   ];

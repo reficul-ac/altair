@@ -1,6 +1,6 @@
 import dgram, { type RemoteInfo, type Socket } from 'node:dgram';
 import { EventEmitter } from 'node:events';
-import { buildMultiVehicleAnalysis, defaultCommandCapabilities } from './parity.js';
+import { buildMultiVehicleAnalysis, buildVehicleReadiness, defaultCommandCapabilities, firmwareIdentity, normalizeArmingState, normalizeFlightMode } from './parity.js';
 import { validateMission } from './state.js';
 import type {
   CameraStream,
@@ -13,6 +13,10 @@ import type {
   MissionTransferState,
   MockLinkState,
   MultiVehicleAnalysis,
+  NormalizedArmingState,
+  NormalizedFlightMode,
+  FirmwareIdentity,
+  VehicleReadiness,
   WritableLinkState
 } from './state.js';
 
@@ -116,6 +120,10 @@ export type VehicleStatePayload = {
   status?: {
     armed: boolean | null;
     mode: string | null;
+    modeState?: NormalizedFlightMode;
+    firmware?: FirmwareIdentity;
+    armingState?: NormalizedArmingState;
+    readiness?: VehicleReadiness;
     baseMode: number | null;
     customMode: number | null;
     gpsFix: string | null;
@@ -395,7 +403,8 @@ const DECODERS: Record<number, Decoder> = {
       systemStatus: p.readUInt8(7),
       mavlinkVersion: p.readUInt8(8),
       armed: (baseMode & 0x80) !== 0 ? 1 : 0,
-      mode: flightModeLabel(customMode, baseMode)
+      firmware: firmwareIdentity(p.readUInt8(5)).label,
+      mode: normalizeFlightMode(p.readUInt8(5), customMode, baseMode).label
     });
   },
   1: (message) => {
@@ -692,6 +701,7 @@ export class LiveVehicleState {
   mode: string | null = null;
   baseMode: number | null = null;
   customMode: number | null = null;
+  autopilot: number | null = null;
   gpsFix: string | null = null;
   satellitesVisible: number | null = null;
   batteryRemainingPct: number | null = null;
@@ -736,9 +746,30 @@ export class LiveVehicleState {
     const packetAgeS = this.lastPacketTimeS === null ? null : nowS - this.lastPacketTimeS;
     const heartbeatAgeS = this.lastHeartbeatTimeS === null ? null : nowS - this.lastHeartbeatTimeS;
     const [northM, eastM, upM] = this.localPosition();
+    const connected = this.connected && (packetAgeS === null || packetAgeS < 2);
+    const firmware = firmwareIdentity(this.autopilot);
+    const modeState = normalizeFlightMode(this.autopilot, this.customMode, this.baseMode);
+    const readiness = buildVehicleReadiness({
+      connected,
+      packetAgeS,
+      status: {
+        armed: this.armed,
+        mode: this.mode,
+        firmware,
+        baseMode: this.baseMode,
+        customMode: this.customMode,
+        gpsFix: this.gpsFix,
+        satellitesVisible: this.satellitesVisible,
+        batteryRemainingPct: this.batteryRemainingPct,
+        batteryVoltageV: this.batteryVoltageV,
+        onboardControlSensorsHealth: this.onboardControlSensorsHealth,
+        missionSeq: this.missionSeq,
+        lastStatusText: this.lastStatusText
+      }
+    });
     return {
       type: 'vehicle_state',
-      connected: this.connected && (packetAgeS === null || packetAgeS < 2),
+      connected,
       packetAgeS,
       heartbeatAgeS,
       systemId: this.systemId,
@@ -777,6 +808,10 @@ export class LiveVehicleState {
       status: {
         armed: this.armed,
         mode: this.mode,
+        modeState,
+        firmware,
+        armingState: normalizeArmingState(this.armed, readiness),
+        readiness,
         baseMode: this.baseMode,
         customMode: this.customMode,
         gpsFix: this.gpsFix,
@@ -787,7 +822,7 @@ export class LiveVehicleState {
         missionSeq: this.missionSeq,
         lastStatusText: this.lastStatusText
       },
-      commandCapabilities: defaultCommandCapabilities(true, false),
+      commandCapabilities: defaultCommandCapabilities(connected, false, { packetAgeS, readiness }),
       diagnostics: {
         linkId: `${this.systemId ?? 'unknown'}:${this.componentId ?? 'unknown'}`,
         transport: 'udp',
@@ -817,8 +852,9 @@ export class LiveVehicleState {
     if (message.msgId === 0) {
       this.baseMode = num(f.baseMode);
       this.customMode = num(f.customMode);
+      this.autopilot = num(f.autopilot);
       this.armed = boolish(f.armed);
-      this.mode = str(f.mode);
+      this.mode = normalizeFlightMode(this.autopilot, this.customMode, this.baseMode).label;
     } else if (message.msgId === 1) {
       this.onboardControlSensorsHealth = num(f.onboardControlSensorsHealth);
       this.batteryRemainingPct = num(f.batteryRemainingPct);
@@ -975,13 +1011,6 @@ export function mavTypeLabel(mavType: number): string {
     default:
       return `MAV_TYPE ${mavType}`;
   }
-}
-
-function flightModeLabel(customMode: number, baseMode: number): string {
-  if ((baseMode & 0x80) === 0 && customMode === 0) {
-    return 'Standby';
-  }
-  return customMode === 0 ? `base ${baseMode}` : `mode ${customMode}`;
 }
 
 function gpsFixLabel(fixType: number | null): string | null {
@@ -1309,12 +1338,16 @@ export class MavlinkTelemetryService extends EventEmitter {
   }
 
   linkState(): WritableLinkState {
+    const selected = this.registry.selectedVehicle();
     return {
-      liveLink: this.registry.selectedVehicle().connected,
+      liveLink: selected.connected,
       writable: this.config.writableAnimus,
       transport: 'udp',
       mode: this.config.writableAnimus ? 'sitl-writable' : 'read-only',
-      blockedReason: this.config.writableAnimus ? null : 'Animus writes require a SITL session started with --writable-animus.'
+      blockedReason: defaultCommandCapabilities(selected.connected, this.config.writableAnimus, {
+        packetAgeS: selected.packetAgeS,
+        readiness: selected.status?.readiness
+      }).blockedReason
     };
   }
 
@@ -1458,18 +1491,27 @@ export class MavlinkTelemetryService extends EventEmitter {
   }
 
   private applyWritableCapabilities(payload: VehicleStatePayload): void {
-    payload.commandCapabilities = defaultCommandCapabilities(payload.connected, this.config.writableAnimus);
-    if (this.config.writableAnimus && payload.commandCapabilities.blockedReason) {
-      payload.commandCapabilities.blockedReason = null;
-    }
+    payload.commandCapabilities = defaultCommandCapabilities(payload.connected, this.config.writableAnimus, {
+      packetAgeS: payload.packetAgeS,
+      readiness: payload.status?.readiness,
+      authority: this.config.writableAnimus ? 'sitl-writable' : 'read-only'
+    });
   }
 
   private writeBlocked(confirmed: boolean, target: { systemId: number; componentId: number } | null): string | null {
     if (!confirmed) {
       return 'operator confirmation is required';
     }
-    if (!target || !this.registry.selectedVehicle().connected) {
+    const selected = this.registry.selectedVehicle();
+    if (!target || !selected.connected) {
       return 'no live vehicle link advertises command support';
+    }
+    if (selected.packetAgeS === null || selected.packetAgeS >= 2) {
+      return 'Live command actions are blocked because the selected link is stale.';
+    }
+    const blockedReadiness = selected.status?.readiness?.checks.find((check) => check.state === 'blocked');
+    if (blockedReadiness) {
+      return `${blockedReadiness.label} blocks commands: ${blockedReadiness.detail}`;
     }
     if (!this.config.writableAnimus) {
       return 'Animus writes require a SITL session started with --writable-animus.';

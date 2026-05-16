@@ -44,6 +44,10 @@ export type VehicleStateMessage = {
   status?: {
     armed: boolean | null;
     mode: string | null;
+    modeState?: NormalizedFlightMode;
+    firmware?: FirmwareIdentity;
+    armingState?: NormalizedArmingState;
+    readiness?: VehicleReadiness;
     baseMode: number | null;
     customMode: number | null;
     gpsFix: string | null;
@@ -194,7 +198,7 @@ export type WritableLinkState = {
   liveLink: boolean;
   writable: boolean;
   transport: 'udp' | 'tcp' | 'serial' | 'mock' | 'replay';
-  mode: 'read-only' | 'sitl-writable';
+  mode: CommandAuthorityMode;
   blockedReason: string | null;
 };
 
@@ -279,8 +283,11 @@ export type CommandName =
 export type CommandCapabilityState = {
   liveLink: boolean;
   writableLink: boolean;
+  authority: CommandAuthorityMode;
+  stale: boolean;
   supported: CommandName[];
   blockedReason: string | null;
+  readiness?: VehicleReadiness;
 };
 
 export type GuardedCommandRequest = {
@@ -296,6 +303,54 @@ export type GuardedCommandResult = {
   vehicleId: string;
   reason: string;
   mock: boolean;
+};
+
+export type CommandAuthorityMode =
+  | 'read-only'
+  | 'sitl-writable'
+  | 'trusted-live-writable'
+  | 'maintenance-setup'
+  | 'unsupported'
+  | 'unknown';
+
+export type FirmwareFamily = 'px4' | 'ardupilot' | 'altair' | 'generic' | 'unknown' | 'unsupported';
+
+export type FirmwareIdentity = {
+  family: FirmwareFamily;
+  label: string;
+  autopilot: number | null;
+  source: 'heartbeat' | 'configured' | 'unknown';
+  unsupportedReason: string | null;
+};
+
+export type NormalizedFlightMode = {
+  label: string;
+  family: FirmwareFamily;
+  category: 'manual' | 'stabilized' | 'auto' | 'guided' | 'standby' | 'unknown' | 'unsupported';
+  baseMode: number | null;
+  customMode: number | null;
+  armed: boolean | null;
+  known: boolean;
+  unsupportedReason: string | null;
+};
+
+export type NormalizedArmingState = {
+  armed: boolean | null;
+  label: 'armed' | 'disarmed' | 'unknown';
+  readyForArm: 'ready' | 'blocked' | 'unknown';
+  reason: string | null;
+};
+
+export type ReadinessCheck = {
+  key: 'link' | 'gps' | 'battery' | 'mission' | 'firmware';
+  label: string;
+  state: 'ready' | 'warning' | 'blocked' | 'unknown';
+  detail: string;
+};
+
+export type VehicleReadiness = {
+  overall: 'ready' | 'warning' | 'blocked' | 'unknown';
+  checks: ReadinessCheck[];
 };
 
 export type ParameterValue = {

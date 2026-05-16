@@ -1,13 +1,18 @@
 import {
   LIVE_VIEWER_TARGET_ANALYSIS_VEHICLES,
   type CommandCapabilityState,
+  type CommandAuthorityMode,
+  type FirmwareIdentity,
   type CommandName,
   type GuardedCommandRequest,
   type GuardedCommandResult,
   type LinkDiagnostics,
   type MockLinkState,
   type MultiVehicleAnalysis,
+  type NormalizedArmingState,
+  type NormalizedFlightMode,
   type SessionSnapshotMessage,
+  type VehicleReadiness,
   type VehicleStateMessage
 } from './state.js';
 
@@ -27,12 +32,19 @@ const LIVE_COMMANDS: CommandName[] = [
   'mission-resume'
 ];
 
-export function defaultCommandCapabilities(liveLink: boolean, writableLink = false): CommandCapabilityState {
+export function defaultCommandCapabilities(liveLink: boolean, writableLink = false, options: { packetAgeS?: number | null; readiness?: VehicleReadiness; authority?: CommandAuthorityMode } = {}): CommandCapabilityState {
+  const stale = options.packetAgeS === null || options.packetAgeS === undefined ? false : options.packetAgeS >= 2;
+  const authority = options.authority ?? (writableLink ? 'sitl-writable' : 'read-only');
+  const ready = !options.readiness || options.readiness.overall === 'ready' || options.readiness.overall === 'warning';
+  const commandReady = liveLink && writableLink && !stale && ready && authority === 'sitl-writable';
   return {
     liveLink,
     writableLink,
-    supported: liveLink && writableLink ? LIVE_COMMANDS : [],
-    blockedReason: liveLink && writableLink ? null : liveLink ? 'Live command actions require an explicitly writable link.' : 'No live link is active.'
+    authority,
+    stale,
+    supported: commandReady ? LIVE_COMMANDS : [],
+    blockedReason: commandReady ? null : commandBlockReason(liveLink, writableLink, stale, options.readiness, authority),
+    readiness: options.readiness
   };
 }
 
@@ -43,8 +55,14 @@ export function evaluateGuardedCommand(request: GuardedCommandRequest, capabilit
   if (!capability?.liveLink) {
     return rejected(request, 'no live vehicle link advertises command support');
   }
+  if (capability.stale) {
+    return rejected(request, capability.blockedReason ?? 'link is stale');
+  }
   if (!capability.writableLink) {
     return rejected(request, capability.blockedReason ?? 'link is read-only');
+  }
+  if (capability.readiness?.overall === 'blocked' || capability.readiness?.overall === 'unknown') {
+    return rejected(request, capability.blockedReason ?? 'vehicle readiness is not sufficient for commands');
   }
   if (!capability.supported.includes(request.command)) {
     return rejected(request, `${request.command} is not advertised by the selected vehicle`);
@@ -56,6 +74,104 @@ export function evaluateGuardedCommand(request: GuardedCommandRequest, capabilit
     reason: 'command accepted by guarded dispatcher',
     mock: false
   };
+}
+
+export function firmwareIdentity(autopilot: number | null | undefined): FirmwareIdentity {
+  switch (autopilot) {
+    case 3:
+      return { family: 'ardupilot', label: 'ArduPilot', autopilot, source: 'heartbeat', unsupportedReason: null };
+    case 12:
+      return { family: 'px4', label: 'PX4', autopilot, source: 'heartbeat', unsupportedReason: null };
+    case 0:
+      return { family: 'generic', label: 'Generic MAVLink', autopilot, source: 'heartbeat', unsupportedReason: 'firmware-specific capabilities are unknown for generic MAVLink' };
+    case null:
+    case undefined:
+      return { family: 'unknown', label: 'Unknown firmware', autopilot: null, source: 'unknown', unsupportedReason: 'no heartbeat autopilot field has been decoded yet' };
+    default:
+      return { family: 'unsupported', label: `MAV_AUTOPILOT ${autopilot}`, autopilot, source: 'heartbeat', unsupportedReason: `MAV_AUTOPILOT ${autopilot} has no Animus compatibility mapping yet` };
+  }
+}
+
+export function normalizeFlightMode(autopilot: number | null | undefined, customMode: number | null | undefined, baseMode: number | null | undefined): NormalizedFlightMode {
+  const firmware = firmwareIdentity(autopilot);
+  const armed = typeof baseMode === 'number' ? (baseMode & 0x80) !== 0 : null;
+  if (baseMode === null || baseMode === undefined || customMode === null || customMode === undefined) {
+    return { label: 'Unknown', family: firmware.family, category: 'unknown', baseMode: baseMode ?? null, customMode: customMode ?? null, armed, known: false, unsupportedReason: 'heartbeat mode fields are incomplete' };
+  }
+  if ((baseMode & 0x80) === 0 && customMode === 0) {
+    return { label: 'Standby', family: firmware.family, category: 'standby', baseMode, customMode, armed, known: true, unsupportedReason: null };
+  }
+  const baseLabel = baseModeLabel(baseMode);
+  if (firmware.family === 'px4') {
+    const label = px4ModeLabel(customMode);
+    return { label: label ?? `PX4 custom ${customMode}`, family: firmware.family, category: categoryFor(label, baseLabel), baseMode, customMode, armed, known: label !== null, unsupportedReason: label === null ? 'PX4 custom mode is not mapped yet' : null };
+  }
+  if (firmware.family === 'ardupilot') {
+    const label = ardupilotModeLabel(customMode);
+    return { label: label ?? `ArduPilot custom ${customMode}`, family: firmware.family, category: categoryFor(label, baseLabel), baseMode, customMode, armed, known: label !== null, unsupportedReason: label === null ? 'ArduPilot custom mode is not mapped yet' : null };
+  }
+  const label = customMode === 0 ? baseLabel : `${firmware.label} custom ${customMode}`;
+  return {
+    label,
+    family: firmware.family,
+    category: customMode === 0 ? categoryFor(baseLabel, baseLabel) : 'unknown',
+    baseMode,
+    customMode,
+    armed,
+    known: customMode === 0,
+    unsupportedReason: customMode === 0 ? firmware.unsupportedReason : `custom mode ${customMode} needs a firmware-specific mapping`
+  };
+}
+
+export function normalizeArmingState(armed: boolean | null | undefined, readiness: VehicleReadiness): NormalizedArmingState {
+  if (armed === true) {
+    return { armed: true, label: 'armed', readyForArm: 'ready', reason: null };
+  }
+  if (armed === false) {
+    const blocked = readiness.checks.find((check) => check.state === 'blocked');
+    return { armed: false, label: 'disarmed', readyForArm: blocked ? 'blocked' : readiness.overall === 'unknown' ? 'unknown' : 'ready', reason: blocked?.detail ?? null };
+  }
+  return { armed: null, label: 'unknown', readyForArm: 'unknown', reason: 'arming state has not been decoded from heartbeat' };
+}
+
+export function buildVehicleReadiness(vehicle: Pick<VehicleStateMessage, 'connected' | 'packetAgeS' | 'status'>): VehicleReadiness {
+  const checks: VehicleReadiness['checks'] = [];
+  const stale = vehicle.packetAgeS === null || vehicle.packetAgeS >= 2;
+  checks.push({
+    key: 'link',
+    label: 'Live link',
+    state: vehicle.connected && !stale ? 'ready' : 'blocked',
+    detail: vehicle.connected && !stale ? 'fresh MAVLink packets' : stale ? 'selected link is stale or missing packet age' : 'no selected live link'
+  });
+  const gps = vehicle.status?.gpsFix;
+  checks.push({
+    key: 'gps',
+    label: 'GPS',
+    state: gps === null || gps === undefined ? 'unknown' : /3D|DGPS|RTK/.test(gps) ? 'ready' : 'warning',
+    detail: gps ?? 'GPS fix has not been decoded'
+  });
+  const battery = vehicle.status?.batteryRemainingPct;
+  checks.push({
+    key: 'battery',
+    label: 'Battery',
+    state: battery === null || battery === undefined ? 'unknown' : battery < 20 ? 'warning' : 'ready',
+    detail: battery === null || battery === undefined ? 'battery remaining has not been decoded' : `${battery}% remaining`
+  });
+  const mission = vehicle.status?.missionSeq;
+  checks.push({
+    key: 'mission',
+    label: 'Mission',
+    state: mission === null || mission === undefined ? 'unknown' : 'ready',
+    detail: mission === null || mission === undefined ? 'mission state has not been decoded' : `active item ${mission}`
+  });
+  const firmware = vehicle.status?.firmware;
+  checks.push({
+    key: 'firmware',
+    label: 'Firmware',
+    state: !firmware || firmware.family === 'unknown' ? 'unknown' : firmware.family === 'unsupported' ? 'warning' : 'ready',
+    detail: firmware?.unsupportedReason ?? firmware?.label ?? 'firmware identity has not been decoded'
+  });
+  return { checks, overall: overallReadiness(checks.map((check) => check.state)) };
 }
 
 export function buildMultiVehicleAnalysis(snapshot: SessionSnapshotMessage, ghostTimestampS: number | null = null): MultiVehicleAnalysis {
@@ -118,6 +234,80 @@ export function createMockLink(vehicleCount: number, id = 'mock-default'): MockL
 
 function rejected(request: GuardedCommandRequest, reason: string): GuardedCommandResult {
   return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason, mock: false };
+}
+
+function commandBlockReason(liveLink: boolean, writableLink: boolean, stale: boolean, readiness: VehicleReadiness | undefined, authority: CommandAuthorityMode): string {
+  if (!liveLink) return 'No live link is active.';
+  if (stale) return 'Live command actions are blocked because the selected link is stale.';
+  if (!writableLink) return 'Live command actions require an explicitly writable link.';
+  if (authority !== 'sitl-writable') return `Command authority is ${authority}.`;
+  const blocked = readiness?.checks.find((check) => check.state === 'blocked');
+  if (blocked) return `${blocked.label} blocks commands: ${blocked.detail}`;
+  if (readiness?.overall === 'unknown') return 'Vehicle readiness is unknown.';
+  return 'Live command actions are blocked.';
+}
+
+function baseModeLabel(baseMode: number): string {
+  if ((baseMode & 0x10) !== 0) return 'Manual';
+  if ((baseMode & 0x04) !== 0) return 'Auto';
+  if ((baseMode & 0x08) !== 0) return 'Guided';
+  if ((baseMode & 0x40) !== 0) return 'Stabilized';
+  return `base ${baseMode}`;
+}
+
+function px4ModeLabel(customMode: number): string | null {
+  const mainMode = (customMode >> 16) & 0xff;
+  const subMode = (customMode >> 24) & 0xff;
+  const main: Record<number, string> = { 1: 'Manual', 2: 'Altitude', 3: 'Position', 4: 'Auto', 5: 'Acro', 6: 'Offboard', 7: 'Stabilized', 8: 'Rattitude' };
+  if (mainMode !== 4) return main[mainMode] ?? null;
+  const auto: Record<number, string> = { 1: 'Auto ready', 2: 'Auto takeoff', 3: 'Auto loiter', 4: 'Auto mission', 5: 'Auto RTL', 6: 'Auto land', 8: 'Auto follow target', 9: 'Auto precision land' };
+  return auto[subMode] ?? 'Auto';
+}
+
+function ardupilotModeLabel(customMode: number): string | null {
+  const modes: Record<number, string> = {
+    0: 'Manual',
+    1: 'Circle',
+    2: 'Stabilize',
+    3: 'Training',
+    4: 'Acro',
+    5: 'FBWA',
+    6: 'FBWB',
+    7: 'Cruise',
+    8: 'Autotune',
+    10: 'Auto',
+    11: 'RTL',
+    12: 'Loiter',
+    14: 'Avoid ADSB',
+    15: 'Guided',
+    16: 'Initializing',
+    17: 'QStabilize',
+    18: 'QHover',
+    19: 'QLoiter',
+    20: 'QLand',
+    21: 'QRTL',
+    22: 'QAutotune',
+    23: 'QAcro',
+    24: 'Thermal'
+  };
+  return modes[customMode] ?? null;
+}
+
+function categoryFor(label: string | null, fallback: string): NormalizedFlightMode['category'] {
+  const text = (label ?? fallback).toLowerCase();
+  if (text.includes('manual') || text.includes('acro')) return 'manual';
+  if (text.includes('auto') || text.includes('mission') || text.includes('rtl') || text.includes('land') || text.includes('takeoff')) return 'auto';
+  if (text.includes('guided') || text.includes('offboard')) return 'guided';
+  if (text.includes('stabil')) return 'stabilized';
+  if (text.includes('standby') || text.includes('initializing')) return 'standby';
+  return 'unknown';
+}
+
+function overallReadiness(states: VehicleReadiness['checks'][number]['state'][]): VehicleReadiness['overall'] {
+  if (states.includes('blocked')) return 'blocked';
+  if (states.includes('warning')) return 'warning';
+  if (states.includes('unknown')) return 'unknown';
+  return 'ready';
 }
 
 function pointFromVehicle(vehicle: VehicleStateMessage): { eastM: number; northM: number; upM: number } | null {

@@ -345,7 +345,7 @@ function updateVehicleComparison(snapshot: SessionSnapshotMessage): void {
       ? '--'
       : `${vehicle.localPosition.northM.toFixed(1)} N / ${vehicle.localPosition.eastM.toFixed(1)} E`;
     const armed = vehicle.status?.armed === null || vehicle.status?.armed === undefined ? '--' : vehicle.status.armed ? 'ARM' : 'SAFE';
-    return `<div><strong>${escapeHtml(id)}</strong><span>${escapeHtml(vehicle.vehicleType ?? 'MAVLink')}</span><span>${escapeHtml(vehicle.status?.mode ?? '--')}</span><span>${armed}</span><span>${position}</span></div>`;
+    return `<div><strong>${escapeHtml(id)}</strong><span>${escapeHtml(vehicle.status?.firmware?.label ?? vehicle.vehicleType ?? 'MAVLink')}</span><span>${escapeHtml(vehicle.status?.modeState?.label ?? vehicle.status?.mode ?? '--')}</span><span>${armed}</span><span>${position}</span></div>`;
   }).join('') || '<p class="empty">No vehicle streams</p>';
 }
 
@@ -418,13 +418,18 @@ function updatePlanSurface(vehicle: VehicleStateMessage | null): void {
 }
 
 function updateSetupSurface(vehicle: VehicleStateMessage | null): void {
-  const readiness = [
-    ['Live link', vehicle?.connected ? 'ready' : 'missing'],
-    ['GPS', vehicle?.status?.gpsFix ?? '--'],
-    ['Battery', vehicle?.status?.batteryRemainingPct === null || vehicle?.status?.batteryRemainingPct === undefined ? '--' : `${vehicle.status.batteryRemainingPct}%`],
-    ['Mission', vehicle?.mission?.state?.state ?? vehicle?.status?.missionSeq ?? '--']
+  const readiness = vehicle?.status?.readiness;
+  const checks = readiness?.checks ?? [
+    { label: 'Live link', state: vehicle?.connected ? 'ready' : 'blocked', detail: vehicle?.connected ? 'fresh MAVLink packets' : 'missing' },
+    { label: 'Firmware', state: 'unknown', detail: 'firmware identity has not been decoded' }
   ];
-  document.querySelector<HTMLElement>('#readiness-list')!.innerHTML = readiness.map(([label, value]) => `<div><strong>${escapeHtml(String(label))}</strong><span>${escapeHtml(String(value))}</span></div>`).join('');
+  const commandState = vehicle?.commandCapabilities;
+  document.querySelector<HTMLElement>('#readiness-list')!.innerHTML = [
+    `<div><strong>Overall</strong><span>${escapeHtml(readiness?.overall ?? 'unknown')}</span><span>${escapeHtml(commandState?.blockedReason ?? 'commands available')}</span></div>`,
+    `<div><strong>Authority</strong><span>${escapeHtml(commandState?.authority ?? 'unknown')}</span><span>${escapeHtml(commandState?.writableLink ? 'writable' : 'read-only')}</span></div>`,
+    `<div><strong>Mode</strong><span>${escapeHtml(vehicle?.status?.modeState?.label ?? '--')}</span><span>${escapeHtml(vehicle?.status?.modeState?.unsupportedReason ?? vehicle?.status?.modeState?.category ?? 'unknown')}</span></div>`,
+    ...checks.map((check) => `<div><strong>${escapeHtml(String(check.label))}</strong><span>${escapeHtml(String(check.state))}</span><span>${escapeHtml(String(check.detail))}</span></div>`)
+  ].join('');
   const parameters = vehicle?.parameters ?? [];
   const query = document.querySelector<HTMLInputElement>('#parameter-filter')?.value.toLowerCase() ?? '';
   document.querySelector<HTMLElement>('#parameter-list')!.innerHTML = parameters
@@ -442,7 +447,8 @@ function renderGuardedCommands(vehicle: VehicleStateMessage | null): void {
   const commands: CommandName[] = ['arm', 'disarm', 'emergency-stop', 'takeoff', 'land', 'return-to-launch', 'pause', 'change-altitude', 'go-to', 'orbit', 'mission-start', 'mission-continue', 'mission-resume'];
   const container = document.querySelector<HTMLElement>('#guarded-commands')!;
   const supported = vehicle?.commandCapabilities?.supported ?? [];
-  container.innerHTML = commands.map((command) => `<button type="button" data-command="${command}" ${supported.includes(command) ? '' : 'disabled'}>${escapeHtml(command)}</button>`).join('');
+  const blockedReason = vehicle?.commandCapabilities?.blockedReason ?? 'command is not advertised by the selected vehicle';
+  container.innerHTML = commands.map((command) => `<button type="button" data-command="${command}" ${supported.includes(command) ? '' : 'disabled'} title="${escapeHtml(supported.includes(command) ? `Send ${command}` : blockedReason)}">${escapeHtml(command)}</button>`).join('');
   container.querySelectorAll<HTMLButtonElement>('[data-command]').forEach((button) => {
     button.addEventListener('click', () => {
       const command = button.dataset.command as CommandName;
@@ -577,7 +583,9 @@ document.querySelector<HTMLElement>('#status-strip')!.addEventListener('click', 
     'packet-age': `Last packet age: ${selected?.packetAgeS?.toFixed(2) ?? '--'} s`,
     'heartbeat-age': `Last heartbeat age: ${selected?.heartbeatAgeS?.toFixed(2) ?? '--'} s`,
     'vehicle-kind': `Vehicle: ${selected?.vehicleType ?? '--'} / sys ${selected?.systemId ?? '--'} comp ${selected?.componentId ?? '--'}`,
+    'authority-state': `Command authority: ${selected?.commandCapabilities?.authority ?? 'unknown'} / ${selected?.commandCapabilities?.blockedReason ?? 'available'}`,
     'arm-state': `Arming state: ${selected?.status?.armed === null || selected?.status?.armed === undefined ? '--' : selected.status.armed ? 'armed' : 'disarmed'}`,
+    'mode-state': `Mode: ${selected?.status?.modeState?.label ?? '--'} / ${selected?.status?.modeState?.unsupportedReason ?? selected?.status?.modeState?.category ?? '--'}`,
     'gps-state': `GPS: ${selected?.status?.gpsFix ?? '--'} / satellites ${selected?.status?.satellitesVisible ?? '--'}`,
     'battery-state': `Battery: ${selected?.status?.batteryVoltageV ?? '--'} V / ${selected?.status?.batteryRemainingPct ?? '--'}%`
   };
