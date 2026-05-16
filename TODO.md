@@ -81,6 +81,14 @@ Reusable Bayek framework follow-up is tracked separately in
   save `1440x835` PNGs.
 - [x] Reduce unnecessary vertical scrollbars in default Animus `1440x900`
   capture views, especially the live debugger pane and longer workspace panels.
+- [x] Fix narrow `390x844` Animus workspace navigation so the tab row does not
+  create horizontal overflow across live workspaces.
+- [x] Fix narrow `390x844` flight workspace control wrapping so camera/HUD
+  controls do not overlap telemetry cards and the lower scene HUD.
+- [x] Fix narrow `390x844` inspector message table overflow so message names,
+  rates, and counts remain readable without clipped columns.
+- [x] Recenter the `1440x900` flight Free camera state so the vehicle remains
+  visible instead of rendering off-canvas or clipped into the top status area.
 - [ ] Persist completed onboard MAVLink log downloads as raw `.tlog` or `.bin`
   files once `LOG_DATA` byte assembly is promoted from operation progress to
   durable file output.

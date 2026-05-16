@@ -75,6 +75,7 @@ export class SceneRenderer {
   private lastFpsMs = performance.now();
   private lastFrameMs = 0;
   private lastAnimationMs = performance.now();
+  private freeCameraManuallyMoved = false;
   paused = false;
   cameraMode: CameraMode = 'chase';
   cameraLocked = false;
@@ -133,7 +134,10 @@ export class SceneRenderer {
     this.headingCue.setDirection(pose.heading.clone().setZ(0).normalize());
     this.attitudeRings.position.copy(this.aircraft.position);
     this.attitudeRings.quaternion.copy(pose.quaternion);
-    if (needsInitialCameraSnap && this.cameraMode !== 'free') this.snapCameraToPreset(this.cameraMode);
+    if (needsInitialCameraSnap) {
+      if (this.cameraMode === 'free') this.snapCameraToFreeDefault();
+      else this.snapCameraToPreset(this.cameraMode);
+    }
   }
 
   applyFleet(vehicles: VehicleStateMessage[], selectedId: string | null, events: SessionEvent[]): void {
@@ -190,7 +194,11 @@ export class SceneRenderer {
     document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach((button) => {
       button.classList.toggle('active', button.dataset.camera === mode);
     });
-    if (mode !== 'free') this.snapCameraToPreset(mode);
+    if (mode === 'free') {
+      if (!this.freeCameraManuallyMoved) this.snapCameraToFreeDefault();
+    } else {
+      this.snapCameraToPreset(mode);
+    }
   }
 
   setCameraLocked(locked: boolean): void {
@@ -323,6 +331,20 @@ export class SceneRenderer {
     this.syncFreeControlsFromCamera();
   }
 
+  private snapCameraToFreeDefault(): void {
+    const attitude = this.lastMessage?.attitude ?? { rollRad: 0, pitchRad: 0, yawRad: 0 };
+    const pose = aircraftPoseFromTelemetry(attitude);
+    const target = this.lastPoint
+      ? new Vector3(this.lastPoint.eastM, this.lastPoint.northM, this.lastPoint.upM)
+      : this.aircraft.position.clone();
+    const offset = pose.heading.clone().multiplyScalar(-130).addScaledVector(pose.right, 22).add(new Vector3(0, 0, 72));
+    const lookAt = target.clone().add(new Vector3(0, 0, 18));
+    this.camera.up.set(0, 0, 1);
+    this.camera.position.copy(target).add(offset);
+    this.camera.lookAt(lookAt);
+    this.syncFreeControlsFromCamera();
+  }
+
   private applyPresetCamera(mode: Exclude<CameraMode, 'free'>, alpha: number): void {
     const attitude = this.lastMessage?.attitude ?? { rollRad: 0, pitchRad: 0, yawRad: 0 };
     const target = this.aircraft.position;
@@ -358,7 +380,10 @@ export class SceneRenderer {
   }
 
   private bindPointer(): void {
-    window.addEventListener('keydown', (event) => this.freeControls.keys.add(event.code));
+    window.addEventListener('keydown', (event) => {
+      this.freeControls.keys.add(event.code);
+      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE'].includes(event.code)) this.freeCameraManuallyMoved = true;
+    });
     window.addEventListener('keyup', (event) => this.freeControls.keys.delete(event.code));
     this.canvas.addEventListener('pointerdown', (event) => {
       if (this.cameraLocked) return;
@@ -369,6 +394,7 @@ export class SceneRenderer {
     });
     this.canvas.addEventListener('pointermove', (event) => {
       if (!this.freeControls.dragging) return;
+      if (event.clientX !== this.freeControls.lastX || event.clientY !== this.freeControls.lastY) this.freeCameraManuallyMoved = true;
       this.freeControls.yaw -= (event.clientX - this.freeControls.lastX) * 0.005;
       this.freeControls.pitch = Math.max(-1.25, Math.min(1.25, this.freeControls.pitch - (event.clientY - this.freeControls.lastY) * 0.005));
       this.freeControls.lastX = event.clientX;
@@ -381,6 +407,7 @@ export class SceneRenderer {
     this.canvas.addEventListener('wheel', (event) => {
       if (this.cameraLocked) return;
       event.preventDefault();
+      this.freeCameraManuallyMoved = true;
       const direction = new Vector3();
       this.camera.getWorldDirection(direction);
       this.camera.position.addScaledVector(direction, Math.max(-80, Math.min(80, event.deltaY * 0.12)));
