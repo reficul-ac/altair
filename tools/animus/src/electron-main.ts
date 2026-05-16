@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  commandSpec,
   DEFAULT_LISTEN_HOST,
   DEFAULT_LISTEN_PORT,
   DEFAULT_QGC_HOST,
@@ -16,7 +17,8 @@ import {
 import { parseAltairReplayJson, ReplaySession, type ReplayPlaybackState } from './replay.js';
 import { createMockLink, defaultCommandCapabilities, evaluateGuardedCommand } from './parity.js';
 import { validateMission } from './state.js';
-import type { CommandDispatchResult, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MockLinkState } from './state.js';
+import { createCommandAuditLog } from './command-audit.js';
+import type { CommandAuditEntry, CommandDispatchResult, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MockLinkState } from './state.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, '..');
@@ -48,12 +50,54 @@ function parseArgs(argv: string[]): Partial<MavlinkServiceConfig> {
 
 const telemetry = new MavlinkTelemetryService(parseArgs(process.argv.slice(1)));
 const replay = new ReplaySession();
+const commandAuditLog = createCommandAuditLog(path.join(app.getPath('userData'), 'command-audit.jsonl'));
+let recentCommandAudit: CommandAuditEntry[] = [];
 let mockLink: MockLinkState | null = null;
 
 function sendToWindows(channel: string, payload: VehicleStatePayload | MavlinkServiceConfig | SessionSnapshotPayload | ReplayPlaybackState): void {
+  const message = channel === 'session-snapshot' && isSessionSnapshot(payload) ? withRecentCommandAudit(payload) : payload;
   for (const window of BrowserWindow.getAllWindows()) {
-    window.webContents.send(channel, payload);
+    window.webContents.send(channel, message);
   }
+}
+
+function isSessionSnapshot(payload: VehicleStatePayload | MavlinkServiceConfig | SessionSnapshotPayload | ReplayPlaybackState): payload is SessionSnapshotPayload {
+  return typeof payload === 'object' && payload !== null && 'type' in payload && payload.type === 'session_snapshot';
+}
+
+function withRecentCommandAudit(snapshot: SessionSnapshotPayload): SessionSnapshotPayload {
+  return {
+    ...snapshot,
+    commandAudit: recentCommandAudit.slice(0, 20)
+  };
+}
+
+async function appendAudit(entry: CommandAuditEntry): Promise<void> {
+  recentCommandAudit = [entry, ...recentCommandAudit.filter((candidate) => candidate !== entry)].slice(0, 20);
+  await commandAuditLog.append(entry);
+}
+
+function buildRejectedCommandAuditEntry(request: GuardedCommandRequest, reason: string, eventKind: CommandAuditEntry['eventKind']): CommandAuditEntry {
+  const spec = commandSpec(request.command, request.params);
+  const writable = telemetry.getConfig().writableAnimus;
+  return {
+    schemaVersion: 1,
+    eventKind,
+    transactionId: null,
+    timestamp: new Date().toISOString(),
+    vehicleId: request.vehicleId,
+    commandName: request.command,
+    commandId: spec?.command ?? null,
+    params: spec?.params ?? [],
+    confirmationType: request.confirmationType ?? 'browser-confirm',
+    accepted: false,
+    state: 'blocked',
+    reason,
+    ack: null,
+    authority: writable ? 'sitl-writable' : 'read-only',
+    writable,
+    retryCount: 0
+  };
 }
 
 function createWindow(): BrowserWindow {
@@ -177,12 +221,15 @@ ipcMain.handle('mock-link:start', (_event, vehicleCount: number) => {
   sendToWindows('session-snapshot', snapshot);
   return mockLink;
 });
-ipcMain.handle('command:issue', (_event, request: GuardedCommandRequest): GuardedCommandResult | CommandDispatchResult => {
+ipcMain.handle('command:issue', async (_event, request: GuardedCommandRequest): Promise<GuardedCommandResult | CommandDispatchResult> => {
   const selected = telemetry.registry.selectedVehicle();
   const capability = selected.commandCapabilities ?? defaultCommandCapabilities(selected.connected, telemetry.getConfig().writableAnimus);
   const guard = evaluateGuardedCommand(request, capability);
   const result = guard.accepted ? telemetry.dispatchCommand(request) : guard;
   if (!result.accepted) {
+    if (!guard.accepted) {
+      await appendAudit(buildRejectedCommandAuditEntry(request, result.reason, request.confirmed ? 'guard-rejected' : 'confirmation-rejected'));
+    }
     sendToWindows('session-snapshot', {
       type: 'session_snapshot',
       vehicles: [],
@@ -196,14 +243,33 @@ ipcMain.handle('command:issue', (_event, request: GuardedCommandRequest): Guarde
   }
   return result;
 });
+ipcMain.handle('command:audit-rejection', async (_event, request: GuardedCommandRequest, reason?: string) => {
+  const entry = buildRejectedCommandAuditEntry(request, String(reason || 'operator confirmation was rejected'), 'confirmation-rejected');
+  await appendAudit(entry);
+  sendToWindows('session-snapshot', {
+    type: 'session_snapshot',
+    vehicles: [],
+    selectedVehicleId: null,
+    messages: [],
+    events: [{ id: `command-${Date.now()}`, timestampS: 0, vehicleId: request.vehicleId, level: 'info', kind: 'command', label: entry.reason, position: null }],
+    packetCount: 0,
+    decodedCount: 0,
+    mockLinks: mockLink ? [mockLink] : []
+  } as SessionSnapshotPayload);
+  return entry;
+});
 
 telemetry.on('vehicle-state', (payload: VehicleStatePayload) => sendToWindows('vehicle-state', payload));
 telemetry.on('config', (config: MavlinkServiceConfig) => sendToWindows('mavlink-config', config));
 telemetry.on('session-snapshot', (snapshot: SessionSnapshotPayload) => sendToWindows('session-snapshot', snapshot));
+telemetry.on('command-audit', (entry: CommandAuditEntry) => {
+  void appendAudit(entry).catch((error) => console.error('Failed to append command audit entry', error));
+});
 replay.on('session-snapshot', (snapshot) => sendToWindows('session-snapshot', snapshot as SessionSnapshotPayload));
 replay.on('state', (state) => sendToWindows('replay-state', state));
 
 app.whenReady().then(async () => {
+  recentCommandAudit = await commandAuditLog.recent(20);
   await telemetry.start();
   createWindow();
 

@@ -4,6 +4,7 @@ import { buildMultiVehicleAnalysis, buildVehicleReadiness, defaultCommandCapabil
 import { validateMission } from './state.js';
 import type {
   CameraStream,
+  CommandAuditEntry,
   CommandCapabilityState,
   CommandDispatchResult,
   CommandName,
@@ -188,6 +189,7 @@ export type SessionSnapshotPayload = {
   analysis?: MultiVehicleAnalysis;
   mockLinks?: MockLinkState[];
   commandTransactions?: CommandTransaction[];
+  commandAudit?: CommandAuditEntry[];
 };
 
 export function x25Crc(data: Uint8Array, crc = 0xffff): number {
@@ -224,6 +226,7 @@ export const MAV_CMD = {
 
 const COMMAND_TRANSACTION_TIMEOUT_S = 2;
 const MAX_COMMAND_TRANSACTIONS = 80;
+const MAX_COMMAND_AUDIT_SNAPSHOT_ENTRIES = 20;
 
 export const MAV_RESULT_LABELS: Record<number, string> = {
   0: 'accepted',
@@ -1298,6 +1301,7 @@ export class MavlinkTelemetryService extends EventEmitter {
   private txSeq = 1;
   private commandTransactionSeq = 1;
   private readonly commandTransactions: CommandTransaction[] = [];
+  private readonly commandAudit: CommandAuditEntry[] = [];
 
   constructor(config: Partial<MavlinkServiceConfig> = {}) {
     super();
@@ -1417,22 +1421,83 @@ export class MavlinkTelemetryService extends EventEmitter {
   dispatchCommand(request: GuardedCommandRequest): CommandDispatchResult {
     const vehicle = this.registry.selectedVehicle();
     const target = parseVehicleTarget(request.vehicleId, vehicle);
+    const command = commandSpec(request.command, request.params);
     const blocked = this.writeBlocked(request.confirmed, target, request.command);
     if (blocked) {
+      this.pushCommandAudit(this.createCommandAuditEntry({
+        eventKind: 'dispatch-blocked',
+        request,
+        transaction: null,
+        commandId: command?.command ?? null,
+        params: command?.params ?? [],
+        accepted: false,
+        state: 'blocked',
+        reason: blocked
+      }));
       return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason: blocked, mock: false, sentPackets: 0, transactionId: null, state: 'blocked', ack: null };
     }
     if (!target) {
-      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason: 'no live vehicle link advertises command support', mock: false, sentPackets: 0, transactionId: null, state: 'blocked', ack: null };
+      const reason = 'no live vehicle link advertises command support';
+      this.pushCommandAudit(this.createCommandAuditEntry({
+        eventKind: 'dispatch-blocked',
+        request,
+        transaction: null,
+        commandId: command?.command ?? null,
+        params: command?.params ?? [],
+        accepted: false,
+        state: 'blocked',
+        reason
+      }));
+      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason, mock: false, sentPackets: 0, transactionId: null, state: 'blocked', ack: null };
     }
-    const command = commandSpec(request.command, request.params);
     if (!command) {
-      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason: `${request.command} is not supported by the SITL dispatcher`, mock: false, sentPackets: 0, transactionId: null, state: 'blocked', ack: null };
+      const reason = `${request.command} is not supported by the SITL dispatcher`;
+      this.pushCommandAudit(this.createCommandAuditEntry({
+        eventKind: 'dispatch-blocked',
+        request,
+        transaction: null,
+        commandId: null,
+        params: [],
+        accepted: false,
+        state: 'blocked',
+        reason
+      }));
+      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason, mock: false, sentPackets: 0, transactionId: null, state: 'blocked', ack: null };
     }
     const nowS = performanceNowS();
     const transaction = this.createCommandTransaction(request, command.command, command.params, nowS);
     const frame = encodeCommandLong(command.command, target.systemId, target.componentId, command.params, 0, this.nextSeq());
-    this.sendFrame(frame);
+    try {
+      this.sendFrame(frame);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      transaction.state = 'failed';
+      transaction.updatedAtS = nowS;
+      transaction.failureReason = reason;
+      this.pushCommandAudit(this.createCommandAuditEntry({
+        eventKind: 'send-failed',
+        request,
+        transaction,
+        commandId: command.command,
+        params: command.params,
+        accepted: false,
+        state: 'failed',
+        reason
+      }));
+      this.emit('session-snapshot', this.snapshot(nowS));
+      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason, mock: false, sentPackets: 0, transactionId: transaction.id, state: transaction.state, ack: null };
+    }
     this.registry.addMarker(`Command ${request.command} sent`, nowS, request.vehicleId);
+    this.pushCommandAudit(this.createCommandAuditEntry({
+      eventKind: 'dispatch-sent',
+      request,
+      transaction,
+      commandId: command.command,
+      params: command.params,
+      accepted: true,
+      state: transaction.state,
+      reason: 'command sent on writable SITL link'
+    }));
     this.emit('session-snapshot', this.snapshot(nowS));
     return { accepted: true, command: request.command, vehicleId: request.vehicleId, reason: 'command sent on writable SITL link', mock: false, sentPackets: 1, transactionId: transaction.id, state: transaction.state, ack: null };
   }
@@ -1558,6 +1623,11 @@ export class MavlinkTelemetryService extends EventEmitter {
       params: [...transaction.params],
       ack: transaction.ack ? { ...transaction.ack } : null
     }));
+    snapshot.commandAudit = this.commandAudit.slice(-MAX_COMMAND_AUDIT_SNAPSHOT_ENTRIES).reverse().map((entry) => ({
+      ...entry,
+      params: [...entry.params],
+      ack: entry.ack ? { ...entry.ack } : null
+    }));
     return snapshot;
   }
 
@@ -1568,6 +1638,7 @@ export class MavlinkTelemetryService extends EventEmitter {
       commandName: request.command,
       commandId,
       params: [...params],
+      confirmationType: request.confirmationType ?? 'browser-confirm',
       createdAtS: nowS,
       sentAtS: nowS,
       updatedAtS: nowS,
@@ -1598,6 +1669,22 @@ export class MavlinkTelemetryService extends EventEmitter {
     transaction.state = ack.result === 0 ? 'acknowledged' : 'failed';
     transaction.failureReason = ack.result === 0 ? null : ack.label;
     this.registry.addMarker(`Command ${transaction.commandName} ${transaction.state}: ${ack.label}`, nowS, transaction.vehicleId);
+    this.pushCommandAudit(this.createCommandAuditEntry({
+      eventKind: 'ack',
+      request: {
+        command: transaction.commandName,
+        vehicleId: transaction.vehicleId,
+        confirmed: true,
+        confirmationType: transaction.confirmationType
+      },
+      transaction,
+      commandId: transaction.commandId,
+      params: transaction.params,
+      accepted: ack.result === 0,
+      state: transaction.state,
+      reason: ack.result === 0 ? 'COMMAND_ACK accepted' : ack.label,
+      ack
+    }));
   }
 
   private expireCommandTransactionsForSnapshot(nowS: number): boolean {
@@ -1610,9 +1697,64 @@ export class MavlinkTelemetryService extends EventEmitter {
       transaction.updatedAtS = nowS;
       transaction.failureReason = `no COMMAND_ACK received within ${COMMAND_TRANSACTION_TIMEOUT_S}s`;
       this.registry.addMarker(`Command ${transaction.commandName} timed out`, nowS, transaction.vehicleId);
+      this.pushCommandAudit(this.createCommandAuditEntry({
+        eventKind: 'timeout',
+        request: {
+          command: transaction.commandName,
+          vehicleId: transaction.vehicleId,
+          confirmed: true,
+          confirmationType: transaction.confirmationType
+        },
+        transaction,
+        commandId: transaction.commandId,
+        params: transaction.params,
+        accepted: false,
+        state: 'timeout',
+        reason: transaction.failureReason
+      }));
       changed = true;
     }
     return changed;
+  }
+
+  private createCommandAuditEntry(options: {
+    eventKind: CommandAuditEntry['eventKind'];
+    request: GuardedCommandRequest;
+    transaction: CommandTransaction | null;
+    commandId: number | null;
+    params: number[];
+    accepted: boolean;
+    state: CommandAuditEntry['state'];
+    reason: string;
+    ack?: CommandAuditEntry['ack'];
+  }): CommandAuditEntry {
+    const config = this.getConfig();
+    return {
+      schemaVersion: 1,
+      eventKind: options.eventKind,
+      transactionId: options.transaction?.id ?? null,
+      timestamp: new Date().toISOString(),
+      vehicleId: options.request.vehicleId,
+      commandName: options.request.command,
+      commandId: options.commandId,
+      params: [...options.params],
+      confirmationType: options.request.confirmationType ?? 'browser-confirm',
+      accepted: options.accepted,
+      state: options.state,
+      reason: options.reason,
+      ack: options.ack ? { ...options.ack } : null,
+      authority: config.writableAnimus ? 'sitl-writable' : 'read-only',
+      writable: config.writableAnimus,
+      retryCount: options.transaction?.retryCount ?? 0
+    };
+  }
+
+  private pushCommandAudit(entry: CommandAuditEntry): void {
+    this.commandAudit.push(entry);
+    if (this.commandAudit.length > MAX_COMMAND_AUDIT_SNAPSHOT_ENTRIES) {
+      this.commandAudit.splice(0, this.commandAudit.length - MAX_COMMAND_AUDIT_SNAPSHOT_ENTRIES);
+    }
+    this.emit('command-audit', entry);
   }
 
   private writeBlocked(confirmed: boolean, target: { systemId: number; componentId: number } | null, command?: CommandName): string | null {
@@ -1685,7 +1827,7 @@ function parseVehicleTarget(vehicleId: string, fallback: VehicleStatePayload): {
   return null;
 }
 
-function commandSpec(command: CommandName, params: GuardedCommandRequest['params']): { command: number; params: number[] } | null {
+export function commandSpec(command: CommandName, params: GuardedCommandRequest['params']): { command: number; params: number[] } | null {
   const altitude = typeof params?.altitudeM === 'number' ? params.altitudeM : 0;
   switch (command) {
     case 'arm':

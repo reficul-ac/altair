@@ -123,6 +123,7 @@ export type SessionSnapshotMessage = {
   console?: ConsoleLogEntry[];
   mockLinks?: MockLinkState[];
   commandTransactions?: CommandTransaction[];
+  commandAudit?: CommandAuditEntry[];
 };
 
 export type ReplaySourceType = 'altair-session' | 'ulog-import' | 'mavlink-live' | 'mock-link' | 'csv-import';
@@ -233,6 +234,7 @@ export type CommandTransaction = {
   commandName: CommandName;
   commandId: number;
   params: number[];
+  confirmationType: CommandConfirmationType;
   createdAtS: number;
   sentAtS: number | null;
   updatedAtS: number;
@@ -244,6 +246,40 @@ export type CommandTransaction = {
   } | null;
   retryCount: number;
   failureReason: string | null;
+};
+
+export type CommandConfirmationType = 'browser-confirm' | 'typed-vehicle-id';
+
+export type CommandAuditEventKind =
+  | 'dispatch-blocked'
+  | 'dispatch-sent'
+  | 'ack'
+  | 'timeout'
+  | 'send-failed'
+  | 'guard-rejected'
+  | 'confirmation-rejected';
+
+export type CommandAuditEntry = {
+  schemaVersion: 1;
+  eventKind: CommandAuditEventKind;
+  transactionId: string | null;
+  timestamp: string;
+  vehicleId: string;
+  commandName: CommandName;
+  commandId: number | null;
+  params: number[];
+  confirmationType: CommandConfirmationType;
+  accepted: boolean;
+  state: CommandTransactionState;
+  reason: string;
+  ack: {
+    command: number;
+    result: number;
+    label: string;
+  } | null;
+  authority: CommandAuthorityMode;
+  writable: boolean;
+  retryCount: number;
 };
 
 export type MissionTransferState = {
@@ -325,6 +361,7 @@ export type GuardedCommandRequest = {
   command: CommandName;
   vehicleId: string;
   confirmed: boolean;
+  confirmationType?: CommandConfirmationType;
   params?: Record<string, number | string | boolean | null>;
 };
 

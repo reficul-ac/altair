@@ -817,8 +817,31 @@ select {
 
 .command-grid {
   display: grid;
+  gap: 10px;
+}
+
+.command-group {
+  display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
+}
+
+.command-group-safety {
+  border-top: 1px solid var(--muted-border);
+  padding-top: 10px;
+}
+
+.command-safety {
+  border-color: #7a6540;
+  background: #251f16;
+  color: #ffe2ad;
+}
+
+.command-emergency {
+  border-color: #a74551;
+  background: #35161d;
+  color: #ffd1d8;
+  font-weight: 700;
 }
 
 .command-grid button:disabled {

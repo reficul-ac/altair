@@ -16,6 +16,7 @@ import {
   mavTypeLabel,
   VehicleRegistry
 } from './mavlink';
+import type { CommandAuditEntry } from './state';
 
 const sockets: dgram.Socket[] = [];
 
@@ -400,6 +401,46 @@ describe('Electron MAVLink service', () => {
     });
   });
 
+  it('emits audit event for successful command dispatch with transaction id', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true });
+    makeWritable(service);
+    service.handlePacket(readyVehicle());
+    const audit: CommandAuditEntry[] = [];
+    service.on('command-audit', (entry) => audit.push(entry as CommandAuditEntry));
+
+    const result = service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true });
+
+    expect(audit[0]).toMatchObject({
+      eventKind: 'dispatch-sent',
+      transactionId: result.transactionId,
+      commandName: 'arm',
+      commandId: 400,
+      params: [1],
+      accepted: true,
+      state: 'sent',
+      confirmationType: 'browser-confirm',
+      writable: true
+    });
+  });
+
+  it('emits audit event for blocked dispatch', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: false });
+    service.handlePacket(heartbeat());
+    const audit: CommandAuditEntry[] = [];
+    service.on('command-audit', (entry) => audit.push(entry as CommandAuditEntry));
+
+    service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true });
+
+    expect(audit[0]).toMatchObject({
+      eventKind: 'dispatch-blocked',
+      transactionId: null,
+      commandName: 'arm',
+      accepted: false,
+      state: 'blocked',
+      writable: false
+    });
+  });
+
   it('marks accepted COMMAND_ACK as acknowledged on the matching transaction', () => {
     const service = new MavlinkTelemetryService({ writableAnimus: true });
     makeWritable(service);
@@ -415,6 +456,26 @@ describe('Electron MAVLink service', () => {
       state: 'acknowledged',
       ack: { command: 400, result: 0, label: 'accepted' },
       failureReason: null
+    });
+  });
+
+  it('emits audit event for accepted COMMAND_ACK', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true });
+    makeWritable(service);
+    service.handlePacket(readyVehicle());
+    const audit: CommandAuditEntry[] = [];
+    service.on('command-audit', (entry) => audit.push(entry as CommandAuditEntry));
+    const result = service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true, confirmationType: 'typed-vehicle-id' });
+
+    service.handlePacket(commandAck(400, 0));
+
+    expect(audit.at(-1)).toMatchObject({
+      eventKind: 'ack',
+      transactionId: result.transactionId,
+      accepted: true,
+      state: 'acknowledged',
+      ack: { command: 400, result: 0, label: 'accepted' },
+      confirmationType: 'typed-vehicle-id'
     });
   });
 
@@ -436,6 +497,26 @@ describe('Electron MAVLink service', () => {
     });
   });
 
+  it('emits audit event for rejected COMMAND_ACK', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true });
+    makeWritable(service);
+    service.handlePacket(readyVehicle());
+    const audit: CommandAuditEntry[] = [];
+    service.on('command-audit', (entry) => audit.push(entry as CommandAuditEntry));
+    const result = service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true });
+
+    service.handlePacket(commandAck(400, 2));
+
+    expect(audit.at(-1)).toMatchObject({
+      eventKind: 'ack',
+      transactionId: result.transactionId,
+      accepted: false,
+      state: 'failed',
+      reason: 'denied',
+      ack: { command: 400, result: 2, label: 'denied' }
+    });
+  });
+
   it('times out stale sent command transactions', () => {
     const service = new MavlinkTelemetryService({ writableAnimus: true });
     makeWritable(service);
@@ -453,6 +534,60 @@ describe('Electron MAVLink service', () => {
       state: 'timeout',
       ack: null,
       failureReason: 'no COMMAND_ACK received within 2s'
+    });
+  });
+
+  it('emits audit event for command timeout', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true });
+    makeWritable(service);
+    service.handlePacket(readyVehicle());
+    const audit: CommandAuditEntry[] = [];
+    let session = null as ReturnType<VehicleRegistry['snapshot']> | null;
+    service.on('command-audit', (entry) => audit.push(entry as CommandAuditEntry));
+    service.on('session-snapshot', (next) => {
+      session = next;
+    });
+    const result = service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true });
+    const transactionSentAtS = session?.commandTransactions?.[0]?.sentAtS;
+    expect(transactionSentAtS).toEqual(expect.any(Number));
+
+    service.expireCommandTransactions((transactionSentAtS ?? 0) + 2.1);
+
+    expect(audit.at(-1)).toMatchObject({
+      eventKind: 'timeout',
+      transactionId: result.transactionId,
+      accepted: false,
+      state: 'timeout',
+      reason: 'no COMMAND_ACK received within 2s'
+    });
+  });
+
+  it('records send failure as failed audit state if sendFrame throws after transaction creation', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true });
+    const writable = service as unknown as {
+      socket: { send: () => void };
+      lastRemote: { host: string; port: number };
+    };
+    writable.socket = { send: () => { throw new Error('socket send failed'); } };
+    writable.lastRemote = { host: '127.0.0.1', port: 14540 };
+    service.handlePacket(readyVehicle());
+    const audit: CommandAuditEntry[] = [];
+    let session = null as ReturnType<VehicleRegistry['snapshot']> | null;
+    service.on('command-audit', (entry) => audit.push(entry as CommandAuditEntry));
+    service.on('session-snapshot', (next) => {
+      session = next;
+    });
+
+    const result = service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true });
+
+    expect(result).toMatchObject({ accepted: false, state: 'failed', reason: 'socket send failed', transactionId: expect.any(String) });
+    expect(session?.commandTransactions?.[0]).toMatchObject({ id: result.transactionId, state: 'failed', failureReason: 'socket send failed' });
+    expect(audit.at(-1)).toMatchObject({
+      eventKind: 'send-failed',
+      transactionId: result.transactionId,
+      accepted: false,
+      state: 'failed',
+      reason: 'socket send failed'
     });
   });
 

@@ -5,6 +5,7 @@ import { SceneRenderer, nextCameraMode, type CameraMode, type ThemeName } from '
 import {
   createEmptyMissionPlan,
   validateMission,
+  type CommandAuditEntry,
   type CommandDispatchResult,
   type CommandName,
   type GuardedCommandRequest,
@@ -49,6 +50,7 @@ type AnimusApi = {
   exportSessionLog?: () => Promise<{ saved: boolean; path?: string }>;
   startMockLink?: (vehicleCount: number) => Promise<MockLinkState>;
   issueCommand?: (request: GuardedCommandRequest) => Promise<GuardedCommandResult | CommandDispatchResult>;
+  auditCommandRejection?: (request: GuardedCommandRequest, reason: string) => Promise<CommandAuditEntry>;
   replayPlay?: () => Promise<ReplayTimelineMessage>;
   replayPause?: () => Promise<ReplayTimelineMessage>;
   replaySeek?: (timestampS: number) => Promise<ReplayTimelineMessage>;
@@ -448,6 +450,16 @@ function updateSetupSurface(vehicle: VehicleStateMessage | null, snapshot = stat
 
 function renderCommandHistory(snapshot: SessionSnapshotMessage | null): void {
   const container = document.querySelector<HTMLElement>('#command-history')!;
+  const audit = snapshot?.commandAudit ?? [];
+  if (audit.length > 0) {
+    container.innerHTML = audit.slice(0, 8)
+      .map((entry) => {
+        const detail = entry.ack?.label ?? entry.reason;
+        return `<div><strong>${escapeHtml(entry.commandName)}</strong><span>${escapeHtml(entry.state)}</span><span>${escapeHtml(detail)}</span><span>${escapeHtml(formatAuditTime(entry.timestamp))}</span></div>`;
+      })
+      .join('');
+    return;
+  }
   const transactions = snapshot?.commandTransactions ?? [];
   container.innerHTML = transactions.slice(0, 8)
     .map((transaction) => {
@@ -458,26 +470,42 @@ function renderCommandHistory(snapshot: SessionSnapshotMessage | null): void {
 }
 
 function renderGuardedCommands(vehicle: VehicleStateMessage | null): void {
-  const commands: CommandName[] = ['arm', 'disarm', 'emergency-stop', 'takeoff', 'land', 'return-to-launch', 'pause', 'change-altitude', 'go-to', 'orbit', 'mission-start', 'mission-continue', 'mission-resume'];
+  const normalCommands: CommandName[] = ['arm', 'takeoff', 'change-altitude', 'go-to', 'orbit', 'mission-start', 'mission-continue', 'mission-resume'];
+  const safetyCommands: CommandName[] = ['disarm', 'emergency-stop', 'pause', 'return-to-launch', 'land'];
   const container = document.querySelector<HTMLElement>('#guarded-commands')!;
   const supported = vehicle?.commandCapabilities?.supported ?? [];
   const blockedReason = vehicle?.commandCapabilities?.blockedReason ?? 'command is not advertised by the selected vehicle';
   const blockedCommands = vehicle?.commandCapabilities?.blockedCommands ?? {};
-  container.innerHTML = commands.map((command) => {
+  const renderButton = (command: CommandName, group: 'normal' | 'safety'): string => {
     const enabled = supported.includes(command);
     const title = enabled ? `Send ${command}` : blockedCommands[command] ?? blockedReason;
-    return `<button type="button" data-command="${command}" ${enabled ? '' : 'disabled'} title="${escapeHtml(title)}">${escapeHtml(command)}</button>`;
-  }).join('');
+    return `<button type="button" class="command-${group}${command === 'emergency-stop' ? ' command-emergency' : ''}" data-command="${command}" ${enabled ? '' : 'disabled'} title="${escapeHtml(title)}">${escapeHtml(command)}</button>`;
+  };
+  container.innerHTML = `
+    <div class="command-group" aria-label="Normal actions">${normalCommands.map((command) => renderButton(command, 'normal')).join('')}</div>
+    <div class="command-group command-group-safety" aria-label="Safety actions">${safetyCommands.map((command) => renderButton(command, 'safety')).join('')}</div>
+  `;
   container.querySelectorAll<HTMLButtonElement>('[data-command]').forEach((button) => {
     button.addEventListener('click', () => {
       const command = button.dataset.command as CommandName;
       const vehicleId = vehicle?.id ?? `${vehicle?.systemId ?? '--'}:${vehicle?.componentId ?? '--'}`;
-      if (!window.confirm(`Send ${command} to ${vehicleId}?`)) return;
-      void window.altairAnimus?.issueCommand?.({ command, vehicleId, confirmed: true }).then((result) => {
+      const confirmationType = command === 'emergency-stop' ? 'typed-vehicle-id' : 'browser-confirm';
+      if (!confirmGuardedCommand(command, vehicleId)) {
+        void window.altairAnimus?.auditCommandRejection?.({ command, vehicleId, confirmed: false, confirmationType }, 'operator confirmation was rejected');
+        return;
+      }
+      void window.altairAnimus?.issueCommand?.({ command, vehicleId, confirmed: true, confirmationType }).then((result) => {
         document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
       });
     });
   });
+}
+
+function confirmGuardedCommand(command: CommandName, vehicleId: string): boolean {
+  if (command === 'emergency-stop') {
+    return window.prompt(`Type ${vehicleId} to emergency-stop ${vehicleId}`) === vehicleId;
+  }
+  return window.confirm(`Send ${command} to ${vehicleId}?`);
 }
 
 function formatTime(seconds: number): string {
@@ -485,6 +513,14 @@ function formatTime(seconds: number): string {
   const minutes = Math.floor(clamped / 60);
   const wholeSeconds = Math.floor(clamped % 60);
   return `${minutes}:${wholeSeconds.toString().padStart(2, '0')}`;
+}
+
+function formatAuditTime(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return timestamp;
+  }
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function escapeHtml(value: string): string {
