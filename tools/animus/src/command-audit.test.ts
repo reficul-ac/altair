@@ -57,4 +57,24 @@ describe('command audit log', () => {
     const recent = await readRecentCommandAuditEntries(filePath, 10);
     expect(recent.map((line) => line.transactionId)).toEqual(['cmd-2', 'cmd-1']);
   });
+
+  it('reads schema version 1 entries that predate identity fields', async () => {
+    const filePath = path.join(await mkdtemp(path.join(os.tmpdir(), 'animus-audit-')), 'command-audit.jsonl');
+    const legacy = {
+      schemaVersion: 1,
+      eventKind: 'dispatch-sent',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      vehicleId: '1:1',
+      commandName: 'arm',
+      params: [1],
+      accepted: true,
+      state: 'sent',
+      reason: 'command sent',
+      ack: null
+    };
+    await appendFile(filePath, `${JSON.stringify(legacy)}\n`, 'utf8');
+
+    const recent = await readRecentCommandAuditEntries(filePath, 10);
+    expect(recent[0]).toMatchObject({ eventKind: 'dispatch-sent', commandName: 'arm' });
+  });
 });

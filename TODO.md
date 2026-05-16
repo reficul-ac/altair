@@ -46,10 +46,10 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Make emergency action UX, command cancellation, stale-link protection, and duplicate-GCS handling explicit.
 - [x] Add durable command audit basics with command payload, confirmation, ACK/NACK, timeout, cancellation, and failure reason.
 - [x] Add MAVLink v2/signing awareness to live diagnostics.
-- [ ] Add retry dispatch and retry audit semantics for live commands.
-- [ ] Expand durable command audit history with operator and session identity.
-- [ ] Add broader dialect-driven MAVLink decoding beyond the currently supported message set.
-- [ ] Add typed command workflows for high-consequence live actions.
+- [x] Add retry dispatch and retry audit semantics for live commands.
+- [x] Expand durable command audit history with operator and session identity.
+- [x] Add broader dialect-driven MAVLink decoding beyond the currently supported message set.
+- [x] Add typed command workflows for high-consequence live actions.
 - [ ] Add richer protocol-backed GCS workflows for parameter editing, mission transfer, map/terrain, log, and camera operations.
 
 ## Test Ownership

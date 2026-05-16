@@ -35,14 +35,21 @@ export const DEFAULT_QGC_PORT = 14550;
 export const MAVLINK_CRC_EXTRA: Record<number, number> = {
   0: 50,
   1: 124,
+  21: 159,
+  22: 220,
+  23: 168,
   24: 24,
   30: 39,
   32: 185,
   33: 104,
   36: 222,
+  39: 254,
+  40: 230,
   42: 28,
+  43: 132,
   44: 221,
   45: 232,
+  46: 11,
   47: 153,
   51: 196,
   65: 118,
@@ -51,8 +58,25 @@ export const MAVLINK_CRC_EXTRA: Record<number, number> = {
   76: 152,
   77: 143,
   115: 4,
+  117: 128,
+  118: 56,
+  119: 116,
+  120: 134,
+  121: 237,
+  122: 203,
+  133: 6,
+  134: 229,
+  135: 203,
+  136: 1,
   147: 154,
-  253: 83
+  242: 104,
+  253: 83,
+  259: 92,
+  260: 146,
+  262: 12,
+  266: 38,
+  267: 35,
+  268: 14
 };
 
 export type Endpoint = {
@@ -87,6 +111,13 @@ export type MavlinkServiceConfig = {
   qgcForwarding: boolean;
   qgcEndpoints: Endpoint[];
   writableAnimus: boolean;
+};
+
+export type AnimusSessionContext = {
+  sessionId: string;
+  operatorId: string;
+  appSource: string;
+  processSource: string;
 };
 
 export type VehicleStatePayload = {
@@ -516,6 +547,33 @@ const DECODERS: Record<number, Decoder> = {
       batteryRemainingPct: readInt8(p, 30) === -1 ? null : readInt8(p, 30)
     });
   },
+  21: (message) => {
+    const p = message.payload;
+    if (p.length < 2) return null;
+    return decodeWithFields(message, 'PARAM_REQUEST_LIST', { targetSystem: readUInt8(p, 0), targetComponent: readUInt8(p, 1) });
+  },
+  22: (message) => {
+    const p = message.payload;
+    if (p.length < 25) return null;
+    return decodeWithFields(message, 'PARAM_VALUE', {
+      paramValue: readFloat(p, 0),
+      paramCount: readUInt16(p, 4),
+      paramIndex: readUInt16(p, 6),
+      paramId: readCString(p, 8, 16),
+      paramType: readUInt8(p, 24)
+    });
+  },
+  23: (message) => {
+    const p = message.payload;
+    if (p.length < 23) return null;
+    return decodeWithFields(message, 'PARAM_SET', {
+      paramValue: readFloat(p, 0),
+      targetSystem: readUInt8(p, 4),
+      targetComponent: readUInt8(p, 5),
+      paramId: readCString(p, 6, 16),
+      paramType: readUInt8(p, 22)
+    });
+  },
   24: (message) => {
     const p = message.payload;
     if (p.length < 30) return null;
@@ -590,10 +648,40 @@ const DECODERS: Record<number, Decoder> = {
       servo8Raw: readUInt16(p, 19)
     });
   },
+  39: (message) => {
+    const p = message.payload;
+    if (p.length < 37) return null;
+    return decodeWithFields(message, 'MISSION_ITEM', {
+      param1: readFloat(p, 0),
+      param2: readFloat(p, 4),
+      param3: readFloat(p, 8),
+      param4: readFloat(p, 12),
+      x: readFloat(p, 16),
+      y: readFloat(p, 20),
+      z: readFloat(p, 24),
+      seq: readUInt16(p, 28),
+      command: readUInt16(p, 30),
+      targetSystem: readUInt8(p, 32),
+      targetComponent: readUInt8(p, 33),
+      frame: readUInt8(p, 34),
+      current: readUInt8(p, 35),
+      autocontinue: readUInt8(p, 36)
+    });
+  },
+  40: (message) => {
+    const p = message.payload;
+    if (p.length < 4) return null;
+    return decodeWithFields(message, 'MISSION_REQUEST', { seq: readUInt16(p, 0), targetSystem: readUInt8(p, 2), targetComponent: readUInt8(p, 3) });
+  },
   42: (message) => {
     const p = message.payload;
     if (p.length < 2) return null;
     return decodeWithFields(message, 'MISSION_CURRENT', { seq: readUInt16(p, 0) });
+  },
+  43: (message) => {
+    const p = message.payload;
+    if (p.length < 2) return null;
+    return decodeWithFields(message, 'MISSION_REQUEST_LIST', { targetSystem: readUInt8(p, 0), targetComponent: readUInt8(p, 1) });
   },
   44: (message) => {
     const p = message.payload;
@@ -608,6 +696,11 @@ const DECODERS: Record<number, Decoder> = {
     const p = message.payload;
     if (p.length < 2) return null;
     return decodeWithFields(message, 'MISSION_CLEAR_ALL', { targetSystem: readUInt8(p, 0), targetComponent: readUInt8(p, 1) });
+  },
+  46: (message) => {
+    const p = message.payload;
+    if (p.length < 2) return null;
+    return decodeWithFields(message, 'MISSION_ITEM_REACHED', { seq: readUInt16(p, 0) });
   },
   47: (message) => {
     const ack = decodeMissionAck(message);
@@ -710,6 +803,56 @@ const DECODERS: Record<number, Decoder> = {
       zaccMps2: (readInt16(p, 62) ?? 0) / 1000
     });
   },
+  117: (message) => {
+    const p = message.payload;
+    if (p.length < 6) return null;
+    return decodeWithFields(message, 'LOG_REQUEST_LIST', { start: readUInt16(p, 0), end: readUInt16(p, 2), targetSystem: readUInt8(p, 4), targetComponent: readUInt8(p, 5) });
+  },
+  118: (message) => {
+    const p = message.payload;
+    if (p.length < 14) return null;
+    return decodeWithFields(message, 'LOG_ENTRY', { id: readUInt16(p, 0), numLogs: readUInt16(p, 2), lastLogNum: readUInt16(p, 4), timeUtc: readUInt32(p, 6), sizeBytes: readUInt32(p, 10) });
+  },
+  119: (message) => {
+    const p = message.payload;
+    if (p.length < 12) return null;
+    return decodeWithFields(message, 'LOG_REQUEST_DATA', { ofs: readUInt32(p, 0), count: readUInt32(p, 4), id: readUInt16(p, 8), targetSystem: readUInt8(p, 10), targetComponent: readUInt8(p, 11) });
+  },
+  120: (message) => {
+    const p = message.payload;
+    if (p.length < 7) return null;
+    return decodeWithFields(message, 'LOG_DATA', { ofs: readUInt32(p, 0), id: readUInt16(p, 4), count: readUInt8(p, 6) });
+  },
+  121: (message) => {
+    const p = message.payload;
+    if (p.length < 2) return null;
+    return decodeWithFields(message, 'LOG_ERASE', { targetSystem: readUInt8(p, 0), targetComponent: readUInt8(p, 1) });
+  },
+  122: (message) => {
+    const p = message.payload;
+    if (p.length < 2) return null;
+    return decodeWithFields(message, 'LOG_REQUEST_END', { targetSystem: readUInt8(p, 0), targetComponent: readUInt8(p, 1) });
+  },
+  133: (message) => {
+    const p = message.payload;
+    if (p.length < 18) return null;
+    return decodeWithFields(message, 'TERRAIN_REQUEST', { latDeg: (readInt32(p, 0) ?? 0) / 1e7, lonDeg: (readInt32(p, 4) ?? 0) / 1e7, gridSpacingM: readUInt16(p, 8), mask: Number(p.readBigUInt64LE(10)) });
+  },
+  134: (message) => {
+    const p = message.payload;
+    if (p.length < 43) return null;
+    return decodeWithFields(message, 'TERRAIN_DATA', { latDeg: (readInt32(p, 0) ?? 0) / 1e7, lonDeg: (readInt32(p, 4) ?? 0) / 1e7, gridSpacingM: readUInt16(p, 8), gridbit: readUInt8(p, 10) });
+  },
+  135: (message) => {
+    const p = message.payload;
+    if (p.length < 8) return null;
+    return decodeWithFields(message, 'TERRAIN_CHECK', { latDeg: (readInt32(p, 0) ?? 0) / 1e7, lonDeg: (readInt32(p, 4) ?? 0) / 1e7 });
+  },
+  136: (message) => {
+    const p = message.payload;
+    if (p.length < 22) return null;
+    return decodeWithFields(message, 'TERRAIN_REPORT', { latDeg: (readInt32(p, 0) ?? 0) / 1e7, lonDeg: (readInt32(p, 4) ?? 0) / 1e7, spacingM: readUInt16(p, 8), terrainHeightM: readFloat(p, 10), currentHeightM: readFloat(p, 14), pending: readUInt16(p, 18), loaded: readUInt16(p, 20) });
+  },
   147: (message) => {
     const p = message.payload;
     if (p.length < 36) return null;
@@ -725,6 +868,21 @@ const DECODERS: Record<number, Decoder> = {
       voltageBatteryV: firstBatteryVoltage(p)
     });
   },
+  242: (message) => {
+    const p = message.payload;
+    if (p.length < 52) return null;
+    return decodeWithFields(message, 'HOME_POSITION', {
+      latDeg: (readInt32(p, 0) ?? 0) / 1e7,
+      lonDeg: (readInt32(p, 4) ?? 0) / 1e7,
+      altitudeM: (readInt32(p, 8) ?? 0) / 1000,
+      xM: readFloat(p, 12),
+      yM: readFloat(p, 16),
+      zM: readFloat(p, 20),
+      approachXM: readFloat(p, 40),
+      approachYM: readFloat(p, 44),
+      approachZM: readFloat(p, 48)
+    });
+  },
   253: (message) => {
     const p = message.payload;
     if (p.length < 51) return null;
@@ -732,6 +890,48 @@ const DECODERS: Record<number, Decoder> = {
       severity: readUInt8(p, 0),
       text: readCString(p, 1, 50)
     });
+  },
+  259: (message) => {
+    const p = message.payload;
+    if (p.length < 235) return null;
+    return decodeWithFields(message, 'CAMERA_INFORMATION', {
+      timeBootMs: readUInt32(p, 0),
+      vendorName: readCString(p, 4, 32),
+      modelName: readCString(p, 36, 32),
+      firmwareVersion: readUInt32(p, 68),
+      focalLengthMm: readFloat(p, 72),
+      sensorSizeH: readFloat(p, 76),
+      sensorSizeV: readFloat(p, 80),
+      resolutionH: readUInt16(p, 84),
+      resolutionV: readUInt16(p, 86),
+      flags: readUInt32(p, 88),
+      camDefinitionVersion: readUInt16(p, 233)
+    });
+  },
+  260: (message) => {
+    const p = message.payload;
+    if (p.length < 13) return null;
+    return decodeWithFields(message, 'CAMERA_SETTINGS', { timeBootMs: readUInt32(p, 0), modeId: readUInt8(p, 4), zoomLevel: readFloat(p, 5), focusLevel: readFloat(p, 9) });
+  },
+  262: (message) => {
+    const p = message.payload;
+    if (p.length < 18) return null;
+    return decodeWithFields(message, 'CAMERA_CAPTURE_STATUS', { timeBootMs: readUInt32(p, 0), imageStatus: readUInt8(p, 4), videoStatus: readUInt8(p, 5), imageIntervalS: readFloat(p, 6), recordingTimeMs: readUInt32(p, 10), availableCapacityMb: readFloat(p, 14) });
+  },
+  266: (message) => {
+    const p = message.payload;
+    if (p.length < 5) return null;
+    return decodeWithFields(message, 'LOGGING_DATA', { sequence: readUInt16(p, 0), targetSystem: readUInt8(p, 2), targetComponent: readUInt8(p, 3), length: readUInt8(p, 4) });
+  },
+  267: (message) => {
+    const p = message.payload;
+    if (p.length < 7) return null;
+    return decodeWithFields(message, 'LOGGING_DATA_ACKED', { sequence: readUInt16(p, 0), targetSystem: readUInt8(p, 2), targetComponent: readUInt8(p, 3), length: readUInt8(p, 4), firstMessageOffset: readUInt16(p, 5) });
+  },
+  268: (message) => {
+    const p = message.payload;
+    if (p.length < 4) return null;
+    return decodeWithFields(message, 'LOGGING_ACK', { sequence: readUInt16(p, 0), targetSystem: readUInt8(p, 2), targetComponent: readUInt8(p, 3) });
   }
 };
 
@@ -749,6 +949,33 @@ function firstBatteryVoltage(payload: Buffer): number | null {
     if (mv !== null && mv !== 65535) {
       return mv / 1000;
     }
+  }
+  return null;
+}
+
+function isRetryableCommandState(state: CommandTransaction['state']): boolean {
+  return state === 'timeout' || state === 'failed';
+}
+
+function summarizeProtocol(protocol: MavlinkProtocolDiagnostics): string {
+  const signing = protocol.signed ? 'signed' : protocol.signingRequired ? 'signing-required' : 'unsigned';
+  return `${protocol.mavlinkVersion}/${signing}/${protocol.dialectCoverage}`;
+}
+
+function typedConfirmationBlocked(request: GuardedCommandRequest, encodedParams: number[]): string | null {
+  if (request.confirmationType !== 'typed-altitude') {
+    return null;
+  }
+  if (request.command !== 'takeoff' && request.command !== 'change-altitude') {
+    return 'typed altitude confirmation is only valid for altitude commands';
+  }
+  const typedAltitude = typeof request.params?.altitudeM === 'number' ? request.params.altitudeM : Number.NaN;
+  if (!Number.isFinite(typedAltitude)) {
+    return 'typed altitude confirmation is required';
+  }
+  const encodedAltitude = request.command === 'takeoff' ? encodedParams[6] : encodedParams[0];
+  if (!Number.isFinite(encodedAltitude) || Math.abs(encodedAltitude - typedAltitude) > 1e-6) {
+    return 'typed altitude does not match the encoded command payload';
   }
   return null;
 }
@@ -1381,12 +1608,17 @@ export class MavlinkTelemetryService extends EventEmitter {
   private readonly commandTransactions: CommandTransaction[] = [];
   private readonly commandAudit: CommandAuditEntry[] = [];
   private readonly protocolTracker = new MavlinkProtocolTracker();
-  private readonly sessionId = `animus-${Date.now().toString(36)}`;
-  private readonly operatorId = process.env.USER ?? process.env.USERNAME ?? 'unknown';
+  private readonly sessionContext: AnimusSessionContext;
 
-  constructor(config: Partial<MavlinkServiceConfig> = {}) {
+  constructor(config: Partial<MavlinkServiceConfig> = {}, sessionContext: Partial<AnimusSessionContext> = {}) {
     super();
     this.config = normalizeConfig(config);
+    this.sessionContext = {
+      sessionId: sessionContext.sessionId ?? `animus-${Date.now().toString(36)}`,
+      operatorId: sessionContext.operatorId ?? process.env.USER ?? process.env.USERNAME ?? 'unknown',
+      appSource: sessionContext.appSource ?? 'animus-electron',
+      processSource: sessionContext.processSource ?? `pid:${process.pid}`
+    };
     this.forwarder.configure(this.activeForwardTargets());
   }
 
@@ -1547,6 +1779,20 @@ export class MavlinkTelemetryService extends EventEmitter {
       }));
       return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason, mock: false, sentPackets: 0, transactionId: null, state: 'blocked', ack: null };
     }
+    const typedConfirmationReason = typedConfirmationBlocked(request, command.params);
+    if (typedConfirmationReason) {
+      this.pushCommandAudit(this.createCommandAuditEntry({
+        eventKind: 'dispatch-blocked',
+        request,
+        transaction: null,
+        commandId: command.command,
+        params: command.params,
+        accepted: false,
+        state: 'blocked',
+        reason: typedConfirmationReason
+      }));
+      return { accepted: false, command: request.command, vehicleId: request.vehicleId, reason: typedConfirmationReason, mock: false, sentPackets: 0, transactionId: null, state: 'blocked', ack: null };
+    }
     const nowS = performanceNowS();
     const transaction = this.createCommandTransaction(request, command.command, command.params, nowS);
     const frame = encodeCommandLong(command.command, target.systemId, target.componentId, command.params, 0, this.nextSeq());
@@ -1583,6 +1829,108 @@ export class MavlinkTelemetryService extends EventEmitter {
     }));
     this.emit('session-snapshot', this.snapshot(nowS));
     return { accepted: true, command: request.command, vehicleId: request.vehicleId, reason: 'command sent on writable SITL link', mock: false, sentPackets: 1, transactionId: transaction.id, state: transaction.state, ack: null };
+  }
+
+  retryCommandTransaction(transactionId: string): CommandDispatchResult | null {
+    const nowS = performanceNowS();
+    const transaction = this.commandTransactions.find((candidate) => candidate.id === transactionId);
+    if (!transaction) {
+      return null;
+    }
+    const request: GuardedCommandRequest = {
+      command: transaction.commandName,
+      vehicleId: transaction.vehicleId,
+      confirmed: true,
+      confirmationType: transaction.confirmationType,
+      confirmationResult: 'accepted',
+      originSurface: 'setup-command-history'
+    };
+    if (!isRetryableCommandState(transaction.state)) {
+      const reason = `${transaction.state} command transactions cannot be retried`;
+      this.pushCommandAudit(this.createCommandAuditEntry({
+        eventKind: 'retry-blocked',
+        request,
+        transaction,
+        commandId: transaction.commandId,
+        params: transaction.params,
+        accepted: false,
+        state: transaction.state,
+        reason
+      }));
+      this.emit('session-snapshot', this.snapshot(nowS));
+      return { accepted: false, command: transaction.commandName, vehicleId: transaction.vehicleId, reason, mock: false, sentPackets: 0, transactionId: transaction.id, state: transaction.state, ack: transaction.ack ? { ...transaction.ack } : null };
+    }
+    const target = parseVehicleTarget(transaction.vehicleId, this.selectedVehiclePayload());
+    const blocked = this.writeBlocked(true, target, transaction.commandName);
+    if (blocked) {
+      this.pushCommandAudit(this.createCommandAuditEntry({
+        eventKind: 'retry-blocked',
+        request,
+        transaction,
+        commandId: transaction.commandId,
+        params: transaction.params,
+        accepted: false,
+        state: transaction.state,
+        reason: blocked
+      }));
+      this.emit('session-snapshot', this.snapshot(nowS));
+      return { accepted: false, command: transaction.commandName, vehicleId: transaction.vehicleId, reason: blocked, mock: false, sentPackets: 0, transactionId: transaction.id, state: transaction.state, ack: transaction.ack ? { ...transaction.ack } : null };
+    }
+    if (!target) {
+      const reason = 'no live vehicle link advertises command support';
+      this.pushCommandAudit(this.createCommandAuditEntry({
+        eventKind: 'retry-blocked',
+        request,
+        transaction,
+        commandId: transaction.commandId,
+        params: transaction.params,
+        accepted: false,
+        state: transaction.state,
+        reason
+      }));
+      this.emit('session-snapshot', this.snapshot(nowS));
+      return { accepted: false, command: transaction.commandName, vehicleId: transaction.vehicleId, reason, mock: false, sentPackets: 0, transactionId: transaction.id, state: transaction.state, ack: transaction.ack ? { ...transaction.ack } : null };
+    }
+    transaction.retryCount += 1;
+    transaction.sentAtS = nowS;
+    transaction.updatedAtS = nowS;
+    transaction.state = 'sent';
+    transaction.ack = null;
+    transaction.failureReason = null;
+    const frame = encodeCommandLong(transaction.commandId, target.systemId, target.componentId, transaction.params, transaction.retryCount, this.nextSeq());
+    try {
+      this.sendFrame(frame);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      transaction.state = 'failed';
+      transaction.updatedAtS = nowS;
+      transaction.failureReason = reason;
+      this.pushCommandAudit(this.createCommandAuditEntry({
+        eventKind: 'send-failed',
+        request,
+        transaction,
+        commandId: transaction.commandId,
+        params: transaction.params,
+        accepted: false,
+        state: 'failed',
+        reason
+      }));
+      this.emit('session-snapshot', this.snapshot(nowS));
+      return { accepted: false, command: transaction.commandName, vehicleId: transaction.vehicleId, reason, mock: false, sentPackets: 0, transactionId: transaction.id, state: transaction.state, ack: null };
+    }
+    this.registry.addMarker(`Command ${transaction.commandName} retry ${transaction.retryCount} sent`, nowS, transaction.vehicleId);
+    this.pushCommandAudit(this.createCommandAuditEntry({
+      eventKind: 'retry-sent',
+      request,
+      transaction,
+      commandId: transaction.commandId,
+      params: transaction.params,
+      accepted: true,
+      state: 'sent',
+      reason: 'command retry sent on writable SITL link'
+    }));
+    this.emit('session-snapshot', this.snapshot(nowS));
+    return { accepted: true, command: transaction.commandName, vehicleId: transaction.vehicleId, reason: 'command retry sent on writable SITL link', mock: false, sentPackets: 1, transactionId: transaction.id, state: transaction.state, ack: null };
   }
 
   expireCommandTransactions(nowS = performanceNowS()): void {
@@ -1776,7 +2124,8 @@ export class MavlinkTelemetryService extends EventEmitter {
       ...transaction,
       params: [...transaction.params],
       ack: transaction.ack ? { ...transaction.ack } : null,
-      cancellationEligible: transaction.state === 'sent'
+      cancellationEligible: transaction.state === 'sent',
+      retryEligible: isRetryableCommandState(transaction.state)
     }));
     snapshot.commandAudit = this.commandAudit.slice(-MAX_COMMAND_AUDIT_SNAPSHOT_ENTRIES).reverse().map((entry) => ({
       ...entry,
@@ -1888,8 +2237,8 @@ export class MavlinkTelemetryService extends EventEmitter {
       schemaVersion: 1,
       eventKind: options.eventKind,
       transactionId: options.transaction?.id ?? null,
-      sessionId: this.sessionId,
-      operatorId: this.operatorId,
+      sessionId: this.sessionContext.sessionId,
+      operatorId: this.sessionContext.operatorId,
       timestamp: new Date().toISOString(),
       vehicleId: options.request.vehicleId,
       commandName: options.request.command,
@@ -1904,7 +2253,16 @@ export class MavlinkTelemetryService extends EventEmitter {
       ack: options.ack ? { ...options.ack } : null,
       authority: config.writableAnimus ? 'sitl-writable' : 'read-only',
       writable: config.writableAnimus,
-      retryCount: options.transaction?.retryCount ?? 0
+      retryCount: options.transaction?.retryCount ?? 0,
+      appSource: this.sessionContext.appSource,
+      processSource: this.sessionContext.processSource,
+      commandOrigin: options.request.originSurface ?? 'unknown',
+      vehicleTarget: options.request.vehicleId,
+      authorityMode: config.writableAnimus ? 'sitl-writable' : 'read-only',
+      writableEndpoint: this.lastRemote ? `${this.lastRemote.host}:${this.lastRemote.port}` : null,
+      qgcForwarding: config.qgcForwarding,
+      protocolSummary: summarizeProtocol(this.protocolTracker.snapshot()),
+      confirmationResult: options.request.confirmationResult ?? (options.request.confirmed ? 'accepted' : 'rejected')
     };
   }
 

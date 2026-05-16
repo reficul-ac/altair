@@ -22,6 +22,12 @@ import type { CommandAuditEntry, CommandDispatchResult, GuardedCommandRequest, G
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, '..');
+const animusSessionContext = {
+  sessionId: process.env.ANIMUS_SESSION_ID ?? `electron-${process.pid}-${Date.now().toString(36)}`,
+  operatorId: process.env.USER ?? process.env.USERNAME ?? 'unknown',
+  appSource: 'animus-electron',
+  processSource: `pid:${process.pid}`
+};
 
 function parseArgs(argv: string[]): Partial<MavlinkServiceConfig> {
   const config: Partial<MavlinkServiceConfig> = {};
@@ -48,7 +54,7 @@ function parseArgs(argv: string[]): Partial<MavlinkServiceConfig> {
   return config;
 }
 
-const telemetry = new MavlinkTelemetryService(parseArgs(process.argv.slice(1)));
+const telemetry = new MavlinkTelemetryService(parseArgs(process.argv.slice(1)), animusSessionContext);
 const replay = new ReplaySession();
 const commandAuditLog = createCommandAuditLog(path.join(app.getPath('userData'), 'command-audit.jsonl'));
 let recentCommandAudit: CommandAuditEntry[] = [];
@@ -84,8 +90,8 @@ function buildRejectedCommandAuditEntry(request: GuardedCommandRequest, reason: 
     schemaVersion: 1,
     eventKind,
     transactionId: null,
-    sessionId: process.env.ANIMUS_SESSION_ID ?? `electron-${process.pid}`,
-    operatorId: process.env.USER ?? process.env.USERNAME ?? 'unknown',
+    sessionId: animusSessionContext.sessionId,
+    operatorId: animusSessionContext.operatorId,
     timestamp: new Date().toISOString(),
     vehicleId: request.vehicleId,
     commandName: request.command,
@@ -100,7 +106,15 @@ function buildRejectedCommandAuditEntry(request: GuardedCommandRequest, reason: 
     ack: null,
     authority: writable ? 'sitl-writable' : 'read-only',
     writable,
-    retryCount: 0
+    retryCount: 0,
+    appSource: animusSessionContext.appSource,
+    processSource: animusSessionContext.processSource,
+    commandOrigin: request.originSurface ?? 'unknown',
+    vehicleTarget: request.vehicleId,
+    authorityMode: writable ? 'sitl-writable' : 'read-only',
+    writableEndpoint: telemetry.linkState().blockedReason ? null : undefined,
+    qgcForwarding: telemetry.getConfig().qgcForwarding,
+    confirmationResult: request.confirmationResult ?? (request.confirmed ? 'accepted' : 'rejected')
   };
 }
 
@@ -263,6 +277,7 @@ ipcMain.handle('command:audit-rejection', async (_event, request: GuardedCommand
   return entry;
 });
 ipcMain.handle('command:cancel', (_event, transactionId: string) => telemetry.cancelCommandTransaction(String(transactionId)));
+ipcMain.handle('command:retry', (_event, transactionId: string) => telemetry.retryCommandTransaction(String(transactionId)));
 
 telemetry.on('vehicle-state', (payload: VehicleStatePayload) => sendToWindows('vehicle-state', payload));
 telemetry.on('config', (config: MavlinkServiceConfig) => sendToWindows('mavlink-config', config));

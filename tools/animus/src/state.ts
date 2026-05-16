@@ -247,13 +247,16 @@ export type CommandTransaction = {
   retryCount: number;
   failureReason: string | null;
   cancellationEligible?: boolean;
+  retryEligible?: boolean;
 };
 
-export type CommandConfirmationType = 'browser-confirm' | 'typed-vehicle-id';
+export type CommandConfirmationType = 'browser-confirm' | 'typed-vehicle-id' | 'typed-altitude';
 
 export type CommandAuditEventKind =
   | 'dispatch-blocked'
   | 'dispatch-sent'
+  | 'retry-blocked'
+  | 'retry-sent'
   | 'ack'
   | 'timeout'
   | 'cancelled'
@@ -286,6 +289,15 @@ export type CommandAuditEntry = {
   authority: CommandAuthorityMode;
   writable: boolean;
   retryCount: number;
+  appSource?: string;
+  processSource?: string;
+  commandOrigin?: string;
+  vehicleTarget?: string;
+  authorityMode?: CommandAuthorityMode;
+  writableEndpoint?: string | null;
+  qgcForwarding?: boolean;
+  protocolSummary?: string;
+  confirmationResult?: 'accepted' | 'rejected';
 };
 
 export type MissionTransferState = {
@@ -372,6 +384,8 @@ export type GuardedCommandRequest = {
   vehicleId: string;
   confirmed: boolean;
   confirmationType?: CommandConfirmationType;
+  originSurface?: string;
+  confirmationResult?: 'accepted' | 'rejected';
   params?: Record<string, number | string | boolean | null>;
 };
 

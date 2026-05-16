@@ -53,6 +53,7 @@ type AnimusApi = {
   startMockLink?: (vehicleCount: number) => Promise<MockLinkState>;
   issueCommand?: (request: GuardedCommandRequest) => Promise<GuardedCommandResult | CommandDispatchResult>;
   cancelCommand?: (transactionId: string) => Promise<CommandTransaction | null>;
+  retryCommand?: (transactionId: string) => Promise<CommandDispatchResult | null>;
   auditCommandRejection?: (request: GuardedCommandRequest, reason: string) => Promise<CommandAuditEntry>;
   replayPlay?: () => Promise<ReplayTimelineMessage>;
   replayPause?: () => Promise<ReplayTimelineMessage>;
@@ -319,7 +320,8 @@ function renderCommandHistory(snapshot: SessionSnapshotMessage | null): void {
     container.innerHTML = audit.slice(0, 8)
       .map((entry) => {
         const detail = entry.ack?.label ?? entry.reason;
-        return `<div><strong>${escapeHtml(entry.commandName)}</strong><span>${escapeHtml(entry.state)}</span><span>${escapeHtml(detail)}</span><span>${escapeHtml(formatAuditTime(entry.timestamp))}</span></div>`;
+        const context = `${entry.operatorId ?? '--'} / ${entry.sessionId ?? '--'} / retry ${entry.retryCount ?? 0}`;
+        return `<div><strong>${escapeHtml(entry.commandName)}</strong><span>${escapeHtml(entry.state)}</span><span>${escapeHtml(detail)}</span><span>${escapeHtml(context)}</span><span>${escapeHtml(formatAuditTime(entry.timestamp))}</span></div>`;
       })
       .join('');
     return;
@@ -327,14 +329,27 @@ function renderCommandHistory(snapshot: SessionSnapshotMessage | null): void {
   container.innerHTML = transactions.slice(0, 8)
     .map((transaction) => {
       const detail = transaction.ack?.label ?? transaction.failureReason ?? 'awaiting COMMAND_ACK';
-      const cancel = transaction.cancellationEligible ? `<button type="button" data-cancel-command="${escapeHtml(transaction.id)}">Cancel</button>` : `<span>${formatTime(transaction.updatedAtS)}</span>`;
-      return `<div><strong>${escapeHtml(transaction.commandName)}</strong><span>${escapeHtml(transaction.state)}</span><span>${escapeHtml(detail)}</span>${cancel}</div>`;
+      const action = transaction.cancellationEligible
+        ? `<button type="button" data-cancel-command="${escapeHtml(transaction.id)}">Cancel</button>`
+        : transaction.retryEligible
+          ? `<button type="button" data-retry-command="${escapeHtml(transaction.id)}">Retry</button>`
+          : `<span>${formatTime(transaction.updatedAtS)}</span>`;
+      return `<div><strong>${escapeHtml(transaction.commandName)}</strong><span>${escapeHtml(transaction.state)}</span><span>${escapeHtml(detail)}</span><span>retry ${transaction.retryCount}</span>${action}</div>`;
     })
     .join('') || '<p class="empty">No command transactions</p>';
   container.querySelectorAll<HTMLButtonElement>('[data-cancel-command]').forEach((button) => {
     button.addEventListener('click', () => {
       void window.altairAnimus?.cancelCommand?.(button.dataset.cancelCommand ?? '').then(() => {
         document.querySelector<HTMLElement>('#status')!.textContent = 'Command cancellation recorded';
+      });
+    });
+  });
+  container.querySelectorAll<HTMLButtonElement>('[data-retry-command]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const transaction = transactions.find((candidate) => candidate.id === button.dataset.retryCommand);
+      if (!transaction || !confirmRetryCommand(transaction)) return;
+      void window.altairAnimus?.retryCommand?.(transaction.id).then((result) => {
+        if (result) document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
       });
     });
   });
@@ -360,23 +375,45 @@ function renderGuardedCommands(vehicle: VehicleStateMessage | null): void {
     button.addEventListener('click', () => {
       const command = button.dataset.command as CommandName;
       const vehicleId = vehicle?.id ?? `${vehicle?.systemId ?? '--'}:${vehicle?.componentId ?? '--'}`;
-      const confirmationType = command === 'emergency-stop' ? 'typed-vehicle-id' : 'browser-confirm';
-      if (!confirmGuardedCommand(command, vehicleId)) {
-        void window.altairAnimus?.auditCommandRejection?.({ command, vehicleId, confirmed: false, confirmationType }, 'operator confirmation was rejected');
+      const confirmation = confirmGuardedCommand(command, vehicleId);
+      if (!confirmation.confirmed) {
+        void window.altairAnimus?.auditCommandRejection?.({ command, vehicleId, confirmed: false, confirmationType: confirmation.confirmationType, confirmationResult: 'rejected', originSurface: 'setup-guarded-commands', params: confirmation.params }, 'operator confirmation was rejected');
         return;
       }
-      void window.altairAnimus?.issueCommand?.({ command, vehicleId, confirmed: true, confirmationType }).then((result) => {
+      void window.altairAnimus?.issueCommand?.({ command, vehicleId, confirmed: true, confirmationType: confirmation.confirmationType, confirmationResult: 'accepted', originSurface: 'setup-guarded-commands', params: confirmation.params }).then((result) => {
         document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
       });
     });
   });
 }
 
-function confirmGuardedCommand(command: CommandName, vehicleId: string): boolean {
-  if (command === 'emergency-stop') {
-    return window.prompt(`Type ${vehicleId} to emergency-stop ${vehicleId}`) === vehicleId;
+function confirmGuardedCommand(command: CommandName, vehicleId: string): { confirmed: boolean; confirmationType: 'browser-confirm' | 'typed-vehicle-id' | 'typed-altitude'; params?: Record<string, number | string | boolean | null> } {
+  if (requiresTypedVehicleId(command)) {
+    return { confirmed: window.prompt(`Type ${vehicleId} to send ${command} to ${vehicleId}`) === vehicleId, confirmationType: 'typed-vehicle-id' };
   }
-  return window.confirm(`Send ${command} to ${vehicleId}?`);
+  if (requiresTypedAltitude(command)) {
+    const fallback = command === 'takeoff' ? 50 : state.selected?.globalPosition.relativeAltitudeM ?? state.selected?.globalPosition.altitudeM ?? 50;
+    const rawAltitude = window.prompt(`Type target altitude in meters for ${command}`, String(Math.round(fallback)));
+    if (rawAltitude === null) return { confirmed: false, confirmationType: 'typed-altitude' };
+    const altitudeM = Number(rawAltitude.trim());
+    if (!Number.isFinite(altitudeM) || rawAltitude.trim() !== String(altitudeM)) {
+      return { confirmed: false, confirmationType: 'typed-altitude' };
+    }
+    return { confirmed: true, confirmationType: 'typed-altitude', params: { altitudeM } };
+  }
+  return { confirmed: window.confirm(`Send ${command} to ${vehicleId}?`), confirmationType: 'browser-confirm' };
+}
+
+function confirmRetryCommand(transaction: CommandTransaction): boolean {
+  return window.confirm(`Retry ${transaction.commandName} for ${transaction.vehicleId}? Current guards will be re-evaluated.`);
+}
+
+function requiresTypedVehicleId(command: CommandName): boolean {
+  return command === 'emergency-stop' || command === 'disarm' || command === 'land' || command === 'return-to-launch';
+}
+
+function requiresTypedAltitude(command: CommandName): boolean {
+  return command === 'takeoff' || command === 'change-altitude';
 }
 
 function formatTime(seconds: number): string {

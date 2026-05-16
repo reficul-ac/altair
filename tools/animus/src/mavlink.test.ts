@@ -672,4 +672,88 @@ describe('Electron MAVLink service', () => {
     expect(transactions.find((transaction) => transaction.id === second.transactionId)).toMatchObject({ vehicleId: '2:1', state: 'acknowledged' });
     expect(transactions.find((transaction) => transaction.id === first.transactionId)).toMatchObject({ vehicleId: '1:1', state: 'sent' });
   });
+
+  it('retries failed command transactions as the same logical transaction', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true }, { sessionId: 'session-a', operatorId: 'operator-a' });
+    const sent = makeWritable(service);
+    service.handlePacket(readyVehicle());
+    const audit: CommandAuditEntry[] = [];
+    let session = null as ReturnType<VehicleRegistry['snapshot']> | null;
+    service.on('command-audit', (entry) => audit.push(entry as CommandAuditEntry));
+    service.on('session-snapshot', (next) => {
+      session = next;
+    });
+    const result = service.dispatchCommand({ command: 'arm', vehicleId: '1:1', confirmed: true, originSurface: 'test' });
+    service.handlePacket(commandAck(400, 4));
+
+    const retry = service.retryCommandTransaction(result.transactionId ?? '');
+
+    expect(retry).toMatchObject({ accepted: true, transactionId: result.transactionId, state: 'sent' });
+    expect(sent).toHaveLength(2);
+    expect(session?.commandTransactions?.[0]).toMatchObject({ id: result.transactionId, state: 'sent', retryCount: 1, ack: null, retryEligible: false });
+    expect(audit.at(-1)).toMatchObject({
+      eventKind: 'retry-sent',
+      transactionId: result.transactionId,
+      retryCount: 1,
+      sessionId: 'session-a',
+      operatorId: 'operator-a',
+      appSource: 'animus-electron',
+      commandOrigin: 'setup-command-history',
+      confirmationResult: 'accepted'
+    });
+  });
+
+  it('blocks typed altitude commands when the typed value is missing', () => {
+    const service = new MavlinkTelemetryService({ writableAnimus: true });
+    makeWritable(service);
+    service.handlePacket(readyVehicle());
+
+    const result = service.dispatchCommand({ command: 'takeoff', vehicleId: '1:1', confirmed: true, confirmationType: 'typed-altitude' });
+
+    expect(result).toMatchObject({ accepted: false, state: 'blocked', reason: 'typed altitude confirmation is required' });
+  });
+
+  it('decodes added parameter, mission, terrain, home, camera, and log message families', () => {
+    const paramValue = Buffer.alloc(25);
+    paramValue.writeFloatLE(12.5, 0);
+    paramValue.writeUInt16LE(3, 4);
+    paramValue.writeUInt16LE(1, 6);
+    paramValue.write('ALT_HOLD', 8, 'ascii');
+    paramValue.writeUInt8(9, 24);
+    expect(decodeMavlinkMessage({ msgId: 22, payload: paramValue, seq: 1, systemId: 1, componentId: 1 })).toMatchObject({ name: 'PARAM_VALUE', fields: { paramId: 'ALT_HOLD', paramValue: 12.5 } });
+
+    const missionItem = Buffer.alloc(37);
+    missionItem.writeFloatLE(37.25, 16);
+    missionItem.writeFloatLE(-122.5, 20);
+    missionItem.writeFloatLE(120, 24);
+    missionItem.writeUInt16LE(2, 28);
+    missionItem.writeUInt16LE(16, 30);
+    expect(decodeMavlinkMessage({ msgId: 39, payload: missionItem, seq: 1, systemId: 1, componentId: 1 })).toMatchObject({ name: 'MISSION_ITEM', fields: { seq: 2, command: 16 } });
+
+    const terrainReport = Buffer.alloc(22);
+    terrainReport.writeInt32LE(374275000, 0);
+    terrainReport.writeInt32LE(-1221697000, 4);
+    terrainReport.writeUInt16LE(100, 8);
+    terrainReport.writeFloatLE(85, 10);
+    expect(decodeMavlinkMessage({ msgId: 136, payload: terrainReport, seq: 1, systemId: 1, componentId: 1 })).toMatchObject({ name: 'TERRAIN_REPORT', fields: { spacingM: 100, terrainHeightM: 85 } });
+
+    const home = Buffer.alloc(52);
+    home.writeInt32LE(374275000, 0);
+    home.writeInt32LE(-1221697000, 4);
+    home.writeInt32LE(120000, 8);
+    expect(decodeMavlinkMessage({ msgId: 242, payload: home, seq: 1, systemId: 1, componentId: 1 })).toMatchObject({ name: 'HOME_POSITION', fields: { altitudeM: 120 } });
+
+    const camera = Buffer.alloc(235);
+    camera.write('ALT', 4, 'ascii');
+    camera.write('SIMCAM', 36, 'ascii');
+    camera.writeUInt16LE(1920, 84);
+    camera.writeUInt16LE(1080, 86);
+    expect(decodeMavlinkMessage({ msgId: 259, payload: camera, seq: 1, systemId: 1, componentId: 1 })).toMatchObject({ name: 'CAMERA_INFORMATION', fields: { vendorName: 'ALT', modelName: 'SIMCAM', resolutionH: 1920 } });
+
+    const logEntry = Buffer.alloc(14);
+    logEntry.writeUInt16LE(7, 0);
+    logEntry.writeUInt16LE(9, 2);
+    logEntry.writeUInt32LE(4096, 10);
+    expect(decodeMavlinkMessage({ msgId: 118, payload: logEntry, seq: 1, systemId: 1, componentId: 1 })).toMatchObject({ name: 'LOG_ENTRY', fields: { id: 7, numLogs: 9, sizeBytes: 4096 } });
+  });
 });

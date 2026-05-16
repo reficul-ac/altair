@@ -24,6 +24,7 @@ export type AltairAnimusApi = {
   startMockLink: (vehicleCount: number) => Promise<MockLinkState>;
   issueCommand: (request: GuardedCommandRequest) => Promise<GuardedCommandResult | CommandDispatchResult>;
   cancelCommand: (transactionId: string) => Promise<CommandTransaction | null>;
+  retryCommand: (transactionId: string) => Promise<CommandDispatchResult | null>;
   auditCommandRejection: (request: GuardedCommandRequest, reason: string) => Promise<CommandAuditEntry>;
   replayPlay: () => Promise<ReplayTimelineMessage>;
   replayPause: () => Promise<ReplayTimelineMessage>;
@@ -101,6 +102,9 @@ const api: AltairAnimusApi = {
   },
   cancelCommand(transactionId) {
     return ipcRenderer.invoke('command:cancel', transactionId);
+  },
+  retryCommand(transactionId) {
+    return ipcRenderer.invoke('command:retry', transactionId);
   },
   auditCommandRejection(request, reason) {
     return ipcRenderer.invoke('command:audit-rejection', request, reason);
