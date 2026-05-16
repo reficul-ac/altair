@@ -64,3 +64,17 @@ Optional later checks:
 - replay artifact diffing
 - PlatformIO compile check
 - static analysis
+
+## Animus UI Verification
+
+Animus UI and layout changes require local screenshot verification in addition to automated tests:
+
+```sh
+npm test --prefix tools/animus
+npm run build --prefix tools/animus
+python3 tools/python/capture_animus_sitl.py
+```
+
+The capture workflow starts a no-QGC live SITL session, opens Animus through Electron, captures the `flight`, `map`, and `inspector` workspaces at `1440x900`, and writes screenshots plus logs under `artifacts/animus-screenshots/<timestamp>/`.
+
+Inspect the generated screenshots before review. Check that the 3D scene is nonblank, live link/telemetry state is visible, the selected workspace matches the file name, desktop layout is usable, and controls/text are not obviously clipped or overlapping. This workflow is required for Animus UI/layout changes even before it becomes a GitHub Actions status check; if it cannot run, note the reason and the residual visual risk in the review or final response.

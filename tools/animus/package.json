@@ -16,6 +16,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -p tsconfig.json && vite build && tsc -p tsconfig.electron.json",
     "app": "npm run build && electron .",
+    "capture": "electron dist-electron/electron-capture.js",
     "dist:appimage": "npm run build && electron-builder --linux AppImage --publish never",
     "test": "vitest run"
   },

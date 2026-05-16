@@ -32,6 +32,9 @@ This file tracks near-term repository work. Roadmap and design context live in:
 
 ## Animus
 
+- [ ] Fix live capture flight workspace rendering so the 3D scene is nonblank under `python3 tools/python/capture_animus_sitl.py`.
+- [ ] Resolve flight workspace topbar/status-strip overlap at the default `1440x900` capture viewport.
+- [ ] Populate or visually clarify the map and inspector live workspaces during SITL capture so they do not appear empty while telemetry is active.
 - [ ] Add firmware-specific readiness checks beyond generic MAVLink telemetry.
 - [ ] Make emergency action UX, command cancellation, stale-link protection, and duplicate-GCS handling explicit.
 - [ ] Add durable command audit history with operator/session, payload, confirmation, ACK/NACK, retries, timeout, and failure reason.

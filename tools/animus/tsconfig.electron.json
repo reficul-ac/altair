@@ -13,6 +13,7 @@
   },
   "include": [
     "src/electron-main.ts",
+    "src/electron-capture.ts",
     "src/preload.ts",
     "src/electron-test-entry.ts",
     "src/mavlink.ts",

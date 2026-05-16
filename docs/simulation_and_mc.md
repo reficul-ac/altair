@@ -104,6 +104,14 @@ tools/python/run_sitl_session.py
 
 The launcher starts `mavlink_live_bridge.py`, forwards raw packets to QGroundControl at `127.0.0.1:14550`, starts the browser Animus at `http://127.0.0.1:5173`, and runs realtime `cruise6dof` SITL pointed at bridge UDP port `14551`. If Animus dependencies are not installed, rerun with `--install-viewer-deps`. Use `--no-qgc` or `--no-viewer` to disable either side of the live session.
 
+To capture required Animus UI verification screenshots from a live no-QGC SITL session, run:
+
+```sh
+python3 tools/python/capture_animus_sitl.py
+```
+
+Screenshots, SITL logs, and manifests are written under `artifacts/animus-screenshots/<timestamp>/`. The default capture covers the `flight`, `map`, and `inspector` workspaces at `1440x900`; add `--viewport WIDTHxHEIGHT` to include additional desktop or narrow layouts.
+
 Latitude, longitude, and altitude in `cruise6dof` logs are derived from the spherical-Earth ECEF truth state in ECEF mode. The local `pos_n_m`, `pos_e_m`, `pos_d_m`, `vel_n_mps`, `vel_e_mps`, and `vel_d_mps` columns remain available as derived compatibility outputs relative to the configured initial origin. The appended `pos_ecef_x_m`, `pos_ecef_y_m`, `pos_ecef_z_m`, `vel_ecef_x_mps`, `vel_ecef_y_mps`, and `vel_ecef_z_mps` columns expose the ECEF truth state directly.
 
 ## SITL Replay CSV v1
