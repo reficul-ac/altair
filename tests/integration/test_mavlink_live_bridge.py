@@ -77,6 +77,32 @@ def main():
     if abs(payload["metrics"]["airspeedMps"] - 18.5) > 1e-6:
         print("VFR_HUD was not decoded", file=sys.stderr)
         return 1
+    if payload["id"] != "1:1" or payload["vehicleType"] != "Fixed-wing":
+        print("vehicle identity was not decoded", file=sys.stderr)
+        return 1
+    if len(payload["trail"]) != 1:
+        print("vehicle trail was not populated", file=sys.stderr)
+        return 1
+
+    snapshot = bridge.LiveSessionSnapshot(bridge.LiveVehicleState())
+    snapshot.apply_datagram(parser.feed(heartbeat + attitude + global_position + vfr_hud), now=20.0)
+    snapshot_payload = snapshot.to_jsonable(now=20.5)
+    message_names = {message["name"] for message in snapshot_payload["messages"]}
+    if (
+        snapshot_payload["type"] != "session_snapshot"
+        or snapshot_payload["selectedVehicleId"] != "1:1"
+    ):
+        print("session snapshot identity was not populated", file=sys.stderr)
+        return 1
+    if not {"HEARTBEAT", "ATTITUDE", "GLOBAL_POSITION_INT", "VFR_HUD"}.issubset(message_names):
+        print("session snapshot message summaries were not populated", file=sys.stderr)
+        return 1
+    attitude_summary = next(
+        message for message in snapshot_payload["messages"] if message["name"] == "ATTITUDE"
+    )
+    if abs(attitude_summary["fields"]["rollRad"] - 0.1) > 1e-6:
+        print("session snapshot message fields were not decoded", file=sys.stderr)
+        return 1
 
     sink = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sink.bind(("127.0.0.1", 0))
@@ -85,7 +111,10 @@ def main():
     forwarder = bridge.UdpForwarder([endpoint])
     broadcasts = []
     protocol = bridge.BridgeProtocol(
-        bridge.MavlinkV1Parser(), bridge.LiveVehicleState(), forwarder, [broadcasts.append]
+        bridge.MavlinkV1Parser(),
+        bridge.LiveSessionSnapshot(bridge.LiveVehicleState()),
+        forwarder,
+        [broadcasts.append],
     )
     protocol.datagram_received(attitude, ("127.0.0.1", 14551))
     forwarded, _ = sink.recvfrom(512)
@@ -95,8 +124,9 @@ def main():
     if forwarded != attitude:
         print("forwarded packet did not match input packet", file=sys.stderr)
         return 1
-    if not broadcasts or json.loads(broadcasts[-1])["type"] != "vehicle_state":
-        print("bridge did not broadcast vehicle state", file=sys.stderr)
+    broadcast_types = [json.loads(payload)["type"] for payload in broadcasts]
+    if broadcast_types != ["vehicle_state", "session_snapshot"]:
+        print("bridge did not broadcast vehicle state and session snapshot", file=sys.stderr)
         return 1
     return 0
 

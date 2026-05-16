@@ -3,6 +3,7 @@ import {
   hasRenderablePosition,
   isTelemetryStale,
   headingDegFromYaw,
+  parseSessionSnapshot,
   parseVehicleState,
   trailPointFromState,
   TrailBuffer,
@@ -53,6 +54,32 @@ describe('Animus state', () => {
     expect(parseVehicleState(JSON.stringify(message))?.metrics.airspeedMps).toBe(18.5);
     expect(parseVehicleState(JSON.stringify({ type: 'other' }))).toBeNull();
     expect(parseVehicleState('not json')).toBeNull();
+  });
+
+  it('parses live browser session snapshots with trails and message summaries', () => {
+    const snapshot = {
+      type: 'session_snapshot',
+      vehicles: [{ ...message, id: '1:1', trail: [{ eastM: 2, northM: 3, upM: 4, timestampS: 12 }] }],
+      selectedVehicleId: '1:1',
+      messages: [{
+        key: '1:1:30',
+        msgId: 30,
+        name: 'ATTITUDE',
+        systemId: 1,
+        componentId: 1,
+        lastAgeS: 0.1,
+        rateHz: 20,
+        count: 3,
+        fields: { rollRad: 0.1, pitchRad: 0.2 }
+      }],
+      events: [],
+      packetCount: 3,
+      decodedCount: 3
+    };
+    const parsed = parseSessionSnapshot(JSON.stringify(snapshot));
+    expect(parsed?.vehicles[0].trail?.[0]).toMatchObject({ eastM: 2, northM: 3 });
+    expect(parsed?.messages[0]).toMatchObject({ name: 'ATTITUDE', msgId: 30, count: 3 });
+    expect(parseSessionSnapshot(JSON.stringify({ type: 'vehicle_state' }))).toBeNull();
   });
 
   it('keeps the trail bounded', () => {

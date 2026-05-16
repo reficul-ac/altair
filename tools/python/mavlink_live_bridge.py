@@ -31,6 +31,34 @@ MAVLINK_CRC_EXTRA = {
     77: 143,
 }
 
+MAVLINK_MESSAGE_NAMES = {
+    0: "HEARTBEAT",
+    30: "ATTITUDE",
+    33: "GLOBAL_POSITION_INT",
+    44: "MISSION_COUNT",
+    45: "MISSION_CLEAR_ALL",
+    47: "MISSION_ACK",
+    51: "MISSION_REQUEST_INT",
+    73: "MISSION_ITEM_INT",
+    74: "VFR_HUD",
+    76: "COMMAND_LONG",
+    77: "COMMAND_ACK",
+}
+
+MAV_TYPE_NAMES = {
+    0: "Generic",
+    1: "Fixed-wing",
+    2: "Quadrotor",
+    3: "Coaxial",
+    4: "Helicopter",
+    10: "Ground rover",
+    12: "Submarine",
+    13: "Hexarotor",
+    14: "Octorotor",
+    15: "Tricopter",
+    19: "VTOL",
+}
+
 
 def x25_crc(data: bytes, crc: int = 0xFFFF) -> int:
     for byte in data:
@@ -123,10 +151,17 @@ class LiveVehicleState:
     groundspeed_mps: float | None = None
     climb_mps: float | None = None
     throttle_pct: int | None = None
+    vehicle_type: str | None = None
+    autopilot: int | None = None
+    base_mode: int | None = None
+    custom_mode: int | None = None
+    system_status: int | None = None
+    armed: bool | None = None
     origin_lat_deg: float | None = None
     origin_lon_deg: float | None = None
     origin_altitude_m: float | None = None
     writable_animus: bool = False
+    trail: list[dict[str, float]] = field(default_factory=list)
 
     def apply(self, message: MavlinkMessage, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
@@ -136,6 +171,18 @@ class LiveVehicleState:
         self.component_id = message.component_id
         if message.msg_id == 0:
             self.last_heartbeat_time = now
+            decoded = _unpack("<IBBBBB", message.payload, 9)
+            if decoded is not None:
+                (
+                    self.custom_mode,
+                    vehicle_type,
+                    self.autopilot,
+                    self.base_mode,
+                    self.system_status,
+                    _mavlink_version,
+                ) = decoded
+                self.vehicle_type = MAV_TYPE_NAMES.get(vehicle_type, f"MAV type {vehicle_type}")
+                self.armed = bool(self.base_mode & 0x80)
         elif message.msg_id == 30:
             decoded = _unpack("<Iffffff", message.payload, 28)
             if decoded is not None:
@@ -164,6 +211,7 @@ class LiveVehicleState:
                     self.origin_lat_deg = self.lat_deg
                     self.origin_lon_deg = self.lon_deg
                     self.origin_altitude_m = self.altitude_m
+                self._append_trail(now)
         elif message.msg_id == 74:
             decoded = _unpack("<ffhHff", message.payload, 20)
             if decoded is not None:
@@ -190,6 +238,12 @@ class LiveVehicleState:
             "heartbeatAgeS": heartbeat_age,
             "systemId": self.system_id,
             "componentId": self.component_id,
+            "id": (
+                f"{self.system_id}:{self.component_id}"
+                if self.system_id is not None and self.component_id is not None
+                else None
+            ),
+            "vehicleType": self.vehicle_type,
             "attitude": {
                 "rollRad": self.roll_rad,
                 "pitchRad": self.pitch_rad,
@@ -220,9 +274,26 @@ class LiveVehicleState:
                 "climbMps": self.climb_mps,
                 "throttlePct": self.throttle_pct,
             },
+            "status": {
+                "armed": self.armed,
+                "mode": None,
+                "baseMode": self.base_mode,
+                "customMode": self.custom_mode,
+                "systemStatus": self.system_status,
+                "gpsFix": None,
+                "satellitesVisible": None,
+                "batteryRemainingPct": None,
+                "batteryVoltageV": None,
+                "onboardControlSensorsHealth": None,
+                "missionSeq": None,
+                "lastStatusText": None,
+            },
+            "trail": self.trail,
             "commandCapabilities": {
                 "liveLink": self.connected and (packet_age is None or packet_age < 2.0),
                 "writableLink": self.writable_animus,
+                "authority": "sitl-writable" if self.writable_animus else "read-only",
+                "stale": packet_age is not None and packet_age >= 2.0,
                 "supported": (
                     [
                         "arm",
@@ -270,6 +341,163 @@ class LiveVehicleState:
         up_m = self.altitude_m - self.origin_altitude_m
         return north_m, east_m, up_m
 
+    def _append_trail(self, now: float) -> None:
+        north_m, east_m, up_m = self.local_position()
+        if north_m is None or east_m is None or up_m is None:
+            return
+        point = {"eastM": east_m, "northM": north_m, "upM": up_m, "timestampS": now}
+        if self.trail:
+            last = self.trail[-1]
+            distance_m = math.hypot(east_m - last["eastM"], north_m - last["northM"])
+            if distance_m < 0.05 and abs(up_m - last["upM"]) < 0.05:
+                return
+        self.trail.append(point)
+        if len(self.trail) > 900:
+            del self.trail[: len(self.trail) - 900]
+
+
+@dataclass
+class MessageSummary:
+    key: str
+    msg_id: int
+    name: str
+    system_id: int
+    component_id: int
+    first_seen_s: float
+    last_seen_s: float
+    count: int = 0
+    fields: dict[str, float | int | str | None] = field(default_factory=dict)
+
+    def apply(
+        self, message: MavlinkMessage, fields: dict[str, float | int | str | None], now: float
+    ) -> None:
+        self.last_seen_s = now
+        self.count += 1
+        self.fields = fields
+
+    def to_jsonable(self, now: float) -> dict:
+        elapsed_s = max(0.001, self.last_seen_s - self.first_seen_s)
+        return {
+            "key": self.key,
+            "msgId": self.msg_id,
+            "name": self.name,
+            "systemId": self.system_id,
+            "componentId": self.component_id,
+            "lastAgeS": now - self.last_seen_s,
+            "rateHz": self.count / elapsed_s,
+            "count": self.count,
+            "fields": self.fields,
+        }
+
+
+@dataclass
+class LiveSessionSnapshot:
+    state: LiveVehicleState
+    messages: dict[str, MessageSummary] = field(default_factory=dict)
+    events: list[dict] = field(default_factory=list)
+    packet_count: int = 0
+    decoded_count: int = 0
+
+    def apply_datagram(self, messages: Iterable[MavlinkMessage], now: float) -> None:
+        self.packet_count += 1
+        for message in messages:
+            self.decoded_count += 1
+            self.state.apply(message, now)
+            fields = decode_message_fields(message)
+            key = f"{message.system_id}:{message.component_id}:{message.msg_id}"
+            summary = self.messages.get(key)
+            if summary is None:
+                summary = MessageSummary(
+                    key=key,
+                    msg_id=message.msg_id,
+                    name=MAVLINK_MESSAGE_NAMES.get(message.msg_id, f"MSG_{message.msg_id}"),
+                    system_id=message.system_id,
+                    component_id=message.component_id,
+                    first_seen_s=now,
+                    last_seen_s=now,
+                )
+                self.messages[key] = summary
+            summary.apply(message, fields, now)
+
+    def to_jsonable(self, now: float | None = None) -> dict:
+        now = time.monotonic() if now is None else now
+        vehicle = self.state.to_jsonable(now)
+        return {
+            "type": "session_snapshot",
+            "vehicles": [vehicle],
+            "selectedVehicleId": vehicle.get("id"),
+            "messages": [
+                summary.to_jsonable(now)
+                for summary in sorted(
+                    self.messages.values(), key=lambda item: item.last_seen_s, reverse=True
+                )
+            ],
+            "events": self.events[:80],
+            "packetCount": self.packet_count,
+            "decodedCount": self.decoded_count,
+        }
+
+
+def decode_message_fields(message: MavlinkMessage) -> dict[str, float | int | str | None]:
+    if message.msg_id == 0:
+        decoded = _unpack("<IBBBBB", message.payload, 9)
+        if decoded is None:
+            return {}
+        custom_mode, vehicle_type, autopilot, base_mode, system_status, mavlink_version = decoded
+        return {
+            "customMode": custom_mode,
+            "vehicleType": MAV_TYPE_NAMES.get(vehicle_type, f"MAV type {vehicle_type}"),
+            "autopilot": autopilot,
+            "baseMode": base_mode,
+            "armed": 1 if base_mode & 0x80 else 0,
+            "systemStatus": system_status,
+            "mavlinkVersion": mavlink_version,
+        }
+    if message.msg_id == 30:
+        decoded = _unpack("<Iffffff", message.payload, 28)
+        if decoded is None:
+            return {}
+        time_boot_ms, roll, pitch, yaw, rollspeed, pitchspeed, yawspeed = decoded
+        return {
+            "timeBootMs": time_boot_ms,
+            "rollRad": roll,
+            "pitchRad": pitch,
+            "yawRad": yaw,
+            "rollRateRps": rollspeed,
+            "pitchRateRps": pitchspeed,
+            "yawRateRps": yawspeed,
+        }
+    if message.msg_id == 33:
+        decoded = _unpack("<IiiiihhhH", message.payload, 28)
+        if decoded is None:
+            return {}
+        time_boot_ms, lat, lon, alt, rel_alt, vx, vy, vz, hdg = decoded
+        return {
+            "timeBootMs": time_boot_ms,
+            "latDeg": lat / 10000000.0,
+            "lonDeg": lon / 10000000.0,
+            "altitudeM": alt / 1000.0,
+            "relativeAltitudeM": rel_alt / 1000.0,
+            "northMps": vx / 100.0,
+            "eastMps": vy / 100.0,
+            "downMps": vz / 100.0,
+            "headingDeg": None if hdg == 65535 else hdg / 100.0,
+        }
+    if message.msg_id == 74:
+        decoded = _unpack("<ffhHff", message.payload, 20)
+        if decoded is None:
+            return {}
+        airspeed, groundspeed, heading, throttle, altitude, climb = decoded
+        return {
+            "airspeedMps": airspeed,
+            "groundspeedMps": groundspeed,
+            "headingDeg": heading,
+            "throttlePct": throttle,
+            "altitudeM": altitude,
+            "climbMps": climb,
+        }
+    return {"payloadBytes": len(message.payload), "sequence": message.seq}
+
 
 @dataclass
 class UdpForwarder:
@@ -296,23 +524,24 @@ class BridgeProtocol(asyncio.DatagramProtocol):
     def __init__(
         self,
         parser: MavlinkV1Parser,
-        state: LiveVehicleState,
+        snapshot: LiveSessionSnapshot,
         forwarder: UdpForwarder,
         broadcasters: Iterable,
     ) -> None:
         self.parser = parser
-        self.state = state
+        self.snapshot = snapshot
         self.forwarder = forwarder
         self.broadcasters = list(broadcasters)
 
     def datagram_received(self, data: bytes, addr) -> None:
         self.forwarder.forward(data)
         now = time.monotonic()
-        for message in self.parser.feed(data):
-            self.state.apply(message, now)
-        payload = json.dumps(self.state.to_jsonable(now), separators=(",", ":"))
+        self.snapshot.apply_datagram(self.parser.feed(data), now)
+        payload = json.dumps(self.snapshot.state.to_jsonable(now), separators=(",", ":"))
+        snapshot_payload = json.dumps(self.snapshot.to_jsonable(now), separators=(",", ":"))
         for broadcaster in self.broadcasters:
             broadcaster(payload)
+            broadcaster(snapshot_payload)
 
 
 class WebSocketClient:
@@ -359,7 +588,7 @@ async def read_http_headers(reader: asyncio.StreamReader) -> dict[str, str]:
 async def websocket_handler(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
-    state: LiveVehicleState,
+    snapshot: LiveSessionSnapshot,
     clients: set[WebSocketClient],
 ) -> None:
     try:
@@ -384,7 +613,8 @@ async def websocket_handler(
         await writer.drain()
         client = WebSocketClient(writer)
         clients.add(client)
-        await client.send(json.dumps(state.to_jsonable(), separators=(",", ":")))
+        await client.send(json.dumps(snapshot.state.to_jsonable(), separators=(",", ":")))
+        await client.send(json.dumps(snapshot.to_jsonable(), separators=(",", ":")))
         while not reader.at_eof():
             chunk = await reader.read(512)
             if not chunk:
@@ -447,6 +677,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 async def serve(args: argparse.Namespace) -> None:
     parser = MavlinkV1Parser()
     state = LiveVehicleState(writable_animus=args.writable_animus)
+    snapshot = LiveSessionSnapshot(state)
     forwarder = UdpForwarder(args.forward)
     clients: set[WebSocketClient] = set()
 
@@ -462,11 +693,11 @@ async def serve(args: argparse.Namespace) -> None:
 
     loop = asyncio.get_running_loop()
     transport, _ = await loop.create_datagram_endpoint(
-        lambda: BridgeProtocol(parser, state, forwarder, [broadcast]),
+        lambda: BridgeProtocol(parser, snapshot, forwarder, [broadcast]),
         local_addr=(args.listen_host, args.listen_port),
     )
     server = await asyncio.start_server(
-        lambda reader, writer: websocket_handler(reader, writer, state, clients),
+        lambda reader, writer: websocket_handler(reader, writer, snapshot, clients),
         args.ws_host,
         args.ws_port,
     )

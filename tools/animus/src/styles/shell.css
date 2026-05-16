@@ -149,7 +149,7 @@
   position: absolute;
   top: 58px;
   left: 16px;
-  right: 140px;
+  right: 286px;
   z-index: 3;
   display: flex;
   gap: 8px;
@@ -169,7 +169,7 @@
   right: 16px;
   top: 12px;
   display: grid;
-  grid-template-columns: repeat(9, minmax(0, 1fr));
+  grid-template-columns: repeat(11, minmax(0, 1fr));
   gap: 6px;
   z-index: 3;
 }
@@ -182,7 +182,8 @@
   background: var(--panel-float);
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.76rem;
+  padding-inline: 0.35rem;
+  font-size: 0.72rem;
   backdrop-filter: blur(14px);
 }
 

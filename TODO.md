@@ -32,14 +32,18 @@ This file tracks near-term repository work. Roadmap and design context live in:
 
 ## Animus
 
-- [ ] Fix live capture flight workspace rendering so the 3D scene is nonblank under `python3 tools/python/capture_animus_sitl.py`.
-- [ ] Resolve flight workspace topbar/status-strip overlap at the default `1440x900` capture viewport.
-- [ ] Populate or visually clarify the map and inspector live workspaces during SITL capture so they do not appear empty while telemetry is active.
-- [ ] Add firmware-specific readiness checks beyond generic MAVLink telemetry.
-- [ ] Make emergency action UX, command cancellation, stale-link protection, and duplicate-GCS handling explicit.
-- [ ] Add durable command audit history with operator/session, payload, confirmation, ACK/NACK, retries, timeout, and failure reason.
-- [ ] Add MAVLink v2/signing awareness, broader dialect-driven decoding, and typed command workflows.
-- [ ] Add parameter, mission, map/terrain, log, and camera workflows only after protocol-backed transactions and acceptance tests exist.
+- [x] Fix live capture flight workspace rendering so the 3D scene is nonblank under `python3 tools/python/capture_animus_sitl.py`.
+- [x] Resolve flight workspace topbar/status-strip overlap at the default `1440x900` capture viewport.
+- [x] Populate map and inspector live workspaces during SITL capture from browser bridge telemetry.
+- [x] Add firmware-specific readiness checks beyond generic MAVLink telemetry.
+- [x] Make emergency action UX, command cancellation, stale-link protection, and duplicate-GCS handling explicit.
+- [x] Add durable command audit basics with command payload, confirmation, ACK/NACK, timeout, cancellation, and failure reason.
+- [x] Add MAVLink v2/signing awareness to live diagnostics.
+- [ ] Add retry dispatch and retry audit semantics for live commands.
+- [ ] Expand durable command audit history with operator and session identity.
+- [ ] Add broader dialect-driven MAVLink decoding beyond the currently supported message set.
+- [ ] Add typed command workflows for high-consequence live actions.
+- [ ] Add richer protocol-backed GCS workflows for parameter editing, mission transfer, map/terrain, log, and camera operations.
 
 ## Test Ownership
 

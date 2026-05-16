@@ -8,12 +8,17 @@
   }
 
   .topbar {
-    right: 16px;
+    top: 184px;
+    right: 286px;
   }
 
   .status-strip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     right: 16px;
+  }
+
+  .status {
+    top: 184px;
   }
 }
 
@@ -91,7 +96,7 @@
 
   .topbar {
     right: 16px;
-    top: 154px;
+    top: 320px;
   }
 
   .status-strip {
@@ -99,13 +104,14 @@
   }
 
   .status {
-    top: 106px;
+    top: 268px;
     left: 16px;
     right: 16px;
     max-width: none;
   }
 
   .status-detail {
+    top: 372px;
     left: 16px;
     right: 16px;
     max-width: none;
