@@ -26,13 +26,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--duration", type=float, default=12.0, help="SITL duration in seconds")
     parser.add_argument("--warmup", type=float, default=4.0, help="seconds before capture starts")
-    parser.add_argument("--profile", default="cruise", choices=("cruise", "takeoff", "turn", "descent", "failsafe", "mission"))
+    parser.add_argument(
+        "--profile",
+        default="cruise",
+        choices=("cruise", "takeoff", "turn", "descent", "failsafe", "mission"),
+    )
     parser.add_argument("--build-dir", default=str(repo_root() / "build"))
-    parser.add_argument("--output-dir", help="artifact directory; defaults to artifacts/animus-screenshots/<timestamp>")
-    parser.add_argument("--workspace", action="append", dest="workspaces", help="workspace to capture; repeatable")
-    parser.add_argument("--viewport", action="append", dest="viewports", help="viewport WIDTHxHEIGHT; repeatable")
-    parser.add_argument("--install-viewer-deps", action="store_true", help="run npm install in tools/animus first")
-    parser.add_argument("--keep-going", action="store_true", help="write manifest even when capture fails")
+    parser.add_argument(
+        "--output-dir",
+        help="artifact directory; defaults to artifacts/animus-screenshots/<timestamp>",
+    )
+    parser.add_argument(
+        "--workspace", action="append", dest="workspaces", help="workspace to capture; repeatable"
+    )
+    parser.add_argument(
+        "--viewport", action="append", dest="viewports", help="viewport WIDTHxHEIGHT; repeatable"
+    )
+    parser.add_argument(
+        "--install-viewer-deps", action="store_true", help="run npm install in tools/animus first"
+    )
+    parser.add_argument(
+        "--keep-going", action="store_true", help="write manifest even when capture fails"
+    )
     args = parser.parse_args(argv)
     if args.duration <= 0:
         parser.error("--duration must be positive")
@@ -127,7 +142,11 @@ def electron_capture_command(command: list[str]) -> list[str]:
 def run(args: argparse.Namespace) -> int:
     root = repo_root()
     animus_dir = root / "tools" / "animus"
-    out_dir = pathlib.Path(args.output_dir) if args.output_dir else root / "artifacts" / "animus-screenshots" / timestamp()
+    out_dir = (
+        pathlib.Path(args.output_dir)
+        if args.output_dir
+        else root / "artifacts" / "animus-screenshots" / timestamp()
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     processes: list[subprocess.Popen] = []
@@ -227,22 +246,24 @@ def run(args: argparse.Namespace) -> int:
         time.sleep(args.warmup)
 
         url = f"http://127.0.0.1:{viewer_port}/?ws=ws://127.0.0.1:{ws_port}"
-        capture_command = electron_capture_command([
-            "npm",
-            "run",
-            "capture",
-            "--",
-            "--url",
-            url,
-            "--out-dir",
-            str(out_dir),
-            "--workspaces",
-            ",".join(args.workspaces),
-            "--viewports",
-            ",".join(args.viewports),
-            "--wait-timeout-ms",
-            str(max(5000, int((args.warmup + 4.0) * 1000))),
-        ])
+        capture_command = electron_capture_command(
+            [
+                "npm",
+                "run",
+                "capture",
+                "--",
+                "--url",
+                url,
+                "--out-dir",
+                str(out_dir),
+                "--workspaces",
+                ",".join(args.workspaces),
+                "--viewports",
+                ",".join(args.viewports),
+                "--wait-timeout-ms",
+                str(max(5000, int((args.warmup + 4.0) * 1000))),
+            ]
+        )
         capture_log = out_dir / "capture.log"
         manifest["logs"]["capture"] = str(capture_log)
         with capture_log.open("w", encoding="utf8") as log_file:
@@ -272,7 +293,9 @@ def run(args: argparse.Namespace) -> int:
         terminate(processes)
         for log_file in log_files:
             log_file.close()
-        (out_dir / "run-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf8")
+        (out_dir / "run-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n", encoding="utf8"
+        )
         print(f"artifactDir={out_dir}")
         print(f"liveTelemetry={manifest['liveTelemetry']}")
         for path in manifest["screenshots"]:

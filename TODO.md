@@ -46,3 +46,5 @@ This file tracks near-term repository work. Roadmap and design context live in:
 - [ ] Keep Altair tests focused on Altair params, mixer, vehicle interface, SITL runners/cases/conditions, telemetry integration, and Animus.
 - [ ] Move generic Bayek math/control/sim/trim/host-SITL unit coverage into the Bayek repo when that submodule is ready to accept the tests.
 - [ ] Until then, keep only minimal Altair-side Bayek contract coverage needed to protect integration assumptions.
+- [ ] Add path-aware verification selection so agent and human checks can map changed files to the smallest defensible command set.
+- [ ] Build richer visual verification reports that combine metrics, plots, screenshots, logs, and manifests in one reviewable artifact.
