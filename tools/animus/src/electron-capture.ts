@@ -103,16 +103,29 @@ async function selectWorkspace(window: BrowserWindow, workspace: string): Promis
   const workspaceName = JSON.stringify(workspace);
   const selected = await window.webContents.executeJavaScript(`
     (() => {
-      const button = [...document.querySelectorAll('[data-workspace]')]
-        .find((candidate) => candidate.dataset.workspace === ${workspaceName});
-      if (!button) return false;
-      button.click();
-      return true;
+      if (typeof window.__animusSetWorkspace === 'function') {
+        window.__animusSetWorkspace(${workspaceName});
+      } else {
+        const button = [...document.querySelectorAll('[data-workspace]')]
+          .find((candidate) => candidate.dataset.workspace === ${workspaceName});
+        if (!button) return false;
+        button.click();
+      }
+      const active = document.querySelector('[data-workspace].active')?.dataset.workspace;
+      const panel = document.querySelector('[data-panel="${workspace}"]');
+      return active === ${workspaceName} && Boolean(panel?.classList.contains('workspace-visible'));
     })()
   `) as boolean;
   if (!selected) {
     throw new Error(`workspace not found: ${workspace}`);
   }
+  await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        resolve(document.querySelector('[data-workspace].active')?.dataset.workspace || '');
+      }));
+    })
+  `);
 }
 
 async function runCapture(args: CaptureArgs): Promise<void> {
@@ -137,6 +150,7 @@ async function runCapture(args: CaptureArgs): Promise<void> {
     await sleep(args.settleMs);
     for (const workspace of args.workspaces) {
       await selectWorkspace(window, workspace);
+      window.webContents.sendInputEvent({ type: 'mouseMove', x: Math.max(0, viewport.width - 20), y: Math.max(0, viewport.height - 20) });
       await sleep(args.settleMs);
       const fileName = `${viewport.label}-${workspace}.png`;
       const filePath = path.join(args.outDir, fileName);

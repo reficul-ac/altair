@@ -65,6 +65,7 @@ type AnimusApi = {
 declare global {
   interface Window {
     altairAnimus?: AnimusApi;
+    __animusSetWorkspace?: (name: string) => void;
   }
 }
 
@@ -96,6 +97,7 @@ function applyVehicle(message: VehicleStateMessage): void {
   updateHud(message, state.showYaw);
   updateStatusStrip(message);
   scene.applyVehicle(message);
+  drawMap(mapSnapshotForVehicle(message));
 }
 
 function applySnapshot(snapshot: SessionSnapshotMessage): void {
@@ -123,6 +125,29 @@ function setWorkspace(name: string): void {
   document.querySelectorAll<HTMLButtonElement>('[data-workspace]').forEach((button) => button.classList.toggle('active', button.dataset.workspace === name));
   document.querySelectorAll<HTMLElement>('.workspace-panel').forEach((panel) => panel.classList.toggle('workspace-visible', panel.dataset.panel === name || panel.dataset.panel === 'session'));
   if (state.snapshot) drawMap(state.snapshot);
+  else if (state.selected) drawMap(mapSnapshotForVehicle(state.selected));
+}
+
+window.__animusSetWorkspace = setWorkspace;
+
+function mapSnapshotForVehicle(message: VehicleStateMessage): SessionSnapshotMessage {
+  if (!state.snapshot) {
+    return {
+      type: 'session_snapshot',
+      vehicles: [message],
+      selectedVehicleId: message.id ?? null,
+      messages: [],
+      events: [],
+      packetCount: 0,
+      decodedCount: 0
+    };
+  }
+  const selectedId = state.snapshot.selectedVehicleId ?? message.id ?? null;
+  const messageKey = message.id ?? `${message.systemId ?? '--'}:${message.componentId ?? '--'}`;
+  const vehicles = state.snapshot.vehicles.some((vehicle) => (vehicle.id ?? `${vehicle.systemId ?? '--'}:${vehicle.componentId ?? '--'}`) === messageKey)
+    ? state.snapshot.vehicles.map((vehicle) => ((vehicle.id ?? `${vehicle.systemId ?? '--'}:${vehicle.componentId ?? '--'}`) === messageKey ? message : vehicle))
+    : [...state.snapshot.vehicles, message];
+  return { ...state.snapshot, vehicles, selectedVehicleId: selectedId };
 }
 
 function connect(): void {

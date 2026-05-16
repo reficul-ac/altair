@@ -2,13 +2,15 @@ export function renderAppShell(root: HTMLElement): void {
   root.innerHTML = `
   <main class="shell theme-grid">
     <nav class="workspace-tabs" aria-label="Workspace">
+      <div class="workspace-brand" aria-label="Altair Animus">
+        <span>Altair</span>
+      </div>
       <button class="active" data-workspace="flight" type="button">Flight</button>
       <button data-workspace="map" type="button">Map</button>
       <button data-workspace="inspector" type="button">Inspector</button>
       <button data-workspace="video" type="button">Video</button>
       <button data-workspace="plan" type="button">Plan</button>
       <button data-workspace="setup" type="button">Setup</button>
-      <button data-workspace="session" type="button">Session</button>
     </nav>
     <section class="viewport workspace-panel active" data-panel="flight">
       <canvas id="scene"></canvas>

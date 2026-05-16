@@ -53,7 +53,7 @@ export class SceneRenderer {
     private readonly radarCanvas: HTMLCanvasElement,
     private readonly orthoCanvas: HTMLCanvasElement
   ) {
-    this.renderer = new WebGLRenderer({ canvas, antialias: true });
+    this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: false, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(0x0b1116);
     this.scene.fog = new Fog(0x0b1116, 420, 1500);

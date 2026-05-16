@@ -26,9 +26,10 @@
 .debug,
 .vehicle-card,
 .ortho {
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  background: color-mix(in srgb, var(--panel-bg) 82%, transparent);
-  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: var(--panel-float);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(14px);
 }
 
 .telemetry-row div {
@@ -60,10 +61,11 @@
   position: relative;
   width: 118px;
   height: 118px;
-  border: 2px solid var(--border);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 50%;
   overflow: hidden;
   background: #14212b;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
 }
 
 .attitude-sky,
@@ -122,7 +124,7 @@
   height: 34px;
   align-self: end;
   overflow: hidden;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
 }
 
 .heading-tape::before {
@@ -172,7 +174,7 @@
   position: absolute;
   left: 50%;
   top: 50%;
-  border: 1px solid var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 72%, transparent);
   border-radius: 50%;
   transform: translate(-50%, -50%);
 }
@@ -208,7 +210,7 @@
   bottom: 24px;
   width: 220px;
   height: 220px;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
 .debug {
@@ -216,7 +218,7 @@
   right: 18px;
   top: 70px;
   width: 250px;
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 14px;
 }
 
@@ -252,12 +254,13 @@
   position: absolute;
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   font-weight: 700;
-  background: var(--input-bg);
-  border: 1px solid var(--border);
+  background: var(--panel-float);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
 }
 
 .axis-east {

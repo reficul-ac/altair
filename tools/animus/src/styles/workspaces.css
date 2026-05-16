@@ -1,22 +1,32 @@
 .metrics {
-  grid-column: 2;
-  grid-row: 2;
-  border-left: 1px solid var(--muted-border);
-  background: var(--panel-bg);
-  padding: 24px;
+  grid-column: 3;
+  grid-row: 1;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  border-left: 1px solid var(--muted-border);
+  background: color-mix(in srgb, var(--panel-bg) 94%, #05070a);
+  padding: 22px;
+}
+
+.metrics.workspace-panel.workspace-visible {
+  display: block;
 }
 
 .map-workspace,
 .inspector-workspace {
-  grid-column: 1;
-  grid-row: 2;
-  min-height: calc(100vh - 52px);
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
   background: var(--bg);
 }
 
 .map-workspace {
   position: relative;
+  overflow: hidden;
 }
 
 .map-toolbar {
@@ -25,62 +35,89 @@
   left: 14px;
   z-index: 2;
   display: flex;
-  gap: 8px;
+  gap: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: var(--panel-float);
+  padding: 4px;
+  backdrop-filter: blur(14px);
 }
 
 .map-toolbar button {
-  min-width: 42px;
-  background: color-mix(in srgb, var(--panel-bg) 88%, transparent);
-  backdrop-filter: blur(8px);
+  min-width: 40px;
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+}
+
+.map-toolbar button:hover {
+  background: rgba(255, 255, 255, 0.07);
 }
 
 #map-canvas {
   display: block;
   width: 100%;
-  height: calc(100vh - 52px);
+  height: 100%;
   touch-action: none;
+  background: var(--bg);
 }
 
 .inspector-workspace {
-  padding: 18px;
   overflow: auto;
+  padding: 20px;
 }
 
 .inspector-grid {
   display: grid;
-  grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: minmax(340px, 0.92fr) minmax(0, 1fr);
+  gap: 16px;
+  min-height: 100%;
+}
+
+.inspector-grid > section,
+.analysis-grid > section {
+  min-width: 0;
+  border: 1px solid var(--muted-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-bg) 92%, transparent);
+  padding: 16px;
 }
 
 .inspector-grid h2,
 .vehicle-switcher h2,
-.event-section h2 {
-  margin: 0 0 10px;
-  font-size: 0.95rem;
+.event-section h2,
+.analysis-grid h2 {
+  margin: 0 0 12px;
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 700;
 }
 
 #inspector-filter {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .inspector-header,
 .inspector-row {
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) 70px 82px 64px;
+  grid-template-columns: minmax(130px, 1fr) 58px 72px 54px;
   gap: 8px;
   align-items: center;
 }
 
 .inspector-header {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
-  padding: 0 8px 6px;
+  padding: 0 8px 7px;
 }
 
 .inspector-row {
   width: 100%;
   margin-bottom: 6px;
+  border-color: var(--muted-border);
+  background: color-mix(in srgb, var(--panel-elevated) 78%, transparent);
   text-align: left;
 }
 
@@ -94,13 +131,15 @@
 #message-detail div {
   min-width: 0;
   border: 1px solid var(--muted-border);
-  border-radius: 6px;
-  padding: 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-elevated) 72%, transparent);
+  padding: 9px;
 }
 
 #message-detail dt {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
 }
 
 #message-detail dd {
@@ -117,7 +156,8 @@
 }
 
 .chart-fields button {
-  font-size: 0.82rem;
+  min-height: 30px;
+  font-size: 0.8rem;
 }
 
 .inspector-actions {
@@ -131,22 +171,32 @@
   width: 100%;
   max-width: 720px;
   height: 180px;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
 .metrics h1 {
-  margin: 0 0 24px;
-  font-size: 1.3rem;
-  font-weight: 700;
+  margin: 0 0 20px;
+  font-size: 1.18rem;
+  font-weight: 760;
+}
+
+.controls,
+.replay-controls,
+.vehicle-card,
+.vehicle-switcher,
+.event-section,
+.metrics > dl {
+  border: 1px solid var(--muted-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-elevated) 66%, transparent);
+  padding: 12px;
 }
 
 .controls,
 .replay-controls {
   display: grid;
   gap: 12px;
-  margin-bottom: 18px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--muted-border);
+  margin-bottom: 12px;
 }
 
 .controls label,
@@ -154,16 +204,16 @@
   display: grid;
   gap: 6px;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   text-transform: uppercase;
 }
 
 .controls .toggle,
 .replay-controls .toggle {
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   text-transform: none;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   color: var(--text);
 }
 
@@ -172,22 +222,28 @@
   width: 18px;
   min-height: 18px;
   margin: 0;
-  accent-color: var(--accent);
+  accent-color: var(--success);
 }
 
 #config {
   margin: 0;
   color: var(--muted);
-  font-size: 0.86rem;
+  font-size: 0.84rem;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .command-strip {
   display: grid;
-  grid-template-columns: 1fr 1fr 72px;
+  grid-template-columns: 1fr 1fr 56px;
   gap: 8px;
-  margin-bottom: 14px;
+  margin: 12px 0;
+}
+
+.command-strip button,
+.replay-buttons button,
+.replay-secondary button {
+  min-width: 0;
 }
 
 .replay-buttons,
@@ -198,34 +254,35 @@
 }
 
 #replay-time,
-#replay-meta {
+#replay-meta,
+#mock-status {
   margin: 0;
   color: var(--muted);
-  font-size: 0.86rem;
+  font-size: 0.84rem;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .vehicle-card {
-  border-radius: 6px;
-  padding: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 
 .vehicle-card span {
   display: block;
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
 }
 
 .vehicle-card strong {
   display: block;
   margin-top: 4px;
-  font-size: 1.05rem;
+  font-size: 1rem;
 }
 
-.vehicle-switcher {
-  margin-bottom: 18px;
+.vehicle-switcher,
+.event-section,
+.metrics > dl {
+  margin-bottom: 12px;
 }
 
 #vehicle-list {
@@ -239,6 +296,11 @@
   text-align: left;
 }
 
+#vehicle-list span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .vehicle-comparison {
   display: grid;
   gap: 8px;
@@ -249,7 +311,8 @@
   grid-template-columns: minmax(42px, 0.9fr) minmax(60px, 1fr) minmax(48px, 0.8fr);
   gap: 4px 8px;
   border: 1px solid var(--muted-border);
-  border-radius: 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 38%, transparent);
   padding: 8px;
   font-size: 0.8rem;
 }
@@ -266,12 +329,11 @@
 .analysis-grid {
   display: grid;
   grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.1fr);
-  gap: 18px;
-  height: 100%;
+  gap: 16px;
+  min-height: 100%;
 }
 
 .analysis-grid section {
-  min-width: 0;
   overflow: auto;
 }
 
@@ -287,11 +349,11 @@
   gap: 8px;
   align-items: center;
   width: 100%;
-  padding: 8px;
+  padding: 9px;
   border: 1px solid var(--muted-border);
-  background: rgba(9, 16, 22, 0.66);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-elevated) 74%, transparent);
   color: var(--text);
-  border-radius: 6px;
   text-align: left;
 }
 
@@ -321,15 +383,15 @@
 }
 
 .command-safety {
-  border-color: #7a6540;
-  background: #251f16;
-  color: #ffe2ad;
+  border-color: color-mix(in srgb, var(--warning) 52%, transparent);
+  background: color-mix(in srgb, #332a12 84%, transparent);
+  color: #ffe9a6;
 }
 
 .command-emergency {
-  border-color: #a74551;
-  background: #35161d;
-  color: #ffd1d8;
+  border-color: color-mix(in srgb, var(--danger) 62%, transparent);
+  background: color-mix(in srgb, #351214 88%, transparent);
+  color: #ffd1d1;
   font-weight: 700;
 }
 
@@ -343,15 +405,6 @@
   margin-top: 10px;
 }
 
-#vehicle-list span {
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-
-.event-section {
-  margin-top: 18px;
-}
-
 #event-log {
   display: grid;
   gap: 8px;
@@ -362,7 +415,8 @@
 
 #event-log li {
   border: 1px solid var(--muted-border);
-  border-radius: 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 36%, transparent);
   padding: 8px;
 }
 
@@ -370,7 +424,7 @@
 #event-log small {
   display: block;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
 }
 
@@ -385,7 +439,7 @@
 }
 
 #event-log .error {
-  border-color: #b45563;
+  border-color: var(--danger);
 }
 
 .empty {
