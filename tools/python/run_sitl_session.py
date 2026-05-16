@@ -165,6 +165,10 @@ def viewer_install_command() -> list[str]:
     return ["npm", "install"]
 
 
+def viewer_build_command() -> list[str]:
+    return ["npm", "run", "build"]
+
+
 def viewer_command(args: argparse.Namespace) -> list[str]:
     return [
         "npm",
@@ -181,9 +185,10 @@ def viewer_command(args: argparse.Namespace) -> list[str]:
 def app_command(args: argparse.Namespace) -> list[str]:
     command = [
         "npm",
-        "run",
-        "app",
+        "exec",
         "--",
+        "electron",
+        ".",
         "--listen-host",
         args.bridge_host,
         "--listen-port",
@@ -266,39 +271,67 @@ def require_viewer_ready(root: pathlib.Path, install_deps: bool, dry_run: bool) 
 def terminate(processes: list[subprocess.Popen]) -> None:
     for process in reversed(processes):
         if process.poll() is None:
-            process.terminate()
+            try:
+                os.killpg(process.pid, signal.SIGINT)
+            except ProcessLookupError:
+                pass
+    interrupt_deadline = time.monotonic() + 3.0
+    for process in reversed(processes):
+        if process.poll() is not None:
+            continue
+        remaining = max(0.0, interrupt_deadline - time.monotonic())
+        try:
+            process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            pass
+
+    for process in reversed(processes):
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
     deadline = time.monotonic() + 5.0
     for process in reversed(processes):
         remaining = max(0.0, deadline - time.monotonic())
         try:
             process.wait(timeout=remaining)
         except subprocess.TimeoutExpired:
-            process.kill()
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
             process.wait()
+
+
+def start_process(command: list[str], cwd: pathlib.Path | None) -> subprocess.Popen:
+    return subprocess.Popen(command, cwd=cwd, text=True, start_new_session=True)
 
 
 def run(args: argparse.Namespace) -> int:
     root = repo_root()
     viewer_dir = root / "tools" / "animus"
+    setup_commands: list[tuple[str, list[str], pathlib.Path | None]] = []
     commands: list[tuple[str, list[str], pathlib.Path | None]] = []
     if args.app:
         require_viewer_ready(root, args.install_viewer_deps, args.dry_run)
         if args.install_viewer_deps:
-            commands.append(("viewer dependencies", viewer_install_command(), viewer_dir))
+            setup_commands.append(("viewer dependencies", viewer_install_command(), viewer_dir))
+        setup_commands.append(("app build", viewer_build_command(), viewer_dir))
         commands.append(("app", app_command(args), viewer_dir))
     else:
         commands.append(("bridge", bridge_command(args), None))
     if args.viewer and not args.app:
         require_viewer_ready(root, args.install_viewer_deps, args.dry_run)
         if args.install_viewer_deps:
-            commands.append(("viewer dependencies", viewer_install_command(), viewer_dir))
+            setup_commands.append(("viewer dependencies", viewer_install_command(), viewer_dir))
         commands.append(("viewer", viewer_command(args), viewer_dir))
     for index in range(args.vehicles):
         label = "sitl" if args.vehicles == 1 else f"sitl sys{args.system_id_base + index}"
         commands.append((label, sitl_command(args, index), None))
 
     if args.dry_run:
-        for label, command, cwd in commands:
+        for label, command, cwd in [*setup_commands, *commands]:
             prefix = f"(cd {cwd} && " if cwd is not None else ""
             suffix = ")" if cwd is not None else ""
             print(f"{label}: {prefix}{quote_command(command)}{suffix}")
@@ -329,10 +362,15 @@ def run(args: argparse.Namespace) -> int:
             print(f"qgc={', '.join(f'{host}:{port}' for host, port in qgc_targets)}", flush=True)
         else:
             print("qgc=disabled", flush=True)
+        for label, command, cwd in setup_commands:
+            print(f"\n== Run {label} ==", flush=True)
+            print(quote_command(command), flush=True)
+            subprocess.run(command, cwd=cwd, text=True, check=True)
+
         for label, command, cwd in commands[:-1]:
             print(f"\n== Start {label} ==", flush=True)
             print(quote_command(command), flush=True)
-            processes.append(subprocess.Popen(command, cwd=cwd, text=True))
+            processes.append(start_process(command, cwd))
             time.sleep(0.3)
             if processes[-1].poll() is not None:
                 return processes[-1].returncode or 1
@@ -341,18 +379,18 @@ def run(args: argparse.Namespace) -> int:
             label, command, cwd = commands[-1]
             print(f"\n== Run {label} ==", flush=True)
             print(quote_command(command), flush=True)
-            sitl = subprocess.Popen(command, cwd=cwd, text=True)
+            sitl = start_process(command, cwd)
             processes.append(sitl)
             return sitl.wait()
         print(f"\n== Run swarm ({args.vehicles} vehicles) ==", flush=True)
         for label, command, cwd in commands[-args.vehicles :]:
             print(f"{label}: {quote_command(command)}", flush=True)
-            processes.append(subprocess.Popen(command, cwd=cwd, text=True))
+            processes.append(start_process(command, cwd))
             time.sleep(0.2)
         return max(process.wait() for process in processes[-args.vehicles :])
     except KeyboardInterrupt:
         return 130
-    except (OSError, RuntimeError) as exc:
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
         print(f"run_sitl_session.py: {exc}", file=sys.stderr)
         return 1
     finally:

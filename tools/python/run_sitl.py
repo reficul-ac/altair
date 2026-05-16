@@ -144,6 +144,26 @@ def plot_after_run(csv_path, plot_names, plots_dir):
     print_metric("plots_dir", plots_dir)
 
 
+def terminate(process):
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5.0)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
+def run_command(command):
+    process = subprocess.Popen(command, text=True)
+    try:
+        return process.wait()
+    except KeyboardInterrupt:
+        terminate(process)
+        return 130
+
+
 def main():
     args = parse_args()
     exe = pathlib.Path(args.build_dir) / "vehicle" / "sitl_runner"
@@ -188,7 +208,11 @@ def main():
             command.extend(["--mavlink-source-port", str(args.mavlink_source_port)])
 
     try:
-        subprocess.run(command, check=True, text=True)
+        returncode = run_command(command)
+        if returncode != 0:
+            if returncode == 130:
+                return 130
+            raise subprocess.CalledProcessError(returncode, command)
         rows = load_dict_rows(args.output)
         summarize(rows, args.scenario, args.profile, args.output)
         plot_after_run(args.output, args.plot, args.plots_dir)
