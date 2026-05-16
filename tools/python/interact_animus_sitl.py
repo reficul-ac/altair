@@ -25,16 +25,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Run Animus Playwright interactions against live SITL."
     )
     parser.add_argument("--duration", type=float, default=18.0, help="SITL duration in seconds")
-    parser.add_argument("--warmup", type=float, default=4.0, help="seconds before Playwright starts")
+    parser.add_argument(
+        "--warmup", type=float, default=4.0, help="seconds before Playwright starts"
+    )
     parser.add_argument(
         "--profile",
         default="cruise",
         choices=("cruise", "takeoff", "turn", "descent", "failsafe", "mission"),
     )
     parser.add_argument("--build-dir", default=str(repo_root() / "build"))
-    parser.add_argument(
-        "--viewport", default="1440x900", help="Playwright viewport WIDTHxHEIGHT"
-    )
+    parser.add_argument("--viewport", default="1440x900", help="Playwright viewport WIDTHxHEIGHT")
     parser.add_argument(
         "--output-dir",
         help="artifact directory; defaults to artifacts/animus-interactions/<timestamp>",

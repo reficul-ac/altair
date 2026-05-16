@@ -57,6 +57,13 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Add dashboard widget groups or presets for flight test, mission planning, and maintenance workflows.
 - [ ] Add richer dashboard widget configuration such as thresholds, units, and selected vehicle/fleet scoping.
 - [ ] Add persisted application settings beyond the dashboard layout.
+- [x] Fix the Electron screenshot capture hang so `capture_animus_sitl.py`
+  produces screenshots reliably instead of relying on timeout failure.
+- [ ] Decide whether Animus capture artifacts should represent the requested
+  outer viewport or Electron web contents size; current `1440x900` captures
+  save `1440x835` PNGs.
+- [ ] Reduce unnecessary vertical scrollbars in default Animus `1440x900`
+  capture views, especially the live debugger pane and longer workspace panels.
 - [ ] Persist completed onboard MAVLink log downloads as raw `.tlog` or `.bin`
   files once `LOG_DATA` byte assembly is promoted from operation progress to
   durable file output.

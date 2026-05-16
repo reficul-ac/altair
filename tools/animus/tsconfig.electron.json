@@ -14,8 +14,9 @@
   "include": [
     "src/electron-main.ts",
     "src/electron-capture.ts",
-    "src/preload.ts",
+    "src/preload.cts",
     "src/electron-test-entry.ts",
+    "src/electron-live-telemetry-check.ts",
     "src/mavlink.ts",
     "src/parity.ts",
     "src/replay.ts",

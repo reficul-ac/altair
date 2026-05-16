@@ -139,10 +139,23 @@ function createWindow(): BrowserWindow {
     title: 'Altair Animus',
     backgroundColor: '#0b1116',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false
     }
+  });
+
+  window.webContents.on('preload-error', (_event, preloadPath, error) => {
+    console.error(`Electron preload failed (${preloadPath}):`, error);
+  });
+  window.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`Electron renderer exited: reason=${details.reason} exitCode=${details.exitCode}`);
+  });
+  window.webContents.on('unresponsive', () => {
+    console.error('Electron renderer became unresponsive');
+  });
+  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error(`Electron renderer failed to load ${validatedURL}: ${errorCode} ${errorDescription}`);
   });
 
   if (process.env.VITE_DEV_SERVER_URL) {

@@ -48,11 +48,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--keep-going", action="store_true", help="write manifest even when capture fails"
     )
+    parser.add_argument(
+        "--capture-timeout",
+        type=float,
+        default=60.0,
+        help="maximum seconds to wait for the Electron screenshot capture step",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="write structured Electron capture diagnostics to capture.log",
+    )
     args = parser.parse_args(argv)
     if args.duration <= 0:
         parser.error("--duration must be positive")
     if args.warmup < 0:
         parser.error("--warmup must be non-negative")
+    if args.capture_timeout <= 0:
+        parser.error("--capture-timeout must be positive")
     args.workspaces = args.workspaces or [
         "flight",
         "dashboard",
@@ -128,6 +141,45 @@ def terminate(processes: list[subprocess.Popen]) -> None:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+
+
+def run_logged_with_timeout(
+    command: list[str],
+    *,
+    cwd: pathlib.Path | None,
+    log_path: pathlib.Path,
+    timeout_s: float,
+) -> int:
+    with log_path.open("w", encoding="utf8") as log_file:
+        process = subprocess.Popen(
+            command,
+            cwd=cwd,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
+        )
+        try:
+            return process.wait(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            print(
+                f"capture timed out after {timeout_s:.1f}s; terminating process group",
+                file=log_file,
+                flush=True,
+            )
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
+            raise RuntimeError(f"capture timed out after {timeout_s:.1f}s; see {log_path}")
 
 
 def require_tools(root: pathlib.Path, install_deps: bool) -> None:
@@ -270,20 +322,22 @@ def run(args: argparse.Namespace) -> int:
                 ",".join(args.viewports),
                 "--wait-timeout-ms",
                 str(max(5000, int((args.warmup + 4.0) * 1000))),
+                "--capture-timeout-ms",
+                str(int(args.capture_timeout * 1000)),
             ]
         )
+        if args.debug:
+            capture_command.append("--debug")
         capture_log = out_dir / "capture.log"
         manifest["logs"]["capture"] = str(capture_log)
-        with capture_log.open("w", encoding="utf8") as log_file:
-            result = subprocess.run(
-                capture_command,
-                cwd=animus_dir,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-        if result.returncode != 0:
-            raise RuntimeError(f"capture failed with code {result.returncode}; see {capture_log}")
+        returncode = run_logged_with_timeout(
+            capture_command,
+            cwd=animus_dir,
+            log_path=capture_log,
+            timeout_s=args.capture_timeout,
+        )
+        if returncode != 0:
+            raise RuntimeError(f"capture failed with code {returncode}; see {capture_log}")
 
         capture_manifest_path = out_dir / "manifest.json"
         capture_manifest = json.loads(capture_manifest_path.read_text(encoding="utf8"))
