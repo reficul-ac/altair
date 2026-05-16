@@ -49,7 +49,9 @@ export function updateHud(message: VehicleStateMessage, showYaw: boolean): void 
   setText('mode', message.status?.modeState?.label ?? message.status?.mode ?? '--');
   setText('gps', `${message.status?.gpsFix ?? '--'} / ${fmt(message.status?.satellitesVisible, ' sats', 0)}`);
   setText('battery', `${fmt(message.status?.batteryVoltageV, ' V', 2)} / ${fmt(message.status?.batteryRemainingPct, '%', 0)}`);
-  setText('mission', fmt(message.status?.missionSeq, '', 0));
+  setText('mission', message.status?.missionState
+    ? `${message.status.missionState.state} ${fmt(message.status.missionState.activeSeq, '', 0)}`
+    : fmt(message.status?.missionSeq, '', 0));
   setText('statustext', message.status?.lastStatusText ?? '--');
 
   const status = document.querySelector<HTMLElement>('#status')!;
@@ -68,6 +70,8 @@ export function updateStatusStrip(message: VehicleStateMessage | null): void {
     ['authority-state', message?.commandCapabilities?.authority ?? 'unknown', message?.commandCapabilities?.blockedReason ? 'warning' : 'ok'],
     ['arm-state', message?.status?.armed ? 'Armed' : message?.status?.armed === false ? 'Disarmed' : '--', message?.status?.armed ? 'warning' : 'ok'],
     ['mode-state', message?.status?.modeState?.label ?? message?.status?.mode ?? '--', message?.status?.modeState?.known === false ? 'warning' : 'ok'],
+    ['failsafe-state', message?.status?.failsafeState?.label ?? '--', message?.status?.failsafeState?.commandBlocking ? 'error' : message?.status?.failsafeState?.known === false ? 'warning' : 'ok'],
+    ['mission-state', message?.status?.missionState?.detail ?? '--', message?.status?.missionState?.valid === false ? 'error' : message?.status?.missionState?.state === 'unknown' ? 'warning' : 'ok'],
     ['gps-state', message?.status?.gpsFix ?? '--', message?.status?.gpsFix?.includes('3D') ? 'ok' : 'warning'],
     ['battery-state', `${fmt(message?.status?.batteryVoltageV, 'V', 2)} ${fmt(message?.status?.batteryRemainingPct, '%', 0)}`, message?.status?.batteryRemainingPct !== null && message?.status?.batteryRemainingPct !== undefined && message.status.batteryRemainingPct < 20 ? 'warning' : 'ok']
   ];

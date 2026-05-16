@@ -8,8 +8,10 @@ import {
   type GuardedCommandResult,
   type LinkDiagnostics,
   type MockLinkState,
+  type MissionState,
   type MultiVehicleAnalysis,
   type NormalizedArmingState,
+  type NormalizedFailsafeState,
   type NormalizedFlightMode,
   type SessionSnapshotMessage,
   type VehicleReadiness,
@@ -134,6 +136,83 @@ export function normalizeArmingState(armed: boolean | null | undefined, readines
   return { armed: null, label: 'unknown', readyForArm: 'unknown', reason: 'arming state has not been decoded from heartbeat' };
 }
 
+export function normalizeFailsafeState(autopilot: number | null | undefined, systemStatus: number | null | undefined): NormalizedFailsafeState {
+  const firmware = firmwareIdentity(autopilot);
+  const raw = typeof systemStatus === 'number' && Number.isFinite(systemStatus) ? systemStatus : null;
+  const base = { systemStatus: raw, family: firmware.family };
+  switch (raw) {
+    case 3:
+      return { ...base, status: 'standby', label: 'Standby', known: true, commandBlocking: false };
+    case 4:
+      return { ...base, status: 'active', label: 'Active', known: true, commandBlocking: false };
+    case 5:
+      return { ...base, status: 'critical', label: 'Critical failsafe', known: true, commandBlocking: true };
+    case 6:
+      return { ...base, status: 'emergency', label: 'Emergency failsafe', known: true, commandBlocking: true };
+    case 7:
+      return { ...base, status: 'poweroff', label: 'Poweroff', known: true, commandBlocking: true };
+    case 8:
+      return { ...base, status: 'emergency', label: 'Flight termination', known: true, commandBlocking: true };
+    default:
+      return {
+        ...base,
+        status: 'unknown',
+        label: raw === null ? 'Unknown' : `MAV_STATE ${raw}`,
+        known: false,
+        commandBlocking: false
+      };
+  }
+}
+
+export function normalizeMissionState(input: {
+  activeSeq?: number | null;
+  totalItems?: number | null;
+  modeState?: NormalizedFlightMode | null;
+  lastAckType?: number | null;
+}): MissionState {
+  const activeSeq = integerOrNull(input.activeSeq);
+  const totalItems = integerOrNull(input.totalItems);
+  const lastAckType = integerOrNull(input.lastAckType);
+  const invalidAck = lastAckType !== null && lastAckType !== 0;
+  if (totalItems !== null && totalItems < 0) {
+    return { activeSeq, totalItems, state: 'unknown', progressPct: null, valid: false, detail: 'mission count is invalid', lastAckType };
+  }
+  if (activeSeq !== null && activeSeq < 0) {
+    return { activeSeq, totalItems, state: 'unknown', progressPct: null, valid: false, detail: 'active mission item is invalid', lastAckType };
+  }
+  if (invalidAck) {
+    return { activeSeq, totalItems, state: 'unknown', progressPct: null, valid: false, detail: `mission ACK rejected with type ${lastAckType}`, lastAckType };
+  }
+  if (totalItems === null && activeSeq === null) {
+    return { activeSeq: null, totalItems: null, state: 'unknown', progressPct: null, valid: false, detail: 'mission state has not been decoded', lastAckType };
+  }
+  if (totalItems === 0) {
+    return { activeSeq, totalItems, state: 'not-started', progressPct: 0, valid: true, detail: 'no mission items loaded', lastAckType };
+  }
+  if (totalItems !== null && activeSeq !== null && activeSeq >= totalItems) {
+    return { activeSeq, totalItems, state: 'complete', progressPct: 100, valid: true, detail: `mission complete (${totalItems}/${totalItems})`, lastAckType };
+  }
+  if (totalItems !== null && activeSeq === null) {
+    return { activeSeq, totalItems, state: 'not-started', progressPct: 0, valid: true, detail: `${totalItems} mission item${totalItems === 1 ? '' : 's'} loaded`, lastAckType };
+  }
+  const progressPct = totalItems !== null && activeSeq !== null ? Math.max(0, Math.min(100, ((activeSeq + 1) / totalItems) * 100)) : null;
+  const modeCategory = input.modeState?.category ?? 'unknown';
+  const state = activeSeq === 0 && modeCategory !== 'auto'
+    ? 'not-started'
+    : modeCategory === 'auto'
+      ? 'active'
+      : 'paused';
+  return {
+    activeSeq,
+    totalItems,
+    state,
+    progressPct,
+    valid: true,
+    detail: missionDetail(state, activeSeq, totalItems, progressPct),
+    lastAckType
+  };
+}
+
 export function buildVehicleReadiness(vehicle: Pick<VehicleStateMessage, 'connected' | 'packetAgeS' | 'status'>): VehicleReadiness {
   const checks: VehicleReadiness['checks'] = [];
   const stale = vehicle.packetAgeS === null || vehicle.packetAgeS >= 2;
@@ -157,12 +236,23 @@ export function buildVehicleReadiness(vehicle: Pick<VehicleStateMessage, 'connec
     state: battery === null || battery === undefined ? 'unknown' : battery < 20 ? 'warning' : 'ready',
     detail: battery === null || battery === undefined ? 'battery remaining has not been decoded' : `${battery}% remaining`
   });
-  const mission = vehicle.status?.missionSeq;
+  const failsafe = vehicle.status?.failsafeState ?? normalizeFailsafeState(vehicle.status?.firmware?.autopilot, vehicle.status?.systemStatus);
+  checks.push({
+    key: 'failsafe',
+    label: 'Failsafe',
+    state: failsafe.known ? (failsafe.commandBlocking ? 'blocked' : 'ready') : 'unknown',
+    detail: failsafe.known ? failsafe.label : 'MAVLink system status has not been decoded'
+  });
+  const mission = vehicle.status?.missionState ?? normalizeMissionState({
+    activeSeq: vehicle.status?.missionSeq,
+    totalItems: null,
+    modeState: vehicle.status?.modeState
+  });
   checks.push({
     key: 'mission',
     label: 'Mission',
-    state: mission === null || mission === undefined ? 'unknown' : 'ready',
-    detail: mission === null || mission === undefined ? 'mission state has not been decoded' : `active item ${mission}`
+    state: undecodedMission(mission) ? 'unknown' : !mission.valid ? 'blocked' : mission.state === 'unknown' ? 'unknown' : 'ready',
+    detail: mission.detail
   });
   const firmware = vehicle.status?.firmware;
   checks.push({
@@ -172,6 +262,32 @@ export function buildVehicleReadiness(vehicle: Pick<VehicleStateMessage, 'connec
     detail: firmware?.unsupportedReason ?? firmware?.label ?? 'firmware identity has not been decoded'
   });
   return { checks, overall: overallReadiness(checks.map((check) => check.state)) };
+}
+
+function undecodedMission(mission: MissionState): boolean {
+  return mission.state === 'unknown' && mission.activeSeq === null && mission.totalItems === null && (mission.lastAckType === null || mission.lastAckType === undefined);
+}
+
+function integerOrNull(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null;
+}
+
+function missionDetail(state: MissionState['state'], activeSeq: number | null, totalItems: number | null, progressPct: number | null): string {
+  const item = activeSeq === null ? 'unknown item' : `item ${activeSeq}`;
+  const progress = progressPct === null ? '' : ` / ${progressPct.toFixed(0)}%`;
+  const total = totalItems === null ? '' : ` of ${totalItems}`;
+  switch (state) {
+    case 'active':
+      return `active ${item}${total}${progress}`;
+    case 'paused':
+      return `paused at ${item}${total}${progress}`;
+    case 'not-started':
+      return `not started${totalItems === null ? '' : ` / ${totalItems} item${totalItems === 1 ? '' : 's'} loaded`}`;
+    case 'complete':
+      return `mission complete${totalItems === null ? '' : ` / ${totalItems} item${totalItems === 1 ? '' : 's'}`}`;
+    default:
+      return 'mission state has not been decoded';
+  }
 }
 
 export function buildMultiVehicleAnalysis(snapshot: SessionSnapshotMessage, ghostTimestampS: number | null = null): MultiVehicleAnalysis {

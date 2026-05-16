@@ -25,8 +25,15 @@ afterEach(() => {
   }
 });
 
-function heartbeat(seq = 1): Buffer {
-  return mavlinkV1Frame(0, Buffer.from([0, 0, 0, 0, 1, 0, 0, 4, 3]), seq);
+function heartbeat(seq = 1, options: { autopilot?: number; baseMode?: number; customMode?: number; systemStatus?: number } = {}): Buffer {
+  const payload = Buffer.alloc(9);
+  payload.writeUInt32LE(options.customMode ?? 0, 0);
+  payload.writeUInt8(1, 4);
+  payload.writeUInt8(options.autopilot ?? 0, 5);
+  payload.writeUInt8(options.baseMode ?? 0, 6);
+  payload.writeUInt8(options.systemStatus ?? 4, 7);
+  payload.writeUInt8(3, 8);
+  return mavlinkV1Frame(0, payload, seq);
 }
 
 function attitude(seq = 2): Buffer {
@@ -111,6 +118,18 @@ function missionCurrent(seq = 8): Buffer {
   return mavlinkV1Frame(42, payload, seq);
 }
 
+function missionCount(count = 6, seq = 11): Buffer {
+  const payload = Buffer.alloc(4);
+  payload.writeUInt16LE(count, 0);
+  payload.writeUInt8(1, 2);
+  payload.writeUInt8(1, 3);
+  return mavlinkV1Frame(44, payload, seq);
+}
+
+function missionAck(type = 0, seq = 12): Buffer {
+  return mavlinkV1Frame(47, Buffer.from([1, 1, type]), seq);
+}
+
 function batteryStatus(seq = 9): Buffer {
   const payload = Buffer.alloc(36);
   payload.writeUInt8(0, 0);
@@ -174,6 +193,41 @@ describe('Electron MAVLink service', () => {
     expect(decoded[3].fields.seq).toBe(4);
     expect(decoded[4].fields.batteryRemainingPct).toBe(64);
     expect(decoded[5].fields.text).toBe('Ready');
+  });
+
+  it('decodes heartbeat system status and mission status messages', () => {
+    const parser = new MavlinkV1Parser();
+    const decoded = parser.feed(Buffer.concat([
+      heartbeat(1, { autopilot: 12, systemStatus: 5 }),
+      missionCount(6, 2),
+      missionCurrent(3),
+      missionAck(0, 4)
+    ])).map((message) => decodeMavlinkMessage(message));
+    expect(decoded.map((message) => message.name)).toEqual(['HEARTBEAT', 'MISSION_COUNT', 'MISSION_CURRENT', 'MISSION_ACK']);
+    expect(decoded[0].fields.systemStatus).toBe(5);
+    expect(decoded[1].fields.count).toBe(6);
+    expect(decoded[2].fields.seq).toBe(4);
+    expect(decoded[3].fields.type).toBe(0);
+  });
+
+  it('propagates MAVLink failsafe and mission state into live vehicle payloads', () => {
+    const parser = new MavlinkV1Parser();
+    const state = new LiveVehicleState();
+    const autoMission = (4 << 16) | (4 << 24);
+    for (const message of parser.feed(Buffer.concat([
+      heartbeat(1, { autopilot: 12, baseMode: 0x80, customMode: autoMission, systemStatus: 5 }),
+      missionCount(6, 2),
+      missionCurrent(3),
+      missionAck(0, 4)
+    ]))) {
+      state.apply(message, 10);
+    }
+    const payload = state.toJsonable(10.5);
+    expect(payload.status?.failsafeState).toMatchObject({ status: 'critical', commandBlocking: true });
+    expect(payload.status?.missionState).toMatchObject({ activeSeq: 4, totalItems: 6, state: 'active', valid: true });
+    expect(payload.status?.missionState?.progressPct).toBeCloseTo(83.333, 2);
+    expect(payload.status?.readiness?.overall).toBe('blocked');
+    expect(payload.status?.readiness?.checks.find((check) => check.key === 'failsafe')).toMatchObject({ state: 'blocked' });
   });
 
   it('encodes command and mission write packets behind MAVLink v1 CRCs', () => {

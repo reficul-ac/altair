@@ -428,6 +428,8 @@ function updateSetupSurface(vehicle: VehicleStateMessage | null): void {
     `<div><strong>Overall</strong><span>${escapeHtml(readiness?.overall ?? 'unknown')}</span><span>${escapeHtml(commandState?.blockedReason ?? 'commands available')}</span></div>`,
     `<div><strong>Authority</strong><span>${escapeHtml(commandState?.authority ?? 'unknown')}</span><span>${escapeHtml(commandState?.writableLink ? 'writable' : 'read-only')}</span></div>`,
     `<div><strong>Mode</strong><span>${escapeHtml(vehicle?.status?.modeState?.label ?? '--')}</span><span>${escapeHtml(vehicle?.status?.modeState?.unsupportedReason ?? vehicle?.status?.modeState?.category ?? 'unknown')}</span></div>`,
+    `<div><strong>Failsafe</strong><span>${escapeHtml(vehicle?.status?.failsafeState?.status ?? 'unknown')}</span><span>${escapeHtml(vehicle?.status?.failsafeState?.label ?? 'MAVLink system status has not been decoded')}</span></div>`,
+    `<div><strong>Mission</strong><span>${escapeHtml(vehicle?.status?.missionState?.state ?? 'unknown')}</span><span>${escapeHtml(vehicle?.status?.missionState?.detail ?? 'mission state has not been decoded')}</span></div>`,
     ...checks.map((check) => `<div><strong>${escapeHtml(String(check.label))}</strong><span>${escapeHtml(String(check.state))}</span><span>${escapeHtml(String(check.detail))}</span></div>`)
   ].join('');
   const parameters = vehicle?.parameters ?? [];

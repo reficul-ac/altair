@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMultiVehicleAnalysis, buildVehicleReadiness, createMockLink, defaultCommandCapabilities, evaluateGuardedCommand, firmwareIdentity, normalizeFlightMode } from './parity';
+import { buildMultiVehicleAnalysis, buildVehicleReadiness, createMockLink, defaultCommandCapabilities, evaluateGuardedCommand, firmwareIdentity, normalizeFailsafeState, normalizeFlightMode, normalizeMissionState } from './parity';
 import type { SessionSnapshotMessage, VehicleStateMessage } from './state';
 
 const vehicle: VehicleStateMessage = {
@@ -57,6 +57,51 @@ describe('ground station parity helpers', () => {
     expect(capability.supported).toEqual([]);
     expect(capability.blockedReason).toContain('stale');
     expect(evaluateGuardedCommand({ command: 'arm', vehicleId: '1:1', confirmed: true }, capability).reason).toContain('stale');
+  });
+
+  it('normalizes MAVLink system status into typed failsafe states', () => {
+    expect(normalizeFailsafeState(12, 4)).toMatchObject({ family: 'px4', status: 'active', commandBlocking: false });
+    expect(normalizeFailsafeState(3, 3)).toMatchObject({ family: 'ardupilot', status: 'standby', commandBlocking: false });
+    expect(normalizeFailsafeState(0, 5)).toMatchObject({ family: 'generic', status: 'critical', commandBlocking: true });
+    expect(normalizeFailsafeState(12, 6)).toMatchObject({ status: 'emergency', commandBlocking: true });
+    expect(normalizeFailsafeState(12, 7)).toMatchObject({ status: 'poweroff', commandBlocking: true });
+    expect(normalizeFailsafeState(99, 99)).toMatchObject({ family: 'unsupported', status: 'unknown', known: false });
+  });
+
+  it('normalizes mission state and progress from decoded mission telemetry', () => {
+    expect(normalizeMissionState({ activeSeq: null, totalItems: null })).toMatchObject({ state: 'unknown', valid: false });
+    expect(normalizeMissionState({ activeSeq: null, totalItems: 4 })).toMatchObject({ state: 'not-started', progressPct: 0, valid: true });
+    expect(normalizeMissionState({ activeSeq: 1, totalItems: 4, modeState: normalizeFlightMode(3, 10, 0x80) })).toMatchObject({ state: 'active', progressPct: 50, valid: true });
+    expect(normalizeMissionState({ activeSeq: 1, totalItems: 4, modeState: normalizeFlightMode(3, 0, 0x80) })).toMatchObject({ state: 'paused', progressPct: 50, valid: true });
+    expect(normalizeMissionState({ activeSeq: 4, totalItems: 4 })).toMatchObject({ state: 'complete', progressPct: 100, valid: true });
+    expect(normalizeMissionState({ activeSeq: 0, totalItems: 2, lastAckType: 2 })).toMatchObject({ state: 'unknown', valid: false });
+  });
+
+  it('blocks readiness for critical failsafe and invalid mission state', () => {
+    const readiness = buildVehicleReadiness({
+      connected: true,
+      packetAgeS: 0,
+      status: {
+        armed: false,
+        mode: 'Auto',
+        firmware: firmwareIdentity(12),
+        baseMode: 0,
+        customMode: 0,
+        systemStatus: 5,
+        gpsFix: '3D fix',
+        satellitesVisible: 10,
+        batteryRemainingPct: 80,
+        batteryVoltageV: 12,
+        onboardControlSensorsHealth: 1,
+        missionSeq: 0,
+        missionState: normalizeMissionState({ activeSeq: 0, totalItems: 2, lastAckType: 3 }),
+        lastStatusText: null
+      }
+    });
+    expect(readiness.overall).toBe('blocked');
+    expect(readiness.checks.find((check) => check.key === 'failsafe')).toMatchObject({ state: 'blocked' });
+    expect(readiness.checks.find((check) => check.key === 'mission')).toMatchObject({ state: 'blocked' });
+    expect(defaultCommandCapabilities(true, true, { packetAgeS: 0, readiness }).blockedReason).toContain('blocks commands');
   });
 
   it('computes formation offsets and deconfliction warnings', () => {

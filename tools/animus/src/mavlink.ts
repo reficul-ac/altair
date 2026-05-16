@@ -1,6 +1,6 @@
 import dgram, { type RemoteInfo, type Socket } from 'node:dgram';
 import { EventEmitter } from 'node:events';
-import { buildMultiVehicleAnalysis, buildVehicleReadiness, defaultCommandCapabilities, firmwareIdentity, normalizeArmingState, normalizeFlightMode } from './parity.js';
+import { buildMultiVehicleAnalysis, buildVehicleReadiness, defaultCommandCapabilities, firmwareIdentity, normalizeArmingState, normalizeFailsafeState, normalizeFlightMode, normalizeMissionState } from './parity.js';
 import { validateMission } from './state.js';
 import type {
   CameraStream,
@@ -10,10 +10,12 @@ import type {
   GuardedCommandRequest,
   LinkDiagnostics,
   MissionPlan,
+  MissionState,
   MissionTransferState,
   MockLinkState,
   MultiVehicleAnalysis,
   NormalizedArmingState,
+  NormalizedFailsafeState,
   NormalizedFlightMode,
   FirmwareIdentity,
   VehicleReadiness,
@@ -123,9 +125,12 @@ export type VehicleStatePayload = {
     modeState?: NormalizedFlightMode;
     firmware?: FirmwareIdentity;
     armingState?: NormalizedArmingState;
+    failsafeState?: NormalizedFailsafeState;
+    missionState?: MissionState;
     readiness?: VehicleReadiness;
     baseMode: number | null;
     customMode: number | null;
+    systemStatus?: number | null;
     gpsFix: string | null;
     satellitesVisible: number | null;
     batteryRemainingPct: number | null;
@@ -133,6 +138,10 @@ export type VehicleStatePayload = {
     onboardControlSensorsHealth: number | null;
     missionSeq: number | null;
     lastStatusText: string | null;
+  };
+  mission?: {
+    activeSeq: number | null;
+    state?: MissionState;
   };
   commandCapabilities?: CommandCapabilityState;
   diagnostics?: LinkDiagnostics;
@@ -701,6 +710,7 @@ export class LiveVehicleState {
   mode: string | null = null;
   baseMode: number | null = null;
   customMode: number | null = null;
+  systemStatus: number | null = null;
   autopilot: number | null = null;
   gpsFix: string | null = null;
   satellitesVisible: number | null = null;
@@ -708,6 +718,8 @@ export class LiveVehicleState {
   batteryVoltageV: number | null = null;
   onboardControlSensorsHealth: number | null = null;
   missionSeq: number | null = null;
+  missionCount: number | null = null;
+  missionAckType: number | null = null;
   lastStatusText: string | null = null;
   readonly trail: { eastM: number; northM: number; upM: number; timestampS: number }[] = [];
 
@@ -749,6 +761,13 @@ export class LiveVehicleState {
     const connected = this.connected && (packetAgeS === null || packetAgeS < 2);
     const firmware = firmwareIdentity(this.autopilot);
     const modeState = normalizeFlightMode(this.autopilot, this.customMode, this.baseMode);
+    const failsafeState = normalizeFailsafeState(this.autopilot, this.systemStatus);
+    const missionState = normalizeMissionState({
+      activeSeq: this.missionSeq,
+      totalItems: this.missionCount,
+      modeState,
+      lastAckType: this.missionAckType
+    });
     const readiness = buildVehicleReadiness({
       connected,
       packetAgeS,
@@ -756,8 +775,12 @@ export class LiveVehicleState {
         armed: this.armed,
         mode: this.mode,
         firmware,
+        modeState,
+        failsafeState,
+        missionState,
         baseMode: this.baseMode,
         customMode: this.customMode,
+        systemStatus: this.systemStatus,
         gpsFix: this.gpsFix,
         satellitesVisible: this.satellitesVisible,
         batteryRemainingPct: this.batteryRemainingPct,
@@ -811,9 +834,12 @@ export class LiveVehicleState {
         modeState,
         firmware,
         armingState: normalizeArmingState(this.armed, readiness),
+        failsafeState,
+        missionState,
         readiness,
         baseMode: this.baseMode,
         customMode: this.customMode,
+        systemStatus: this.systemStatus,
         gpsFix: this.gpsFix,
         satellitesVisible: this.satellitesVisible,
         batteryRemainingPct: this.batteryRemainingPct,
@@ -821,6 +847,10 @@ export class LiveVehicleState {
         onboardControlSensorsHealth: this.onboardControlSensorsHealth,
         missionSeq: this.missionSeq,
         lastStatusText: this.lastStatusText
+      },
+      mission: {
+        activeSeq: this.missionSeq,
+        state: missionState
       },
       commandCapabilities: defaultCommandCapabilities(connected, false, { packetAgeS, readiness }),
       diagnostics: {
@@ -852,6 +882,7 @@ export class LiveVehicleState {
     if (message.msgId === 0) {
       this.baseMode = num(f.baseMode);
       this.customMode = num(f.customMode);
+      this.systemStatus = num(f.systemStatus);
       this.autopilot = num(f.autopilot);
       this.armed = boolish(f.armed);
       this.mode = normalizeFlightMode(this.autopilot, this.customMode, this.baseMode).label;
@@ -867,6 +898,10 @@ export class LiveVehicleState {
       if (typeof f.altM === 'number') this.altitudeM = f.altM;
     } else if (message.msgId === 42) {
       this.missionSeq = num(f.seq);
+    } else if (message.msgId === 44) {
+      this.missionCount = num(f.count);
+    } else if (message.msgId === 47) {
+      this.missionAckType = num(f.type);
     } else if (message.msgId === 147) {
       this.batteryRemainingPct = num(f.batteryRemainingPct);
       this.batteryVoltageV = num(f.voltageBatteryV);

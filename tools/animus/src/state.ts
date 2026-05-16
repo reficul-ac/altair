@@ -47,9 +47,12 @@ export type VehicleStateMessage = {
     modeState?: NormalizedFlightMode;
     firmware?: FirmwareIdentity;
     armingState?: NormalizedArmingState;
+    failsafeState?: NormalizedFailsafeState;
+    missionState?: MissionState;
     readiness?: VehicleReadiness;
     baseMode: number | null;
     customMode: number | null;
+    systemStatus?: number | null;
     gpsFix: string | null;
     satellitesVisible: number | null;
     batteryRemainingPct: number | null;
@@ -160,9 +163,12 @@ export type TrailPoint = {
 
 export type MissionState = {
   activeSeq: number | null;
-  totalItems: number;
+  totalItems: number | null;
   state: 'unknown' | 'not-started' | 'active' | 'paused' | 'complete';
   progressPct: number | null;
+  valid: boolean;
+  detail: string;
+  lastAckType?: number | null;
 };
 
 export const BAYEK_MISSION_MAX_WAYPOINTS = 16;
@@ -341,8 +347,17 @@ export type NormalizedArmingState = {
   reason: string | null;
 };
 
+export type NormalizedFailsafeState = {
+  status: 'active' | 'standby' | 'critical' | 'emergency' | 'poweroff' | 'unknown';
+  label: string;
+  systemStatus: number | null;
+  family: FirmwareFamily;
+  known: boolean;
+  commandBlocking: boolean;
+};
+
 export type ReadinessCheck = {
-  key: 'link' | 'gps' | 'battery' | 'mission' | 'firmware';
+  key: 'link' | 'gps' | 'battery' | 'failsafe' | 'mission' | 'firmware';
   label: string;
   state: 'ready' | 'warning' | 'blocked' | 'unknown';
   detail: string;
