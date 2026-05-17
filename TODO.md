@@ -21,7 +21,7 @@ Reusable Bayek framework follow-up is tracked separately in
 
 - [ ] Replace placeholder Altair parameters with a documented first-pass airframe model.
 - [ ] Document mass, wing area, speed limits, control limits, safe actuator positions, and aero data provenance.
-- [ ] Expand mixer tests for edge cases, saturation, sign conventions, and failsafe/disarmed outputs.
+- [x] Expand mixer tests for edge cases, saturation, sign conventions, and failsafe/disarmed outputs.
 - [ ] Improve state estimation beyond direct placeholder field assignment.
 - [ ] Wire Bayek wind, turbulence, sensor noise, and bias hooks into Altair SITL
   and Monte Carlo scenarios after the reusable hooks exist.
@@ -94,6 +94,8 @@ Reusable Bayek framework follow-up is tracked separately in
   durable file output.
 - [x] Replace the generated Animus offline topo PMTiles placeholder with a
   production map pack and documented source/licensing refresh workflow.
+- [ ] Fix `integration_sitl_session` when Electron exits with `SIGTRAP` after
+  WebGL2 is blocklisted during shutdown.
 
 ## Test Ownership
 
