@@ -39,6 +39,19 @@ Reusable Bayek framework follow-up is tracked separately in
 
 ## Animus
 
+- [ ] Complete the Animus Qt migration: C++ MAVLink receive/decode, QGC-derived
+  2D provider/cache workers, offline MBTiles/PMTiles serving, Cesium terrain,
+  mission/fence/rally overlays, and Qt screenshot capture.
+- [ ] Move Animus Qt UDP telemetry receive/decode onto an explicit worker thread
+  if UI rendering or map loading can contend with packet ingestion under load.
+- [x] Replace Animus Qt capture readiness artifacts with real map-2d,
+  terrain-3d, and setup screenshots plus nonblank scene checks.
+- [ ] Add QtLocation-backed Animus Qt map rendering once CI and operator
+  installs have a portable runtime package strategy.
+- [ ] Extend Animus Qt screenshot analysis beyond nonblank PNG checks to catch
+  obvious overlap, clipping, and workspace selection regressions.
+- [ ] Add Animus Qt local tile serving for validated XYZ map packs, then MBTiles,
+  before adding PMTiles support.
 - [x] Add a Playwright-backed live SITL interaction harness for Animus workspace controls and checkpoint screenshots.
 - [x] Fix live capture flight workspace rendering so the 3D scene is nonblank under `python3 tools/python/capture_animus_sitl.py`.
 - [x] Resolve flight workspace topbar/status-strip overlap at the default `1440x900` capture viewport.

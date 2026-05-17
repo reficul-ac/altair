@@ -31,6 +31,16 @@ For a Python bridge session:
 python3 tools/python/mavlink_live_bridge.py
 ```
 
+The experimental Qt/QML migration shell is opt-in and coexists with the Electron app:
+
+```sh
+cmake -S . -B build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON
+cmake --build build-animus-qt --parallel
+./build-animus-qt/tools/animus-qt/animus_qt
+```
+
+It requires Qt 6.4 or newer with the Qt modules listed in [Animus Qt Map And Terrain Architecture](animus_qt_architecture.md). The current 2D map capture path uses a strict-offline QtQuick fallback; QtLocation-backed rendering remains future work.
+
 ## Verification Workflows
 
 The lightweight visual workflow launches live SITL, opens Animus, and captures one screenshot per workspace:
@@ -48,6 +58,14 @@ python3 tools/python/interact_animus_sitl.py
 ```
 
 Use the interaction harness when changing workspace controls, dashboard widget workflows, guarded command surfaces, mission editing, replay/session controls, or any UI behavior that needs screenshots at specific checkpoints. It writes logs, the Playwright report, and checkpoint screenshots under `artifacts/animus-interactions/<timestamp>/`.
+
+The Qt migration has a separate screenshot entrypoint:
+
+```sh
+python3 tools/python/capture_animus_qt_sitl.py
+```
+
+The script captures `map-2d`, `terrain-3d`, and `setup` from the built Qt shell with mock telemetry. It writes PNGs, per-workspace logs, `visual-report.md`, and `run-manifest.json` under `artifacts/animus-qt-screenshots/<timestamp>/`.
 
 ## Flight View
 

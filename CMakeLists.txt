@@ -18,6 +18,7 @@ endif()
 
 option(ALTAIR_ENABLE_WARNINGS "Enable compiler warnings for Altair host targets" ON)
 option(ALTAIR_WARNINGS_AS_ERRORS "Treat compiler warnings as errors for Altair host targets" OFF)
+option(ALTAIR_BUILD_ANIMUS_QT "Build the experimental Qt/QML Animus shell" OFF)
 
 function(altair_enable_warnings target)
     if(NOT ALTAIR_ENABLE_WARNINGS)
@@ -42,3 +43,7 @@ enable_testing()
 add_subdirectory(bayek)
 add_subdirectory(vehicle)
 add_subdirectory(tests)
+
+if(ALTAIR_BUILD_ANIMUS_QT)
+    add_subdirectory(tools/animus-qt)
+endif()

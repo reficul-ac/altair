@@ -1,0 +1,21 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import Animus
+
+ApplicationWindow {
+    id: root
+    width: 1280
+    height: 820
+    visible: true
+    title: "Animus Qt"
+
+    function selectWorkspace(workspaceId) {
+        return shell.selectWorkspace(workspaceId)
+    }
+
+    WorkspaceShell {
+        id: shell
+        anchors.fill: parent
+    }
+}

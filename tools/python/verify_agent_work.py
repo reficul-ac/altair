@@ -11,7 +11,7 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 RECOMMENDATION_ARTIFACT_DIR = pathlib.Path("artifacts/agent-verification/<timestamp>")
-CHECK_ORDER = ("format", "cmake", "release", "sitl_plots", "mc", "animus")
+CHECK_ORDER = ("format", "cmake", "release", "sitl_plots", "mc", "animus", "animus_qt")
 
 
 def parse_args():
@@ -31,6 +31,11 @@ def parse_args():
     parser.add_argument("--mc", action="store_true", help="run Monte Carlo smoke summary")
     parser.add_argument(
         "--animus", action="store_true", help="run Animus test/build/capture workflow"
+    )
+    parser.add_argument(
+        "--animus-qt",
+        action="store_true",
+        help="configure, build, test, and run the Qt Animus screenshot workflow",
     )
     parser.add_argument("--all", action="store_true", help="run every verification check")
     parser.add_argument(
@@ -70,6 +75,16 @@ def is_animus_path(path):
             "tools/animus/tsconfig.json",
             "tools/animus/vite.config.ts",
         }
+    )
+
+
+def is_animus_qt_path(path):
+    return (
+        path.startswith("tools/animus-qt/")
+        or path == "tools/python/capture_animus_qt_sitl.py"
+        or path == "docs/animus_qt_architecture.md"
+        or path == "docs/animus_qgc_map_audit.md"
+        or path == "CMakeLists.txt"
     )
 
 
@@ -156,6 +171,12 @@ def select_verification_for_paths(paths):
                     "Animus source, style, or UI workflow files changed",
                 )
                 continue
+            if is_animus_qt_path(path):
+                add_reason(
+                    reasons,
+                    "animus_qt",
+                    "Animus Qt source, capture helper, docs, or top-level Qt CMake wiring changed",
+                )
             if pathlib.PurePosixPath(path).suffix in {".c", ".h", ".py", ".cmake"} or (
                 pathlib.PurePosixPath(path).name == "CMakeLists.txt"
             ):
@@ -355,6 +376,40 @@ def selected_checks_for_flags(flags, artifact_dir=RECOMMENDATION_ARTIFACT_DIR):
                 [sys.executable, "tools/python/capture_animus_sitl.py"],
             ],
         )
+    if "all" in requested or "animus_qt" in requested:
+        add_check(
+            checks,
+            "animus_qt",
+            [
+                [
+                    "cmake",
+                    "-S",
+                    ".",
+                    "-B",
+                    "build-animus-qt",
+                    "-DALTAIR_BUILD_ANIMUS_QT=ON",
+                    "-DCMAKE_BUILD_TYPE=Debug",
+                ],
+                [
+                    "cmake",
+                    "--build",
+                    "build-animus-qt",
+                    "--target",
+                    "animus_qt",
+                    "animus_qt_unit_tests",
+                    "--parallel",
+                ],
+                [
+                    "ctest",
+                    "--test-dir",
+                    "build-animus-qt",
+                    "--output-on-failure",
+                    "-R",
+                    "animus_qt",
+                ],
+                [sys.executable, "tools/python/capture_animus_qt_sitl.py"],
+            ],
+        )
     return checks
 
 
@@ -401,6 +456,7 @@ def has_execution_flag(args):
         or args.sitl_plots
         or args.mc
         or args.animus
+        or args.animus_qt
     )
 
 
