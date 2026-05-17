@@ -13,6 +13,7 @@ import struct
 import subprocess
 import sys
 import zlib
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,6 +21,51 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKSPACES = ("map-2d", "terrain-3d", "setup")
 XVFB_SCREEN = "1280x820x24"
+EXPECTED_CAPTURE_SIZE = (1280, 820)
+
+
+@dataclass(frozen=True)
+class PngImage:
+    width: int
+    height: int
+    channels: int
+    color_type: int
+    palette: tuple[tuple[int, int, int], ...]
+    rows: tuple[bytes, ...]
+
+
+@dataclass(frozen=True)
+class RegionSpec:
+    name: str
+    bounds: tuple[float, float, float, float]
+    min_colors: int
+    min_luminance_range: float
+    max_dominant_fraction: float
+
+
+WORKSPACE_COLOR_MINIMUMS = {
+    "map-2d": 8,
+    "terrain-3d": 18,
+    "setup": 7,
+}
+
+WORKSPACE_CONTENT_REGIONS = {
+    "map-2d": (
+        RegionSpec("map canvas", (0.06, 0.20, 0.94, 0.88), 6, 10.0, 0.96),
+        RegionSpec("vehicle/home overlays", (0.40, 0.34, 0.60, 0.60), 4, 18.0, 0.92),
+    ),
+    "terrain-3d": (
+        RegionSpec("terrain preview", (0.05, 0.18, 0.95, 0.90), 18, 28.0, 0.90),
+        RegionSpec("vehicle marker", (0.43, 0.38, 0.57, 0.56), 5, 35.0, 0.88),
+    ),
+    "setup": (
+        RegionSpec("setup controls", (0.02, 0.18, 0.98, 0.68), 3, 18.0, 0.94),
+        RegionSpec("map policy panel", (0.02, 0.14, 0.98, 0.34), 3, 16.0, 0.94),
+    ),
+}
+
+TOP_REGION = RegionSpec("toolbar and tabs", (0.0, 0.0, 1.0, 0.15), 7, 18.0, 0.96)
+WORKSPACE_DIFFERENCE_MINIMUM = 8.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -55,7 +101,7 @@ def paeth(a: int, b: int, c: int) -> int:
     return c
 
 
-def read_png_pixels(path: Path) -> tuple[int, int, list[tuple[int, ...]]]:
+def read_png_image(path: Path) -> PngImage:
     data = path.read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise ValueError("not a PNG")
@@ -121,44 +167,198 @@ def read_png_pixels(path: Path) -> tuple[int, int, list[tuple[int, ...]]]:
         rows.append(bytes(row))
         previous = row
 
-    pixels: list[tuple[int, ...]] = []
-    sample_step_x = max(1, width // 32)
-    sample_step_y = max(1, height // 32)
-    for y in range(0, height, sample_step_y):
-        row = rows[y]
-        for x in range(0, width, sample_step_x):
-            start = x * channels
-            value = tuple(row[start : start + channels])
-            if color_type == 3 and value:
-                index = value[0]
-                value = palette[index] if index < len(palette) else (index, index, index)
-            pixels.append(value)
-    return width, height, pixels
+    return PngImage(width, height, channels, color_type, tuple(palette), tuple(rows))
 
 
-def inspect_png(path: Path) -> dict[str, object]:
-    result: dict[str, object] = {"path": str(path), "exists": path.exists()}
+def pixel_rgb(image: PngImage, x: int, y: int) -> tuple[int, int, int]:
+    x = min(max(x, 0), image.width - 1)
+    y = min(max(y, 0), image.height - 1)
+    row = image.rows[y]
+    start = x * image.channels
+    value = tuple(row[start : start + image.channels])
+    if image.color_type == 3 and value:
+        index = value[0]
+        return image.palette[index] if index < len(image.palette) else (index, index, index)
+    if image.color_type == 0:
+        return (value[0], value[0], value[0])
+    return (value[0], value[1], value[2])
+
+
+def sampled_pixels(image: PngImage, columns: int = 32, rows: int = 32) -> list[tuple[int, int, int]]:
+    pixels: list[tuple[int, int, int]] = []
+    sample_step_x = max(1, image.width // columns)
+    sample_step_y = max(1, image.height // rows)
+    for y in range(0, image.height, sample_step_y):
+        for x in range(0, image.width, sample_step_x):
+            pixels.append(pixel_rgb(image, x, y))
+    return pixels
+
+
+def read_png_pixels(path: Path) -> tuple[int, int, list[tuple[int, ...]]]:
+    image = read_png_image(path)
+    return image.width, image.height, sampled_pixels(image)
+
+
+def luminance(pixel: tuple[int, int, int]) -> float:
+    return 0.2126 * pixel[0] + 0.7152 * pixel[1] + 0.0722 * pixel[2]
+
+
+def region_bounds(image: PngImage, bounds: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
+    left = min(max(int(round(bounds[0] * image.width)), 0), image.width - 1)
+    top = min(max(int(round(bounds[1] * image.height)), 0), image.height - 1)
+    right = min(max(int(round(bounds[2] * image.width)), left + 1), image.width)
+    bottom = min(max(int(round(bounds[3] * image.height)), top + 1), image.height)
+    return left, top, right, bottom
+
+
+def sample_region(image: PngImage, spec: RegionSpec, columns: int = 28, rows: int = 12) -> list[tuple[int, int, int]]:
+    left, top, right, bottom = region_bounds(image, spec.bounds)
+    width = right - left
+    height = bottom - top
+    step_x = max(1, width // columns)
+    step_y = max(1, height // rows)
+    pixels: list[tuple[int, int, int]] = []
+    for y in range(top, bottom, step_y):
+        for x in range(left, right, step_x):
+            pixels.append(pixel_rgb(image, x, y))
+    return pixels
+
+
+def diagnostic_status(failures: list[str], warnings: list[str]) -> str:
+    if failures:
+        return "fail"
+    if warnings:
+        return "warn"
+    return "pass"
+
+
+def inspect_region(image: PngImage, spec: RegionSpec) -> dict[str, object]:
+    pixels = sample_region(image, spec)
+    colors = {pixel for pixel in pixels}
+    luminance_values = [luminance(pixel) for pixel in pixels]
+    dominant_fraction = 1.0
+    if pixels:
+        dominant_fraction = max(pixels.count(color) for color in colors) / len(pixels)
+    luminance_range = max(luminance_values) - min(luminance_values) if luminance_values else 0.0
+    failures: list[str] = []
+    warnings: list[str] = []
+    if len(colors) <= 1:
+        failures.append("region is blank or single-color")
+    elif len(colors) < spec.min_colors:
+        warnings.append(f"low color diversity: {len(colors)} < {spec.min_colors}")
+    if luminance_range < spec.min_luminance_range:
+        warnings.append(f"low luminance variation: {luminance_range:.1f} < {spec.min_luminance_range:.1f}")
+    if dominant_fraction > spec.max_dominant_fraction:
+        warnings.append(f"dominant color covers {dominant_fraction:.1%} of sampled region")
+    return {
+        "name": spec.name,
+        "sampledColors": len(colors),
+        "luminanceRange": round(luminance_range, 1),
+        "dominantFraction": round(dominant_fraction, 3),
+        "status": diagnostic_status(failures, warnings),
+        "failures": failures,
+        "warnings": warnings,
+    }
+
+
+def inspect_png(path: Path, workspace: str = "", expected_size: tuple[int, int] = EXPECTED_CAPTURE_SIZE) -> dict[str, object]:
+    result: dict[str, object] = {"path": str(path), "exists": path.exists(), "diagnostics": []}
+    failures: list[str] = []
+    warnings: list[str] = []
     if not path.exists():
-        result["ok"] = False
-        result["warning"] = "missing screenshot"
+        failures.append("missing screenshot")
+        result.update({"ok": False, "warning": "missing screenshot", "failures": failures, "warnings": warnings})
         return result
     try:
-        width, height, pixels = read_png_pixels(path)
+        image = read_png_image(path)
+        pixels = sampled_pixels(image)
         colors = {pixel for pixel in pixels}
-        result.update(
-            {
-                "width": width,
-                "height": height,
-                "sampledColors": len(colors),
-                "ok": width > 0 and height > 0 and len(colors) > 1,
-            }
-        )
-        if not result["ok"]:
-            result["warning"] = "blank or single-color screenshot"
+        width = image.width
+        height = image.height
+        result.update({"width": width, "height": height, "sampledColors": len(colors)})
+        if expected_size and (width, height) != expected_size:
+            failures.append(f"unexpected dimensions: {width}x{height}, expected {expected_size[0]}x{expected_size[1]}")
+        if len(colors) <= 1:
+            failures.append("blank or single-color screenshot")
+        elif workspace:
+            minimum = WORKSPACE_COLOR_MINIMUMS.get(workspace, 6)
+            if len(colors) < minimum:
+                warnings.append(f"low screenshot color diversity: {len(colors)} < {minimum}")
+
+        diagnostics = [inspect_region(image, TOP_REGION)]
+        for spec in WORKSPACE_CONTENT_REGIONS.get(workspace, ()):
+            diagnostics.append(inspect_region(image, spec))
+        result["diagnostics"] = diagnostics
+        for diagnostic in diagnostics:
+            for message in diagnostic.get("failures", []):
+                failures.append(f"{diagnostic['name']}: {message}")
+            for message in diagnostic.get("warnings", []):
+                warnings.append(f"{diagnostic['name']}: {message}")
     except (OSError, ValueError, zlib.error) as exc:
-        result["ok"] = False
-        result["warning"] = str(exc)
+        failures.append(str(exc))
+
+    result["ok"] = not failures
+    result["failures"] = failures
+    result["warnings"] = warnings
+    if failures:
+        result["warning"] = "; ".join(failures)
+    elif warnings:
+        result["warning"] = "; ".join(warnings)
     return result
+
+
+def thumbnail_pixels(image: PngImage, columns: int = 32, rows: int = 24) -> list[tuple[int, int, int]]:
+    pixels: list[tuple[int, int, int]] = []
+    for row in range(rows):
+        y = min(image.height - 1, int((row + 0.5) * image.height / rows))
+        for column in range(columns):
+            x = min(image.width - 1, int((column + 0.5) * image.width / columns))
+            pixels.append(pixel_rgb(image, x, y))
+    return pixels
+
+
+def mean_pixel_delta(left: list[tuple[int, int, int]], right: list[tuple[int, int, int]]) -> float:
+    count = min(len(left), len(right))
+    if count == 0:
+        return 0.0
+    total = 0.0
+    for index in range(count):
+        total += sum(abs(left[index][channel] - right[index][channel]) for channel in range(3)) / 3.0
+    return total / count
+
+
+def compare_workspace_screenshots(captures: list[dict[str, object]]) -> list[dict[str, object]]:
+    images: dict[str, PngImage] = {}
+    for capture in captures:
+        workspace = str(capture.get("workspace", ""))
+        png = capture.get("png", {})
+        if not isinstance(png, dict) or not png.get("ok"):
+            continue
+        try:
+            images[workspace] = read_png_image(Path(str(capture.get("screenshot", ""))))
+        except (OSError, ValueError, zlib.error):
+            continue
+
+    comparisons: list[dict[str, object]] = []
+    for index, left_workspace in enumerate(WORKSPACES):
+        for right_workspace in WORKSPACES[index + 1 :]:
+            if left_workspace not in images or right_workspace not in images:
+                continue
+            difference = mean_pixel_delta(thumbnail_pixels(images[left_workspace]), thumbnail_pixels(images[right_workspace]))
+            failures: list[str] = []
+            if difference < WORKSPACE_DIFFERENCE_MINIMUM:
+                failures.append(
+                    f"screenshots are too similar: {difference:.1f} < {WORKSPACE_DIFFERENCE_MINIMUM:.1f}"
+                )
+            comparisons.append(
+                {
+                    "workspaces": [left_workspace, right_workspace],
+                    "meanPixelDelta": round(difference, 1),
+                    "status": "fail" if failures else "pass",
+                    "failures": failures,
+                }
+            )
+    return comparisons
 
 
 class ManagedXvfb:
@@ -258,19 +458,50 @@ def write_report(run_dir: Path, manifest: dict[str, object]) -> None:
         f"- Executable: `{manifest['executable']}`",
         f"- Status: `{manifest['status']}`",
         "",
-        "| Workspace | Exit | PNG | Dimensions | Sampled colors |",
-        "| --- | ---: | --- | --- | ---: |",
+        "| Workspace | Exit | PNG | Dimensions | Sampled colors | Diagnostics |",
+        "| --- | ---: | --- | --- | ---: | --- |",
     ]
     for capture in manifest.get("captures", []):
         png = capture["png"]
         dimensions = "-"
         if png.get("width") and png.get("height"):
             dimensions = f"{png['width']}x{png['height']}"
+        diagnostics = []
+        for diagnostic in png.get("diagnostics", []):
+            diagnostics.append(
+                f"{diagnostic.get('name', '-')}: {diagnostic.get('status', '-')}"
+                f" ({diagnostic.get('sampledColors', 0)} colors, "
+                f"lum {diagnostic.get('luminanceRange', 0)})"
+            )
+        messages = []
+        messages.extend(str(message) for message in png.get("failures", []))
+        messages.extend(str(message) for message in png.get("warnings", []))
+        diagnostic_text = "<br>".join(diagnostics + messages) if diagnostics or messages else "-"
         lines.append(
             f"| `{capture['workspace']}` | {capture['exitCode']} | "
             f"{'ok' if png.get('ok') else png.get('warning', 'failed')} | "
-            f"{dimensions} | {png.get('sampledColors', 0)} |"
+            f"{dimensions} | {png.get('sampledColors', 0)} | {diagnostic_text} |"
         )
+
+    comparisons = manifest.get("workspaceComparisons", [])
+    if comparisons:
+        lines.extend(
+            [
+                "",
+                "## Workspace Differences",
+                "",
+                "| Workspaces | Mean pixel delta | Status | Notes |",
+                "| --- | ---: | --- | --- |",
+            ]
+        )
+        for comparison in comparisons:
+            workspaces = comparison.get("workspaces", ["-", "-"])
+            failures = comparison.get("failures", [])
+            notes = "<br>".join(str(message) for message in failures) if failures else "-"
+            lines.append(
+                f"| `{workspaces[0]}` vs `{workspaces[1]}` | "
+                f"{comparison.get('meanPixelDelta', 0)} | {comparison.get('status', '-')} | {notes} |"
+            )
 
     notes = manifest.get("notes", [])
     if notes:
@@ -324,6 +555,7 @@ def main() -> int:
         "usedOffscreen": virtual_display == "offscreen",
         "captures": [],
         "screenshots": [],
+        "workspaceComparisons": [],
         "notes": notes,
         "status": "pass",
     }
@@ -349,7 +581,7 @@ def main() -> int:
                         timeout=max(10, args.capture_delay_ms // 1000 + 10),
                         check=False,
                     )
-                png = inspect_png(screenshot_dir / f"{workspace}.png")
+                png = inspect_png(screenshot_dir / f"{workspace}.png", workspace)
                 capture = {
                     "workspace": workspace,
                     "command": command,
@@ -362,6 +594,10 @@ def main() -> int:
                 if png.get("ok"):
                     manifest["screenshots"].append(capture["screenshot"])
                 if completed.returncode != 0 or not png.get("ok"):
+                    manifest["status"] = "fail"
+            manifest["workspaceComparisons"] = compare_workspace_screenshots(manifest["captures"])
+            for comparison in manifest["workspaceComparisons"]:
+                if comparison.get("status") == "fail":
                     manifest["status"] = "fail"
     finally:
         if xvfb is not None:

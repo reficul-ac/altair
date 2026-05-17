@@ -65,7 +65,7 @@ The Qt migration has a separate screenshot entrypoint:
 python3 tools/python/capture_animus_qt_sitl.py
 ```
 
-The script captures `map-2d`, `terrain-3d`, and `setup` from the built Qt shell with mock telemetry. It writes PNGs, per-workspace logs, `visual-report.md`, and `run-manifest.json` under `artifacts/animus-qt-screenshots/<timestamp>/`.
+The script captures `map-2d`, `terrain-3d`, and `setup` from the built Qt shell with mock telemetry. It writes PNGs, per-workspace logs, `visual-report.md`, and `run-manifest.json` under `artifacts/animus-qt-screenshots/<timestamp>/`. The report includes deterministic PNG diagnostics for capture size, toolbar/tab visibility, workspace content regions, sampled color diversity, and cross-workspace screenshot differences.
 
 ## Flight View
 
