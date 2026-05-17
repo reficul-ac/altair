@@ -2,6 +2,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { animusSettingsPath, createDefaultAnimusSettings, readAnimusSettings, writeAnimusSettings } from './animus-settings';
 import { createDefaultDashboardLayout } from './dashboard-types';
 import { dashboardLayoutPath, exportDashboardProfile, importDashboardProfile, readDashboardLayout, resetDashboardLayout, writeDashboardLayout } from './dashboard-settings';
 
@@ -101,5 +102,43 @@ describe('dashboard settings helpers', () => {
     await writeFile(filePath, 'not-json', 'utf8');
 
     expect(await importDashboardProfile(filePath)).toEqual(createDefaultDashboardLayout());
+  });
+
+  it('reads missing application settings as safe defaults', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'animus-settings-'));
+    const filePath = animusSettingsPath(dir);
+
+    expect(await readAnimusSettings(filePath)).toEqual(createDefaultAnimusSettings());
+  });
+
+  it('persists normalized UI-safe application settings only', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'animus-settings-'));
+    const filePath = animusSettingsPath(dir);
+    const saved = await writeAnimusSettings(filePath, {
+      schemaVersion: 1,
+      defaultWorkspace: 'dashboard',
+      theme: 'snow',
+      cameraMode: 'fpv',
+      cameraLock: true,
+      lastDashboardPresetLabel: 'Flight Test'
+    });
+
+    expect(saved).toEqual({
+      schemaVersion: 1,
+      defaultWorkspace: 'dashboard',
+      theme: 'snow',
+      cameraMode: 'fpv',
+      cameraLock: true,
+      lastDashboardPresetLabel: 'Flight Test'
+    });
+    expect(JSON.parse(await readFile(filePath, 'utf8')).writableAnimus).toBeUndefined();
+  });
+
+  it('falls back for malformed application settings', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'animus-settings-'));
+    const filePath = animusSettingsPath(dir);
+    await writeFile(filePath, 'not-json', 'utf8');
+
+    expect(await readAnimusSettings(filePath)).toEqual(createDefaultAnimusSettings());
   });
 });

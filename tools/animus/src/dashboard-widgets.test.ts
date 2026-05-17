@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDashboardWidgetView, dashboardCommandDisabledReason, renderDashboardWidgetRows } from './dashboard-widgets';
+import { DASHBOARD_WIDGET_CATALOG_GROUPS, buildDashboardWidgetView, dashboardCommandDisabledReason, renderDashboardWidgetRows } from './dashboard-widgets';
 import type { SessionSnapshotMessage, VehicleStateMessage } from './state';
 
 const vehicle: VehicleStateMessage = {
@@ -71,5 +71,39 @@ describe('dashboard widget catalog rendering', () => {
     expect(dashboardCommandDisabledReason(vehicle, 'arm')).toBeNull();
     expect(dashboardCommandDisabledReason({ ...vehicle, commandCapabilities: { ...vehicle.commandCapabilities!, writableLink: false, blockedReason: 'read-only authority' } }, 'arm')).toBe('read-only authority');
     expect(dashboardCommandDisabledReason({ ...vehicle, commandCapabilities: { ...vehicle.commandCapabilities!, supported: ['arm'], blockedCommands: { land: 'land unsupported' } } }, 'land')).toBe('land unsupported');
+  });
+
+  it('exposes grouped widget catalog metadata for dashboard workflows', () => {
+    expect(DASHBOARD_WIDGET_CATALOG_GROUPS.map((group) => group.id)).toEqual(['flight-test', 'mission-planning', 'maintenance']);
+    expect(DASHBOARD_WIDGET_CATALOG_GROUPS.flatMap((group) => group.kinds)).toContain('guarded-controls');
+  });
+
+  it('uses configured link freshness thresholds for warning and danger tones', () => {
+    const warning = buildDashboardWidgetView({
+      id: 'link',
+      kind: 'link-freshness',
+      span: 'compact',
+      config: { thresholds: { packetWarningS: 0.1, packetDangerS: 0.5, heartbeatWarningS: 0.1, heartbeatDangerS: 0.5 } }
+    }, snapshot);
+    const danger = buildDashboardWidgetView({
+      id: 'link',
+      kind: 'link-freshness',
+      span: 'compact',
+      config: { thresholds: { packetWarningS: 0.1, packetDangerS: 0.15, heartbeatWarningS: 0.1, heartbeatDangerS: 0.2 } }
+    }, snapshot);
+
+    expect(warning.rows.find((row) => row.label === 'Packet age')?.tone).toBe('warning');
+    expect(danger.rows.find((row) => row.label === 'Heartbeat age')?.tone).toBe('danger');
+  });
+
+  it('scopes widgets to selected vehicle or fleet', () => {
+    const staleVehicle = { ...vehicle, id: '2:1', connected: false, packetAgeS: 3.2, heartbeatAgeS: 4.4 };
+    const fleetSnapshot = { ...snapshot, vehicles: [vehicle, staleVehicle], selectedVehicleId: '1:1' };
+    const selected = buildDashboardWidgetView({ id: 'link', kind: 'link-freshness', span: 'compact', config: { vehicleScope: 'selected' } }, fleetSnapshot);
+    const fleet = buildDashboardWidgetView({ id: 'link', kind: 'link-freshness', span: 'compact', config: { vehicleScope: 'fleet' } }, fleetSnapshot);
+
+    expect(selected.rows.find((row) => row.label === 'Packet age')?.value).toBe('0.20 s');
+    expect(fleet.rows.find((row) => row.label === 'Fleet')?.value).toBe('1/2 live');
+    expect(fleet.rows.find((row) => row.label === 'Worst heartbeat')?.value).toBe('4.40 s');
   });
 });

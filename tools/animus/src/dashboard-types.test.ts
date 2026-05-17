@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   ANIMUS_WIDGET_KINDS,
+  DASHBOARD_PRESETS,
+  createDashboardPresetLayout,
   createDefaultDashboardLayout,
   moveDashboardWidget,
   normalizeDashboardLayout,
   parseDashboardLayoutJson,
+  setDashboardWidgetConfig,
   setDashboardWidgetSpan
 } from './dashboard-types';
 
@@ -104,5 +107,65 @@ describe('dashboard layout validation', () => {
     expect(setDashboardWidgetSpan(layout, 'link', 'full').widgets[0]?.span).toBe('full');
     expect(setDashboardWidgetSpan(layout, 'link', 'compact').widgets[0]?.span).toBe('compact');
     expect(setDashboardWidgetSpan(layout, 'link', 'tall')).toEqual(layout);
+  });
+
+  it('preserves supported widget config while normalizing legacy layouts', () => {
+    const legacy = normalizeDashboardLayout({
+      schemaVersion: 1,
+      widgets: [{ id: 'legacy-link', kind: 'link-freshness', span: 'compact' }]
+    });
+    const configured = normalizeDashboardLayout({
+      schemaVersion: 1,
+      widgets: [{
+        id: 'link',
+        kind: 'link-freshness',
+        span: 'wide',
+        config: {
+          vehicleScope: 'fleet',
+          units: 'imperial',
+          thresholds: {
+            packetWarningS: 0.5,
+            packetDangerS: -1,
+            heartbeatWarningS: 1.25,
+            heartbeatDangerS: 2.5
+          }
+        }
+      }]
+    });
+
+    expect(legacy.widgets[0]).toEqual({ id: 'legacy-link', kind: 'link-freshness', span: 'compact' });
+    expect(configured.widgets[0]?.config).toEqual({
+      vehicleScope: 'fleet',
+      thresholds: { packetWarningS: 0.5, heartbeatWarningS: 1.25, heartbeatDangerS: 2.5 }
+    });
+  });
+
+  it('updates widget config only with supported keys', () => {
+    const layout = normalizeDashboardLayout({
+      schemaVersion: 1,
+      widgets: [{ id: 'link', kind: 'link-freshness', span: 'compact' }]
+    });
+
+    const updated = setDashboardWidgetConfig(layout, 'link', {
+      vehicleScope: 'fleet',
+      units: 'metric',
+      thresholds: { packetWarningS: 0.75, packetDangerS: 1.5 }
+    });
+
+    expect(updated.widgets[0]?.config).toEqual({
+      vehicleScope: 'fleet',
+      units: 'metric',
+      thresholds: { packetWarningS: 0.75, packetDangerS: 1.5 }
+    });
+    expect(setDashboardWidgetConfig(layout, 'missing', { vehicleScope: 'fleet' })).toEqual(layout);
+  });
+
+  it('builds dashboard presets from known widget kinds and spans', () => {
+    expect(DASHBOARD_PRESETS.map((preset) => preset.id)).toEqual(['flight-test', 'mission-planning', 'maintenance']);
+    for (const preset of DASHBOARD_PRESETS) {
+      const layout = createDashboardPresetLayout(preset.id);
+      expect(layout.widgets.length).toBeGreaterThan(0);
+      expect(layout.widgets.every((widget) => ANIMUS_WIDGET_KINDS.includes(widget.kind))).toBe(true);
+    }
   });
 });

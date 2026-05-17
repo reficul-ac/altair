@@ -1,15 +1,19 @@
 import {
   createDefaultDashboardLayout,
+  DASHBOARD_PRESETS,
+  createDashboardPresetLayout,
   isAnimusWidgetSpan,
   moveDashboardWidget,
+  setDashboardWidgetConfig,
   setDashboardWidgetSpan,
   type AnimusDashboardLayout,
   type AnimusWidgetConfig,
-  type AnimusWidgetKind
+  type AnimusWidgetKind,
+  type AnimusWidgetRuntimeConfig
 } from './dashboard-types';
 import {
   DASHBOARD_COMMANDS,
-  DASHBOARD_WIDGET_CATALOG,
+  DASHBOARD_WIDGET_CATALOG_GROUPS,
   buildDashboardWidgetView,
   catalogEntry,
   dashboardCommandDisabledReason,
@@ -37,6 +41,7 @@ export type DashboardControllerOptions = {
   getApi: () => DashboardApi | undefined;
   issueCommand: (command: CommandName, originSurface: string) => void;
   setStatus: (message: string) => void;
+  onPresetApplied?: (label: string) => void;
 };
 
 export function createDashboardController(options: DashboardControllerOptions): DashboardController {
@@ -82,6 +87,32 @@ export function createDashboardController(options: DashboardControllerOptions): 
         const span = button.dataset.widgetSpan;
         if (!isAnimusWidgetSpan(span)) return;
         persist(setDashboardWidgetSpan(state.layout, id, span));
+      });
+    });
+    grid?.querySelectorAll<HTMLSelectElement>('[data-widget-config]').forEach((select) => {
+      select.addEventListener('change', () => {
+        const id = select.dataset.widgetId ?? '';
+        const widget = state.layout.widgets.find((candidate) => candidate.id === id);
+        if (!widget) return;
+        persist(setDashboardWidgetConfig(state.layout, id, {
+          ...(widget.config ?? {}),
+          [select.dataset.widgetConfig ?? '']: select.value
+        }));
+      });
+    });
+    grid?.querySelectorAll<HTMLInputElement>('[data-widget-threshold]').forEach((input) => {
+      input.addEventListener('change', () => {
+        const id = input.dataset.widgetId ?? '';
+        const widget = state.layout.widgets.find((candidate) => candidate.id === id);
+        if (!widget) return;
+        const key = input.dataset.widgetThreshold ?? '';
+        persist(setDashboardWidgetConfig(state.layout, id, {
+          ...(widget.config ?? {}),
+          thresholds: {
+            ...(widget.config?.thresholds ?? {}),
+            [key]: Number(input.value)
+          }
+        }));
       });
     });
     grid?.querySelectorAll<HTMLButtonElement>('[data-dashboard-command]').forEach((button) => {
@@ -207,6 +238,17 @@ export function createDashboardController(options: DashboardControllerOptions): 
           : 'Dashboard profile export canceled');
       }).catch(() => options.setStatus('Dashboard profile export failed'));
     };
+    drawer?.querySelectorAll<HTMLButtonElement>('[data-dashboard-preset]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const preset = DASHBOARD_PRESETS.find((candidate) => candidate.id === button.dataset.dashboardPreset);
+        if (!preset) return;
+        if (!window.confirm(`Replace dashboard layout with ${preset.label}?`)) return;
+        state.drawerOpen = false;
+        persist(createDashboardPresetLayout(preset.id));
+        options.onPresetApplied?.(preset.label);
+        options.setStatus(`${preset.label} dashboard preset applied`);
+      });
+    });
     drawer?.querySelectorAll<HTMLButtonElement>('[data-widget-add]').forEach((button) => {
       button.addEventListener('click', () => {
         const kind = button.dataset.widgetAdd as AnimusWidgetKind;
@@ -244,6 +286,7 @@ export function createDashboardController(options: DashboardControllerOptions): 
 
 function renderWidget(widget: AnimusWidgetConfig, snapshot: SessionSnapshotMessage | null): string {
   const view = buildDashboardWidgetView(widget, snapshot);
+  const configControls = renderWidgetConfigControls(widget);
   const body = widget.kind === 'guarded-controls'
     ? `${renderDashboardWidgetRows(view)}${renderCommandButtons(snapshot)}`
     : renderDashboardWidgetRows(view);
@@ -257,9 +300,68 @@ function renderWidget(widget: AnimusWidgetConfig, snapshot: SessionSnapshotMessa
           <button type="button" title="Remove widget" aria-label="Remove ${escapeHtml(view.title)}" data-widget-remove="${escapeHtml(widget.id)}">x</button>
         </div>
       </header>
+      ${configControls}
       <div class="dashboard-widget-body">${body}</div>
     </section>
   `;
+}
+
+function renderWidgetConfigControls(widget: AnimusWidgetConfig): string {
+  const scope = widget.config?.vehicleScope ?? 'selected';
+  const configurableScope = widget.kind !== 'guarded-controls';
+  const thresholdControls = widget.kind === 'link-freshness' ? renderThresholdControls(widget.config, widget.id) : '';
+  if (!configurableScope && !thresholdControls) return '';
+  return `
+    <div class="dashboard-widget-config">
+      ${configurableScope ? `
+        <label>
+          <span>Scope</span>
+          <select data-widget-id="${escapeHtml(widget.id)}" data-widget-config="vehicleScope">
+            <option value="selected" ${scope === 'selected' ? 'selected' : ''}>Selected</option>
+            <option value="fleet" ${scope === 'fleet' ? 'selected' : ''}>Fleet</option>
+          </select>
+        </label>
+      ` : ''}
+      ${renderUnitsControl(widget)}
+      ${thresholdControls}
+    </div>
+  `;
+}
+
+function renderUnitsControl(widget: AnimusWidgetConfig): string {
+  if (widget.kind !== 'gps-battery' && widget.kind !== 'position-velocity' && widget.kind !== 'mission-progress' && widget.kind !== 'attitude-summary') return '';
+  return `
+    <label>
+      <span>Units</span>
+      <select data-widget-id="${escapeHtml(widget.id)}" data-widget-config="units">
+        <option value="metric" selected>Metric</option>
+      </select>
+    </label>
+  `;
+}
+
+function renderThresholdControls(config: AnimusWidgetRuntimeConfig | undefined, widgetId: string): string {
+  const thresholds = config?.thresholds ?? {};
+  const fields = [
+    { key: 'packetWarningS', label: 'Pkt warn', value: thresholds.packetWarningS ?? 1 },
+    { key: 'packetDangerS', label: 'Pkt danger', value: thresholds.packetDangerS ?? 2 },
+    { key: 'heartbeatWarningS', label: 'HB warn', value: thresholds.heartbeatWarningS ?? 1 },
+    { key: 'heartbeatDangerS', label: 'HB danger', value: thresholds.heartbeatDangerS ?? 2 }
+  ] as const;
+  return fields.map((field) => `
+    <label>
+      <span>${field.label}</span>
+      <input
+        data-widget-id="${escapeHtml(widgetId)}"
+        data-widget-threshold="${field.key}"
+        type="number"
+        min="0"
+        max="3600"
+        step="0.25"
+        value="${field.value}"
+      />
+    </label>
+  `).join('');
 }
 
 function renderSpanButtons(widget: AnimusWidgetConfig): string {
@@ -302,13 +404,29 @@ function renderDrawer(layout: AnimusDashboardLayout, open: boolean): string {
   layout.widgets.forEach((widget) => counts.set(widget.kind, (counts.get(widget.kind) ?? 0) + 1));
   return `
     <div class="dashboard-drawer-panel ${open ? '' : 'hidden'}">
-      <div class="dashboard-catalog">
-        ${DASHBOARD_WIDGET_CATALOG.map((entry) => `
-          <button type="button" data-widget-add="${entry.kind}">
-            <strong>${escapeHtml(entry.label)}</strong>
-            <span>${escapeHtml(entry.detail)}</span>
-            <small>${counts.get(entry.kind) ?? 0} active</small>
+      <div class="dashboard-presets">
+        ${DASHBOARD_PRESETS.map((preset) => `
+          <button type="button" data-dashboard-preset="${preset.id}">
+            <strong>${escapeHtml(preset.label)}</strong>
+            <span>${preset.layout.widgets.length} widgets</span>
           </button>
+        `).join('')}
+      </div>
+      <div class="dashboard-catalog">
+        ${DASHBOARD_WIDGET_CATALOG_GROUPS.map((group) => `
+          <section class="dashboard-catalog-group">
+            <h2>${escapeHtml(group.label)}</h2>
+            ${group.kinds.map((kind) => {
+              const entry = catalogEntry(kind);
+              return `
+                <button type="button" data-widget-add="${entry.kind}">
+                  <strong>${escapeHtml(entry.label)}</strong>
+                  <span>${escapeHtml(entry.detail)}</span>
+                  <small>${counts.get(entry.kind) ?? 0} active</small>
+                </button>
+              `;
+            }).join('')}
+          </section>
         `).join('')}
       </div>
     </div>

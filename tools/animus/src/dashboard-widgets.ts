@@ -1,4 +1,4 @@
-import type { AnimusWidgetConfig, AnimusWidgetKind, AnimusWidgetSpan } from './dashboard-types';
+import type { AnimusWidgetConfig, AnimusWidgetKind, AnimusWidgetRuntimeConfig, AnimusWidgetSpan, AnimusWidgetVehicleScope } from './dashboard-types';
 import type { CommandName, SessionSnapshotMessage, VehicleStateMessage } from './state';
 
 export type DashboardWidgetCatalogEntry = {
@@ -6,6 +6,15 @@ export type DashboardWidgetCatalogEntry = {
   label: string;
   detail: string;
   span: AnimusWidgetSpan;
+  group: DashboardWidgetCatalogGroupId;
+};
+
+export type DashboardWidgetCatalogGroupId = 'flight-test' | 'mission-planning' | 'maintenance';
+
+export type DashboardWidgetCatalogGroup = {
+  id: DashboardWidgetCatalogGroupId;
+  label: string;
+  kinds: AnimusWidgetKind[];
 };
 
 export type DashboardWidgetRow = {
@@ -23,15 +32,21 @@ export type DashboardWidgetView = {
 export const DASHBOARD_COMMANDS: CommandName[] = ['arm', 'disarm', 'pause', 'return-to-launch', 'land', 'takeoff', 'change-altitude'];
 
 export const DASHBOARD_WIDGET_CATALOG: DashboardWidgetCatalogEntry[] = [
-  { kind: 'link-freshness', label: 'Link / Packets', detail: 'Connection state, heartbeat age, packet age, and session counters.', span: 'compact' },
-  { kind: 'identity-mode', label: 'Identity / Mode', detail: 'Vehicle id, firmware, type, base mode, and normalized mode.', span: 'compact' },
-  { kind: 'arm-failsafe-readiness', label: 'Arm / Failsafe', detail: 'Arming state, failsafe state, readiness summary, and command authority.', span: 'compact' },
-  { kind: 'gps-battery', label: 'GPS / Battery', detail: 'GPS fix, satellites, battery voltage, and remaining percentage.', span: 'compact' },
-  { kind: 'attitude-summary', label: 'Attitude', detail: 'Roll, pitch, yaw, heading, and attitude rates.', span: 'compact' },
-  { kind: 'position-velocity', label: 'Position / Velocity', detail: 'Global position, local position, airspeed, groundspeed, and climb.', span: 'compact' },
-  { kind: 'mission-progress', label: 'Mission', detail: 'Active waypoint, progress, total items, and validation state.', span: 'compact' },
-  { kind: 'status-events', label: 'Status / Events', detail: 'Latest status text and recent session events.', span: 'full' },
-  { kind: 'guarded-controls', label: 'Guarded Controls', detail: 'Existing guarded command workflow for selected vehicle actions.', span: 'full' }
+  { kind: 'link-freshness', label: 'Link / Packets', detail: 'Connection state, heartbeat age, packet age, and session counters.', span: 'compact', group: 'flight-test' },
+  { kind: 'identity-mode', label: 'Identity / Mode', detail: 'Vehicle id, firmware, type, base mode, and normalized mode.', span: 'compact', group: 'maintenance' },
+  { kind: 'arm-failsafe-readiness', label: 'Arm / Failsafe', detail: 'Arming state, failsafe state, readiness summary, and command authority.', span: 'compact', group: 'maintenance' },
+  { kind: 'gps-battery', label: 'GPS / Battery', detail: 'GPS fix, satellites, battery voltage, and remaining percentage.', span: 'compact', group: 'mission-planning' },
+  { kind: 'attitude-summary', label: 'Attitude', detail: 'Roll, pitch, yaw, heading, and attitude rates.', span: 'compact', group: 'flight-test' },
+  { kind: 'position-velocity', label: 'Position / Velocity', detail: 'Global position, local position, airspeed, groundspeed, and climb.', span: 'compact', group: 'mission-planning' },
+  { kind: 'mission-progress', label: 'Mission', detail: 'Active waypoint, progress, total items, and validation state.', span: 'compact', group: 'mission-planning' },
+  { kind: 'status-events', label: 'Status / Events', detail: 'Latest status text and recent session events.', span: 'full', group: 'flight-test' },
+  { kind: 'guarded-controls', label: 'Guarded Controls', detail: 'Existing guarded command workflow for selected vehicle actions.', span: 'full', group: 'maintenance' }
+];
+
+export const DASHBOARD_WIDGET_CATALOG_GROUPS: DashboardWidgetCatalogGroup[] = [
+  { id: 'flight-test', label: 'Flight Test', kinds: ['link-freshness', 'attitude-summary', 'status-events'] },
+  { id: 'mission-planning', label: 'Mission Planning', kinds: ['mission-progress', 'position-velocity', 'gps-battery'] },
+  { id: 'maintenance', label: 'Maintenance', kinds: ['identity-mode', 'arm-failsafe-readiness', 'guarded-controls'] }
 ];
 
 export function catalogEntry(kind: AnimusWidgetKind): DashboardWidgetCatalogEntry {
@@ -44,20 +59,36 @@ export function selectedDashboardVehicle(snapshot: SessionSnapshotMessage | null
 }
 
 export function buildDashboardWidgetView(config: AnimusWidgetConfig, snapshot: SessionSnapshotMessage | null): DashboardWidgetView {
-  const vehicle = selectedDashboardVehicle(snapshot);
+  const vehicles = scopedDashboardVehicles(config.config?.vehicleScope, snapshot);
+  const vehicle = vehicles[0] ?? null;
   const entry = catalogEntry(config.kind);
   if (!vehicle && config.kind !== 'status-events') {
-    return { title: entry.label, rows: [], empty: 'No selected vehicle stream' };
+    return { title: entry.label, rows: [], empty: emptyVehicleText(config.config?.vehicleScope) };
   }
 
   switch (config.kind) {
     case 'link-freshness':
+      if (config.config?.vehicleScope === 'fleet') {
+        const packet = worstAge(vehicles.map((candidate) => candidate.packetAgeS));
+        const heartbeat = worstAge(vehicles.map((candidate) => candidate.heartbeatAgeS));
+        return {
+          title: entry.label,
+          rows: [
+            { label: 'Fleet', value: `${vehicles.filter((candidate) => candidate.connected).length}/${vehicles.length} live`, tone: vehicles.every((candidate) => candidate.connected) ? 'ok' : 'danger' },
+            { label: 'Worst packet', value: seconds(packet), tone: staleTone(packet, config.config) },
+            { label: 'Worst heartbeat', value: seconds(heartbeat), tone: staleTone(heartbeat, config.config, 'heartbeat') },
+            { label: 'Decoded', value: String(snapshot?.decodedCount ?? 0) },
+            { label: 'Packets', value: String(snapshot?.packetCount ?? 0) }
+          ],
+          empty: vehicles.length > 0 ? undefined : 'No fleet vehicle streams'
+        };
+      }
       return {
         title: entry.label,
         rows: [
           { label: 'Link', value: vehicle?.connected ? 'live' : 'stale', tone: vehicle?.connected ? 'ok' : 'danger' },
-          { label: 'Packet age', value: seconds(vehicle?.packetAgeS), tone: staleTone(vehicle?.packetAgeS) },
-          { label: 'Heartbeat age', value: seconds(vehicle?.heartbeatAgeS), tone: staleTone(vehicle?.heartbeatAgeS) },
+          { label: 'Packet age', value: seconds(vehicle?.packetAgeS), tone: staleTone(vehicle?.packetAgeS, config.config) },
+          { label: 'Heartbeat age', value: seconds(vehicle?.heartbeatAgeS), tone: staleTone(vehicle?.heartbeatAgeS, config.config, 'heartbeat') },
           { label: 'Decoded', value: String(snapshot?.decodedCount ?? 0) },
           { label: 'Packets', value: String(snapshot?.packetCount ?? 0) }
         ]
@@ -155,6 +186,13 @@ export function renderDashboardWidgetRows(view: DashboardWidgetView): string {
   return view.rows.map((row) => `<div class="${row.tone ? `tone-${row.tone}` : ''}"><span>${escapeHtml(row.label)}</span><strong>${escapeHtml(row.value)}</strong></div>`).join('');
 }
 
+export function scopedDashboardVehicles(scope: AnimusWidgetVehicleScope | undefined, snapshot: SessionSnapshotMessage | null): VehicleStateMessage[] {
+  if (!snapshot) return [];
+  if (scope === 'fleet') return snapshot.vehicles;
+  const selected = selectedDashboardVehicle(snapshot);
+  return selected ? [selected] : [];
+}
+
 export function dashboardCommandDisabledReason(vehicle: VehicleStateMessage | null, command: CommandName): string | null {
   if (!vehicle) return 'no selected vehicle';
   const capabilities = vehicle.commandCapabilities;
@@ -174,9 +212,11 @@ function vehicleLabel(vehicle: VehicleStateMessage | null): string {
   return vehicle?.id ?? `${valueOrDash(vehicle?.systemId)}:${valueOrDash(vehicle?.componentId)}`;
 }
 
-function staleTone(value: number | null | undefined): DashboardWidgetRow['tone'] {
+function staleTone(value: number | null | undefined, config?: AnimusWidgetRuntimeConfig, thresholdKind: 'packet' | 'heartbeat' = 'packet'): DashboardWidgetRow['tone'] {
   if (value === null || value === undefined) return 'muted';
-  return value > 2 ? 'danger' : value > 1 ? 'warning' : 'ok';
+  const warning = thresholdKind === 'heartbeat' ? config?.thresholds?.heartbeatWarningS ?? 1 : config?.thresholds?.packetWarningS ?? 1;
+  const danger = thresholdKind === 'heartbeat' ? config?.thresholds?.heartbeatDangerS ?? 2 : config?.thresholds?.packetDangerS ?? 2;
+  return value > danger ? 'danger' : value > warning ? 'warning' : 'ok';
 }
 
 function seconds(value: number | null | undefined): string {
@@ -201,4 +241,13 @@ function percent(value: number | null | undefined): string {
 
 function valueOrDash(value: number | string | null | undefined): string {
   return value === null || value === undefined ? '--' : String(value);
+}
+
+function worstAge(values: Array<number | null | undefined>): number | null {
+  const numeric = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  return numeric.length > 0 ? Math.max(...numeric) : null;
+}
+
+function emptyVehicleText(scope: AnimusWidgetVehicleScope | undefined): string {
+  return scope === 'fleet' ? 'No fleet vehicle streams' : 'No selected vehicle stream';
 }

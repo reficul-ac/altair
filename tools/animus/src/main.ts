@@ -37,6 +37,17 @@ type AnimusConfig = {
   authorityMode: string;
 };
 
+type AnimusWorkspaceName = 'flight' | 'dashboard' | 'map' | 'inspector' | 'video' | 'plan' | 'setup';
+
+type AnimusUiSettings = {
+  schemaVersion: 1;
+  defaultWorkspace: AnimusWorkspaceName;
+  theme: ThemeName;
+  cameraMode: CameraMode;
+  cameraLock: boolean;
+  lastDashboardPresetLabel: string | null;
+};
+
 type AnimusApi = {
   onVehicleState: (callback: (message: VehicleStateMessage) => void) => () => void;
   onSessionSnapshot?: (callback: (message: SessionSnapshotMessage) => void) => () => void;
@@ -46,6 +57,8 @@ type AnimusApi = {
   setListenPort: (port: number) => Promise<AnimusConfig>;
   selectVehicle?: (id: string) => Promise<SessionSnapshotMessage>;
   addMarker?: (label: string) => Promise<SessionSnapshotMessage>;
+  getSettings?: () => Promise<AnimusUiSettings>;
+  saveSettings?: (settings: AnimusUiSettings) => Promise<AnimusUiSettings>;
   getDashboardLayout?: () => Promise<AnimusDashboardLayout>;
   saveDashboardLayout?: (layout: AnimusDashboardLayout) => Promise<AnimusDashboardLayout>;
   resetDashboardLayout?: () => Promise<AnimusDashboardLayout>;
@@ -111,7 +124,16 @@ const state = {
   selected: null as VehicleStateMessage | null,
   mission: createEmptyMissionPlan(),
   replay: null as ReplayTimelineMessage | null,
-  syncInspection: true
+  syncInspection: true,
+  settings: {
+    schemaVersion: 1,
+    defaultWorkspace: 'flight',
+    theme: 'grid',
+    cameraMode: 'chase',
+    cameraLock: false,
+    lastDashboardPresetLabel: null
+  } as AnimusUiSettings,
+  settingsLoaded: false
 };
 bindMapControls(() => state.snapshot);
 const dashboard = createDashboardController({
@@ -120,6 +142,9 @@ const dashboard = createDashboardController({
   issueCommand: (command, originSurface) => issueGuardedCommand(command, originSurface),
   setStatus: (message) => {
     document.querySelector<HTMLElement>('#status')!.textContent = message;
+  },
+  onPresetApplied: (label) => {
+    saveUiSettings({ lastDashboardPresetLabel: label });
   }
 });
 
@@ -155,11 +180,12 @@ function updateConfig(config: AnimusConfig): void {
   document.querySelector<HTMLElement>('#config')!.textContent = `UDP ${config.listenHost}:${config.listenPort} / QGC ${config.qgcForwarding ? endpoints : 'off'} / ${config.authorityMode}${config.qgcForwarding && config.writableAnimus ? ' / duplicate-GCS risk' : ''}`;
 }
 
-function setWorkspace(name: string): void {
+function setWorkspace(name: string, persist = true): void {
   document.querySelectorAll<HTMLButtonElement>('[data-workspace]').forEach((button) => button.classList.toggle('active', button.dataset.workspace === name));
   document.querySelectorAll<HTMLElement>('.workspace-panel').forEach((panel) => panel.classList.toggle('workspace-visible', panel.dataset.panel === name || panel.dataset.panel === 'session'));
   if (state.snapshot) drawMap(state.snapshot);
   else if (state.selected) drawMap(mapSnapshotForVehicle(state.selected));
+  if (persist && isWorkspaceName(name)) saveUiSettings({ defaultWorkspace: name });
 }
 
 window.__animusSetWorkspace = setWorkspace;
@@ -542,7 +568,7 @@ document.querySelector<HTMLButtonElement>('#debug-toggle')!.addEventListener('cl
 });
 document.querySelector<HTMLButtonElement>('#theme-toggle')!.addEventListener('click', () => {
   const next: Record<ThemeName, ThemeName> = { grid: 'rez', rez: 'snow', snow: 'grid' };
-  scene.setTheme(next[scene.theme]);
+  setTheme(next[scene.theme]);
 });
 document.querySelector<HTMLButtonElement>('#marker')!.addEventListener('click', () => void window.altairAnimus?.addMarker?.('Manual marker').then(applySnapshot));
 document.querySelector<HTMLButtonElement>('#replay-open')!.addEventListener('click', () => {
@@ -671,8 +697,8 @@ document.querySelectorAll<HTMLButtonElement>('[data-camera-action]').forEach((bu
     document.querySelector<HTMLElement>('#status')!.textContent = result.reason;
   });
 }));
-document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach((button) => button.addEventListener('click', () => scene.setCameraMode(button.dataset.camera as CameraMode)));
-document.querySelector<HTMLButtonElement>('#camera-lock')!.addEventListener('click', () => scene.setCameraLocked(!scene.cameraLocked));
+document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach((button) => button.addEventListener('click', () => setCameraMode(button.dataset.camera as CameraMode)));
+document.querySelector<HTMLButtonElement>('#camera-lock')!.addEventListener('click', () => setCameraLocked(!scene.cameraLocked));
 document.querySelectorAll<HTMLButtonElement>('[data-hud]').forEach((button) => button.addEventListener('click', () => {
   state.hudMode = button.dataset.hud as HudMode;
   setHudMode(state.hudMode);
@@ -704,7 +730,7 @@ document.querySelector<HTMLInputElement>('#listen-port')!.addEventListener('chan
   void window.altairAnimus?.setListenPort(Number((event.currentTarget as HTMLInputElement).value)).then(updateConfig);
 });
 window.addEventListener('keydown', (event) => {
-  if (event.code === 'KeyC') scene.setCameraMode(nextCameraMode(scene.cameraMode));
+  if (event.code === 'KeyC') setCameraMode(nextCameraMode(scene.cameraMode));
   if (event.code === 'KeyH') document.querySelector<HTMLButtonElement>(`[data-hud="${state.hudMode === 'console' ? 'tactical' : state.hudMode === 'tactical' ? 'off' : 'console'}"]`)?.click();
   if (event.code === 'KeyO') document.querySelector<HTMLButtonElement>('#ortho-toggle')!.click();
   if (event.code === 'KeyY') document.querySelector<HTMLButtonElement>('#heading-mode')!.click();
@@ -712,11 +738,52 @@ window.addEventListener('keydown', (event) => {
   if (event.code === 'KeyM') document.querySelector<HTMLButtonElement>('#marker')!.click();
 });
 
+function setTheme(theme: ThemeName, persist = true): void {
+  scene.setTheme(theme);
+  if (persist) saveUiSettings({ theme });
+}
+
+function setCameraMode(mode: CameraMode, persist = true): void {
+  scene.setCameraMode(mode);
+  if (persist) saveUiSettings({ cameraMode: mode });
+}
+
+function setCameraLocked(locked: boolean, persist = true): void {
+  scene.setCameraLocked(locked);
+  if (persist) saveUiSettings({ cameraLock: locked });
+}
+
+function saveUiSettings(patch: Partial<AnimusUiSettings>): void {
+  state.settings = { ...state.settings, ...patch, schemaVersion: 1 };
+  if (!state.settingsLoaded) return;
+  void window.altairAnimus?.saveSettings?.(state.settings).then((saved) => {
+    state.settings = saved;
+  }).catch(() => {
+    document.querySelector<HTMLElement>('#status')!.textContent = 'Animus settings save failed';
+  });
+}
+
+function isWorkspaceName(value: string): value is AnimusWorkspaceName {
+  return ['flight', 'dashboard', 'map', 'inspector', 'video', 'plan', 'setup'].includes(value);
+}
+
+function applyUiSettings(settings: AnimusUiSettings): void {
+  state.settings = settings;
+  setTheme(settings.theme, false);
+  setCameraMode(settings.cameraMode, false);
+  setCameraLocked(settings.cameraLock, false);
+  setWorkspace(settings.defaultWorkspace, false);
+  state.settingsLoaded = true;
+}
+
 setHudMode('console');
-scene.setTheme('grid');
-scene.setCameraLocked(false);
+setTheme('grid', false);
+setCameraLocked(false, false);
 document.querySelector<HTMLCanvasElement>('#ortho')!.classList.toggle('hidden', !scene.ortho);
-setWorkspace('flight');
+setWorkspace('flight', false);
 dashboard.load();
+void window.altairAnimus?.getSettings?.().then(applyUiSettings).catch(() => {
+  state.settingsLoaded = true;
+});
 connect();
 scene.start();
