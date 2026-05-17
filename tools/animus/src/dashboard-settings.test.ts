@@ -1,11 +1,12 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { animusSettingsPath, createDefaultAnimusSettings, normalizeAnimusSettings, readAnimusSettings, writeAnimusSettings } from './animus-settings';
 import { createDefaultDashboardLayout } from './dashboard-types';
 import { dashboardLayoutPath, exportDashboardProfile, importDashboardProfile, readDashboardLayout, resetDashboardLayout, writeDashboardLayout } from './dashboard-settings';
-import { getUserMapPackStatus } from './map-pack-node';
+import { estimateTileCount, validateTileUrlTemplate } from './map-cache';
+import { MapCacheManager } from './map-cache-node';
 
 describe('dashboard settings helpers', () => {
   it('reads missing files as the default layout without writing', async () => {
@@ -116,32 +117,36 @@ describe('dashboard settings helpers', () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'animus-settings-'));
     const filePath = animusSettingsPath(dir);
     const saved = await writeAnimusSettings(filePath, {
-      schemaVersion: 2,
+      schemaVersion: 3,
       defaultWorkspace: 'dashboard',
       theme: 'snow',
       cameraMode: 'fpv',
       cameraLock: true,
       mapStyle: 'satellite',
       mapFollowSelected: false,
-      satellitePmtilesPath: '/maps/sat.pmtiles',
-      terrainPmtilesPath: '/maps/dem.pmtiles',
-      mapPackLabel: 'Test pack',
-      mapPackAttribution: 'Licensed test data',
+      mapTileUrlTemplate: 'https://tiles.example/{z}/{x}/{y}.png?key=test',
+      mapTileAttribution: 'Licensed test data',
+      activeMapCacheSetId: 'cache-test',
+      mapCacheMinZoom: 11,
+      mapCacheMaxZoom: 15,
+      mapCacheMaxTileCount: 1234,
       lastDashboardPresetLabel: 'Flight Test'
     });
 
     expect(saved).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       defaultWorkspace: 'dashboard',
       theme: 'snow',
       cameraMode: 'fpv',
       cameraLock: true,
       mapStyle: 'satellite',
       mapFollowSelected: false,
-      satellitePmtilesPath: '/maps/sat.pmtiles',
-      terrainPmtilesPath: '/maps/dem.pmtiles',
-      mapPackLabel: 'Test pack',
-      mapPackAttribution: 'Licensed test data',
+      mapTileUrlTemplate: 'https://tiles.example/{z}/{x}/{y}.png?key=test',
+      mapTileAttribution: 'Licensed test data',
+      activeMapCacheSetId: 'cache-test',
+      mapCacheMinZoom: 11,
+      mapCacheMaxZoom: 15,
+      mapCacheMaxTileCount: 1234,
       lastDashboardPresetLabel: 'Flight Test'
     });
     expect(JSON.parse(await readFile(filePath, 'utf8')).writableAnimus).toBeUndefined();
@@ -158,6 +163,21 @@ describe('dashboard settings helpers', () => {
     })).toEqual({ ...createDefaultAnimusSettings(), defaultWorkspace: 'map' });
   });
 
+  it('migrates v2 PMTiles settings to v3 cache defaults without preserving map-pack paths', () => {
+    expect(normalizeAnimusSettings({
+      schemaVersion: 2,
+      defaultWorkspace: 'map',
+      theme: 'grid',
+      cameraMode: 'chase',
+      cameraLock: false,
+      mapFollowSelected: true,
+      satellitePmtilesPath: '/maps/sat.pmtiles',
+      terrainPmtilesPath: '/maps/dem.pmtiles',
+      mapPackLabel: 'Old pack',
+      mapPackAttribution: 'Old attribution'
+    })).toEqual({ ...createDefaultAnimusSettings(), defaultWorkspace: 'map' });
+  });
+
   it('falls back for malformed application settings', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'animus-settings-'));
     const filePath = animusSettingsPath(dir);
@@ -166,31 +186,30 @@ describe('dashboard settings helpers', () => {
     expect(await readAnimusSettings(filePath)).toEqual(createDefaultAnimusSettings());
   });
 
-  it('normalizes user map-pack status for valid and missing PMTiles paths', async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'animus-map-pack-'));
-    const sat = path.join(dir, 'sat.pmtiles');
-    const dem = path.join(dir, 'dem.pmtiles');
-    await writeFile(sat, 'sat', 'utf8');
-    await writeFile(dem, 'dem', 'utf8');
-
-    const valid = await getUserMapPackStatus({
-      ...createDefaultAnimusSettings(),
-      satellitePmtilesPath: sat,
-      terrainPmtilesPath: dem,
-      mapPackLabel: 'Licensed field pack',
-      mapPackAttribution: 'Operator licensed imagery'
+  it('estimates XYZ tile counts deterministically and enforces guardrails', () => {
+    const estimate = estimateTileCount({
+      bbox: { west: -122.18, south: 37.42, east: -122.16, north: 37.44 },
+      minZoom: 12,
+      maxZoom: 13,
+      maxTileCount: 1
     });
-    expect(valid.available).toBe(true);
-    expect(valid.satellite.url).toContain('sat.pmtiles');
-    expect(valid.terrain.url).toContain('dem.pmtiles');
+    expect(estimate.tileCount).toBeGreaterThan(0);
+    expect(estimate).toEqual(estimateTileCount({ ...estimate, maxTileCount: 1 }));
+    expect(estimate.exceedsLimit).toBe(true);
+  });
 
-    const missing = await getUserMapPackStatus({
-      ...createDefaultAnimusSettings(),
-      satellitePmtilesPath: path.join(dir, 'missing-sat.pmtiles'),
-      terrainPmtilesPath: dem
-    });
-    expect(missing.available).toBe(false);
-    expect(missing.satellite.available).toBe(false);
-    expect(missing.terrain.available).toBe(true);
+  it('validates licensed XYZ URL templates before download', () => {
+    expect(validateTileUrlTemplate('https://tiles.example/{z}/{x}/{y}.jpg?key=test')).toEqual({ ok: true, host: 'tiles.example', extension: 'jpg' });
+    expect(validateTileUrlTemplate('file:///tiles/{z}/{x}/{y}.png').ok).toBe(false);
+    expect(validateTileUrlTemplate('https://tiles.example/{z}/{x}.png').ok).toBe(false);
+  });
+
+  it('normalizes malformed or missing map cache metadata as unavailable', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'animus-map-cache-'));
+    const manager = new MapCacheManager(dir);
+    expect(await manager.status()).toMatchObject({ available: false, sets: [] });
+    await mkdir(path.join(dir, 'map-cache'), { recursive: true });
+    await writeFile(path.join(dir, 'map-cache', 'index.json'), 'not-json', 'utf8');
+    expect(await manager.status()).toMatchObject({ available: false, sets: [] });
   });
 });

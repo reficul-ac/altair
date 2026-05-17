@@ -1,8 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   commandSpec,
   DEFAULT_LISTEN_HOST,
@@ -21,7 +21,8 @@ import { validateMission } from './state.js';
 import { createCommandAuditLog } from './command-audit.js';
 import { animusSettingsPath, readAnimusSettings, writeAnimusSettings } from './animus-settings.js';
 import { dashboardLayoutPath, exportDashboardProfile, importDashboardProfile, readDashboardLayout, resetDashboardLayout, writeDashboardLayout } from './dashboard-settings.js';
-import { getUserMapPackStatus } from './map-pack-node.js';
+import { MapCacheManager } from './map-cache-node.js';
+import { ANIMUS_MAP_CACHE_PROTOCOL, type MapCacheDownloadRequest, type MapCacheEstimateRequest } from './map-cache.js';
 import type { AnimusUiSettings } from './animus-settings.js';
 import type { AnimusDashboardLayout } from './dashboard-types.js';
 import type { CommandAuditEntry, CommandDispatchResult, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MockLinkState } from './state.js';
@@ -84,6 +85,7 @@ const commandAuditLog = createCommandAuditLog(path.join(app.getPath('userData'),
 const operationAuditLog = createCommandAuditLog(path.join(app.getPath('userData'), 'operation-audit.jsonl'));
 const dashboardLayoutFile = dashboardLayoutPath(app.getPath('userData'));
 const animusSettingsFile = animusSettingsPath(app.getPath('userData'));
+const mapCache = new MapCacheManager(app.getPath('userData'));
 let recentCommandAudit: CommandAuditEntry[] = [];
 let mockLink: MockLinkState | null = null;
 let shutdownPromise: Promise<void> | null = null;
@@ -182,27 +184,21 @@ function buildRejectedCommandAuditEntry(request: GuardedCommandRequest, reason: 
   };
 }
 
-async function selectMapPackFile(kind: 'satellite' | 'terrain') {
-  const result = await dialog.showOpenDialog({
-    title: kind === 'satellite' ? 'Select satellite imagery PMTiles' : 'Select terrain DEM PMTiles',
-    properties: ['openFile'],
-    filters: [
-      { name: 'PMTiles map pack', extensions: ['pmtiles'] },
-      { name: 'All files', extensions: ['*'] }
-    ]
+protocol.registerSchemesAsPrivileged([{ scheme: ANIMUS_MAP_CACHE_PROTOCOL, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
+
+function registerMapCacheProtocol(): void {
+  protocol.handle(ANIMUS_MAP_CACHE_PROTOCOL, async (request) => {
+    const url = new URL(request.url);
+    const [setId, z, x, y] = url.pathname.split('/').filter(Boolean);
+    if (url.hostname !== 'tiles' || !setId || !z || !x || !y) {
+      return new Response(mapCache.emptyTileBytes(), { headers: { 'content-type': 'image/png' } });
+    }
+    const tile = await mapCache.tilePath(decodeURIComponent(setId), z, x, y);
+    if (!tile.found) {
+      return new Response(mapCache.emptyTileBytes(), { headers: { 'content-type': 'image/png' } });
+    }
+    return net.fetch(pathToFileURL(tile.path).href);
   });
-  const settings = await readAnimusSettings(animusSettingsFile);
-  if (!result.canceled && result.filePaths[0]) {
-    const next: AnimusUiSettings = {
-      ...settings,
-      satellitePmtilesPath: kind === 'satellite' ? result.filePaths[0] : settings.satellitePmtilesPath,
-      terrainPmtilesPath: kind === 'terrain' ? result.filePaths[0] : settings.terrainPmtilesPath,
-      mapPackLabel: settings.mapPackLabel ?? 'Operator offline satellite map',
-      schemaVersion: 2
-    };
-    await writeAnimusSettings(animusSettingsFile, next);
-  }
-  return getUserMapPackStatus(await readAnimusSettings(animusSettingsFile));
 }
 
 function createWindow(): BrowserWindow {
@@ -271,9 +267,13 @@ ipcMain.handle('mavlink:select-vehicle', (_event, id: string) => replay.isLoaded
 ipcMain.handle('mavlink:add-marker', (_event, label: string) => telemetry.addMarker(String(label || 'Marker')));
 ipcMain.handle('settings:get', () => readAnimusSettings(animusSettingsFile));
 ipcMain.handle('settings:save', (_event, settings: AnimusUiSettings) => writeAnimusSettings(animusSettingsFile, settings));
-ipcMain.handle('map-pack:status', async () => getUserMapPackStatus(await readAnimusSettings(animusSettingsFile)));
-ipcMain.handle('map-pack:select-satellite', async () => selectMapPackFile('satellite'));
-ipcMain.handle('map-pack:select-terrain', async () => selectMapPackFile('terrain'));
+ipcMain.handle('map-cache:status', async () => mapCache.status());
+ipcMain.handle('map-cache:list', async () => (await mapCache.status()).sets);
+ipcMain.handle('map-cache:estimate', async (_event, request: MapCacheEstimateRequest) => mapCache.estimate(request));
+ipcMain.handle('map-cache:start-download', async (_event, request: MapCacheDownloadRequest) => mapCache.startDownload(request));
+ipcMain.handle('map-cache:cancel-download', async () => mapCache.cancelDownload());
+ipcMain.handle('map-cache:activate', async (_event, setId: string) => mapCache.activate(String(setId)));
+ipcMain.handle('map-cache:delete', async (_event, setId: string) => mapCache.delete(String(setId)));
 ipcMain.handle('dashboard:get-layout', () => readDashboardLayout(dashboardLayoutFile));
 ipcMain.handle('dashboard:save-layout', (_event, layout: AnimusDashboardLayout) => writeDashboardLayout(dashboardLayoutFile, layout));
 ipcMain.handle('dashboard:reset-layout', () => resetDashboardLayout(dashboardLayoutFile));
@@ -450,6 +450,7 @@ replay.on('session-snapshot', (snapshot) => sendToWindows('session-snapshot', sn
 replay.on('state', (state) => sendToWindows('replay-state', state));
 
 app.whenReady().then(async () => {
+  registerMapCacheProtocol();
   recentCommandAudit = await commandAuditLog.recent(20);
   await telemetry.start();
   createWindow();

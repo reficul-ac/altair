@@ -1,6 +1,9 @@
-import { app, BrowserWindow, type Event, type WebContentsConsoleMessageEventParams } from 'electron';
+import { app, BrowserWindow, ipcMain, net, protocol, type Event, type WebContentsConsoleMessageEventParams } from 'electron';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { MapCacheManager } from './map-cache-node.js';
+import { ANIMUS_MAP_CACHE_PROTOCOL } from './map-cache.js';
 
 type CaptureArgs = {
   url: string;
@@ -25,6 +28,10 @@ type CaptureResult = {
 type DebugLog = ((phase: string, event: string, fields?: Record<string, unknown>) => void) & {
   enabled: boolean;
 };
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+protocol.registerSchemesAsPrivileged([{ scheme: ANIMUS_MAP_CACHE_PROTOCOL, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
 function parseArgs(argv: string[]): CaptureArgs {
   const args: CaptureArgs = {
@@ -381,12 +388,23 @@ async function runCapture(args: CaptureArgs): Promise<void> {
   watchdog.unref();
   await mkdir(args.outDir, { recursive: true });
   debugLog('electron-app', 'ready');
+  const mapCache = new MapCacheManager(app.getPath('userData'));
+  protocol.handle(ANIMUS_MAP_CACHE_PROTOCOL, async (request) => {
+    const url = new URL(request.url);
+    const [setId, z, x, y] = url.pathname.split('/').filter(Boolean);
+    const tile = setId && z && x && y ? await mapCache.tilePath(decodeURIComponent(setId), z, x, y) : { path: '', found: false };
+    return tile.found
+      ? net.fetch(pathToFileURL(tile.path).href)
+      : new Response(mapCache.emptyTileBytes(), { headers: { 'content-type': 'image/png' } });
+  });
+  ipcMain.handle('map-cache:status', async () => mapCache.status());
   const window = new BrowserWindow({
     width: args.viewports[0]?.width ?? 1440,
     height: args.viewports[0]?.height ?? 900,
     show: false,
     backgroundColor: '#0b1116',
     webPreferences: {
+      preload: path.join(__dirname, 'electron-capture-preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false

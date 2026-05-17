@@ -4,7 +4,7 @@ import type { ReplayTimelineMessage } from './state.js';
 import type { CommandAuditEntry, CommandDispatchResult, CommandTransaction, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MissionTransferState, MissionValidationResult, MockLinkState, ParameterEditRequest, ParameterEditResult } from './state.js';
 import type { AnimusUiSettings } from './animus-settings.js';
 import type { AnimusDashboardLayout } from './dashboard-types.js';
-import type { MapPackStatus } from './map-pack.js';
+import type { MapCacheActionResult, MapCacheDownloadRequest, MapCacheEstimate, MapCacheEstimateRequest, MapCacheSet, MapCacheStatus } from './map-cache.js';
 
 export type AltairAnimusApi = {
   onVehicleState: (callback: (message: VehicleStatePayload) => void) => () => void;
@@ -17,9 +17,13 @@ export type AltairAnimusApi = {
   addMarker: (label: string) => Promise<SessionSnapshotPayload>;
   getSettings: () => Promise<AnimusUiSettings>;
   saveSettings: (settings: AnimusUiSettings) => Promise<AnimusUiSettings>;
-  getMapPackStatus: () => Promise<MapPackStatus>;
-  selectSatelliteMapPack: () => Promise<MapPackStatus>;
-  selectTerrainMapPack: () => Promise<MapPackStatus>;
+  getMapCacheStatus: () => Promise<MapCacheStatus>;
+  estimateMapCache: (request: MapCacheEstimateRequest) => Promise<MapCacheEstimate>;
+  startMapCacheDownload: (request: MapCacheDownloadRequest) => Promise<MapCacheActionResult>;
+  cancelMapCacheDownload: () => Promise<MapCacheActionResult>;
+  listMapCacheSets: () => Promise<MapCacheSet[]>;
+  activateMapCacheSet: (setId: string) => Promise<MapCacheActionResult>;
+  deleteMapCacheSet: (setId: string) => Promise<MapCacheActionResult>;
   getDashboardLayout: () => Promise<AnimusDashboardLayout>;
   saveDashboardLayout: (layout: AnimusDashboardLayout) => Promise<AnimusDashboardLayout>;
   resetDashboardLayout: () => Promise<AnimusDashboardLayout>;
@@ -107,14 +111,26 @@ const api: AltairAnimusApi = {
   saveSettings(settings) {
     return ipcRenderer.invoke('settings:save', settings);
   },
-  getMapPackStatus() {
-    return ipcRenderer.invoke('map-pack:status');
+  getMapCacheStatus() {
+    return ipcRenderer.invoke('map-cache:status');
   },
-  selectSatelliteMapPack() {
-    return ipcRenderer.invoke('map-pack:select-satellite');
+  estimateMapCache(request) {
+    return ipcRenderer.invoke('map-cache:estimate', request);
   },
-  selectTerrainMapPack() {
-    return ipcRenderer.invoke('map-pack:select-terrain');
+  startMapCacheDownload(request) {
+    return ipcRenderer.invoke('map-cache:start-download', request);
+  },
+  cancelMapCacheDownload() {
+    return ipcRenderer.invoke('map-cache:cancel-download');
+  },
+  listMapCacheSets() {
+    return ipcRenderer.invoke('map-cache:list');
+  },
+  activateMapCacheSet(setId) {
+    return ipcRenderer.invoke('map-cache:activate', setId);
+  },
+  deleteMapCacheSet(setId) {
+    return ipcRenderer.invoke('map-cache:delete', setId);
   },
   getDashboardLayout() {
     return ipcRenderer.invoke('dashboard:get-layout');

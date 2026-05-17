@@ -1,7 +1,14 @@
 import path from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import {
+  ANIMUS_MAP_CACHE_DEFAULT_ATTRIBUTION,
+  ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT,
+  ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM,
+  ANIMUS_MAP_CACHE_DEFAULT_MIN_ZOOM,
+  ANIMUS_MAP_CACHE_DEFAULT_TEMPLATE
+} from './map-cache.js';
 
-export const ANIMUS_SETTINGS_SCHEMA_VERSION = 2;
+export const ANIMUS_SETTINGS_SCHEMA_VERSION = 3;
 export const ANIMUS_SETTINGS_FILENAME = 'animus-settings.json';
 
 export const ANIMUS_WORKSPACES = ['flight', 'dashboard', 'map', 'inspector', 'video', 'plan', 'setup'] as const;
@@ -14,17 +21,19 @@ export const ANIMUS_MAP_STYLES = ['satellite'] as const;
 export type AnimusMapStyle = typeof ANIMUS_MAP_STYLES[number];
 
 export type AnimusUiSettings = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   defaultWorkspace: AnimusWorkspaceName;
   theme: AnimusThemeName;
   cameraMode: AnimusCameraMode;
   cameraLock: boolean;
   mapStyle: AnimusMapStyle;
   mapFollowSelected: boolean;
-  satellitePmtilesPath: string | null;
-  terrainPmtilesPath: string | null;
-  mapPackLabel: string | null;
-  mapPackAttribution: string | null;
+  mapTileUrlTemplate: string;
+  mapTileAttribution: string;
+  activeMapCacheSetId: string | null;
+  mapCacheMinZoom: number;
+  mapCacheMaxZoom: number;
+  mapCacheMaxTileCount: number;
   lastDashboardPresetLabel: string | null;
 };
 
@@ -37,10 +46,12 @@ export function createDefaultAnimusSettings(): AnimusUiSettings {
     cameraLock: false,
     mapStyle: 'satellite',
     mapFollowSelected: true,
-    satellitePmtilesPath: null,
-    terrainPmtilesPath: null,
-    mapPackLabel: null,
-    mapPackAttribution: null,
+    mapTileUrlTemplate: ANIMUS_MAP_CACHE_DEFAULT_TEMPLATE,
+    mapTileAttribution: ANIMUS_MAP_CACHE_DEFAULT_ATTRIBUTION,
+    activeMapCacheSetId: null,
+    mapCacheMinZoom: ANIMUS_MAP_CACHE_DEFAULT_MIN_ZOOM,
+    mapCacheMaxZoom: ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM,
+    mapCacheMaxTileCount: ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT,
     lastDashboardPresetLabel: null
   };
 }
@@ -52,7 +63,9 @@ export function animusSettingsPath(userDataPath: string): string {
 export function normalizeAnimusSettings(value: unknown): AnimusUiSettings {
   const defaults = createDefaultAnimusSettings();
   if (!isRecord(value)) return defaults;
-  if (value.schemaVersion !== ANIMUS_SETTINGS_SCHEMA_VERSION && value.schemaVersion !== 1) return defaults;
+  if (value.schemaVersion !== ANIMUS_SETTINGS_SCHEMA_VERSION && value.schemaVersion !== 2 && value.schemaVersion !== 1) return defaults;
+  const minZoom = normalizeInteger(value.mapCacheMinZoom, defaults.mapCacheMinZoom, 0, 22);
+  const maxZoom = normalizeInteger(value.mapCacheMaxZoom, defaults.mapCacheMaxZoom, minZoom, 22);
   return {
     schemaVersion: ANIMUS_SETTINGS_SCHEMA_VERSION,
     defaultWorkspace: isMember(value.defaultWorkspace, ANIMUS_WORKSPACES) ? value.defaultWorkspace : defaults.defaultWorkspace,
@@ -61,10 +74,12 @@ export function normalizeAnimusSettings(value: unknown): AnimusUiSettings {
     cameraLock: typeof value.cameraLock === 'boolean' ? value.cameraLock : defaults.cameraLock,
     mapStyle: isMember(value.mapStyle, ANIMUS_MAP_STYLES) ? value.mapStyle : defaults.mapStyle,
     mapFollowSelected: typeof value.mapFollowSelected === 'boolean' ? value.mapFollowSelected : defaults.mapFollowSelected,
-    satellitePmtilesPath: normalizeOptionalString(value.satellitePmtilesPath, 4096),
-    terrainPmtilesPath: normalizeOptionalString(value.terrainPmtilesPath, 4096),
-    mapPackLabel: normalizeOptionalString(value.mapPackLabel, 120),
-    mapPackAttribution: normalizeOptionalString(value.mapPackAttribution, 240),
+    mapTileUrlTemplate: normalizeString(value.mapTileUrlTemplate, 4096, defaults.mapTileUrlTemplate),
+    mapTileAttribution: normalizeString(value.mapTileAttribution, 240, defaults.mapTileAttribution),
+    activeMapCacheSetId: normalizeOptionalString(value.activeMapCacheSetId, 96),
+    mapCacheMinZoom: minZoom,
+    mapCacheMaxZoom: maxZoom,
+    mapCacheMaxTileCount: normalizeInteger(value.mapCacheMaxTileCount, defaults.mapCacheMaxTileCount, 1, 250000),
     lastDashboardPresetLabel: typeof value.lastDashboardPresetLabel === 'string' && value.lastDashboardPresetLabel.trim()
       ? value.lastDashboardPresetLabel.trim().slice(0, 80)
       : null
@@ -100,6 +115,16 @@ function isMember<T extends readonly string[]>(value: unknown, options: T): valu
 
 function normalizeOptionalString(value: unknown, maxLength: number): string | null {
   return typeof value === 'string' && value.trim() ? value.trim().slice(0, maxLength) : null;
+}
+
+function normalizeString(value: unknown, maxLength: number, fallback: string): string {
+  return typeof value === 'string' ? value.trim().slice(0, maxLength) : fallback;
+}
+
+function normalizeInteger(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(parsed)));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

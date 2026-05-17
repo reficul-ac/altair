@@ -79,18 +79,18 @@ export function renderAppShell(root: HTMLElement): void {
       <div class="map-toolbar" aria-label="Map controls">
         <div class="segmented map-mode-controls" aria-label="Map mode">
           <button class="active" data-map-mode="satellite" type="button">Satellite</button>
-          <button data-map-mode="terrain-3d" type="button">Terrain 3D</button>
+          <button data-map-mode="terrain-3d" type="button" disabled title="DEM cache support is not implemented in v1">Terrain 3D</button>
         </div>
         <button id="map-focus" type="button">Focus</button>
         <button id="map-zoom-in" type="button">+</button>
         <button id="map-zoom-out" type="button">-</button>
-        <span id="map-pack-status" class="map-pack-status">Offline map loading</span>
+        <span id="map-cache-status" class="map-cache-status">Offline cache loading</span>
       </div>
       <div id="map-container" aria-label="Offline satellite map"></div>
       <canvas id="map-overlay-canvas" width="1200" height="760"></canvas>
       <div id="map-unavailable" class="map-unavailable hidden" role="status">
-        <strong>Offline map unavailable</strong>
-        <span id="map-unavailable-detail">Select satellite imagery and terrain DEM PMTiles files in Setup.</span>
+        <strong>Offline satellite cache unavailable</strong>
+        <span id="map-unavailable-detail">Create or activate an offline satellite cache in Setup.</span>
       </div>
       <canvas id="terrain-canvas" class="hidden" width="1200" height="760"></canvas>
     </section>
@@ -131,7 +131,7 @@ export function renderAppShell(root: HTMLElement): void {
     <section class="workspace-panel inspector-workspace" data-panel="setup">
       <div class="analysis-grid">
         <section><h2>Readiness</h2><div id="readiness-list" class="tool-list"></div><div class="command-grid" id="guarded-commands"></div><h2>Command History</h2><div id="command-history" class="tool-list command-history"></div></section>
-        <section><h2>Parameters / Diagnostics</h2><div class="inspector-actions"><input id="parameter-filter" type="search" placeholder="Filter parameters" /><button id="parameter-refresh" type="button">Refresh</button></div><div id="parameter-list" class="tool-list"></div><h2>Offline Map Pack</h2><div class="inspector-actions"><button id="map-select-satellite" type="button">Satellite PMTiles</button><button id="map-select-terrain" type="button">Terrain PMTiles</button></div><div id="setup-map-pack-status" class="tool-list"></div><h2>Onboard Logs</h2><div class="inspector-actions"><button id="onboard-log-list" type="button">List</button><button id="onboard-log-erase" type="button">Erase</button></div><div id="onboard-log-listing" class="tool-list"></div><div id="diagnostics-list" class="tool-list"></div></section>
+        <section><h2>Parameters / Diagnostics</h2><div class="inspector-actions"><input id="parameter-filter" type="search" placeholder="Filter parameters" /><button id="parameter-refresh" type="button">Refresh</button></div><div id="parameter-list" class="tool-list"></div><h2>Offline Satellite Cache</h2><div class="map-cache-form"><label><span>XYZ URL</span><input id="map-cache-template" type="url" placeholder="https://tiles.example.com/{z}/{x}/{y}.png?key=..." /></label><label><span>Attribution</span><input id="map-cache-attribution" type="text" placeholder="Licensed imagery attribution" /></label><label><span>Set Label</span><input id="map-cache-label" type="text" placeholder="Field cache" /></label><label><span>Min Zoom</span><input id="map-cache-min-zoom" type="number" min="0" max="22" value="12" /></label><label><span>Max Zoom</span><input id="map-cache-max-zoom" type="number" min="0" max="22" value="16" /></label><label><span>Max Tiles</span><input id="map-cache-max-tiles" type="number" min="1" value="8000" /></label></div><div class="inspector-actions"><button id="map-cache-estimate" type="button">Estimate</button><button id="map-cache-download" type="button">Cache</button><button id="map-cache-cancel" type="button">Cancel</button></div><div id="setup-map-cache-status" class="tool-list"></div><h2>Onboard Logs</h2><div class="inspector-actions"><button id="onboard-log-list" type="button">List</button><button id="onboard-log-erase" type="button">Erase</button></div><div id="onboard-log-listing" class="tool-list"></div><div id="diagnostics-list" class="tool-list"></div></section>
       </div>
     </section>
     <aside class="metrics workspace-panel active" data-panel="session">

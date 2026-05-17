@@ -16,7 +16,6 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -p tsconfig.json && vite build && tsc -p tsconfig.electron.json",
     "app": "npm run build && electron .",
-    "generate:map-pack": "node scripts/generate-altair-topo-pmtiles.mjs",
     "capture": "electron dist-electron/electron-capture.js --",
     "test:electron-live": "node dist-electron/electron-live-telemetry-check.js",
     "dist:appimage": "npm run build && electron-builder --linux AppImage --publish never",
@@ -26,7 +25,6 @@
   },
   "dependencies": {
     "maplibre-gl": "^5.24.0",
-    "pmtiles": "^4.4.1",
     "three": "^0.184.0",
     "vite": "^8.0.0"
   },

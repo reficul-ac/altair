@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildMapOverlayModel, geofenceLocalPoints, homePointFromVehicle, mapMode, mapScreenToWorld, mapWorldToScreen, rallyLocalPoints, satelliteStyle, selectedMapVehicle, setMapMode, terrainModelFromVehicle, type MapViewState } from './map-panel';
 import { buildFlightTerrainModel } from './map-assets';
-import { normalizeMapPackStatus } from './map-pack';
+import { normalizeMapCacheStatus } from './map-cache';
 import type { SessionSnapshotMessage, VehicleStateMessage } from './state';
 
 const view: MapViewState = { scale: 2, panEastM: 5, panNorthM: -3, followSelected: true, mode: 'satellite' };
@@ -74,53 +74,53 @@ describe('map panel helpers', () => {
     expect(model?.maxTerrainM).toBe(model?.minTerrainM);
   });
 
-  it('tracks map mode state transitions', () => {
+  it('keeps terrain 3D disabled for the v1 cache workflow', () => {
     setMapMode('terrain-3d');
-    expect(mapMode()).toBe('terrain-3d');
+    expect(mapMode()).toBe('satellite');
     setMapMode('satellite');
     expect(mapMode()).toBe('satellite');
   });
 
-  it('normalizes map-pack status from the preload boundary', () => {
-    expect(normalizeMapPackStatus({
+  it('normalizes map-cache status from the preload boundary', () => {
+    expect(normalizeMapCacheStatus({
       available: true,
-      satellite: { available: true, url: 'file:///sat.pmtiles', path: '/sat.pmtiles', label: 'Satellite', attribution: 'Licensed' },
-      terrain: { available: true, url: 'file:///dem.pmtiles', path: '/dem.pmtiles', label: 'Terrain DEM', attribution: 'Licensed' },
-      label: 'Pack',
-      attribution: 'Licensed'
+      activeSet: { id: 'set-1', label: 'Field', templateHost: 'tiles.example', attribution: 'Licensed', bbox: { west: -122, south: 37, east: -121, north: 38 }, minZoom: 12, maxZoom: 14, tileCount: 3, downloadedCount: 3, failedCount: 0, bytes: 10, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', extension: 'png' },
+      sets: [],
+      error: null
     })).toEqual({
       available: true,
-      satellite: { available: true, url: 'file:///sat.pmtiles', path: '/sat.pmtiles', label: 'Satellite', attribution: 'Licensed' },
-      terrain: { available: true, url: 'file:///dem.pmtiles', path: '/dem.pmtiles', label: 'Terrain DEM', attribution: 'Licensed' },
-      label: 'Pack',
-      attribution: 'Licensed'
+      activeSet: { id: 'set-1', label: 'Field', templateHost: 'tiles.example', attribution: 'Licensed', bbox: { west: -122, south: 37, east: -121, north: 38 }, minZoom: 12, maxZoom: 14, tileCount: 3, downloadedCount: 3, failedCount: 0, bytes: 10, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', extension: 'png' },
+      sets: [],
+      downloadState: null,
+      error: null
     });
-    expect(normalizeMapPackStatus({ available: false, error: 'missing' }).available).toBe(false);
+    expect(normalizeMapCacheStatus({ available: false, error: 'missing' }).available).toBe(false);
   });
 
-  it('builds a MapLibre satellite plus terrain style', () => {
-    const style = satelliteStyle(normalizeMapPackStatus({
+  it('builds a MapLibre satellite style with local cache tiles', () => {
+    const style = satelliteStyle(normalizeMapCacheStatus({
       available: true,
-      satellite: { available: true, url: 'file:///sat.pmtiles', path: '/sat.pmtiles', label: 'Satellite' },
-      terrain: { available: true, url: 'file:///dem.pmtiles', path: '/dem.pmtiles', label: 'Terrain DEM' }
+      activeSet: { id: 'set-1', label: 'Field', templateHost: 'tiles.example', attribution: 'Licensed', bbox: { west: -122, south: 37, east: -121, north: 38 }, minZoom: 12, maxZoom: 14, tileCount: 3, downloadedCount: 3, failedCount: 0, bytes: 10, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', extension: 'png' },
+      sets: []
     }));
     expect(style.sources.satellite.type).toBe('raster');
-    expect(style.sources.terrain.type).toBe('raster-dem');
+    expect('terrain' in style.sources).toBe(false);
+    expect(JSON.stringify(style.sources.satellite)).toContain('animus-cache://tiles/set-1');
     expect(style.layers.some((layer) => layer.id === 'satellite')).toBe(true);
-    expect(style.terrain).toEqual({ source: 'terrain', exaggeration: 1 });
+    expect(style.terrain).toBeUndefined();
   });
 
-  it('reports flight terrain availability from the selected DEM pack', () => {
-    const unavailable = buildFlightTerrainModel(normalizeMapPackStatus({ available: false, error: 'missing' }), vehicle);
+  it('keeps flight terrain unavailable until DEM cache support exists', () => {
+    const unavailable = buildFlightTerrainModel(normalizeMapCacheStatus({ available: false, error: 'missing' }), vehicle);
     expect(unavailable.available).toBe(false);
-    const available = buildFlightTerrainModel(normalizeMapPackStatus({
+    const available = buildFlightTerrainModel(normalizeMapCacheStatus({
       available: true,
-      satellite: { available: true, url: 'file:///sat.pmtiles', path: '/sat.pmtiles', label: 'Satellite' },
-      terrain: { available: true, url: 'file:///dem.pmtiles', path: '/dem.pmtiles', label: 'Terrain DEM' }
+      activeSet: { id: 'set-1', label: 'Field', templateHost: 'tiles.example', attribution: 'Licensed', bbox: { west: -122, south: 37, east: -121, north: 38 }, minZoom: 12, maxZoom: 14, tileCount: 3, downloadedCount: 3, failedCount: 0, bytes: 10, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', extension: 'png' },
+      sets: []
     }), vehicle, 5, 30);
-    expect(available.available).toBe(true);
-    expect(available.samples).toHaveLength(25);
-    expect(available.textured).toBe(true);
+    expect(available.available).toBe(false);
+    expect(available.samples).toHaveLength(0);
+    expect(available.textured).toBe(false);
   });
 
   it('converts session overlays to geographic GeoJSON', () => {

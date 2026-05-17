@@ -1,4 +1,4 @@
-import type { MapPackStatus } from './map-pack';
+import type { MapCacheStatus } from './map-cache';
 import type { VehicleStateMessage } from './state';
 
 export type FlightTerrainSample = {
@@ -18,34 +18,8 @@ export type FlightTerrainModel = {
   spacingM: number;
 };
 
-export function buildFlightTerrainModel(status: MapPackStatus | null, vehicle: VehicleStateMessage | null, gridSize = 17, spacingM = 45): FlightTerrainModel {
-  if (!status?.terrain.available) {
-    return { available: false, reason: status?.terrain.error ?? 'Terrain DEM PMTiles is unavailable.', textured: false, samples: [], gridSize, spacingM };
-  }
-  const centerEastM = vehicle?.localPosition.eastM ?? 0;
-  const centerNorthM = vehicle?.localPosition.northM ?? 0;
-  const baseElevationM = vehicle?.globalPosition.originAltitudeM ?? vehicle?.home?.altitudeM ?? 0;
-  const samples: FlightTerrainSample[] = [];
-  const half = Math.floor(gridSize / 2);
-  for (let row = 0; row < gridSize; row += 1) {
-    for (let col = 0; col < gridSize; col += 1) {
-      const eastM = centerEastM + (col - half) * spacingM;
-      const northM = centerNorthM + (row - half) * spacingM;
-      samples.push({
-        eastM,
-        northM,
-        elevationM: baseElevationM,
-        u: col / Math.max(1, gridSize - 1),
-        v: row / Math.max(1, gridSize - 1)
-      });
-    }
-  }
-  return {
-    available: true,
-    reason: null,
-    textured: status.satellite.available,
-    samples,
-    gridSize,
-    spacingM
-  };
+export function buildFlightTerrainModel(status: MapCacheStatus | null, vehicle: VehicleStateMessage | null, gridSize = 17, spacingM = 45): FlightTerrainModel {
+  void status;
+  void vehicle;
+  return { available: false, reason: 'DEM cache support is not implemented in v1.', textured: false, samples: [], gridSize, spacingM };
 }

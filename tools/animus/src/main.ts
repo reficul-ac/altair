@@ -1,10 +1,20 @@
-import { bindMapControls, drawMap, refreshMapLayout, refreshMapPackStatus, setMapFollowSelected } from './map-panel';
+import { bindMapControls, currentMapCacheBbox, drawMap, refreshMapCacheStatus, refreshMapLayout, setMapFollowSelected } from './map-panel';
 import { clearInspectorLog, recordInspectorSnapshot, updateInspector } from './inspector-ui';
 import { setHudMode, updateHud, updateStatusStrip, updateVehicleList, type HudMode } from './hud-ui';
 import { SceneRenderer, nextCameraMode, type CameraMode, type ThemeName } from './scene-renderer';
 import { createDashboardController } from './dashboard-ui';
 import type { AnimusDashboardLayout } from './dashboard-types';
-import type { MapPackStatus } from './map-pack';
+import {
+  ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT,
+  ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM,
+  ANIMUS_MAP_CACHE_DEFAULT_MIN_ZOOM,
+  createUnavailableMapCacheStatus,
+  normalizeMapCacheStatus,
+  type MapCacheActionResult,
+  type MapCacheEstimate,
+  type MapCacheSet,
+  type MapCacheStatus
+} from './map-cache';
 import {
   createEmptyMissionPlan,
   validateMission,
@@ -41,17 +51,19 @@ type AnimusConfig = {
 type AnimusWorkspaceName = 'flight' | 'dashboard' | 'map' | 'inspector' | 'video' | 'plan' | 'setup';
 
 type AnimusUiSettings = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   defaultWorkspace: AnimusWorkspaceName;
   theme: ThemeName;
   cameraMode: CameraMode;
   cameraLock: boolean;
   mapStyle: 'satellite';
   mapFollowSelected: boolean;
-  satellitePmtilesPath: string | null;
-  terrainPmtilesPath: string | null;
-  mapPackLabel: string | null;
-  mapPackAttribution: string | null;
+  mapTileUrlTemplate: string;
+  mapTileAttribution: string;
+  activeMapCacheSetId: string | null;
+  mapCacheMinZoom: number;
+  mapCacheMaxZoom: number;
+  mapCacheMaxTileCount: number;
   lastDashboardPresetLabel: string | null;
 };
 
@@ -66,9 +78,13 @@ type AnimusApi = {
   addMarker?: (label: string) => Promise<SessionSnapshotMessage>;
   getSettings?: () => Promise<AnimusUiSettings>;
   saveSettings?: (settings: AnimusUiSettings) => Promise<AnimusUiSettings>;
-  getMapPackStatus?: () => Promise<MapPackStatus>;
-  selectSatelliteMapPack?: () => Promise<MapPackStatus>;
-  selectTerrainMapPack?: () => Promise<MapPackStatus>;
+  getMapCacheStatus?: () => Promise<MapCacheStatus>;
+  estimateMapCache?: (request: { bbox: ReturnType<typeof currentMapCacheBbox>; minZoom: number; maxZoom: number; maxTileCount?: number }) => Promise<MapCacheEstimate>;
+  startMapCacheDownload?: (request: { urlTemplate: string; attribution?: string | null; label?: string | null; bbox: ReturnType<typeof currentMapCacheBbox>; minZoom: number; maxZoom: number; maxTileCount?: number }) => Promise<MapCacheActionResult>;
+  cancelMapCacheDownload?: () => Promise<MapCacheActionResult>;
+  listMapCacheSets?: () => Promise<MapCacheSet[]>;
+  activateMapCacheSet?: (setId: string) => Promise<MapCacheActionResult>;
+  deleteMapCacheSet?: (setId: string) => Promise<MapCacheActionResult>;
   getDashboardLayout?: () => Promise<AnimusDashboardLayout>;
   saveDashboardLayout?: (layout: AnimusDashboardLayout) => Promise<AnimusDashboardLayout>;
   resetDashboardLayout?: () => Promise<AnimusDashboardLayout>;
@@ -138,21 +154,24 @@ const state = {
   replay: null as ReplayTimelineMessage | null,
   syncInspection: true,
   settings: {
-    schemaVersion: 2,
+    schemaVersion: 3,
     defaultWorkspace: 'flight',
     theme: 'grid',
     cameraMode: 'chase',
     cameraLock: false,
     mapStyle: 'satellite',
     mapFollowSelected: true,
-    satellitePmtilesPath: null,
-    terrainPmtilesPath: null,
-    mapPackLabel: null,
-    mapPackAttribution: null,
+    mapTileUrlTemplate: '',
+    mapTileAttribution: '',
+    activeMapCacheSetId: null,
+    mapCacheMinZoom: ANIMUS_MAP_CACHE_DEFAULT_MIN_ZOOM,
+    mapCacheMaxZoom: ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM,
+    mapCacheMaxTileCount: ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT,
     lastDashboardPresetLabel: null
   } as AnimusUiSettings,
   settingsLoaded: false
 };
+let mapCachePoll: number | null = null;
 bindMapControls(() => state.snapshot, (followSelected) => saveUiSettings({ mapFollowSelected: followSelected }));
 const dashboard = createDashboardController({
   getSnapshot: () => state.snapshot,
@@ -249,7 +268,7 @@ function mapSnapshotForVehicle(message: VehicleStateMessage): SessionSnapshotMes
 }
 
 function connect(): void {
-  if (window.altairAnimus) {
+  if (window.altairAnimus?.onVehicleState && window.altairAnimus.getConfig) {
     window.altairAnimus.onVehicleState(applyVehicle);
     window.altairAnimus.onSessionSnapshot?.(applySnapshot);
     window.altairAnimus.onReplayState?.(updateReplayControls);
@@ -767,11 +786,14 @@ document.querySelector<HTMLInputElement>('#qgc')!.addEventListener('change', (ev
 document.querySelector<HTMLInputElement>('#listen-port')!.addEventListener('change', (event) => {
   void window.altairAnimus?.setListenPort(Number((event.currentTarget as HTMLInputElement).value)).then(updateConfig);
 });
-document.querySelector<HTMLButtonElement>('#map-select-satellite')?.addEventListener('click', () => {
-  void window.altairAnimus?.selectSatelliteMapPack?.().then(applyMapPackStatus);
+document.querySelector<HTMLButtonElement>('#map-cache-estimate')?.addEventListener('click', () => {
+  void estimateMapCache();
 });
-document.querySelector<HTMLButtonElement>('#map-select-terrain')?.addEventListener('click', () => {
-  void window.altairAnimus?.selectTerrainMapPack?.().then(applyMapPackStatus);
+document.querySelector<HTMLButtonElement>('#map-cache-download')?.addEventListener('click', () => {
+  void startMapCacheDownload();
+});
+document.querySelector<HTMLButtonElement>('#map-cache-cancel')?.addEventListener('click', () => {
+  void window.altairAnimus?.cancelMapCacheDownload?.().then((result) => applyMapCacheStatus(result.status));
 });
 window.addEventListener('keydown', (event) => {
   if (event.code === 'KeyC') setCameraMode(nextCameraMode(scene.cameraMode));
@@ -798,7 +820,7 @@ function setCameraLocked(locked: boolean, persist = true): void {
 }
 
 function saveUiSettings(patch: Partial<AnimusUiSettings>): void {
-  state.settings = { ...state.settings, ...patch, schemaVersion: 2 };
+  state.settings = { ...state.settings, ...patch, schemaVersion: 3 };
   if (!state.settingsLoaded) return;
   void window.altairAnimus?.saveSettings?.(state.settings).then((saved) => {
     state.settings = saved;
@@ -813,6 +835,7 @@ function isWorkspaceName(value: string): value is AnimusWorkspaceName {
 
 function applyUiSettings(settings: AnimusUiSettings): void {
   state.settings = settings;
+  populateMapCacheInputs(settings);
   setTheme(settings.theme, false);
   setCameraMode(settings.cameraMode, false);
   setCameraLocked(settings.cameraLock, false);
@@ -821,23 +844,95 @@ function applyUiSettings(settings: AnimusUiSettings): void {
   state.settingsLoaded = true;
 }
 
-function applyMapPackStatus(status: MapPackStatus): void {
-  scene.setMapPackStatus(status);
-  renderSetupMapPackStatus(status);
-  void refreshMapPackStatus();
+function applyMapCacheStatus(status: MapCacheStatus): void {
+  const normalized = normalizeMapCacheStatus(status);
+  scene.setMapCacheStatus(normalized);
+  renderSetupMapCacheStatus(normalized);
+  void refreshMapCacheStatus();
+  scheduleMapCachePoll(normalized);
   if (state.snapshot) drawMap(state.snapshot);
 }
 
-function renderSetupMapPackStatus(status: MapPackStatus): void {
-  const target = document.querySelector<HTMLElement>('#setup-map-pack-status');
+function scheduleMapCachePoll(status: MapCacheStatus): void {
+  if (!status.downloadState?.active || mapCachePoll !== null) return;
+  mapCachePoll = window.setTimeout(() => {
+    mapCachePoll = null;
+    void window.altairAnimus?.getMapCacheStatus?.().then(applyMapCacheStatus);
+  }, 1000);
+}
+
+function renderSetupMapCacheStatus(status: MapCacheStatus): void {
+  const target = document.querySelector<HTMLElement>('#setup-map-cache-status');
   if (!target) return;
   const row = (label: string, available: boolean, detail: string | null | undefined): string =>
     `<div><strong>${escapeHtml(label)}</strong><span>${available ? 'ready' : 'unavailable'}</span><span>${escapeHtml(detail ?? '--')}</span></div>`;
+  const download = status.downloadState;
+  const setRows = status.sets.map((set) => `
+    <div><strong>${escapeHtml(set.label)}</strong><span>${set.id === status.activeSet?.id ? 'active' : `${set.downloadedCount}/${set.tileCount}`}</span><span>${escapeHtml(`${set.minZoom}-${set.maxZoom} / ${formatBytes(set.bytes)} / ${set.templateHost}`)}</span><button type="button" data-map-cache-activate="${escapeHtml(set.id)}">Use</button><button type="button" data-map-cache-delete="${escapeHtml(set.id)}">Delete</button></div>
+  `);
   target.innerHTML = [
-    row('Satellite', status.satellite.available, status.satellite.path ?? status.satellite.error),
-    row('Terrain DEM', status.terrain.available, status.terrain.path ?? status.terrain.error),
-    row('Attribution', Boolean(status.attribution), status.attribution ?? 'operator supplied')
+    row('Active cache', Boolean(status.activeSet), status.activeSet ? `${status.activeSet.label} / ${status.activeSet.downloadedCount} tiles` : status.error),
+    download ? row('Download', download.active, `${download.downloaded}/${download.downloaded + download.queued + download.failed} ok, ${download.failed} failed, ${formatBytes(download.bytes)}${download.lastError ? ` / ${download.lastError}` : ''}`) : '',
+    row('Terrain 3D', false, 'DEM cache support is not implemented in v1.'),
+    ...setRows
   ].join('');
+  target.querySelectorAll<HTMLButtonElement>('[data-map-cache-activate]').forEach((button) => {
+    button.addEventListener('click', () => {
+      void window.altairAnimus?.activateMapCacheSet?.(button.dataset.mapCacheActivate ?? '').then((result) => applyMapCacheStatus(result.status));
+    });
+  });
+  target.querySelectorAll<HTMLButtonElement>('[data-map-cache-delete]').forEach((button) => {
+    button.addEventListener('click', () => {
+      void window.altairAnimus?.deleteMapCacheSet?.(button.dataset.mapCacheDelete ?? '').then((result) => applyMapCacheStatus(result.status));
+    });
+  });
+}
+
+function populateMapCacheInputs(settings: AnimusUiSettings): void {
+  const template = document.querySelector<HTMLInputElement>('#map-cache-template');
+  const attribution = document.querySelector<HTMLInputElement>('#map-cache-attribution');
+  const minZoom = document.querySelector<HTMLInputElement>('#map-cache-min-zoom');
+  const maxZoom = document.querySelector<HTMLInputElement>('#map-cache-max-zoom');
+  const maxTiles = document.querySelector<HTMLInputElement>('#map-cache-max-tiles');
+  if (template) template.value = settings.mapTileUrlTemplate;
+  if (attribution) attribution.value = settings.mapTileAttribution;
+  if (minZoom) minZoom.value = String(settings.mapCacheMinZoom);
+  if (maxZoom) maxZoom.value = String(settings.mapCacheMaxZoom);
+  if (maxTiles) maxTiles.value = String(settings.mapCacheMaxTileCount);
+}
+
+function mapCacheForm() {
+  const template = document.querySelector<HTMLInputElement>('#map-cache-template')?.value.trim() ?? '';
+  const attribution = document.querySelector<HTMLInputElement>('#map-cache-attribution')?.value.trim() ?? '';
+  const label = document.querySelector<HTMLInputElement>('#map-cache-label')?.value.trim() ?? '';
+  const minZoom = Number(document.querySelector<HTMLInputElement>('#map-cache-min-zoom')?.value ?? ANIMUS_MAP_CACHE_DEFAULT_MIN_ZOOM);
+  const maxZoom = Number(document.querySelector<HTMLInputElement>('#map-cache-max-zoom')?.value ?? ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM);
+  const maxTileCount = Number(document.querySelector<HTMLInputElement>('#map-cache-max-tiles')?.value ?? ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT);
+  saveUiSettings({ mapTileUrlTemplate: template, mapTileAttribution: attribution, mapCacheMinZoom: minZoom, mapCacheMaxZoom: maxZoom, mapCacheMaxTileCount: maxTileCount });
+  return { urlTemplate: template, attribution, label, bbox: currentMapCacheBbox(state.snapshot), minZoom, maxZoom, maxTileCount };
+}
+
+async function estimateMapCache(): Promise<void> {
+  const request = mapCacheForm();
+  const result = await window.altairAnimus?.estimateMapCache?.(request);
+  if (!result) return;
+  const target = document.querySelector<HTMLElement>('#setup-map-cache-status');
+  if (target) {
+    target.innerHTML = `<div><strong>Estimate</strong><span>${result.tileCount} tiles</span><span>${result.exceedsLimit ? `exceeds max ${result.maxTileCount}` : `zoom ${result.minZoom}-${result.maxZoom}`}</span></div>` + target.innerHTML;
+  }
+}
+
+async function startMapCacheDownload(): Promise<void> {
+  const result = await window.altairAnimus?.startMapCacheDownload?.(mapCacheForm());
+  if (!result) return;
+  if (!result.ok && result.error) document.querySelector<HTMLElement>('#status')!.textContent = result.error;
+  applyMapCacheStatus(result.status);
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
 setHudMode('console');
@@ -849,15 +944,8 @@ dashboard.load();
 void window.altairAnimus?.getSettings?.().then(applyUiSettings).catch(() => {
   state.settingsLoaded = true;
 });
-void (window.altairAnimus?.getMapPackStatus?.() ?? refreshMapPackStatus()).then(applyMapPackStatus).catch(() => {
-  renderSetupMapPackStatus({
-    available: false,
-    satellite: { available: false, url: null, path: null, label: 'Satellite imagery', attribution: null, error: 'map pack status unavailable' },
-    terrain: { available: false, url: null, path: null, label: 'Terrain DEM', attribution: null, error: 'map pack status unavailable' },
-    label: 'Offline satellite map unavailable',
-    attribution: null,
-    error: 'map pack status unavailable'
-  });
+void (window.altairAnimus?.getMapCacheStatus?.() ?? refreshMapCacheStatus()).then(applyMapCacheStatus).catch(() => {
+  renderSetupMapCacheStatus(createUnavailableMapCacheStatus('map cache status unavailable'));
 });
 connect();
 scene.start();

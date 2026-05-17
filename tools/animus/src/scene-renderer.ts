@@ -1,7 +1,7 @@
 import { AmbientLight, ArrowHelper, AxesHelper, BoxGeometry, BufferAttribute, BufferGeometry, CapsuleGeometry, ConeGeometry, CylinderGeometry, DirectionalLight, Euler, Fog, GridHelper, Group, Line, LineBasicMaterial, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Quaternion, Scene, SphereGeometry, TorusGeometry, Vector3, WebGLRenderer } from 'three';
 import { fmt } from './hud-ui';
 import { buildFlightTerrainModel, type FlightTerrainModel } from './map-assets';
-import type { MapPackStatus } from './map-pack';
+import type { MapCacheStatus } from './map-cache';
 import { TrailBuffer, trailPointFromState, type SessionEvent, type VehicleStateMessage, type TrailPoint } from './state';
 
 export const CAMERA_MODES = ['chase', 'orbit', 'top', 'side', 'fpv', 'free'] as const;
@@ -73,7 +73,7 @@ export class SceneRenderer {
   private readonly terrainMesh = new Mesh(new BufferGeometry(), this.terrainMaterial);
   private readonly markers = new Map<string, Mesh>();
   private lastMessage: VehicleStateMessage | null = null;
-  private mapPackStatus: MapPackStatus | null = null;
+  private mapCacheStatus: MapCacheStatus | null = null;
   private lastPoint: TrailPoint | null = null;
   private frames = 0;
   private fps = 0;
@@ -111,7 +111,7 @@ export class SceneRenderer {
     runway.rotation.x = Math.PI / 2;
     runway.position.z = -0.04;
     this.scene.add(runway);
-    this.terrainMesh.name = 'offline-map-terrain';
+    this.terrainMesh.name = 'map-cache-terrain-disabled';
     this.scene.add(this.terrainMesh);
     this.scene.add(new AxesHelper(90));
     this.scene.add(this.aircraft);
@@ -121,8 +121,8 @@ export class SceneRenderer {
     this.bindPointer();
   }
 
-  setMapPackStatus(status: MapPackStatus): void {
-    this.mapPackStatus = status;
+  setMapCacheStatus(status: MapCacheStatus): void {
+    this.mapCacheStatus = status;
     this.updateGroundTerrain();
   }
 
@@ -299,7 +299,7 @@ export class SceneRenderer {
   }
 
   private updateGroundTerrain(): void {
-    const model = buildFlightTerrainModel(this.mapPackStatus, this.lastMessage);
+    const model = buildFlightTerrainModel(this.mapCacheStatus, this.lastMessage);
     this.terrainMesh.visible = model.available;
     if (!model.available) return;
     this.terrainMesh.geometry.dispose();

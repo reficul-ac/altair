@@ -410,13 +410,33 @@
   display: none;
 }
 
-.map-pack-status {
+.map-cache-status {
   min-height: 28px;
   display: inline-flex;
   align-items: center;
   color: var(--muted);
   font-size: 0.78rem;
   padding: 0 8px;
+}
+
+.map-cache-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) minmax(140px, 1fr);
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.map-cache-form label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
+
+.map-cache-form input {
+  width: 100%;
+  min-width: 0;
 }
 
 .map-unavailable {

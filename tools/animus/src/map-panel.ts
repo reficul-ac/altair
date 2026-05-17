@@ -1,8 +1,16 @@
 import type { SessionEvent, SessionSnapshotMessage, VehicleStateMessage } from './state';
-import { ANIMUS_MAP_PACK_URL, createUnavailableMapPackStatus, normalizeMapPackStatus, type MapPackStatus } from './map-pack';
+import {
+  ANIMUS_MAP_CACHE_DEFAULT_ORIGIN,
+  ANIMUS_MAP_CACHE_DEFAULT_RADIUS_M,
+  bboxAround,
+  createUnavailableMapCacheStatus,
+  localTileUrlTemplate,
+  normalizeMapCacheStatus,
+  type MapCacheBbox,
+  type MapCacheStatus
+} from './map-cache';
 import maplibregl, { type GeoJSONSource, type LngLatLike, type Map as MapLibreMap, type StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { PMTiles, Protocol, type RangeResponse, type Source } from 'pmtiles';
 import {
   AmbientLight,
   BufferAttribute,
@@ -64,9 +72,9 @@ let mapReady = false;
 let mapFailed = false;
 let latestSnapshot: SessionSnapshotMessage | null = null;
 let terrain3d: TerrainRenderer | null = null;
-let mapPackStatusPromise: Promise<MapPackStatus> | null = null;
+let mapCacheStatusPromise: Promise<MapCacheStatus> | null = null;
 let mapFollowChanged: ((follow: boolean) => void) | null = null;
-let registeredMapPackUrl: string | null = null;
+let renderedMapCacheSetId: string | null = null;
 
 const overlaySourceIds = ['vehicles', 'trails', 'mission', 'home', 'geofences', 'rally', 'events'] as const;
 const fallbackLocalOrigin = { originLat: 37, originLon: -122, originAlt: 0, originEastM: 0, originNorthM: 0 };
@@ -127,7 +135,7 @@ export function rallyLocalPoints(vehicle: VehicleStateMessage): LocalPoint[] {
 }
 
 export function setMapMode(mode: MapMode): void {
-  view.mode = mode;
+  view.mode = mode === 'terrain-3d' ? 'satellite' : mode;
 }
 
 export function mapMode(): MapMode {
@@ -260,6 +268,7 @@ export function bindMapControls(snapshotProvider: () => SessionSnapshotMessage |
   document.querySelectorAll<HTMLButtonElement>('[data-map-mode]').forEach((button) => {
     button.addEventListener('click', () => {
       const mode = button.dataset.mapMode as MapMode;
+      if (mode === 'terrain-3d') return;
       setMapMode(mode);
       document.querySelectorAll<HTMLButtonElement>('[data-map-mode]').forEach((candidate) => candidate.classList.toggle('active', candidate === button));
       redraw(snapshotProvider);
@@ -288,14 +297,10 @@ export function refreshMapLayout(): void {
 }
 
 async function drawTerrainMap(canvas: HTMLCanvasElement, snapshot: SessionSnapshotMessage): Promise<void> {
-  const status = await getMapPackStatus();
-  updateMapPackStatus(status);
-  if (!status.terrain.available) {
-    showMapUnavailable(status.terrain.error ?? 'Terrain DEM PMTiles is missing or unreadable.');
-    return;
-  }
-  hideMapUnavailable();
-  drawTerrain3d(canvas, snapshot);
+  void canvas;
+  void snapshot;
+  updateMapCacheStatus(await getMapCacheStatus());
+  showMapUnavailable('DEM cache support is not implemented in v1.');
 }
 
 function drawTerrain3d(canvas: HTMLCanvasElement, snapshot: SessionSnapshotMessage): void {
@@ -305,13 +310,22 @@ function drawTerrain3d(canvas: HTMLCanvasElement, snapshot: SessionSnapshotMessa
 }
 
 async function drawSatelliteMap(snapshot: SessionSnapshotMessage): Promise<void> {
-  const status = await getMapPackStatus();
-  updateMapPackStatus(status);
-  if (!status.satellite.available) {
-    showMapUnavailable(status.satellite.error ?? 'Satellite imagery PMTiles is missing or unreadable.');
+  const status = await getMapCacheStatus();
+  updateMapCacheStatus(status);
+  if (!status.available || !status.activeSet) {
+    showMapUnavailable(status.error ?? 'offline satellite cache unavailable');
     return;
   }
   hideMapUnavailable();
+  if (map && renderedMapCacheSetId !== status.activeSet.id) {
+    map.setStyle(satelliteStyle(status));
+    renderedMapCacheSetId = status.activeSet.id;
+    mapReady = false;
+    map.once('styledata', () => {
+      mapReady = true;
+      if (latestSnapshot) void drawSatelliteMap(latestSnapshot);
+    });
+  }
   const mapInstance = await ensureMap(status);
   if (!mapInstance || !mapReady) return;
   const overlays = buildMapOverlayModel(snapshot);
@@ -322,12 +336,11 @@ async function drawSatelliteMap(snapshot: SessionSnapshotMessage): Promise<void>
   }
 }
 
-async function ensureMap(status: MapPackStatus): Promise<MapLibreMap | null> {
+async function ensureMap(status: MapCacheStatus): Promise<MapLibreMap | null> {
   if (map || mapFailed) return map;
   const container = document.querySelector<HTMLElement>('#map-container');
   if (!container) return null;
   try {
-    registerMapPack(status);
     map = new maplibregl.Map({
       container,
       style: satelliteStyle(status),
@@ -337,6 +350,7 @@ async function ensureMap(status: MapPackStatus): Promise<MapLibreMap | null> {
       dragRotate: false,
       pitchWithRotate: false
     });
+    renderedMapCacheSetId = status.activeSet?.id ?? null;
     map.on('load', () => {
       mapReady = true;
       if (latestSnapshot) void drawSatelliteMap(latestSnapshot);
@@ -349,7 +363,7 @@ async function ensureMap(status: MapPackStatus): Promise<MapLibreMap | null> {
       if (latestSnapshot && map) drawProjectedOverlay(map, buildMapOverlayModel(latestSnapshot));
     });
     map.on('error', (event) => {
-      const message = event.error?.message ?? 'MapLibre failed to load the offline map pack.';
+      const message = event.error?.message ?? 'MapLibre failed to load the offline satellite cache.';
       showMapUnavailable(message);
     });
   } catch (error) {
@@ -359,24 +373,17 @@ async function ensureMap(status: MapPackStatus): Promise<MapLibreMap | null> {
   return map;
 }
 
-function registerMapPack(status: MapPackStatus): void {
-  const key = [status.satellite.url, status.terrain.url].join('|');
-  if (registeredMapPackUrl === key) return;
-  const protocol = new Protocol();
-  if (status.satellite.url) protocol.add(new PMTiles(new BundlePmtilesSource(status.satellite.url)));
-  if (status.terrain.url) protocol.add(new PMTiles(new BundlePmtilesSource(status.terrain.url)));
-  maplibregl.addProtocol('pmtiles', protocol.tile);
-  registeredMapPackUrl = key;
-}
-
-export function satelliteStyle(status: MapPackStatus): StyleSpecification {
+export function satelliteStyle(status: MapCacheStatus): StyleSpecification {
   const empty = collection([]);
+  const activeSet = status.activeSet;
   const sources: StyleSpecification['sources'] = {
     satellite: {
       type: 'raster',
-      url: `pmtiles://${status.satellite.url ?? ANIMUS_MAP_PACK_URL}`,
+      tiles: [activeSet ? localTileUrlTemplate(activeSet.id) : localTileUrlTemplate('missing')],
       tileSize: 256,
-      attribution: status.attribution ?? status.satellite.attribution ?? 'Offline satellite imagery'
+      minzoom: activeSet?.minZoom,
+      maxzoom: activeSet?.maxZoom,
+      attribution: activeSet?.attribution ?? 'Offline satellite cache'
     },
     vehicles: { type: 'geojson', data: empty },
     trails: { type: 'geojson', data: empty },
@@ -386,22 +393,12 @@ export function satelliteStyle(status: MapPackStatus): StyleSpecification {
     rally: { type: 'geojson', data: empty },
     events: { type: 'geojson', data: empty }
   };
-  if (status.terrain.available && status.terrain.url) {
-    sources.terrain = {
-      type: 'raster-dem',
-      url: `pmtiles://${status.terrain.url}`,
-      tileSize: 256,
-      encoding: 'terrarium'
-    };
-  }
   return {
     version: 8,
     sources,
-    ...(status.terrain.available ? { terrain: { source: 'terrain', exaggeration: 1 } } : {}),
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': '#223129' } },
       { id: 'satellite', type: 'raster', source: 'satellite', paint: { 'raster-opacity': 1, 'raster-contrast': 0.08, 'raster-saturation': -0.08 } },
-      ...(status.terrain.available ? [{ id: 'terrain-shade', type: 'hillshade' as const, source: 'terrain', paint: { 'hillshade-shadow-color': '#05080b', 'hillshade-highlight-color': '#ffffff', 'hillshade-accent-color': '#000000', 'hillshade-exaggeration': 0.22 } }] : []),
       { id: 'geofence-fill', type: 'fill', source: 'geofences', paint: { 'fill-color': ['case', ['==', ['get', 'inclusion'], true], '#66e0a3', '#ff6b7a'], 'fill-opacity': 0.16 } },
       { id: 'geofence-line', type: 'line', source: 'geofences', paint: { 'line-color': ['case', ['==', ['get', 'inclusion'], true], '#66e0a3', '#ff6b7a'], 'line-width': 2 } },
       { id: 'mission-line', type: 'line', source: 'mission', filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-color': '#ffc857', 'line-width': 2.4, 'line-opacity': 0.88 } },
@@ -538,41 +535,40 @@ function setFollowSelected(followSelected: boolean): void {
   mapFollowChanged?.(followSelected);
 }
 
-async function getMapPackStatus(): Promise<MapPackStatus> {
-  if (!mapPackStatusPromise) {
-    mapPackStatusPromise = window.altairAnimus?.getMapPackStatus
-      ? window.altairAnimus.getMapPackStatus().then(normalizeMapPackStatus)
-      : probeBrowserMapPackStatus();
+async function getMapCacheStatus(): Promise<MapCacheStatus> {
+  if (!mapCacheStatusPromise) {
+    mapCacheStatusPromise = window.altairAnimus?.getMapCacheStatus
+      ? window.altairAnimus.getMapCacheStatus().then(normalizeMapCacheStatus)
+      : Promise.resolve(createUnavailableMapCacheStatus('offline satellite cache unavailable in browser runtime'));
   }
-  return mapPackStatusPromise;
+  return mapCacheStatusPromise;
 }
 
-export async function refreshMapPackStatus(): Promise<MapPackStatus> {
-  mapPackStatusPromise = null;
-  const status = await getMapPackStatus();
-  updateMapPackStatus(status);
+export async function refreshMapCacheStatus(): Promise<MapCacheStatus> {
+  mapCacheStatusPromise = null;
+  const status = await getMapCacheStatus();
+  updateMapCacheStatus(status);
   return status;
 }
 
-async function probeBrowserMapPackStatus(): Promise<MapPackStatus> {
-  try {
-    const response = await fetch(ANIMUS_MAP_PACK_URL, { headers: { Range: 'bytes=0-1' } });
-    if (!response.ok) return createUnavailableMapPackStatus(`HTTP ${response.status}`);
-    return normalizeMapPackStatus({
-      available: true,
-      satellite: { available: true, url: ANIMUS_MAP_PACK_URL, path: ANIMUS_MAP_PACK_URL, label: 'Development satellite placeholder' },
-      terrain: { available: true, url: ANIMUS_MAP_PACK_URL, path: ANIMUS_MAP_PACK_URL, label: 'Development terrain placeholder' },
-      label: 'Altair bundled development map',
-      attribution: 'Generated Altair offline development basemap'
-    });
-  } catch (error) {
-    return createUnavailableMapPackStatus(error instanceof Error ? error.message : 'map pack is missing or unreadable');
+export function currentMapCacheBbox(snapshot: SessionSnapshotMessage | null = latestSnapshot): MapCacheBbox {
+  if (map) {
+    const bounds = map.getBounds();
+    return { west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() };
   }
+  const selected = snapshot ? selectedMapVehicle(snapshot) : null;
+  const lat = selected?.globalPosition.latDeg ?? selected?.home?.latDeg ?? ANIMUS_MAP_CACHE_DEFAULT_ORIGIN.latDeg;
+  const lon = selected?.globalPosition.lonDeg ?? selected?.home?.lonDeg ?? ANIMUS_MAP_CACHE_DEFAULT_ORIGIN.lonDeg;
+  return bboxAround(lat, lon, ANIMUS_MAP_CACHE_DEFAULT_RADIUS_M);
 }
 
-function updateMapPackStatus(status: MapPackStatus): void {
-  const target = document.querySelector<HTMLElement>('#map-pack-status');
-  if (target) target.textContent = status.available ? status.label : status.satellite.available ? 'Terrain DEM unavailable' : 'Satellite map unavailable';
+function updateMapCacheStatus(status: MapCacheStatus): void {
+  const target = document.querySelector<HTMLElement>('#map-cache-status');
+  if (target) {
+    target.textContent = status.activeSet
+      ? `${status.activeSet.label} / ${status.activeSet.downloadedCount}/${status.activeSet.tileCount} tiles`
+      : 'Offline satellite cache unavailable';
+  }
 }
 
 function showMapUnavailable(detail: string): void {
@@ -583,29 +579,6 @@ function showMapUnavailable(detail: string): void {
 
 function hideMapUnavailable(): void {
   document.querySelector<HTMLElement>('#map-unavailable')?.classList.add('hidden');
-}
-
-class BundlePmtilesSource implements Source {
-  private bytes: Promise<ArrayBuffer> | null = null;
-
-  constructor(private readonly url: string) {}
-
-  getKey(): string {
-    return this.url;
-  }
-
-  async getBytes(offset: number, length: number): Promise<RangeResponse> {
-    const bytes = await this.read();
-    return { data: bytes.slice(offset, offset + length) };
-  }
-
-  private async read(): Promise<ArrayBuffer> {
-    this.bytes ??= fetch(this.url).then((response) => {
-      if (!response.ok) throw new Error(`offline map unavailable: HTTP ${response.status}`);
-      return response.arrayBuffer();
-    });
-    return this.bytes;
-  }
 }
 
 class TerrainRenderer {
