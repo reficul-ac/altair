@@ -66,7 +66,10 @@ function parseArgs(argv: string[]): Partial<MavlinkServiceConfig> {
   return config;
 }
 
-const telemetry = new MavlinkTelemetryService(parseArgs(process.argv.slice(1)), animusSessionContext);
+const telemetry = new MavlinkTelemetryService({
+  ...parseArgs(process.argv.slice(1)),
+  logDownloadDirectory: path.join(app.getPath('userData'), 'onboard-logs')
+}, animusSessionContext);
 const replay = new ReplaySession();
 const commandAuditLog = createCommandAuditLog(path.join(app.getPath('userData'), 'command-audit.jsonl'));
 const operationAuditLog = createCommandAuditLog(path.join(app.getPath('userData'), 'operation-audit.jsonl'));

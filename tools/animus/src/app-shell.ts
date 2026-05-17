@@ -77,11 +77,17 @@ export function renderAppShell(root: HTMLElement): void {
     </section>
     <section class="workspace-panel map-workspace" data-panel="map">
       <div class="map-toolbar" aria-label="Map controls">
+        <div class="segmented map-mode-controls" aria-label="Map mode">
+          <button class="active" data-map-mode="2d" type="button">2D</button>
+          <button data-map-mode="terrain-2d" type="button">Terrain 2D</button>
+          <button data-map-mode="terrain-3d" type="button">Terrain 3D</button>
+        </div>
         <button id="map-focus" type="button">Focus</button>
         <button id="map-zoom-in" type="button">+</button>
         <button id="map-zoom-out" type="button">-</button>
       </div>
       <canvas id="map-canvas" width="1200" height="760"></canvas>
+      <canvas id="terrain-canvas" class="hidden" width="1200" height="760"></canvas>
     </section>
     <section class="workspace-panel dashboard-workspace" data-panel="dashboard">
       <div class="dashboard-toolbar">

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { geofenceLocalPoints, homePointFromVehicle, mapScreenToWorld, mapWorldToScreen, rallyLocalPoints, selectedMapVehicle, type MapViewState } from './map-panel';
+import { geofenceLocalPoints, homePointFromVehicle, mapMode, mapScreenToWorld, mapWorldToScreen, rallyLocalPoints, selectedMapVehicle, setMapMode, terrainModelFromVehicle, type MapViewState } from './map-panel';
 import type { SessionSnapshotMessage, VehicleStateMessage } from './state';
 
-const view: MapViewState = { scale: 2, panEastM: 5, panNorthM: -3, followSelected: true };
+const view: MapViewState = { scale: 2, panEastM: 5, panNorthM: -3, followSelected: true, mode: '2d' };
 
 const vehicle: VehicleStateMessage = {
   type: 'vehicle_state',
@@ -59,5 +59,24 @@ describe('map panel helpers', () => {
     expect(geofenceLocalPoints(enriched)).toHaveLength(2);
     expect(geofenceLocalPoints(enriched)[0].radiusM).toBe(50);
     expect(rallyLocalPoints(enriched)[0].northM).toBeGreaterThan(11);
+  });
+
+  it('builds local terrain samples from terrain reports', () => {
+    const model = terrainModelFromVehicle({
+      ...vehicle,
+      terrain: { latDeg: 37.0001, lonDeg: -122, spacingM: 30, terrainHeightM: 92, currentHeightM: 18, pending: 0, loaded: 8 }
+    });
+
+    expect(model?.samples).toHaveLength(25);
+    expect(model?.spacingM).toBe(30);
+    expect(model?.maxTerrainM).toBeGreaterThan(model?.minTerrainM ?? 0);
+  });
+
+  it('tracks map mode state transitions', () => {
+    setMapMode('terrain-2d');
+    expect(mapMode()).toBe('terrain-2d');
+    setMapMode('terrain-3d');
+    expect(mapMode()).toBe('terrain-3d');
+    setMapMode('2d');
   });
 });

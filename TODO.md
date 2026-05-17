@@ -57,7 +57,7 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Add dashboard widget groups or presets for flight test, mission planning, and maintenance workflows.
 - [x] Add richer dashboard widget configuration such as thresholds, units, and selected vehicle/fleet scoping.
 - [x] Add persisted application settings beyond the dashboard layout.
-- [ ] Add real 2D and 3D terrain map views in Animus for clearer terrain and
+- [x] Add real 2D and 3D terrain map views in Animus for clearer terrain and
   vehicle-position visualization.
 - [x] Correct the flight-view 3D aircraft model heading so the nose points in
   the vehicle's telemetry-derived direction of travel.
@@ -89,7 +89,7 @@ Reusable Bayek framework follow-up is tracked separately in
   rates, and counts remain readable without clipped columns.
 - [x] Recenter the `1440x900` flight Free camera state so the vehicle remains
   visible instead of rendering off-canvas or clipped into the top status area.
-- [ ] Persist completed onboard MAVLink log downloads as raw `.tlog` or `.bin`
+- [x] Persist completed onboard MAVLink log downloads as raw `.tlog` or `.bin`
   files once `LOG_DATA` byte assembly is promoted from operation progress to
   durable file output.
 

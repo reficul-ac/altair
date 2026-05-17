@@ -1,5 +1,7 @@
 import dgram, { type RemoteInfo, type Socket } from 'node:dgram';
 import { EventEmitter } from 'node:events';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { buildMultiVehicleAnalysis, buildVehicleReadiness, defaultCommandCapabilities, evaluateGuardedCommand, firmwareIdentity, normalizeArmingState, normalizeFailsafeState, normalizeFlightMode, normalizeMissionState } from './parity.js';
 import { validateMission } from './state.js';
 import type {
@@ -121,6 +123,7 @@ export type MavlinkServiceConfig = {
   qgcEndpoints: Endpoint[];
   writableAnimus: boolean;
   authorityMode: CommandAuthorityMode;
+  logDownloadDirectory: string | null;
 };
 
 export type AnimusSessionContext = {
@@ -319,6 +322,7 @@ const PROTOCOL_OPERATION_TIMEOUT_S = 5;
 const MAX_COMMAND_TRANSACTIONS = 80;
 const MAX_COMMAND_AUDIT_SNAPSHOT_ENTRIES = 20;
 const MAX_PROTOCOL_OPERATIONS = 120;
+const LOG_DATA_PAYLOAD_OFFSET = 7;
 
 export const MAV_RESULT_LABELS: Record<number, string> = {
   0: 'accepted',
@@ -328,6 +332,56 @@ export const MAV_RESULT_LABELS: Record<number, string> = {
   4: 'failed',
   5: 'in progress'
 };
+
+export type OnboardLogAssembly = {
+  operationId: string;
+  vehicleId: string;
+  logId: number;
+  sizeBytes: number;
+  bytes: Buffer;
+  received: boolean[];
+  receivedBytes: number;
+  complete: boolean;
+};
+
+export function createOnboardLogAssembly(operationId: string, vehicleId: string, logId: number, sizeBytes: number): OnboardLogAssembly {
+  const size = Math.max(0, Math.floor(sizeBytes));
+  return {
+    operationId,
+    vehicleId,
+    logId,
+    sizeBytes: size,
+    bytes: Buffer.alloc(size),
+    received: Array.from({ length: size }, () => false),
+    receivedBytes: 0,
+    complete: size === 0
+  };
+}
+
+export function addOnboardLogChunk(assembly: OnboardLogAssembly, offset: number, data: Uint8Array): number {
+  if (!Number.isInteger(offset) || offset < 0 || data.length === 0 || assembly.complete) {
+    return 0;
+  }
+  let unique = 0;
+  const available = Math.max(0, Math.min(data.length, assembly.sizeBytes - offset));
+  for (let index = 0; index < available; index += 1) {
+    const byteIndex = offset + index;
+    if (!assembly.received[byteIndex]) {
+      assembly.received[byteIndex] = true;
+      assembly.bytes[byteIndex] = data[index] ?? 0;
+      unique += 1;
+    }
+  }
+  assembly.receivedBytes += unique;
+  assembly.complete = assembly.receivedBytes >= assembly.sizeBytes;
+  return unique;
+}
+
+export function onboardLogFilePath(directory: string, vehicleId: string, logId: number, timestamp = new Date()): string {
+  const vehiclePart = vehicleId.replace(/[^a-zA-Z0-9_.-]+/g, '-');
+  const timePart = timestamp.toISOString().replace(/[:.]/g, '-');
+  return path.join(directory, `vehicle-${vehiclePart}-log-${logId}-${timePart}.bin`);
+}
 
 export function encodeCommandLong(command: number, targetSystem: number, targetComponent: number, params: number[] = [], confirmation = 0, seq = 1, sourceSystem = 255, sourceComponent = 190): Buffer {
   const payload = Buffer.alloc(33);
@@ -932,7 +986,8 @@ const DECODERS: Record<number, Decoder> = {
   120: (message) => {
     const p = message.payload;
     if (p.length < 7) return null;
-    return decodeWithFields(message, 'LOG_DATA', { ofs: readUInt32(p, 0), id: readUInt16(p, 4), count: readUInt8(p, 6) });
+    const count = readUInt8(p, 6) ?? 0;
+    return decodeWithFields(message, 'LOG_DATA', { ofs: readUInt32(p, 0), id: readUInt16(p, 4), count, dataHex: p.subarray(7, 7 + count).toString('hex') });
   },
   121: (message) => {
     const p = message.payload;
@@ -1878,7 +1933,7 @@ export class MavlinkTelemetryService extends EventEmitter {
   private readonly commandAudit: CommandAuditEntry[] = [];
   private readonly protocolOperations: ProtocolOperation[] = [];
   private readonly operationAudit: OperationAuditEntry[] = [];
-  private readonly logDownloadBuffers = new Map<string, Buffer[]>();
+  private readonly logDownloads = new Map<string, OnboardLogAssembly>();
   private readonly protocolTracker = new MavlinkProtocolTracker();
   private readonly sessionContext: AnimusSessionContext;
 
@@ -2339,17 +2394,22 @@ export class MavlinkTelemetryService extends EventEmitter {
   }
 
   downloadLog(logId: number, vehicleId = this.registry.selectedVehicleId ?? '', originSurface = 'logs'): ParameterEditResult {
+    const selected = this.registry.selectedVehicle();
+    const entry = selected.logs?.find((candidate) => candidate.id === logId);
+    const sizeBytes = entry?.sizeBytes ?? null;
     const result = this.sendSimpleOperation({
       domain: 'logs',
       action: 'download',
       vehicleId,
       confirmed: true,
       originSurface,
-      payload: { logId },
-      frames: (target) => [encodeLogRequestData(logId, 0, 900, target.systemId, target.componentId, this.nextSeq())],
+      payload: { logId, sizeBytes },
+      frames: (target) => [encodeLogRequestData(logId, 0, sizeBytes ?? 0xffffffff, target.systemId, target.componentId, this.nextSeq())],
       resultSummary: `log ${logId} download requested`
     });
-    if (result.operationId) this.logDownloadBuffers.set(result.operationId, []);
+    if (result.operationId && sizeBytes !== null) {
+      this.logDownloads.set(result.operationId, createOnboardLogAssembly(result.operationId, vehicleId, logId, sizeBytes));
+    }
     return result;
   }
 
@@ -2655,6 +2715,17 @@ export class MavlinkTelemetryService extends EventEmitter {
     return snapshot;
   }
 
+  private persistCompletedLog(assembly: OnboardLogAssembly): string {
+    const directory = this.config.logDownloadDirectory;
+    if (!directory) {
+      throw new Error('onboard log download directory is not configured');
+    }
+    mkdirSync(directory, { recursive: true });
+    const filePath = onboardLogFilePath(directory, assembly.vehicleId, assembly.logId);
+    writeFileSync(filePath, assembly.bytes);
+    return filePath;
+  }
+
   private createCommandTransaction(request: GuardedCommandRequest, commandId: number, params: number[], nowS: number): CommandTransaction {
     const transaction: CommandTransaction = {
       id: `cmd-${Math.round(nowS * 1000)}-${this.commandTransactionSeq++}`,
@@ -2812,10 +2883,33 @@ export class MavlinkTelemetryService extends EventEmitter {
       const operation = activeFor('logs', ['download']);
       if (operation) {
         const count = num(decoded.fields.count) ?? 0;
+        const offset = num(decoded.fields.ofs) ?? 0;
+        const chunk = message.payload.subarray(LOG_DATA_PAYLOAD_OFFSET, LOG_DATA_PAYLOAD_OFFSET + count);
         operation.receivedPackets += 1;
         operation.updatedAtS = nowS;
-        operation.payload = { ...(operation.payload ?? {}), receivedBytes: (Number(operation.payload?.receivedBytes ?? 0) + count) };
-        operation.resultSummary = `received ${operation.payload.receivedBytes} log bytes`;
+        const assembly = this.logDownloads.get(operation.id);
+        if (assembly && num(decoded.fields.id) === assembly.logId) {
+          addOnboardLogChunk(assembly, offset, chunk);
+          operation.payload = { ...(operation.payload ?? {}), receivedBytes: assembly.receivedBytes, sizeBytes: assembly.sizeBytes };
+          operation.progressPct = assembly.sizeBytes > 0 ? Math.min(100, (assembly.receivedBytes / assembly.sizeBytes) * 100) : 100;
+          operation.resultSummary = `received ${assembly.receivedBytes} / ${assembly.sizeBytes} log bytes`;
+          if (assembly.complete) {
+            try {
+              const savedPath = this.persistCompletedLog(assembly);
+              operation.payload = { ...(operation.payload ?? {}), savedPath };
+              complete(operation, `log ${assembly.logId} saved to ${savedPath}`);
+            } catch (error) {
+              operation.state = 'failed';
+              operation.failureReason = error instanceof Error ? error.message : String(error);
+              operation.resultSummary = operation.failureReason;
+              this.pushOperationAudit(this.createOperationAuditEntry({ eventKind: 'operation-failed', operation, accepted: false, reason: operation.failureReason }));
+            }
+            this.logDownloads.delete(operation.id);
+          }
+        } else {
+          operation.payload = { ...(operation.payload ?? {}), receivedBytes: (Number(operation.payload?.receivedBytes ?? 0) + count) };
+          operation.resultSummary = `received ${operation.payload.receivedBytes} log bytes; waiting for LOG_ENTRY size`;
+        }
       }
     } else if (message.msgId === 136) {
       const operation = activeFor('terrain', ['check', 'request']);
@@ -3048,7 +3142,8 @@ export function normalizeConfig(config: Partial<MavlinkServiceConfig>): MavlinkS
     qgcForwarding: config.qgcForwarding ?? true,
     qgcEndpoints: config.qgcEndpoints ?? [{ host: DEFAULT_QGC_HOST, port: DEFAULT_QGC_PORT }],
     authorityMode: config.authorityMode ?? (config.writableAnimus ? 'sitl-writable' : 'read-only'),
-    writableAnimus: config.writableAnimus ?? Boolean(config.authorityMode && config.authorityMode !== 'read-only')
+    writableAnimus: config.writableAnimus ?? Boolean(config.authorityMode && config.authorityMode !== 'read-only'),
+    logDownloadDirectory: config.logDownloadDirectory ?? null
   };
 }
 

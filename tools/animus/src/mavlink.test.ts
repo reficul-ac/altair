@@ -1,6 +1,11 @@
 import dgram from 'node:dgram';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  addOnboardLogChunk,
+  createOnboardLogAssembly,
   decodeCommandAck,
   decodeMavlinkMessage,
   decodeMissionAck,
@@ -21,6 +26,7 @@ import {
   MAVLINK_V2_STX,
   mavlinkV1Frame,
   mavTypeLabel,
+  onboardLogFilePath,
   VehicleRegistry
 } from './mavlink';
 import type { CommandAuditEntry } from './state';
@@ -204,6 +210,25 @@ function readyVehicle(systemId = 1, componentId = 1, seq = 1): Buffer {
     sysStatus(seq + 2, { sensorHealth: 5, batteryRemainingPct: 72, voltageMv: 12100, systemId, componentId }),
     missionCount(2, seq + 3, systemId, componentId)
   ]);
+}
+
+function logEntryFrame(id: number, sizeBytes: number, seq = 30, systemId = 1, componentId = 1): Buffer {
+  const payload = Buffer.alloc(14);
+  payload.writeUInt16LE(id, 0);
+  payload.writeUInt16LE(1, 2);
+  payload.writeUInt16LE(id, 4);
+  payload.writeUInt32LE(123456, 6);
+  payload.writeUInt32LE(sizeBytes, 10);
+  return mavlinkV1Frame(118, payload, seq, systemId, componentId);
+}
+
+function logDataFrame(id: number, offset: number, data: Buffer, seq = 31, systemId = 1, componentId = 1): Buffer {
+  const payload = Buffer.alloc(97);
+  payload.writeUInt32LE(offset, 0);
+  payload.writeUInt16LE(id, 4);
+  payload.writeUInt8(data.length, 6);
+  data.copy(payload, 7);
+  return mavlinkV1Frame(120, payload, seq, systemId, componentId);
 }
 
 describe('Electron MAVLink service', () => {
@@ -798,5 +823,55 @@ describe('Electron MAVLink service', () => {
     logEntry.writeUInt16LE(9, 2);
     logEntry.writeUInt32LE(4096, 10);
     expect(decodeMavlinkMessage({ msgId: 118, payload: logEntry, seq: 1, systemId: 1, componentId: 1 })).toMatchObject({ name: 'LOG_ENTRY', fields: { id: 7, numLogs: 9, sizeBytes: 4096 } });
+
+    const logData = Buffer.alloc(97);
+    logData.writeUInt32LE(4, 0);
+    logData.writeUInt16LE(7, 4);
+    logData.writeUInt8(3, 6);
+    Buffer.from([0xaa, 0xbb, 0xcc]).copy(logData, 7);
+    expect(decodeMavlinkMessage({ msgId: 120, payload: logData, seq: 1, systemId: 1, componentId: 1 })).toMatchObject({ name: 'LOG_DATA', fields: { id: 7, ofs: 4, count: 3, dataHex: 'aabbcc' } });
+  });
+
+  it('assembles onboard log chunks deterministically across ordering and duplicates', () => {
+    const assembly = createOnboardLogAssembly('op-a', '1:1', 7, 8);
+
+    expect(addOnboardLogChunk(assembly, 4, Buffer.from([5, 6, 7, 8]))).toBe(4);
+    expect(addOnboardLogChunk(assembly, 4, Buffer.from([5, 6]))).toBe(0);
+    expect(addOnboardLogChunk(assembly, 0, Buffer.from([1, 2, 3, 4]))).toBe(4);
+
+    expect(assembly.complete).toBe(true);
+    expect([...assembly.bytes]).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  it('persists completed onboard log downloads with stable vehicle and log naming', () => {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'animus-log-'));
+    try {
+      const service = new MavlinkTelemetryService({ writableAnimus: true, logDownloadDirectory: tmp });
+      let snapshot: { protocolOperations?: { id: string; state: string; progressPct: number | null; payload?: Record<string, unknown> }[] } | null = null;
+      service.on('session-snapshot', (next) => {
+        snapshot = next;
+      });
+      makeWritable(service);
+      service.handlePacket(readyVehicle());
+      service.handlePacket(logEntryFrame(7, 8));
+      const result = service.downloadLog(7, '1:1');
+      expect(result.accepted).toBe(true);
+
+      service.handlePacket(logDataFrame(7, 4, Buffer.from([5, 6, 7, 8]), 31));
+      service.handlePacket(logDataFrame(7, 0, Buffer.from([1, 2, 3, 4]), 32));
+      const operation = snapshot?.protocolOperations?.find((candidate) => candidate.id === result.operationId);
+      const savedPath = operation?.payload?.savedPath;
+
+      expect(operation).toMatchObject({ state: 'complete', progressPct: 100 });
+      expect(typeof savedPath).toBe('string');
+      expect(path.basename(String(savedPath))).toMatch(/^vehicle-1-1-log-7-.*\.bin$/);
+      expect([...readFileSync(String(savedPath))]).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('builds stable onboard log file paths', () => {
+    expect(onboardLogFilePath('/tmp/logs', '1:200', 4, new Date('2026-05-17T01:02:03.004Z'))).toBe('/tmp/logs/vehicle-1-200-log-4-2026-05-17T01-02-03-004Z.bin');
   });
 });

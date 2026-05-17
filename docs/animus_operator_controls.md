@@ -64,8 +64,9 @@ Vehicle meshes are chosen from heartbeat vehicle type: fixed-wing, multirotor, V
 - Mouse wheel zooms around the cursor.
 - `Focus` recenters on the selected vehicle and resumes selected-vehicle follow.
 - `+` and `-` adjust zoom.
+- `2D`, `Terrain 2D`, and `Terrain 3D` switch between the default local canvas map, a shaded terrain-report overlay, and an offline Three.js terrain surface.
 
-The map renders selected and fleet trails, event markers, an origin/home marker when available, mission waypoint paths, terrain reports, geofence polygons/circles, and rally points when decoded records are present. Terrain check requests are protocol-backed and appear in the operation history. Creating or editing geofences, rally points, or terrain tiles remains out of scope unless a decoded MAVLink path is added for that operation.
+The map renders selected and fleet trails, event markers, an origin/home marker when available, mission waypoint paths, terrain reports, geofence polygons/circles, and rally points when decoded records are present. Terrain modes use decoded `TERRAIN_REPORT`, home/origin altitude, selected vehicle position, mission, geofence, and rally data only; they do not use online tiles, network map providers, API keys, or external terrain services. Terrain check requests are protocol-backed and appear in the operation history. Creating or editing geofences, rally points, or terrain tiles remains out of scope unless a decoded MAVLink path is added for that operation.
 
 ## Dashboard View
 
@@ -92,7 +93,7 @@ Status widgets read the same session snapshot used by Flight, Map, Inspector, an
 - `Import` accepts native replay JSON plus CSV-style delimited logs and ULog-labeled imports that can be reduced to the currently supported deterministic replay frame fields.
 - Replay controls support pause/play, scrub, speed selection, reset, and marker navigation.
 - `Download` saves the current replay/session metadata path exposed by Electron.
-- Setup can request the onboard MAVLink log list, start per-log download operations, and erase onboard logs behind typed confirmation. Progress is reported by operation id and received-byte counters from `LOG_DATA`; imported replay behavior is unchanged.
+- Setup can request the onboard MAVLink log list, start per-log download operations, and erase onboard logs behind typed confirmation. Completed `LOG_DATA` downloads are assembled by byte offset and saved as raw `.bin` files under `path.join(app.getPath('userData'), 'onboard-logs')`; the saved path appears in the logs operation history. Imported replay behavior is unchanged.
 
 ## Analysis And GCS Parity
 
