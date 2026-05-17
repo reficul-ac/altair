@@ -78,15 +78,20 @@ export function renderAppShell(root: HTMLElement): void {
     <section class="workspace-panel map-workspace" data-panel="map">
       <div class="map-toolbar" aria-label="Map controls">
         <div class="segmented map-mode-controls" aria-label="Map mode">
-          <button class="active" data-map-mode="2d" type="button">2D</button>
-          <button data-map-mode="terrain-2d" type="button">Terrain 2D</button>
+          <button class="active" data-map-mode="topo" type="button">Topo</button>
           <button data-map-mode="terrain-3d" type="button">Terrain 3D</button>
         </div>
         <button id="map-focus" type="button">Focus</button>
         <button id="map-zoom-in" type="button">+</button>
         <button id="map-zoom-out" type="button">-</button>
+        <span id="map-pack-status" class="map-pack-status">Offline map loading</span>
       </div>
-      <canvas id="map-canvas" width="1200" height="760"></canvas>
+      <div id="map-container" aria-label="Offline topographic map"></div>
+      <canvas id="map-overlay-canvas" width="1200" height="760"></canvas>
+      <div id="map-unavailable" class="map-unavailable hidden" role="status">
+        <strong>Offline map unavailable</strong>
+        <span id="map-unavailable-detail">Bundled topographic map pack is missing or unreadable.</span>
+      </div>
       <canvas id="terrain-canvas" class="hidden" width="1200" height="760"></canvas>
     </section>
     <section class="workspace-panel dashboard-workspace" data-panel="dashboard">

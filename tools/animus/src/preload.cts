@@ -4,6 +4,7 @@ import type { ReplayTimelineMessage } from './state.js';
 import type { CommandAuditEntry, CommandDispatchResult, CommandTransaction, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MissionTransferState, MissionValidationResult, MockLinkState, ParameterEditRequest, ParameterEditResult } from './state.js';
 import type { AnimusUiSettings } from './animus-settings.js';
 import type { AnimusDashboardLayout } from './dashboard-types.js';
+import type { MapPackStatus } from './map-pack.js';
 
 export type AltairAnimusApi = {
   onVehicleState: (callback: (message: VehicleStatePayload) => void) => () => void;
@@ -16,6 +17,7 @@ export type AltairAnimusApi = {
   addMarker: (label: string) => Promise<SessionSnapshotPayload>;
   getSettings: () => Promise<AnimusUiSettings>;
   saveSettings: (settings: AnimusUiSettings) => Promise<AnimusUiSettings>;
+  getMapPackStatus: () => Promise<MapPackStatus>;
   getDashboardLayout: () => Promise<AnimusDashboardLayout>;
   saveDashboardLayout: (layout: AnimusDashboardLayout) => Promise<AnimusDashboardLayout>;
   resetDashboardLayout: () => Promise<AnimusDashboardLayout>;
@@ -96,6 +98,9 @@ const api: AltairAnimusApi = {
   },
   saveSettings(settings) {
     return ipcRenderer.invoke('settings:save', settings);
+  },
+  getMapPackStatus() {
+    return ipcRenderer.invoke('map-pack:status');
   },
   getDashboardLayout() {
     return ipcRenderer.invoke('dashboard:get-layout');

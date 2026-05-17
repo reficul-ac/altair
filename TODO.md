@@ -92,6 +92,8 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Persist completed onboard MAVLink log downloads as raw `.tlog` or `.bin`
   files once `LOG_DATA` byte assembly is promoted from operation progress to
   durable file output.
+- [ ] Replace the generated Animus offline topo PMTiles placeholder with a
+  production map pack and documented source/licensing refresh workflow.
 
 ## Test Ownership
 

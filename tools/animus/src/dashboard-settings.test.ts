@@ -2,7 +2,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { animusSettingsPath, createDefaultAnimusSettings, readAnimusSettings, writeAnimusSettings } from './animus-settings';
+import { animusSettingsPath, createDefaultAnimusSettings, normalizeAnimusSettings, readAnimusSettings, writeAnimusSettings } from './animus-settings';
 import { createDefaultDashboardLayout } from './dashboard-types';
 import { dashboardLayoutPath, exportDashboardProfile, importDashboardProfile, readDashboardLayout, resetDashboardLayout, writeDashboardLayout } from './dashboard-settings';
 
@@ -120,6 +120,8 @@ describe('dashboard settings helpers', () => {
       theme: 'snow',
       cameraMode: 'fpv',
       cameraLock: true,
+      mapStyle: 'topo',
+      mapFollowSelected: false,
       lastDashboardPresetLabel: 'Flight Test'
     });
 
@@ -129,9 +131,22 @@ describe('dashboard settings helpers', () => {
       theme: 'snow',
       cameraMode: 'fpv',
       cameraLock: true,
+      mapStyle: 'topo',
+      mapFollowSelected: false,
       lastDashboardPresetLabel: 'Flight Test'
     });
     expect(JSON.parse(await readFile(filePath, 'utf8')).writableAnimus).toBeUndefined();
+  });
+
+  it('migrates missing map settings to offline topographic defaults', () => {
+    expect(normalizeAnimusSettings({
+      schemaVersion: 1,
+      defaultWorkspace: 'map',
+      theme: 'grid',
+      cameraMode: 'chase',
+      cameraLock: false,
+      lastDashboardPresetLabel: null
+    })).toEqual({ ...createDefaultAnimusSettings(), defaultWorkspace: 'map' });
   });
 
   it('falls back for malformed application settings', async () => {

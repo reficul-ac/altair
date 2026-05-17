@@ -17,6 +17,8 @@
     "src/preload.cts",
     "src/electron-test-entry.ts",
     "src/electron-live-telemetry-check.ts",
+    "src/map-pack.ts",
+    "src/map-pack-node.ts",
     "src/mavlink.ts",
     "src/parity.ts",
     "src/replay.ts",

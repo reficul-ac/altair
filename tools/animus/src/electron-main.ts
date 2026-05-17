@@ -20,6 +20,7 @@ import { validateMission } from './state.js';
 import { createCommandAuditLog } from './command-audit.js';
 import { animusSettingsPath, readAnimusSettings, writeAnimusSettings } from './animus-settings.js';
 import { dashboardLayoutPath, exportDashboardProfile, importDashboardProfile, readDashboardLayout, resetDashboardLayout, writeDashboardLayout } from './dashboard-settings.js';
+import { getBundledMapPackStatus } from './map-pack-node.js';
 import type { AnimusUiSettings } from './animus-settings.js';
 import type { AnimusDashboardLayout } from './dashboard-types.js';
 import type { CommandAuditEntry, CommandDispatchResult, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MockLinkState } from './state.js';
@@ -185,6 +186,7 @@ ipcMain.handle('mavlink:select-vehicle', (_event, id: string) => replay.isLoaded
 ipcMain.handle('mavlink:add-marker', (_event, label: string) => telemetry.addMarker(String(label || 'Marker')));
 ipcMain.handle('settings:get', () => readAnimusSettings(animusSettingsFile));
 ipcMain.handle('settings:save', (_event, settings: AnimusUiSettings) => writeAnimusSettings(animusSettingsFile, settings));
+ipcMain.handle('map-pack:status', () => getBundledMapPackStatus(appRoot));
 ipcMain.handle('dashboard:get-layout', () => readDashboardLayout(dashboardLayoutFile));
 ipcMain.handle('dashboard:save-layout', (_event, layout: AnimusDashboardLayout) => writeDashboardLayout(dashboardLayoutFile, layout));
 ipcMain.handle('dashboard:reset-layout', () => resetDashboardLayout(dashboardLayoutFile));

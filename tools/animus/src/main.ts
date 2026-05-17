@@ -1,9 +1,10 @@
-import { bindMapControls, drawMap } from './map-panel';
+import { bindMapControls, drawMap, setMapFollowSelected } from './map-panel';
 import { clearInspectorLog, recordInspectorSnapshot, updateInspector } from './inspector-ui';
 import { setHudMode, updateHud, updateStatusStrip, updateVehicleList, type HudMode } from './hud-ui';
 import { SceneRenderer, nextCameraMode, type CameraMode, type ThemeName } from './scene-renderer';
 import { createDashboardController } from './dashboard-ui';
 import type { AnimusDashboardLayout } from './dashboard-types';
+import type { MapPackStatus } from './map-pack';
 import {
   createEmptyMissionPlan,
   validateMission,
@@ -45,6 +46,8 @@ type AnimusUiSettings = {
   theme: ThemeName;
   cameraMode: CameraMode;
   cameraLock: boolean;
+  mapStyle: 'topo';
+  mapFollowSelected: boolean;
   lastDashboardPresetLabel: string | null;
 };
 
@@ -59,6 +62,7 @@ type AnimusApi = {
   addMarker?: (label: string) => Promise<SessionSnapshotMessage>;
   getSettings?: () => Promise<AnimusUiSettings>;
   saveSettings?: (settings: AnimusUiSettings) => Promise<AnimusUiSettings>;
+  getMapPackStatus?: () => Promise<MapPackStatus>;
   getDashboardLayout?: () => Promise<AnimusDashboardLayout>;
   saveDashboardLayout?: (layout: AnimusDashboardLayout) => Promise<AnimusDashboardLayout>;
   resetDashboardLayout?: () => Promise<AnimusDashboardLayout>;
@@ -131,11 +135,13 @@ const state = {
     theme: 'grid',
     cameraMode: 'chase',
     cameraLock: false,
+    mapStyle: 'topo',
+    mapFollowSelected: true,
     lastDashboardPresetLabel: null
   } as AnimusUiSettings,
   settingsLoaded: false
 };
-bindMapControls(() => state.snapshot);
+bindMapControls(() => state.snapshot, (followSelected) => saveUiSettings({ mapFollowSelected: followSelected }));
 const dashboard = createDashboardController({
   getSnapshot: () => state.snapshot,
   getApi: () => window.altairAnimus,
@@ -772,6 +778,7 @@ function applyUiSettings(settings: AnimusUiSettings): void {
   setTheme(settings.theme, false);
   setCameraMode(settings.cameraMode, false);
   setCameraLocked(settings.cameraLock, false);
+  setMapFollowSelected(settings.mapFollowSelected);
   setWorkspace(settings.defaultWorkspace, false);
   state.settingsLoaded = true;
 }

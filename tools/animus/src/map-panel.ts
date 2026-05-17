@@ -1,4 +1,8 @@
 import type { SessionEvent, SessionSnapshotMessage, VehicleStateMessage } from './state';
+import { ANIMUS_MAP_PACK_URL, createUnavailableMapPackStatus, normalizeMapPackStatus, type MapPackStatus } from './map-pack';
+import maplibregl, { type GeoJSONSource, type LngLatLike, type Map as MapLibreMap, type StyleSpecification } from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import { PMTiles, Protocol, type RangeResponse, type Source } from 'pmtiles';
 import {
   AmbientLight,
   BufferAttribute,
@@ -26,7 +30,14 @@ export type MapViewState = {
 
 type ScreenPoint = { x: number; y: number };
 type LocalPoint = { eastM: number; northM: number; upM?: number | null };
-export type MapMode = '2d' | 'terrain-2d' | 'terrain-3d';
+type GeoPoint = { lon: number; lat: number; altitudeM?: number | null };
+type FeatureGeometry =
+  | { type: 'Point'; coordinates: [number, number] }
+  | { type: 'LineString'; coordinates: [number, number][] }
+  | { type: 'Polygon'; coordinates: [number, number][][] };
+type Feature = { type: 'Feature'; geometry: FeatureGeometry; properties: Record<string, string | number | boolean | null> };
+type FeatureCollection = { type: 'FeatureCollection'; features: Feature[] };
+export type MapMode = 'topo' | 'terrain-3d';
 export type TerrainSample = LocalPoint & { terrainHeightM: number; currentHeightM: number | null };
 export type TerrainModel = {
   center: LocalPoint;
@@ -35,12 +46,30 @@ export type TerrainModel = {
   maxTerrainM: number;
   spacingM: number;
 };
+export type MapOverlayModel = {
+  center: GeoPoint | null;
+  vehicles: FeatureCollection;
+  trails: FeatureCollection;
+  mission: FeatureCollection;
+  home: FeatureCollection;
+  geofences: FeatureCollection;
+  rally: FeatureCollection;
+  events: FeatureCollection;
+};
 
-const view: MapViewState = { scale: 2, panEastM: 0, panNorthM: 0, followSelected: true, mode: '2d' };
+const view: MapViewState = { scale: 2, panEastM: 0, panNorthM: 0, followSelected: true, mode: 'topo' };
 let bound = false;
-let dragging = false;
-let lastDrag: ScreenPoint | null = null;
+let map: MapLibreMap | null = null;
+let mapReady = false;
+let mapFailed = false;
+let latestSnapshot: SessionSnapshotMessage | null = null;
 let terrain3d: TerrainRenderer | null = null;
+let mapPackStatusPromise: Promise<MapPackStatus> | null = null;
+let mapFollowChanged: ((follow: boolean) => void) | null = null;
+let registeredMapPackUrl: string | null = null;
+
+const overlaySourceIds = ['vehicles', 'trails', 'mission', 'home', 'geofences', 'rally', 'events'] as const;
+const fallbackLocalOrigin = { originLat: 37, originLon: -122, originAlt: 0, originEastM: 0, originNorthM: 0 };
 
 export function mapWorldToScreen(point: LocalPoint, center: LocalPoint, state: MapViewState, width: number, height: number): ScreenPoint {
   return {
@@ -105,6 +134,10 @@ export function mapMode(): MapMode {
   return view.mode;
 }
 
+export function setMapFollowSelected(followSelected: boolean): void {
+  view.followSelected = followSelected;
+}
+
 export function terrainModelFromVehicle(vehicle: VehicleStateMessage | null): TerrainModel | null {
   if (!vehicle?.terrain || vehicle.terrain.latDeg === null || vehicle.terrain.lonDeg === null || vehicle.terrain.terrainHeightM === null) return null;
   const originLat = vehicle.globalPosition.originLatDeg ?? vehicle.home?.latDeg ?? vehicle.terrain.latDeg;
@@ -135,58 +168,94 @@ export function terrainModelFromVehicle(vehicle: VehicleStateMessage | null): Te
   };
 }
 
-export function bindMapControls(snapshotProvider: () => SessionSnapshotMessage | null): void {
+export function buildMapOverlayModel(snapshot: SessionSnapshotMessage): MapOverlayModel {
+  const selected = selectedMapVehicle(snapshot);
+  const vehicles: Feature[] = [];
+  const trails: Feature[] = [];
+  const mission: Feature[] = [];
+  const home: Feature[] = [];
+  const geofences: Feature[] = [];
+  const rally: Feature[] = [];
+  const events: Feature[] = [];
+  const selectedContext = selected ? geoContextForVehicle(selected) : null;
+
+  for (const vehicle of snapshot.vehicles) {
+    const context = geoContextForVehicle(vehicle) ?? selectedContext;
+    const vehiclePoint = geoPointFromVehicle(vehicle, context);
+    if (vehiclePoint) {
+      vehicles.push(pointFeature(vehiclePoint, {
+        id: vehicle.id ?? `${vehicle.systemId ?? '--'}:${vehicle.componentId ?? '--'}`,
+        selected: vehicle.id === snapshot.selectedVehicleId
+      }));
+    }
+    const trailPoints = (vehicle.trail ?? []).map((point) => geoPointFromLocal(point, context)).filter((point): point is GeoPoint => Boolean(point));
+    if (trailPoints.length >= 2) {
+      trails.push(lineFeature(trailPoints, { selected: vehicle.id === snapshot.selectedVehicleId }));
+    }
+  }
+
+  if (selected) {
+    const context = selectedContext;
+    const homePoint = geoHomePoint(selected, context);
+    if (homePoint) home.push(pointFeature(homePoint, { kind: 'home' }));
+    for (const point of selected.rallyPoints ?? []) {
+      rally.push(pointFeature({ lat: point.latDeg, lon: point.lonDeg, altitudeM: point.altitudeM }, { id: point.id }));
+    }
+    const missionPoints = (selected.mission?.waypoints ?? []).map((waypoint) => ({ lat: waypoint.latDeg, lon: waypoint.lonDeg, altitudeM: waypoint.altitudeM }));
+    if (missionPoints.length >= 2) mission.push(lineFeature(missionPoints, { activeSeq: selected.mission?.activeSeq ?? null }));
+    for (const waypoint of missionPoints) {
+      mission.push(pointFeature(waypoint, { kind: 'waypoint' }));
+    }
+    for (const zone of selected.geofences ?? []) {
+      if (zone.kind === 'circle') {
+        geofences.push(polygonFeature(circlePolygon({ lat: zone.center.latDeg, lon: zone.center.lonDeg }, zone.radiusM), {
+          id: zone.id,
+          inclusion: zone.inclusion
+        }));
+      } else {
+        geofences.push(polygonFeature(zone.vertices.map((vertex) => ({ lat: vertex.latDeg, lon: vertex.lonDeg })), {
+          id: zone.id,
+          inclusion: zone.inclusion
+        }));
+      }
+    }
+  }
+
+  for (const event of snapshot.events) {
+    const point = geoPointFromEvent(event, selectedContext);
+    if (point) events.push(pointFeature(point, { level: event.level, label: event.label }));
+  }
+
+  return {
+    center: selected ? geoPointFromVehicle(selected, selectedContext) ?? geoHomePoint(selected, selectedContext) : null,
+    vehicles: collection(vehicles),
+    trails: collection(trails),
+    mission: collection(mission),
+    home: collection(home),
+    geofences: collection(geofences),
+    rally: collection(rally),
+    events: collection(events)
+  };
+}
+
+export function bindMapControls(snapshotProvider: () => SessionSnapshotMessage | null, onFollowChanged?: (follow: boolean) => void): void {
+  mapFollowChanged = onFollowChanged ?? null;
   if (bound) return;
   bound = true;
-  const canvas = document.querySelector<HTMLCanvasElement>('#map-canvas');
-  if (!canvas) return;
-  canvas.addEventListener('pointerdown', (event) => {
-    dragging = true;
-    lastDrag = { x: event.clientX, y: event.clientY };
-    view.followSelected = false;
-    canvas.setPointerCapture(event.pointerId);
-  });
-  canvas.addEventListener('pointermove', (event) => {
-    if (!dragging || !lastDrag) return;
-    view.panEastM += (event.clientX - lastDrag.x) / view.scale;
-    view.panNorthM -= (event.clientY - lastDrag.y) / view.scale;
-    lastDrag = { x: event.clientX, y: event.clientY };
-    redraw(snapshotProvider);
-  });
-  canvas.addEventListener('pointerup', (event) => {
-    dragging = false;
-    lastDrag = null;
-    canvas.releasePointerCapture(event.pointerId);
-  });
-  canvas.addEventListener('wheel', (event) => {
-    event.preventDefault();
-    const before = view.scale;
-    const factor = event.deltaY < 0 ? 1.18 : 1 / 1.18;
-    view.scale = Math.max(0.2, Math.min(18, view.scale * factor));
-    const rect = canvas.getBoundingClientRect();
-    const snapshot = snapshotProvider();
-    const selected = snapshot ? selectedMapVehicle(snapshot) : null;
-    const center = selected ? pointFromVehicle(selected) ?? { eastM: 0, northM: 0 } : { eastM: 0, northM: 0 };
-    const cursor = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    const beforeWorld = mapScreenToWorld(cursor, center, { ...view, scale: before }, canvas.width, canvas.height);
-    const afterWorld = mapScreenToWorld(cursor, center, view, canvas.width, canvas.height);
-    view.panEastM += afterWorld.eastM - beforeWorld.eastM;
-    view.panNorthM += afterWorld.northM - beforeWorld.northM;
-    view.followSelected = false;
-    redraw(snapshotProvider);
-  }, { passive: false });
   document.querySelector<HTMLButtonElement>('#map-focus')?.addEventListener('click', () => {
     view.panEastM = 0;
     view.panNorthM = 0;
-    view.followSelected = true;
+    setFollowSelected(true);
     redraw(snapshotProvider);
   });
   document.querySelector<HTMLButtonElement>('#map-zoom-in')?.addEventListener('click', () => {
-    view.scale = Math.min(18, view.scale * 1.25);
+    if (view.mode === 'terrain-3d') view.scale = Math.min(18, view.scale * 1.25);
+    else map?.zoomIn();
     redraw(snapshotProvider);
   });
   document.querySelector<HTMLButtonElement>('#map-zoom-out')?.addEventListener('click', () => {
-    view.scale = Math.max(0.2, view.scale / 1.25);
+    if (view.mode === 'terrain-3d') view.scale = Math.max(0.2, view.scale / 1.25);
+    else map?.zoomOut();
     redraw(snapshotProvider);
   });
   document.querySelectorAll<HTMLButtonElement>('[data-map-mode]').forEach((button) => {
@@ -200,52 +269,18 @@ export function bindMapControls(snapshotProvider: () => SessionSnapshotMessage |
 }
 
 export function drawMap(snapshot: SessionSnapshotMessage): void {
-  const canvas = document.querySelector<HTMLCanvasElement>('#map-canvas')!;
+  latestSnapshot = snapshot;
+  const mapContainer = document.querySelector<HTMLElement>('#map-container');
+  const overlayCanvas = document.querySelector<HTMLCanvasElement>('#map-overlay-canvas');
   const terrainCanvas = document.querySelector<HTMLCanvasElement>('#terrain-canvas');
-  canvas.classList.toggle('hidden', view.mode === 'terrain-3d');
+  mapContainer?.classList.toggle('hidden', view.mode === 'terrain-3d');
+  overlayCanvas?.classList.toggle('hidden', view.mode === 'terrain-3d');
   terrainCanvas?.classList.toggle('hidden', view.mode !== 'terrain-3d');
   if (view.mode === 'terrain-3d' && terrainCanvas) {
     drawTerrain3d(terrainCanvas, snapshot);
     return;
   }
-  resizeCanvas(canvas);
-  const ctx = canvas.getContext('2d')!;
-  const width = canvas.width;
-  const height = canvas.height;
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = '#0b1116';
-  ctx.fillRect(0, 0, width, height);
-  const centerVehicle = selectedMapVehicle(snapshot);
-  const center = view.followSelected ? pointFromVehicle(centerVehicle) ?? { eastM: 0, northM: 0 } : { eastM: 0, northM: 0 };
-  if (view.mode === 'terrain-2d') drawTerrain2d(ctx, centerVehicle, center, width, height);
-  drawGrid(ctx, center, width, height);
-  drawGeofences(ctx, snapshot, center, width, height);
-  drawMission(ctx, snapshot, center, width, height);
-  drawRally(ctx, snapshot, center, width, height);
-  drawHome(ctx, snapshot, center, width, height);
-  for (const vehicle of snapshot.vehicles) {
-    drawTrail(ctx, vehicle, center, width, height, vehicle.id === snapshot.selectedVehicleId);
-  }
-  drawEvents(ctx, snapshot.events, center, width, height);
-  drawScale(ctx, width, height);
-}
-
-function drawTerrain2d(ctx: CanvasRenderingContext2D, vehicle: VehicleStateMessage | null, center: LocalPoint, width: number, height: number): void {
-  const model = terrainModelFromVehicle(vehicle);
-  if (!model) return;
-  const span = Math.max(1, model.maxTerrainM - model.minTerrainM);
-  for (const sample of model.samples) {
-    const screen = mapWorldToScreen(sample, center, view, width, height);
-    const normalized = (sample.terrainHeightM - model.minTerrainM) / span;
-    ctx.fillStyle = `rgba(${Math.round(44 + normalized * 120)}, ${Math.round(125 + normalized * 80)}, ${Math.round(92 - normalized * 30)}, 0.26)`;
-    ctx.fillRect(screen.x - (model.spacingM * view.scale) / 2, screen.y - (model.spacingM * view.scale) / 2, model.spacingM * view.scale, model.spacingM * view.scale);
-  }
-  const report = mapWorldToScreen(model.center, center, view, width, height);
-  ctx.strokeStyle = '#f4d35e';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(report.x, report.y, 9, 0, Math.PI * 2);
-  ctx.stroke();
+  void drawTopoMap(snapshot);
 }
 
 function drawTerrain3d(canvas: HTMLCanvasElement, snapshot: SessionSnapshotMessage): void {
@@ -254,48 +289,200 @@ function drawTerrain3d(canvas: HTMLCanvasElement, snapshot: SessionSnapshotMessa
   terrain3d.render(snapshot);
 }
 
-function drawGeofences(ctx: CanvasRenderingContext2D, snapshot: SessionSnapshotMessage, center: LocalPoint, width: number, height: number): void {
-  const vehicle = selectedMapVehicle(snapshot);
-  if (!vehicle) return;
-  for (const zone of geofenceLocalPoints(vehicle)) {
-    ctx.strokeStyle = zone.inclusion ? 'rgba(102, 224, 163, 0.8)' : 'rgba(255, 107, 122, 0.8)';
-    ctx.fillStyle = zone.inclusion ? 'rgba(102, 224, 163, 0.08)' : 'rgba(255, 107, 122, 0.08)';
-    ctx.lineWidth = 1.5;
-    if (zone.radiusM !== undefined && zone.points[0]) {
-      const screen = mapWorldToScreen(zone.points[0], center, view, width, height);
-      ctx.beginPath();
-      ctx.arc(screen.x, screen.y, zone.radiusM * view.scale, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    } else if (zone.points.length >= 3) {
-      ctx.beginPath();
-      zone.points.forEach((point, index) => {
-        const screen = mapWorldToScreen(point, center, view, width, height);
-        if (index === 0) ctx.moveTo(screen.x, screen.y);
-        else ctx.lineTo(screen.x, screen.y);
-      });
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    }
+async function drawTopoMap(snapshot: SessionSnapshotMessage): Promise<void> {
+  const status = await getMapPackStatus();
+  updateMapPackStatus(status);
+  if (!status.available) {
+    showMapUnavailable(status.error ?? 'Bundled topographic map pack is missing or unreadable.');
+    return;
+  }
+  hideMapUnavailable();
+  const mapInstance = await ensureMap(status);
+  if (!mapInstance || !mapReady) return;
+  const overlays = buildMapOverlayModel(snapshot);
+  updateOverlaySources(mapInstance, overlays);
+  drawProjectedOverlay(mapInstance, overlays);
+  if (view.followSelected && overlays.center) {
+    mapInstance.easeTo({ center: [overlays.center.lon, overlays.center.lat], duration: 220, zoom: Math.max(mapInstance.getZoom(), 13) });
   }
 }
 
-function drawRally(ctx: CanvasRenderingContext2D, snapshot: SessionSnapshotMessage, center: LocalPoint, width: number, height: number): void {
-  const vehicle = selectedMapVehicle(snapshot);
-  if (!vehicle) return;
-  for (const point of rallyLocalPoints(vehicle)) {
-    const screen = mapWorldToScreen(point, center, view, width, height);
-    ctx.strokeStyle = '#e464ff';
-    ctx.lineWidth = 2;
+async function ensureMap(status: MapPackStatus): Promise<MapLibreMap | null> {
+  if (map || mapFailed) return map;
+  const container = document.querySelector<HTMLElement>('#map-container');
+  if (!container) return null;
+  try {
+    registerMapPack(status.url);
+    map = new maplibregl.Map({
+      container,
+      style: topoStyle(status.url),
+      center: [-122.0, 37.0],
+      zoom: 12,
+      attributionControl: false,
+      dragRotate: false,
+      pitchWithRotate: false
+    });
+    map.on('load', () => {
+      mapReady = true;
+      if (latestSnapshot) void drawTopoMap(latestSnapshot);
+    });
+    map.on('dragstart', () => setFollowSelected(false));
+    map.on('zoomstart', (event) => {
+      if (event.originalEvent) setFollowSelected(false);
+    });
+    map.on('move', () => {
+      if (latestSnapshot && map) drawProjectedOverlay(map, buildMapOverlayModel(latestSnapshot));
+    });
+    map.on('error', (event) => {
+      const message = event.error?.message ?? 'MapLibre failed to load the bundled map pack.';
+      showMapUnavailable(message);
+    });
+  } catch (error) {
+    mapFailed = true;
+    showMapUnavailable(error instanceof Error ? error.message : 'MapLibre failed to initialize.');
+  }
+  return map;
+}
+
+function registerMapPack(url: string): void {
+  if (registeredMapPackUrl === url) return;
+  const protocol = new Protocol();
+  protocol.add(new PMTiles(new BundlePmtilesSource(url)));
+  maplibregl.addProtocol('pmtiles', protocol.tile);
+  registeredMapPackUrl = url;
+}
+
+function topoStyle(url: string): StyleSpecification {
+  const empty = collection([]);
+  return {
+    version: 8,
+    sources: {
+      topo: {
+        type: 'raster',
+        url: `pmtiles://${url}`,
+        tileSize: 256,
+        attribution: 'Bundled offline topographic map'
+      },
+      vehicles: { type: 'geojson', data: empty },
+      trails: { type: 'geojson', data: empty },
+      mission: { type: 'geojson', data: empty },
+      home: { type: 'geojson', data: empty },
+      geofences: { type: 'geojson', data: empty },
+      rally: { type: 'geojson', data: empty },
+      events: { type: 'geojson', data: empty }
+    },
+    layers: [
+      { id: 'background', type: 'background', paint: { 'background-color': '#223129' } },
+      { id: 'topo', type: 'raster', source: 'topo', paint: { 'raster-opacity': 1 } },
+      { id: 'geofence-fill', type: 'fill', source: 'geofences', paint: { 'fill-color': ['case', ['==', ['get', 'inclusion'], true], '#66e0a3', '#ff6b7a'], 'fill-opacity': 0.16 } },
+      { id: 'geofence-line', type: 'line', source: 'geofences', paint: { 'line-color': ['case', ['==', ['get', 'inclusion'], true], '#66e0a3', '#ff6b7a'], 'line-width': 2 } },
+      { id: 'mission-line', type: 'line', source: 'mission', filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-color': '#ffc857', 'line-width': 2.4, 'line-opacity': 0.88 } },
+      { id: 'trail-line', type: 'line', source: 'trails', paint: { 'line-color': ['case', ['==', ['get', 'selected'], true], '#66e0a3', '#3aa0ff'], 'line-width': ['case', ['==', ['get', 'selected'], true], 3, 1.8], 'line-opacity': 0.82 } },
+      { id: 'mission-points', type: 'circle', source: 'mission', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 5, 'circle-color': '#0b1116', 'circle-stroke-color': '#ffc857', 'circle-stroke-width': 2 } },
+      { id: 'home-points', type: 'circle', source: 'home', paint: { 'circle-radius': 7, 'circle-color': '#ffc857', 'circle-stroke-color': '#0b1116', 'circle-stroke-width': 2 } },
+      { id: 'rally-points', type: 'circle', source: 'rally', paint: { 'circle-radius': 6, 'circle-color': '#e464ff', 'circle-stroke-color': '#0b1116', 'circle-stroke-width': 2 } },
+      { id: 'event-points', type: 'circle', source: 'events', paint: { 'circle-radius': 5, 'circle-color': ['match', ['get', 'level'], 'warning', '#ffc857', 'error', '#ff6b7a', '#3aa0ff'], 'circle-stroke-color': '#0b1116', 'circle-stroke-width': 1.5 } },
+      { id: 'vehicle-points', type: 'circle', source: 'vehicles', paint: { 'circle-radius': ['case', ['==', ['get', 'selected'], true], 8, 5], 'circle-color': ['case', ['==', ['get', 'selected'], true], '#ffc857', '#3aa0ff'], 'circle-stroke-color': '#0b1116', 'circle-stroke-width': 2 } }
+    ]
+  };
+}
+
+function updateOverlaySources(mapInstance: MapLibreMap, overlays: MapOverlayModel): void {
+  for (const id of overlaySourceIds) {
+    const source = mapInstance.getSource(id) as GeoJSONSource | undefined;
+    source?.setData(overlays[id]);
+  }
+}
+
+function drawProjectedOverlay(mapInstance: MapLibreMap, overlays: MapOverlayModel): void {
+  const canvas = document.querySelector<HTMLCanvasElement>('#map-overlay-canvas');
+  if (!canvas) return;
+  resizeCanvas(canvas);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const rect = canvas.getBoundingClientRect();
+  const ratio = canvas.width / Math.max(1, rect.width);
+  ctx.save();
+  ctx.scale(ratio, ratio);
+  drawPolygonFeatures(ctx, mapInstance, overlays.geofences);
+  drawLineFeatures(ctx, mapInstance, overlays.trails, (feature) => feature.properties.selected === true ? '#66e0a3' : '#3aa0ff', 2.4);
+  drawLineFeatures(ctx, mapInstance, overlays.mission, () => '#ffc857', 2);
+  drawPointFeatures(ctx, mapInstance, overlays.mission, () => '#ffc857', 5, true);
+  drawPointFeatures(ctx, mapInstance, overlays.home, () => '#ffc857', 7, false);
+  drawPointFeatures(ctx, mapInstance, overlays.rally, () => '#e464ff', 6, true);
+  drawPointFeatures(ctx, mapInstance, overlays.events, (feature) => feature.properties.level === 'warning' ? '#ffc857' : feature.properties.level === 'error' ? '#ff6b7a' : '#3aa0ff', 5, false);
+  drawPointFeatures(ctx, mapInstance, overlays.vehicles, (feature) => feature.properties.selected === true ? '#ffc857' : '#3aa0ff', 8, false);
+  if (view.followSelected && latestSnapshot?.vehicles.length) {
+    drawFollowMarker(ctx, rect.width / 2, rect.height / 2);
+  }
+  ctx.restore();
+}
+
+function drawFollowMarker(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.beginPath();
+  ctx.arc(x, y, 9, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffc857';
+  ctx.strokeStyle = '#0b1116';
+  ctx.lineWidth = 2;
+  ctx.fill();
+  ctx.stroke();
+}
+
+function drawPolygonFeatures(ctx: CanvasRenderingContext2D, mapInstance: MapLibreMap, collection: FeatureCollection): void {
+  for (const feature of collection.features) {
+    if (feature.geometry.type !== 'Polygon') continue;
+    const color = feature.properties.inclusion === true ? '#66e0a3' : '#ff6b7a';
     ctx.beginPath();
-    ctx.moveTo(screen.x, screen.y - 7);
-    ctx.lineTo(screen.x + 7, screen.y);
-    ctx.lineTo(screen.x, screen.y + 7);
-    ctx.lineTo(screen.x - 7, screen.y);
+    feature.geometry.coordinates[0]?.forEach((coordinate, index) => {
+      const point = mapInstance.project(coordinate as LngLatLike);
+      if (index === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    });
     ctx.closePath();
+    ctx.fillStyle = colorWithAlpha(color, 0.14);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.8;
+    ctx.fill();
     ctx.stroke();
   }
+}
+
+function drawLineFeatures(ctx: CanvasRenderingContext2D, mapInstance: MapLibreMap, collection: FeatureCollection, color: (feature: Feature) => string, width: number): void {
+  for (const feature of collection.features) {
+    if (feature.geometry.type !== 'LineString') continue;
+    ctx.beginPath();
+    feature.geometry.coordinates.forEach((coordinate, index) => {
+      const point = mapInstance.project(coordinate as LngLatLike);
+      if (index === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    });
+    ctx.strokeStyle = color(feature);
+    ctx.lineWidth = width;
+    ctx.stroke();
+  }
+}
+
+function drawPointFeatures(ctx: CanvasRenderingContext2D, mapInstance: MapLibreMap, collection: FeatureCollection, color: (feature: Feature) => string, radius: number, hollow: boolean): void {
+  for (const feature of collection.features) {
+    if (feature.geometry.type !== 'Point') continue;
+    const point = mapInstance.project(feature.geometry.coordinates as LngLatLike);
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, feature.properties.selected === true ? radius + 1 : radius, 0, Math.PI * 2);
+    ctx.fillStyle = hollow ? '#0b1116' : color(feature);
+    ctx.strokeStyle = color(feature);
+    ctx.lineWidth = 2;
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+function colorWithAlpha(color: string, alpha: number): string {
+  const hex = color.replace('#', '');
+  const r = Number.parseInt(hex.slice(0, 2), 16);
+  const g = Number.parseInt(hex.slice(2, 4), 16);
+  const b = Number.parseInt(hex.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 function redraw(snapshotProvider: () => SessionSnapshotMessage | null): void {
@@ -317,119 +504,67 @@ function resizeCanvas(canvas: HTMLCanvasElement): void {
   }
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D, center: LocalPoint, width: number, height: number): void {
-  const spacingM = gridSpacingM(view.scale);
-  const origin = mapWorldToScreen({ eastM: 0, northM: 0 }, center, view, width, height);
-  ctx.strokeStyle = 'rgba(138, 161, 178, 0.18)';
-  ctx.lineWidth = 1;
-  for (let x = origin.x % (spacingM * view.scale); x <= width; x += spacingM * view.scale) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-  }
-  for (let y = origin.y % (spacingM * view.scale); y <= height; y += spacingM * view.scale) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-    ctx.stroke();
-  }
+function setFollowSelected(followSelected: boolean): void {
+  if (view.followSelected === followSelected) return;
+  view.followSelected = followSelected;
+  mapFollowChanged?.(followSelected);
 }
 
-function drawTrail(ctx: CanvasRenderingContext2D, vehicle: VehicleStateMessage, center: LocalPoint, width: number, height: number, selected: boolean): void {
-  const trail = vehicle.trail ?? [];
-  strokePath(ctx, trail, center, width, height, selected ? '#66e0a3' : 'rgba(58, 160, 255, 0.55)', selected ? 2.5 : 1.4);
-  const point = pointFromVehicle(vehicle);
-  if (!point) return;
-  const screen = mapWorldToScreen(point, center, view, width, height);
-  ctx.fillStyle = selected ? '#ffc857' : '#3aa0ff';
-  ctx.beginPath();
-  ctx.arc(screen.x, screen.y, selected ? 7 : 5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#e7eef3';
-  ctx.font = `${12 * (window.devicePixelRatio || 1)}px Inter, sans-serif`;
-  ctx.fillText(vehicle.id ?? `${vehicle.systemId}:${vehicle.componentId}`, screen.x + 10, screen.y - 10);
+async function getMapPackStatus(): Promise<MapPackStatus> {
+  if (!mapPackStatusPromise) {
+    mapPackStatusPromise = window.altairAnimus?.getMapPackStatus
+      ? window.altairAnimus.getMapPackStatus().then(normalizeMapPackStatus)
+      : probeBrowserMapPackStatus();
+  }
+  return mapPackStatusPromise;
 }
 
-function drawEvents(ctx: CanvasRenderingContext2D, events: readonly SessionEvent[], center: LocalPoint, width: number, height: number): void {
-  for (const event of events.slice().reverse()) {
-    if (!event.position) continue;
-    const screen = mapWorldToScreen(event.position, center, view, width, height);
-    if (screen.x < -10 || screen.x > width + 10 || screen.y < -10 || screen.y > height + 10) continue;
-    ctx.fillStyle = event.level === 'warning' ? '#ffc857' : event.level === 'error' ? '#ff6b7a' : '#3aa0ff';
-    ctx.beginPath();
-    ctx.arc(screen.x, screen.y, 4, 0, Math.PI * 2);
-    ctx.fill();
+async function probeBrowserMapPackStatus(): Promise<MapPackStatus> {
+  try {
+    const response = await fetch(ANIMUS_MAP_PACK_URL, { headers: { Range: 'bytes=0-1' } });
+    if (!response.ok) return createUnavailableMapPackStatus(`HTTP ${response.status}`);
+    return { available: true, url: ANIMUS_MAP_PACK_URL, label: 'Altair bundled topographic map' };
+  } catch (error) {
+    return createUnavailableMapPackStatus(error instanceof Error ? error.message : 'map pack is missing or unreadable');
   }
 }
 
-function drawHome(ctx: CanvasRenderingContext2D, snapshot: SessionSnapshotMessage, center: LocalPoint, width: number, height: number): void {
-  const vehicle = selectedMapVehicle(snapshot);
-  if (!vehicle) return;
-  const home = homePointFromVehicle(vehicle);
-  if (!home) return;
-  const screen = mapWorldToScreen(home, center, view, width, height);
-  ctx.strokeStyle = '#ffc857';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(screen.x - 7, screen.y + 7);
-  ctx.lineTo(screen.x, screen.y - 7);
-  ctx.lineTo(screen.x + 7, screen.y + 7);
-  ctx.closePath();
-  ctx.stroke();
+function updateMapPackStatus(status: MapPackStatus): void {
+  const target = document.querySelector<HTMLElement>('#map-pack-status');
+  if (target) target.textContent = status.available ? status.label : 'Offline map unavailable';
 }
 
-function drawMission(ctx: CanvasRenderingContext2D, snapshot: SessionSnapshotMessage, center: LocalPoint, width: number, height: number): void {
-  const vehicle = selectedMapVehicle(snapshot);
-  if (!vehicle?.mission?.waypoints || vehicle.globalPosition.originLatDeg === null || vehicle.globalPosition.originLonDeg === null) return;
-  const originAlt = vehicle.globalPosition.originAltitudeM ?? 0;
-  const points = vehicle.mission.waypoints.map((waypoint) => geoToLocal(waypoint.latDeg, waypoint.lonDeg, waypoint.altitudeM ?? originAlt, vehicle.globalPosition.originLatDeg!, vehicle.globalPosition.originLonDeg!, originAlt));
-  strokePath(ctx, points, center, width, height, 'rgba(255, 200, 87, 0.78)', 1.8);
-  points.forEach((point, index) => {
-    const seq = vehicle.mission?.waypoints?.[index]?.seq ?? index;
-    const screen = mapWorldToScreen(point, center, view, width, height);
-    ctx.fillStyle = seq === vehicle.mission?.activeSeq ? '#ffc857' : '#0b1116';
-    ctx.strokeStyle = '#ffc857';
-    ctx.beginPath();
-    ctx.arc(screen.x, screen.y, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-  });
+function showMapUnavailable(detail: string): void {
+  document.querySelector<HTMLElement>('#map-unavailable')?.classList.remove('hidden');
+  const target = document.querySelector<HTMLElement>('#map-unavailable-detail');
+  if (target) target.textContent = detail;
 }
 
-function strokePath(ctx: CanvasRenderingContext2D, points: readonly LocalPoint[], center: LocalPoint, width: number, height: number, color: string, lineWidth: number): void {
-  if (points.length === 0) return;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = lineWidth;
-  ctx.beginPath();
-  points.forEach((point, index) => {
-    const screen = mapWorldToScreen(point, center, view, width, height);
-    if (index === 0) ctx.moveTo(screen.x, screen.y);
-    else ctx.lineTo(screen.x, screen.y);
-  });
-  ctx.stroke();
+function hideMapUnavailable(): void {
+  document.querySelector<HTMLElement>('#map-unavailable')?.classList.add('hidden');
 }
 
-function drawScale(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-  const meters = gridSpacingM(view.scale);
-  const pixels = meters * view.scale;
-  ctx.strokeStyle = '#e7eef3';
-  ctx.fillStyle = '#e7eef3';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(22, height - 28);
-  ctx.lineTo(22 + pixels, height - 28);
-  ctx.stroke();
-  ctx.font = `${12 * (window.devicePixelRatio || 1)}px Inter, sans-serif`;
-  ctx.fillText(`${meters} m`, 22, height - 36);
-}
+class BundlePmtilesSource implements Source {
+  private bytes: Promise<ArrayBuffer> | null = null;
 
-function gridSpacingM(scale: number): number {
-  if (scale > 8) return 5;
-  if (scale > 3) return 10;
-  if (scale > 1.2) return 25;
-  if (scale > 0.5) return 50;
-  return 100;
+  constructor(private readonly url: string) {}
+
+  getKey(): string {
+    return this.url;
+  }
+
+  async getBytes(offset: number, length: number): Promise<RangeResponse> {
+    const bytes = await this.read();
+    return { data: bytes.slice(offset, offset + length) };
+  }
+
+  private async read(): Promise<ArrayBuffer> {
+    this.bytes ??= fetch(this.url).then((response) => {
+      if (!response.ok) throw new Error(`offline map unavailable: HTTP ${response.status}`);
+      return response.arrayBuffer();
+    });
+    return this.bytes;
+  }
 }
 
 class TerrainRenderer {
@@ -528,6 +663,68 @@ function missionLocalPoints(vehicle: VehicleStateMessage): LocalPoint[] {
   return vehicle.mission.waypoints.map((waypoint) => geoToLocal(waypoint.latDeg, waypoint.lonDeg, waypoint.altitudeM ?? originAlt, vehicle.globalPosition.originLatDeg!, vehicle.globalPosition.originLonDeg!, originAlt));
 }
 
+function geoContextForVehicle(vehicle: VehicleStateMessage): { originLat: number; originLon: number; originAlt: number; originEastM: number; originNorthM: number } | null {
+  if (vehicle.globalPosition.originLatDeg !== null && vehicle.globalPosition.originLonDeg !== null) {
+    return {
+      originLat: vehicle.globalPosition.originLatDeg,
+      originLon: vehicle.globalPosition.originLonDeg,
+      originAlt: vehicle.globalPosition.originAltitudeM ?? 0,
+      originEastM: 0,
+      originNorthM: 0
+    };
+  }
+  if (
+    vehicle.globalPosition.latDeg !== null &&
+    vehicle.globalPosition.lonDeg !== null &&
+    vehicle.localPosition.eastM !== null &&
+    vehicle.localPosition.northM !== null
+  ) {
+    return {
+      originLat: vehicle.globalPosition.latDeg,
+      originLon: vehicle.globalPosition.lonDeg,
+      originAlt: vehicle.globalPosition.altitudeM ?? 0,
+      originEastM: vehicle.localPosition.eastM,
+      originNorthM: vehicle.localPosition.northM
+    };
+  }
+  if (vehicle.home) {
+    return {
+      originLat: vehicle.home.latDeg,
+      originLon: vehicle.home.lonDeg,
+      originAlt: vehicle.home.altitudeM,
+      originEastM: 0,
+      originNorthM: 0
+    };
+  }
+  if (vehicle.localPosition.eastM !== null && vehicle.localPosition.northM !== null) return fallbackLocalOrigin;
+  return null;
+}
+
+function geoPointFromVehicle(vehicle: VehicleStateMessage, context: ReturnType<typeof geoContextForVehicle>): GeoPoint | null {
+  if (vehicle.globalPosition.latDeg !== null && vehicle.globalPosition.lonDeg !== null) {
+    return { lat: vehicle.globalPosition.latDeg, lon: vehicle.globalPosition.lonDeg, altitudeM: vehicle.globalPosition.altitudeM };
+  }
+  const local = pointFromVehicle(vehicle);
+  return local ? geoPointFromLocal(local, context) : null;
+}
+
+function geoHomePoint(vehicle: VehicleStateMessage, context: ReturnType<typeof geoContextForVehicle>): GeoPoint | null {
+  if (vehicle.home) return { lat: vehicle.home.latDeg, lon: vehicle.home.lonDeg, altitudeM: vehicle.home.altitudeM };
+  return geoPointFromLocal({ eastM: 0, northM: 0, upM: 0 }, context);
+}
+
+function geoPointFromEvent(event: SessionEvent, context: ReturnType<typeof geoContextForVehicle>): GeoPoint | null {
+  return event.position ? geoPointFromLocal(event.position, context) : null;
+}
+
+function geoPointFromLocal(point: LocalPoint, context: ReturnType<typeof geoContextForVehicle>): GeoPoint | null {
+  if (!context) return null;
+  const earthRadiusM = 6378137;
+  const lat = context.originLat + ((point.northM - context.originNorthM) / earthRadiusM) * (180 / Math.PI);
+  const lon = context.originLon + ((point.eastM - context.originEastM) / (earthRadiusM * Math.cos((context.originLat * Math.PI) / 180))) * (180 / Math.PI);
+  return { lat, lon, altitudeM: context.originAlt + (point.upM ?? 0) };
+}
+
 function geoToLocal(latDeg: number, lonDeg: number, altitudeM: number, originLatDeg: number, originLonDeg: number, originAltitudeM: number): LocalPoint {
   const earthRadiusM = 6378137;
   const lat0Rad = (originLatDeg * Math.PI) / 180;
@@ -536,4 +733,37 @@ function geoToLocal(latDeg: number, lonDeg: number, altitudeM: number, originLat
     eastM: (((lonDeg - originLonDeg) * Math.PI) / 180) * earthRadiusM * Math.cos(lat0Rad),
     upM: altitudeM - originAltitudeM
   };
+}
+
+function circlePolygon(center: GeoPoint, radiusM: number): GeoPoint[] {
+  const points: GeoPoint[] = [];
+  const earthRadiusM = 6378137;
+  for (let index = 0; index < 48; index += 1) {
+    const theta = (index / 48) * Math.PI * 2;
+    const northM = Math.cos(theta) * radiusM;
+    const eastM = Math.sin(theta) * radiusM;
+    points.push({
+      lat: center.lat + (northM / earthRadiusM) * (180 / Math.PI),
+      lon: center.lon + (eastM / (earthRadiusM * Math.cos((center.lat * Math.PI) / 180))) * (180 / Math.PI)
+    });
+  }
+  return points;
+}
+
+function pointFeature(point: GeoPoint, properties: Feature['properties']): Feature {
+  return { type: 'Feature', geometry: { type: 'Point', coordinates: [point.lon, point.lat] }, properties };
+}
+
+function lineFeature(points: readonly GeoPoint[], properties: Feature['properties']): Feature {
+  return { type: 'Feature', geometry: { type: 'LineString', coordinates: points.map((point) => [point.lon, point.lat]) }, properties };
+}
+
+function polygonFeature(points: readonly GeoPoint[], properties: Feature['properties']): Feature {
+  const coordinates = points.map((point) => [point.lon, point.lat] as [number, number]);
+  if (coordinates.length > 0) coordinates.push(coordinates[0]);
+  return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [coordinates] }, properties };
+}
+
+function collection(features: Feature[]): FeatureCollection {
+  return { type: 'FeatureCollection', features };
 }

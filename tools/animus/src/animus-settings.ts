@@ -10,6 +10,8 @@ export const ANIMUS_THEMES = ['grid', 'rez', 'snow'] as const;
 export type AnimusThemeName = typeof ANIMUS_THEMES[number];
 export const ANIMUS_CAMERA_MODES = ['chase', 'orbit', 'top', 'side', 'fpv', 'free'] as const;
 export type AnimusCameraMode = typeof ANIMUS_CAMERA_MODES[number];
+export const ANIMUS_MAP_STYLES = ['topo'] as const;
+export type AnimusMapStyle = typeof ANIMUS_MAP_STYLES[number];
 
 export type AnimusUiSettings = {
   schemaVersion: 1;
@@ -17,6 +19,8 @@ export type AnimusUiSettings = {
   theme: AnimusThemeName;
   cameraMode: AnimusCameraMode;
   cameraLock: boolean;
+  mapStyle: AnimusMapStyle;
+  mapFollowSelected: boolean;
   lastDashboardPresetLabel: string | null;
 };
 
@@ -27,6 +31,8 @@ export function createDefaultAnimusSettings(): AnimusUiSettings {
     theme: 'grid',
     cameraMode: 'chase',
     cameraLock: false,
+    mapStyle: 'topo',
+    mapFollowSelected: true,
     lastDashboardPresetLabel: null
   };
 }
@@ -44,6 +50,8 @@ export function normalizeAnimusSettings(value: unknown): AnimusUiSettings {
     theme: isMember(value.theme, ANIMUS_THEMES) ? value.theme : defaults.theme,
     cameraMode: isMember(value.cameraMode, ANIMUS_CAMERA_MODES) ? value.cameraMode : defaults.cameraMode,
     cameraLock: typeof value.cameraLock === 'boolean' ? value.cameraLock : defaults.cameraLock,
+    mapStyle: isMember(value.mapStyle, ANIMUS_MAP_STYLES) ? value.mapStyle : defaults.mapStyle,
+    mapFollowSelected: typeof value.mapFollowSelected === 'boolean' ? value.mapFollowSelected : defaults.mapFollowSelected,
     lastDashboardPresetLabel: typeof value.lastDashboardPresetLabel === 'string' && value.lastDashboardPresetLabel.trim()
       ? value.lastDashboardPresetLabel.trim().slice(0, 80)
       : null

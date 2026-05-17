@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { geofenceLocalPoints, homePointFromVehicle, mapMode, mapScreenToWorld, mapWorldToScreen, rallyLocalPoints, selectedMapVehicle, setMapMode, terrainModelFromVehicle, type MapViewState } from './map-panel';
+import { buildMapOverlayModel, geofenceLocalPoints, homePointFromVehicle, mapMode, mapScreenToWorld, mapWorldToScreen, rallyLocalPoints, selectedMapVehicle, setMapMode, terrainModelFromVehicle, type MapViewState } from './map-panel';
+import { normalizeMapPackStatus } from './map-pack';
 import type { SessionSnapshotMessage, VehicleStateMessage } from './state';
 
-const view: MapViewState = { scale: 2, panEastM: 5, panNorthM: -3, followSelected: true, mode: '2d' };
+const view: MapViewState = { scale: 2, panEastM: 5, panNorthM: -3, followSelected: true, mode: 'topo' };
 
 const vehicle: VehicleStateMessage = {
   type: 'vehicle_state',
@@ -73,10 +74,63 @@ describe('map panel helpers', () => {
   });
 
   it('tracks map mode state transitions', () => {
-    setMapMode('terrain-2d');
-    expect(mapMode()).toBe('terrain-2d');
     setMapMode('terrain-3d');
     expect(mapMode()).toBe('terrain-3d');
-    setMapMode('2d');
+    setMapMode('topo');
+    expect(mapMode()).toBe('topo');
+  });
+
+  it('normalizes map-pack status from the preload boundary', () => {
+    expect(normalizeMapPackStatus({ available: true, url: './maps/altair-topo.pmtiles', label: 'Topo' })).toEqual({
+      available: true,
+      url: './maps/altair-topo.pmtiles',
+      label: 'Topo'
+    });
+    expect(normalizeMapPackStatus({ available: false, error: 'missing' }).available).toBe(false);
+  });
+
+  it('converts session overlays to geographic GeoJSON', () => {
+    const snapshot: SessionSnapshotMessage = {
+      type: 'session_snapshot',
+      vehicles: [{
+        ...vehicle,
+        mission: { activeSeq: 1, waypoints: [{ seq: 0, latDeg: 37, lonDeg: -122, altitudeM: 100 }, { seq: 1, latDeg: 37.0001, lonDeg: -122, altitudeM: 110 }] },
+        home: { latDeg: 37, lonDeg: -122, altitudeM: 90 },
+        rallyPoints: [{ id: 'r1', latDeg: 37.0002, lonDeg: -122, altitudeM: 120 }]
+      }],
+      selectedVehicleId: '1:1',
+      messages: [],
+      events: [{ id: 'e1', timestampS: 1, vehicleId: '1:1', level: 'warning', kind: 'marker', label: 'Gate', position: { eastM: 0, northM: 10, upM: 0 } }],
+      packetCount: 0,
+      decodedCount: 0
+    };
+    const model = buildMapOverlayModel(snapshot);
+    expect(model.center?.lat).toBe(37);
+    expect(model.vehicles.features).toHaveLength(1);
+    expect(model.trails.features).toHaveLength(0);
+    expect(model.mission.features.length).toBeGreaterThan(1);
+    expect(model.home.features).toHaveLength(1);
+    expect(model.rally.features).toHaveLength(1);
+    expect(model.events.features).toHaveLength(1);
+  });
+
+  it('falls back to local overlay geometry when global coordinates are missing', () => {
+    const localOnly = {
+      ...vehicle,
+      globalPosition: { latDeg: null, lonDeg: null, altitudeM: null, relativeAltitudeM: null, originLatDeg: null, originLonDeg: null, originAltitudeM: null },
+      home: undefined,
+      trail: [{ eastM: 12, northM: 18, upM: 10, timestampS: 1 }, { eastM: 22, northM: 28, upM: 10, timestampS: 2 }]
+    };
+    const model = buildMapOverlayModel({
+      type: 'session_snapshot',
+      vehicles: [localOnly],
+      selectedVehicleId: '1:1',
+      messages: [],
+      events: [],
+      packetCount: 0,
+      decodedCount: 0
+    });
+    expect(model.center?.lat).toBeGreaterThan(37);
+    expect(model.trails.features).toHaveLength(1);
   });
 });

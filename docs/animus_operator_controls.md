@@ -64,9 +64,12 @@ Vehicle meshes are chosen from heartbeat vehicle type: fixed-wing, multirotor, V
 - Mouse wheel zooms around the cursor.
 - `Focus` recenters on the selected vehicle and resumes selected-vehicle follow.
 - `+` and `-` adjust zoom.
-- `2D`, `Terrain 2D`, and `Terrain 3D` switch between the default local canvas map, a shaded terrain-report overlay, and an offline Three.js terrain surface.
+- `Topo` shows the bundled offline topographic PMTiles basemap through MapLibre GL JS.
+- `Terrain 3D` switches to the telemetry-derived Three.js terrain surface.
 
-The map renders selected and fleet trails, event markers, an origin/home marker when available, mission waypoint paths, terrain reports, geofence polygons/circles, and rally points when decoded records are present. Terrain modes use decoded `TERRAIN_REPORT`, home/origin altitude, selected vehicle position, mission, geofence, and rally data only; they do not use online tiles, network map providers, API keys, or external terrain services. Terrain check requests are protocol-backed and appear in the operation history. Creating or editing geofences, rally points, or terrain tiles remains out of scope unless a decoded MAVLink path is added for that operation.
+The default map renders a local `tools/animus/public/maps/altair-topo.pmtiles` map pack copied into `dist/maps/` by Vite. It does not use online tiles, network map providers, API keys, or telemetry terrain requests for the basemap. If the bundled map pack is missing or unreadable, Animus shows an explicit offline-map-unavailable state instead of falling back to the old grid.
+
+Vehicle telemetry is used only for overlays: selected and fleet trails, event markers, an origin/home marker when available, mission waypoint paths, geofence polygons/circles, and rally points when decoded records are present. Terrain 3D remains a telemetry terrain visualization based on decoded `TERRAIN_REPORT`, home/origin altitude, selected vehicle position, mission, geofence, and rally data. Terrain check requests are protocol-backed and appear in the operation history. Creating or editing geofences, rally points, or terrain tiles remains out of scope unless a decoded MAVLink path is added for that operation.
 
 ## Dashboard View
 
@@ -75,6 +78,7 @@ The map renders selected and fleet trails, event markers, an origin/home marker 
 - `Import` and `Export` share dashboard profiles as the same JSON layout shape persisted in `dashboard-layout.json`: `schemaVersion: 1` plus a `widgets` array. Import replaces the active layout after normalizing invalid, duplicate, or unsupported widget entries.
 - Threshold customization is intentionally out of scope.
 - The Electron app persists the layout as JSON at `path.join(app.getPath('userData'), 'dashboard-layout.json')`. Missing or invalid settings fall back to the default layout without overwriting the file until the operator changes or resets the layout.
+- Application settings include the default offline map style (`mapStyle: "topo"`) and whether the map should follow the selected vehicle (`mapFollowSelected`).
 
 Status widgets read the same session snapshot used by Flight, Map, Inspector, and Setup. The guarded control widget uses the existing command authority, confirmation, dispatch, audit, retry, and guard evaluation path. Commands are disabled when the selected vehicle reports read-only authority, stale or non-live link state, unsupported command capability, or a decoded blocked-command reason.
 
