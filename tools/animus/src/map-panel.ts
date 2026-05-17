@@ -283,6 +283,11 @@ export function drawMap(snapshot: SessionSnapshotMessage): void {
   void drawTopoMap(snapshot);
 }
 
+export function refreshMapLayout(): void {
+  map?.resize();
+  if (latestSnapshot) drawMap(latestSnapshot);
+}
+
 function drawTerrain3d(canvas: HTMLCanvasElement, snapshot: SessionSnapshotMessage): void {
   resizeCanvas(canvas);
   terrain3d ??= new TerrainRenderer(canvas);

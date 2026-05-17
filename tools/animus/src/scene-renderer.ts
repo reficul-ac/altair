@@ -289,7 +289,7 @@ export class SceneRenderer {
     const deltaS = Math.min(0.05, (nowMs - this.lastAnimationMs) / 1000);
     this.lastFrameMs = nowMs - this.lastAnimationMs;
     this.lastAnimationMs = nowMs;
-    this.resize();
+    this.resizeNow();
     this.updateCamera(deltaS);
     this.attitudeRings.visible = !document.querySelector<HTMLElement>('#hud-tactical')?.classList.contains('hidden');
     drawRadar(this.radarCanvas, this.shell);
@@ -299,8 +299,9 @@ export class SceneRenderer {
     requestAnimationFrame((next) => this.animate(next));
   }
 
-  private resize(): void {
+  resizeNow(): void {
     const { clientWidth, clientHeight } = this.canvas.parentElement!;
+    if (clientWidth <= 0 || clientHeight <= 0) return;
     this.renderer.setSize(clientWidth, clientHeight, false);
     this.camera.aspect = clientWidth / clientHeight;
     this.camera.updateProjectionMatrix();

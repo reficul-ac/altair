@@ -1,4 +1,4 @@
-import { bindMapControls, drawMap, setMapFollowSelected } from './map-panel';
+import { bindMapControls, drawMap, refreshMapLayout, setMapFollowSelected } from './map-panel';
 import { clearInspectorLog, recordInspectorSnapshot, updateInspector } from './inspector-ui';
 import { setHudMode, updateHud, updateStatusStrip, updateVehicleList, type HudMode } from './hud-ui';
 import { SceneRenderer, nextCameraMode, type CameraMode, type ThemeName } from './scene-renderer';
@@ -85,6 +85,7 @@ type AnimusApi = {
   cameraCapture?: (vehicleId?: string) => Promise<ParameterEditResult>;
   cameraRecord?: (recording: boolean, vehicleId?: string) => Promise<ParameterEditResult>;
   cameraSetSetting?: (setting: 'zoom' | 'focus', value: number, vehicleId?: string) => Promise<ParameterEditResult>;
+  onLayoutRefresh?: (callback: (message: { reason: string; width: number; height: number }) => void) => () => void;
   onReplayState?: (callback: (message: ReplayTimelineMessage) => void) => () => void;
   openReplay?: () => Promise<ReplayTimelineMessage>;
   importLog?: () => Promise<ReplayTimelineMessage>;
@@ -106,6 +107,7 @@ declare global {
   interface Window {
     altairAnimus?: AnimusApi;
     __animusSetWorkspace?: (name: string) => void;
+    __animusRefreshLayout?: (reason?: string) => void;
   }
 }
 
@@ -189,12 +191,32 @@ function updateConfig(config: AnimusConfig): void {
 function setWorkspace(name: string, persist = true): void {
   document.querySelectorAll<HTMLButtonElement>('[data-workspace]').forEach((button) => button.classList.toggle('active', button.dataset.workspace === name));
   document.querySelectorAll<HTMLElement>('.workspace-panel').forEach((panel) => panel.classList.toggle('workspace-visible', panel.dataset.panel === name || panel.dataset.panel === 'session'));
+  refreshLayout('workspace');
   if (state.snapshot) drawMap(state.snapshot);
   else if (state.selected) drawMap(mapSnapshotForVehicle(state.selected));
   if (persist && isWorkspaceName(name)) saveUiSettings({ defaultWorkspace: name });
 }
 
 window.__animusSetWorkspace = setWorkspace;
+window.__animusRefreshLayout = refreshLayout;
+
+function refreshLayout(_reason = 'manual'): void {
+  scene.resizeNow();
+  refreshMapLayout();
+}
+
+function scheduleLayoutRefresh(reason: string): void {
+  refreshLayout(reason);
+  window.requestAnimationFrame(() => refreshLayout(reason));
+  window.setTimeout(() => refreshLayout(reason), 120);
+}
+
+window.addEventListener('resize', () => scheduleLayoutRefresh('window-resize'));
+const layoutObserver = new ResizeObserver(() => scheduleLayoutRefresh('resize-observer'));
+layoutObserver.observe(shell);
+const viewport = document.querySelector<HTMLElement>('.viewport');
+if (viewport) layoutObserver.observe(viewport);
+window.altairAnimus?.onLayoutRefresh?.((message) => scheduleLayoutRefresh(message.reason));
 
 function mapSnapshotForVehicle(message: VehicleStateMessage): SessionSnapshotMessage {
   if (!state.snapshot) {

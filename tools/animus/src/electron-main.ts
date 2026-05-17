@@ -26,6 +26,13 @@ import type { AnimusDashboardLayout } from './dashboard-types.js';
 import type { CommandAuditEntry, CommandDispatchResult, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MockLinkState } from './state.js';
 import type { OperationAuditEntry, ParameterEditRequest } from './state.js';
 
+type LayoutRefreshMessage = {
+  reason: string;
+  width: number;
+  height: number;
+};
+type WindowMessage = VehicleStatePayload | MavlinkServiceConfig | SessionSnapshotPayload | ReplayPlaybackState | LayoutRefreshMessage;
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, '..');
 const animusSessionContext = {
@@ -79,14 +86,14 @@ const animusSettingsFile = animusSettingsPath(app.getPath('userData'));
 let recentCommandAudit: CommandAuditEntry[] = [];
 let mockLink: MockLinkState | null = null;
 
-function sendToWindows(channel: string, payload: VehicleStatePayload | MavlinkServiceConfig | SessionSnapshotPayload | ReplayPlaybackState): void {
+function sendToWindows(channel: string, payload: WindowMessage): void {
   const message = channel === 'session-snapshot' && isSessionSnapshot(payload) ? withRecentCommandAudit(payload) : payload;
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send(channel, message);
   }
 }
 
-function isSessionSnapshot(payload: VehicleStatePayload | MavlinkServiceConfig | SessionSnapshotPayload | ReplayPlaybackState): payload is SessionSnapshotPayload {
+function isSessionSnapshot(payload: WindowMessage): payload is SessionSnapshotPayload {
   return typeof payload === 'object' && payload !== null && 'type' in payload && payload.type === 'session_snapshot';
 }
 
@@ -151,6 +158,17 @@ function createWindow(): BrowserWindow {
       nodeIntegration: false
     }
   });
+  window.webContents.setZoomFactor(1);
+
+  const notifyLayoutRefresh = (reason: string): void => {
+    window.webContents.setZoomFactor(1);
+    setTimeout(() => {
+      if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+      const [width, height] = window.getContentSize();
+      window.webContents.setZoomFactor(1);
+      window.webContents.send('animus:layout-refresh', { reason, width, height });
+    }, 80);
+  };
 
   window.webContents.on('preload-error', (_event, preloadPath, error) => {
     console.error(`Electron preload failed (${preloadPath}):`, error);
@@ -164,6 +182,12 @@ function createWindow(): BrowserWindow {
   window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     console.error(`Electron renderer failed to load ${validatedURL}: ${errorCode} ${errorDescription}`);
   });
+  window.webContents.on('did-finish-load', () => notifyLayoutRefresh('did-finish-load'));
+  window.on('enter-full-screen', () => notifyLayoutRefresh('enter-full-screen'));
+  window.on('leave-full-screen', () => notifyLayoutRefresh('leave-full-screen'));
+  window.on('resize', () => notifyLayoutRefresh('resize'));
+  window.on('maximize', () => notifyLayoutRefresh('maximize'));
+  window.on('restore', () => notifyLayoutRefresh('restore'));
 
   if (process.env.VITE_DEV_SERVER_URL) {
     void window.loadURL(process.env.VITE_DEV_SERVER_URL);

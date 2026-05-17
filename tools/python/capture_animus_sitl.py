@@ -59,6 +59,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="write structured Electron capture diagnostics to capture.log",
     )
+    parser.add_argument(
+        "--fullscreen",
+        action="store_true",
+        help="capture after Electron enters true fullscreen and assert fullscreen layout diagnostics",
+    )
     args = parser.parse_args(argv)
     if args.duration <= 0:
         parser.error("--duration must be positive")
@@ -328,6 +333,8 @@ def run(args: argparse.Namespace) -> int:
         )
         if args.debug:
             capture_command.append("--debug")
+        if args.fullscreen:
+            capture_command.append("--fullscreen")
         capture_log = out_dir / "capture.log"
         manifest["logs"]["capture"] = str(capture_log)
         returncode = run_logged_with_timeout(

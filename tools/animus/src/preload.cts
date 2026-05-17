@@ -41,6 +41,7 @@ export type AltairAnimusApi = {
   cameraRecord: (recording: boolean, vehicleId?: string) => Promise<ParameterEditResult>;
   cameraSetSetting: (setting: 'zoom' | 'focus', value: number, vehicleId?: string) => Promise<ParameterEditResult>;
   onReplayState: (callback: (message: ReplayTimelineMessage) => void) => () => void;
+  onLayoutRefresh: (callback: (message: { reason: string; width: number; height: number }) => void) => () => void;
   openReplay: () => Promise<ReplayTimelineMessage>;
   importLog: () => Promise<ReplayTimelineMessage>;
   exportSessionLog: () => Promise<{ saved: boolean; path?: string }>;
@@ -77,6 +78,11 @@ const api: AltairAnimusApi = {
     const listener = (_event: Electron.IpcRendererEvent, message: ReplayTimelineMessage): void => callback(message);
     ipcRenderer.on('replay-state', listener);
     return () => ipcRenderer.off('replay-state', listener);
+  },
+  onLayoutRefresh(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, message: { reason: string; width: number; height: number }): void => callback(message);
+    ipcRenderer.on('animus:layout-refresh', listener);
+    return () => ipcRenderer.off('animus:layout-refresh', listener);
   },
   getConfig() {
     return ipcRenderer.invoke('mavlink:get-config');

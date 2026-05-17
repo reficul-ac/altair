@@ -10,6 +10,7 @@ type CaptureArgs = {
   waitTimeoutMs: number;
   settleMs: number;
   captureTimeoutMs: number;
+  fullscreen: boolean;
   debug: boolean;
 };
 
@@ -18,6 +19,7 @@ type CaptureResult = {
   viewport: string;
   path: string;
   liveTelemetry: boolean;
+  diagnostics: Record<string, unknown>;
 };
 
 type DebugLog = ((phase: string, event: string, fields?: Record<string, unknown>) => void) & {
@@ -33,6 +35,7 @@ function parseArgs(argv: string[]): CaptureArgs {
     waitTimeoutMs: 15000,
     settleMs: 800,
     captureTimeoutMs: 60000,
+    fullscreen: false,
     debug: false
   };
 
@@ -52,6 +55,8 @@ function parseArgs(argv: string[]): CaptureArgs {
       args.settleMs = Number(argv[++index] ?? args.settleMs);
     } else if (arg === '--capture-timeout-ms') {
       args.captureTimeoutMs = Number(argv[++index] ?? args.captureTimeoutMs);
+    } else if (arg === '--fullscreen') {
+      args.fullscreen = true;
     } else if (arg === '--debug') {
       args.debug = true;
     } else if (arg === '--') {
@@ -92,6 +97,20 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function waitForWindowEvent(window: BrowserWindow, eventName: string, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      window.off(eventName as never, onEvent);
+      reject(new Error(`timed out waiting for ${eventName}`));
+    }, timeoutMs);
+    const onEvent = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    window.once(eventName as never, onEvent);
+  });
+}
+
 function createDebugLog(enabled: boolean): DebugLog {
   const log = (phase: string, event: string, fields: Record<string, unknown> = {}) => {
     if (!enabled) return;
@@ -113,9 +132,26 @@ async function rendererSnapshot(window: BrowserWindow): Promise<Record<string, u
       (() => {
         const status = document.querySelector('#status');
         const vehicle = document.querySelector('#vehicle-id');
+        const rectOf = (selector) => {
+          const node = document.querySelector(selector);
+          if (!node) return null;
+          const rect = node.getBoundingClientRect();
+          return {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            left: rect.left
+          };
+        };
+        const scene = document.querySelector('#scene');
         const activeWorkspace = document.querySelector('[data-workspace].active')?.dataset.workspace || null;
         const visiblePanel = document.querySelector('.workspace-visible')?.getAttribute('data-panel') || null;
         const canvases = [...document.querySelectorAll('canvas')].map((canvas) => ({
+          id: canvas.id,
           width: canvas.width,
           height: canvas.height,
           clientWidth: canvas.clientWidth,
@@ -126,9 +162,28 @@ async function rendererSnapshot(window: BrowserWindow): Promise<Record<string, u
           !/^sys\\s+--$/.test((vehicle?.textContent || '').trim());
         return {
           url: window.location.href,
+          innerWidth: window.innerWidth,
+          innerHeight: window.innerHeight,
+          devicePixelRatio: window.devicePixelRatio,
+          visualViewport: window.visualViewport ? {
+            width: window.visualViewport.width,
+            height: window.visualViewport.height,
+            scale: window.visualViewport.scale,
+            offsetLeft: window.visualViewport.offsetLeft,
+            offsetTop: window.visualViewport.offsetTop
+          } : null,
           readyState: document.readyState,
           title: document.title,
           shell: Boolean(document.querySelector('.shell')),
+          shellRect: rectOf('.shell'),
+          viewportRect: rectOf('.viewport'),
+          sceneRect: rectOf('#scene'),
+          sceneClient: scene ? {
+            width: scene.clientWidth,
+            height: scene.clientHeight,
+            canvasWidth: scene.width,
+            canvasHeight: scene.height
+          } : null,
           statusText: (status?.textContent || '').trim(),
           statusClasses: status ? [...status.classList] : [],
           vehicleId: (vehicle?.textContent || '').trim(),
@@ -149,9 +204,37 @@ async function rendererSnapshot(window: BrowserWindow): Promise<Record<string, u
     ...renderer,
     isLoading: window.webContents.isLoading(),
     isCrashed: window.webContents.isCrashed(),
+    contentSize: window.getContentSize(),
+    webContentsSize: window.getContentSize(),
+    isFullScreen: window.isFullScreen(),
     focused: window.isFocused(),
     visible: window.isVisible()
   };
+}
+
+function nestedNumber(value: Record<string, unknown>, pathParts: string[]): number | null {
+  let current: unknown = value;
+  for (const key of pathParts) {
+    if (typeof current !== 'object' || current === null || !(key in current)) return null;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === 'number' && Number.isFinite(current) ? current : null;
+}
+
+function assertFullscreenLayout(snapshot: Record<string, unknown>): void {
+  const innerWidth = nestedNumber(snapshot, ['innerWidth']);
+  const shellWidth = nestedNumber(snapshot, ['shellRect', 'width']);
+  const sceneWidth = nestedNumber(snapshot, ['sceneClient', 'width']);
+  const sceneHeight = nestedNumber(snapshot, ['sceneClient', 'height']);
+  if (innerWidth === null || shellWidth === null || sceneWidth === null || sceneHeight === null) {
+    throw new Error(`fullscreen layout diagnostics were incomplete: ${JSON.stringify(snapshot)}`);
+  }
+  if (Math.abs(shellWidth - innerWidth) > 4) {
+    throw new Error(`fullscreen shell width ${shellWidth} did not match window innerWidth ${innerWidth}`);
+  }
+  if (sceneWidth <= 900 || sceneHeight <= 820) {
+    throw new Error(`fullscreen scene stayed near startup size: ${sceneWidth}x${sceneHeight}`);
+  }
 }
 
 function startDebugSnapshots(
@@ -309,6 +392,7 @@ async function runCapture(args: CaptureArgs): Promise<void> {
       backgroundThrottling: false
     }
   });
+  window.webContents.setZoomFactor(1);
   window.showInactive();
   debugLog('browser-window', 'created', {
     width: args.viewports[0]?.width ?? 1440,
@@ -338,27 +422,43 @@ async function runCapture(args: CaptureArgs): Promise<void> {
   for (const viewport of args.viewports) {
     currentPhase = 'viewport-resize';
     debugLog('viewport-resize', 'start', viewport);
-    window.setSize(viewport.width, viewport.height);
+    window.webContents.setZoomFactor(1);
+    window.setContentSize(viewport.width, viewport.height);
     await sleep(args.settleMs);
     debugLog('viewport-resize', 'end', viewport);
+    if (args.fullscreen && !window.isFullScreen()) {
+      currentPhase = 'enter-full-screen';
+      debugLog('enter-full-screen', 'start', viewport);
+      const entered = waitForWindowEvent(window, 'enter-full-screen', Math.max(3000, args.settleMs * 4));
+      window.setFullScreen(true);
+      await entered;
+      await sleep(args.settleMs);
+      window.webContents.setZoomFactor(1);
+      debugLog('enter-full-screen', 'end', await rendererSnapshot(window));
+    }
     for (const workspace of args.workspaces) {
       currentPhase = `workspace-selection:${workspace}`;
       await selectWorkspace(window, workspace, debugLog);
+      await window.webContents.executeJavaScript('window.__animusRefreshLayout?.("electron-capture");');
       window.webContents.sendInputEvent({ type: 'mouseMove', x: Math.max(0, viewport.width - 20), y: Math.max(0, viewport.height - 20) });
       await sleep(args.settleMs);
-      const fileName = `${viewport.label}-${workspace}.png`;
+      const captureLabel = args.fullscreen ? `fullscreen-${viewport.label}` : viewport.label;
+      const fileName = `${captureLabel}-${workspace}.png`;
       const filePath = path.join(args.outDir, fileName);
-      currentPhase = `capturePage:${workspace}:${viewport.label}`;
-      debugLog('capturePage', 'start', { workspace, viewport: viewport.label, path: filePath });
+      currentPhase = `capturePage:${workspace}:${captureLabel}`;
+      debugLog('capturePage', 'start', { workspace, viewport: captureLabel, path: filePath });
       const snapshots = startDebugSnapshots(window, debugLog, 'capturePage');
+      let diagnostics: Record<string, unknown> = {};
       try {
+        diagnostics = await rendererSnapshot(window);
+        if (args.fullscreen) assertFullscreenLayout(diagnostics);
         const image = await window.webContents.capturePage();
         await writeFile(filePath, image.toPNG());
-        debugLog('capturePage', 'end', { workspace, viewport: viewport.label, path: filePath });
+        debugLog('capturePage', 'end', { workspace, viewport: captureLabel, path: filePath, diagnostics });
       } catch (error) {
         debugLog('capturePage', 'failure', {
           workspace,
-          viewport: viewport.label,
+          viewport: captureLabel,
           path: filePath,
           error: error instanceof Error ? error.message : String(error)
         });
@@ -366,8 +466,12 @@ async function runCapture(args: CaptureArgs): Promise<void> {
       } finally {
         clearInterval(snapshots);
       }
-      captures.push({ workspace, viewport: viewport.label, path: filePath, liveTelemetry });
+      captures.push({ workspace, viewport: captureLabel, path: filePath, liveTelemetry, diagnostics });
       console.log(`capture=${filePath}`);
+    }
+    if (args.fullscreen && window.isFullScreen()) {
+      window.setFullScreen(false);
+      await sleep(args.settleMs);
     }
   }
 
