@@ -20,7 +20,12 @@ def load_capture_module(repo_root):
 
 
 def png_chunk(kind, payload):
-    return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+    return (
+        struct.pack(">I", len(payload))
+        + kind
+        + payload
+        + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+    )
 
 
 def write_rgb_png(path, width, height, pixel_fn):
@@ -83,11 +88,17 @@ def main():
 
         blank = module.inspect_png(blank_path, "map-2d", expected_size=(128, 82))
         status |= expect(not blank["ok"], "expected blank fixture to fail")
-        status |= expect(any("blank" in failure for failure in blank["failures"]), f"missing blank failure: {blank}")
+        status |= expect(
+            any("blank" in failure for failure in blank["failures"]),
+            f"missing blank failure: {blank}",
+        )
 
         wrong_size = module.inspect_png(small_path, "setup", expected_size=(128, 82))
         status |= expect(not wrong_size["ok"], "expected wrong dimensions to fail")
-        status |= expect(any("unexpected dimensions" in failure for failure in wrong_size["failures"]), wrong_size)
+        status |= expect(
+            any("unexpected dimensions" in failure for failure in wrong_size["failures"]),
+            wrong_size,
+        )
 
         captures = [
             {"workspace": "map-2d", "screenshot": str(rich_path), "png": {"ok": True}},
@@ -95,10 +106,18 @@ def main():
             {"workspace": "setup", "screenshot": str(alternate_path), "png": {"ok": True}},
         ]
         comparisons = module.compare_workspace_screenshots(captures)
-        identical = [item for item in comparisons if item["workspaces"] == ["map-2d", "terrain-3d"]][0]
+        identical = [
+            item for item in comparisons if item["workspaces"] == ["map-2d", "terrain-3d"]
+        ][0]
         different = [item for item in comparisons if item["workspaces"] == ["map-2d", "setup"]][0]
-        status |= expect(identical["status"] == "fail", f"expected identical workspace screenshots to fail: {identical}")
-        status |= expect(different["status"] == "pass", f"expected different workspace screenshots to pass: {different}")
+        status |= expect(
+            identical["status"] == "fail",
+            f"expected identical workspace screenshots to fail: {identical}",
+        )
+        status |= expect(
+            different["status"] == "pass",
+            f"expected different workspace screenshots to pass: {different}",
+        )
 
     return 1 if status else 0
 

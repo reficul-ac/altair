@@ -3,7 +3,6 @@
 import os
 import pty
 import selectors
-import shutil
 import socket
 import subprocess
 import sys
@@ -151,12 +150,6 @@ def require_lifecycle_prereqs(repo_root):
     if not (repo_root / "build" / "vehicle" / "sitl_runner").exists():
         print("skipping lifecycle checks: build/vehicle/sitl_runner is missing", file=sys.stderr)
         return False
-    if not (repo_root / "tools" / "animus" / "node_modules").exists():
-        print("skipping lifecycle checks: tools/animus/node_modules is missing", file=sys.stderr)
-        return False
-    if shutil.which("npm") is None:
-        print("skipping lifecycle checks: npm is missing", file=sys.stderr)
-        return False
     return True
 
 
@@ -236,90 +229,46 @@ def run_lifecycle_checks(repo_root):
         ):
             return 1
 
-        browser_output = tmp_path / "browser.csv"
-        browser_bridge_port = 17551
-        browser_source_port = 17600
-        browser_ws_port = 18765
-        browser_viewer_port = 15173
-        browser = [
+        session_output = tmp_path / "session.csv"
+        session_bridge_port = 27551
+        session_source_port = 27600
+        session_ws_port = 28765
+        session = [
             sys.executable,
             str(repo_root / "tools/python/run_sitl_session.py"),
             "--no-qgc",
             "--bridge-port",
-            str(browser_bridge_port),
+            str(session_bridge_port),
             "--mavlink-port-base",
-            str(browser_source_port),
+            str(session_source_port),
             "--ws-port",
-            str(browser_ws_port),
-            "--viewer-port",
-            str(browser_viewer_port),
+            str(session_ws_port),
             "--duration",
             "30",
             "--output",
-            str(browser_output),
+            str(session_output),
         ]
         code, output = run_pty_interrupt(
-            browser, repo_root, ready_text="== Run sitl ==", post_ready_delay=0.5, timeout=25.0
+            session, repo_root, ready_text="== Run sitl ==", post_ready_delay=0.5, timeout=25.0
         )
-        if not assert_interrupt_result("browser run_sitl_session.py", code, output):
+        if not assert_interrupt_result("run_sitl_session.py", code, output):
             return 1
         if not assert_no_processes(
-            "browser run_sitl_session.py",
+            "run_sitl_session.py",
             [
-                str(browser_output),
-                str(browser_bridge_port),
-                str(browser_source_port),
-                str(browser_ws_port),
-                str(browser_viewer_port),
+                str(session_output),
+                str(session_bridge_port),
+                str(session_source_port),
+                str(session_ws_port),
             ],
         ):
             return 1
         for port, kind in (
-            (browser_bridge_port, "udp"),
-            (browser_ws_port, "tcp"),
-            (browser_viewer_port, "tcp"),
+            (session_bridge_port, "udp"),
+            (session_ws_port, "tcp"),
         ):
             port_is_free("127.0.0.1", port, kind)
-        if not run_short_rerun([*browser, "--duration", "0.05", "--no-viewer"], repo_root):
-            return 1
-
-        app_output = tmp_path / "app.csv"
-        app_bridge_port = 17552
-        app_source_port = 17610
-        app = [
-            sys.executable,
-            str(repo_root / "tools/python/run_sitl_session.py"),
-            "--app",
-            "--no-qgc",
-            "--bridge-port",
-            str(app_bridge_port),
-            "--mavlink-port-base",
-            str(app_source_port),
-            "--duration",
-            "30",
-            "--output",
-            str(app_output),
-        ]
-        if "DISPLAY" not in os.environ and "WAYLAND_DISPLAY" not in os.environ:
-            if shutil.which("Xvfb") is None:
-                print("skipping app lifecycle check: no display server or Xvfb", file=sys.stderr)
-                return 0
-        code, output = run_pty_interrupt(
-            app,
-            repo_root,
-            ready_text="== Run sitl ==",
-            post_ready_delay=0.5,
-            timeout=60.0,
-        )
-        if not assert_interrupt_result("app run_sitl_session.py", code, output):
-            return 1
-        if not assert_no_processes(
-            "app run_sitl_session.py", [str(app_output), str(app_bridge_port), str(app_source_port)]
-        ):
-            return 1
-        port_is_free("127.0.0.1", app_bridge_port, "udp")
-        rerun_app = [*app[:-4], "--duration", "0.05", "--output", str(tmp_path / "app-rerun.csv")]
-        if not run_short_rerun(rerun_app, repo_root):
+        if not run_short_rerun([*session, "--duration", "0.05"], repo_root):
             return 1
 
     return 0
@@ -342,8 +291,8 @@ def main():
     if "--forward 127.0.0.1:14550" not in result.stdout:
         print("session did not forward to QGC by default", file=sys.stderr)
         return 1
-    if "npm run dev -- --host 127.0.0.1 --port 5173" not in result.stdout:
-        print("session did not start Animus by default", file=sys.stderr)
+    if "--ws-host 127.0.0.1 --ws-port 8765" not in result.stdout:
+        print("session did not configure the Animus WebSocket endpoint", file=sys.stderr)
         return 1
     if "--mavlink-port 14551" not in result.stdout or "--realtime" not in result.stdout:
         print("session did not route realtime SITL through the bridge", file=sys.stderr)
@@ -361,32 +310,11 @@ def main():
         )
         return 1
 
-    result = run_session(repo_root, "--app", "--duration", "0.2")
+    result = run_session(repo_root, "--no-qgc")
     if result.returncode != 0:
         print(result.stdout, end="")
         print(result.stderr, end="", file=sys.stderr)
         return result.returncode
-    if (
-        "app build: (cd" not in result.stdout
-        or "npm run build" not in result.stdout
-        or "app: (cd" not in result.stdout
-        or "tools/animus/node_modules/.bin/electron --ignore-gpu-blocklist --enable-unsafe-swiftshader --use-angle=swiftshader . --listen-host 127.0.0.1 --listen-port 14551"
-        not in result.stdout
-    ):
-        print("session did not start the Electron Animus with --app", file=sys.stderr)
-        return 1
-    if "mavlink_live_bridge.py" in result.stdout or "npm run dev" in result.stdout:
-        print("session started the browser bridge path despite --app", file=sys.stderr)
-        return 1
-
-    result = run_session(repo_root, "--no-viewer", "--no-qgc")
-    if result.returncode != 0:
-        print(result.stdout, end="")
-        print(result.stderr, end="", file=sys.stderr)
-        return result.returncode
-    if "viewer:" in result.stdout:
-        print("session started the viewer despite --no-viewer", file=sys.stderr)
-        return 1
     if "--no-forward" not in result.stdout:
         print("session did not disable bridge forwarding with --no-qgc", file=sys.stderr)
         return 1
@@ -399,7 +327,6 @@ def main():
         "21",
         "--mavlink-port-base",
         "14700",
-        "--no-viewer",
         "--duration",
         "0.2",
         "--output",

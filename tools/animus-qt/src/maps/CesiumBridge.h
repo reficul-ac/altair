@@ -3,27 +3,29 @@
 #include <QObject>
 #include <QVariantMap>
 
-namespace animus {
+namespace animus
+{
 
 class VehicleModel;
 
-class CesiumBridge final : public QObject {
+class CesiumBridge final : public QObject
+{
     Q_OBJECT
     Q_PROPERTY(QVariantMap latestVehicle READ latestVehicle NOTIFY latestVehicleChanged)
 
-public:
+  public:
     explicit CesiumBridge(VehicleModel *vehicle, QObject *parent = nullptr);
 
     QVariantMap latestVehicle() const;
     Q_INVOKABLE QVariantMap snapshot() const;
 
-signals:
+  signals:
     void latestVehicleChanged(const QVariantMap &vehicle);
 
-private slots:
+  private slots:
     void publishVehicle();
 
-private:
+  private:
     VehicleModel *m_vehicle;
     QVariantMap m_latestVehicle;
 };

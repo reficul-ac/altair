@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a live Altair SITL session with desktop or browser visualization."""
+"""Run a live Altair SITL session through the MAVLink bridge."""
 
 from __future__ import annotations
 
@@ -8,9 +8,7 @@ from dataclasses import dataclass
 import os
 import pathlib
 import shlex
-import shutil
 import signal
-import select
 import subprocess
 import sys
 import time
@@ -98,29 +96,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="QGC MAVLink UDP endpoint as host:port; repeatable",
     )
     parser.add_argument(
-        "--viewer",
-        dest="viewer",
-        action="store_true",
-        default=True,
-        help="start the browser Animus dev server",
-    )
-    parser.add_argument("--no-viewer", dest="viewer", action="store_false")
-    parser.add_argument(
-        "--app",
-        action="store_true",
-        help="start the packaged Electron Animus instead of the browser viewer and Python bridge",
-    )
-    parser.add_argument(
         "--writable-animus",
         action="store_true",
         help="enable guarded SITL-only write controls in Animus; disabled by default",
-    )
-    parser.add_argument("--viewer-host", default="127.0.0.1")
-    parser.add_argument("--viewer-port", type=int, default=5173)
-    parser.add_argument(
-        "--install-viewer-deps",
-        action="store_true",
-        help="run npm install in tools/animus before starting the viewer",
     )
     parser.add_argument(
         "--dry-run",
@@ -132,8 +110,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         args.initial = str(root / "tests" / "integration" / "cruise6dof_initial.ini")
     if not args.qgc and args.qgc_endpoint:
         parser.error("--qgc-endpoint requires --qgc")
-    if args.app and not args.viewer:
-        parser.error("--app cannot be combined with --no-viewer")
     if args.vehicles < 1:
         parser.error("--vehicles must be at least 1")
     if args.system_id_base < 1 or args.system_id_base + args.vehicles - 1 > 255:
@@ -167,58 +143,6 @@ def bridge_command(args: argparse.Namespace) -> list[str]:
             command.extend(["--forward", f"{host}:{port}"])
     else:
         command.append("--no-forward")
-    if args.writable_animus:
-        command.append("--writable-animus")
-    return command
-
-
-def viewer_install_command() -> list[str]:
-    return ["npm", "install"]
-
-
-def viewer_build_command() -> list[str]:
-    return ["npm", "run", "build"]
-
-
-def viewer_command(args: argparse.Namespace) -> list[str]:
-    return [
-        "npm",
-        "run",
-        "dev",
-        "--",
-        "--host",
-        args.viewer_host,
-        "--port",
-        str(args.viewer_port),
-    ]
-
-
-def app_command(args: argparse.Namespace) -> list[str]:
-    root = repo_root()
-    electron = (
-        root
-        / "tools"
-        / "animus"
-        / "node_modules"
-        / ".bin"
-        / ("electron.cmd" if os.name == "nt" else "electron")
-    )
-    command = [
-        str(electron),
-        "--ignore-gpu-blocklist",
-        "--enable-unsafe-swiftshader",
-        "--use-angle=swiftshader",
-        ".",
-        "--listen-host",
-        args.bridge_host,
-        "--listen-port",
-        str(args.bridge_port),
-    ]
-    if args.qgc:
-        for host, port in args.qgc_endpoint or [("127.0.0.1", 14550)]:
-            command.extend(["--qgc-endpoint", f"{host}:{port}"])
-    else:
-        command.append("--no-qgc")
     if args.writable_animus:
         command.append("--writable-animus")
     return command
@@ -276,51 +200,7 @@ def swarm_output_path(output: str, system_id: int) -> str:
     return str(path.with_name(name))
 
 
-def require_viewer_ready(root: pathlib.Path, install_deps: bool, dry_run: bool) -> None:
-    viewer_dir = root / "tools" / "animus"
-    if dry_run:
-        return
-    if shutil.which("npm") is None:
-        raise RuntimeError("npm is required to start Animus")
-    if install_deps:
-        return
-    if not (viewer_dir / "node_modules").exists():
-        raise RuntimeError("tools/animus/node_modules is missing; rerun with --install-viewer-deps")
-
-
-def requires_virtual_display() -> bool:
-    return "DISPLAY" not in os.environ and "WAYLAND_DISPLAY" not in os.environ
-
-
-def start_virtual_display() -> tuple[ManagedProcess, dict[str, str]]:
-    xvfb = shutil.which("Xvfb")
-    if xvfb is None:
-        raise RuntimeError("Electron app mode requires DISPLAY, WAYLAND_DISPLAY, or Xvfb")
-    read_fd, write_fd = os.pipe()
-    process = subprocess.Popen(
-        [xvfb, "-screen", "0", "1440x900x24", "-nolisten", "tcp", "-displayfd", str(write_fd)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        text=True,
-        start_new_session=True,
-        pass_fds=(write_fd,),
-    )
-    os.close(write_fd)
-    try:
-        readable, _, _ = select.select([read_fd], [], [], 5.0)
-        if not readable:
-            raise RuntimeError("timed out waiting for Xvfb display allocation")
-        display = os.read(read_fd, 32).decode("utf-8", errors="replace").strip()
-    finally:
-        os.close(read_fd)
-    if not display or process.poll() is not None:
-        raise RuntimeError("Xvfb failed to start")
-    return ManagedProcess("xvfb", process, signal.SIGTERM, 3.0), {"DISPLAY": f":{display}"}
-
-
 def process_policy(label: str, process: subprocess.Popen) -> ManagedProcess:
-    if label == "app":
-        return ManagedProcess(label, process, signal.SIGINT, 8.0, "shutdown\n")
     return ManagedProcess(label, process)
 
 
@@ -384,36 +264,20 @@ def start_process(
 
 
 def run(args: argparse.Namespace) -> int:
-    root = repo_root()
-    viewer_dir = root / "tools" / "animus"
-    setup_commands: list[tuple[str, list[str], pathlib.Path | None]] = []
     commands: list[tuple[str, list[str], pathlib.Path | None]] = []
-    if args.app:
-        require_viewer_ready(root, args.install_viewer_deps, args.dry_run)
-        if args.install_viewer_deps:
-            setup_commands.append(("viewer dependencies", viewer_install_command(), viewer_dir))
-        setup_commands.append(("app build", viewer_build_command(), viewer_dir))
-        commands.append(("app", app_command(args), viewer_dir))
-    else:
-        commands.append(("bridge", bridge_command(args), None))
-    if args.viewer and not args.app:
-        require_viewer_ready(root, args.install_viewer_deps, args.dry_run)
-        if args.install_viewer_deps:
-            setup_commands.append(("viewer dependencies", viewer_install_command(), viewer_dir))
-        commands.append(("viewer", viewer_command(args), viewer_dir))
+    commands.append(("bridge", bridge_command(args), None))
     for index in range(args.vehicles):
         label = "sitl" if args.vehicles == 1 else f"sitl sys{args.system_id_base + index}"
         commands.append((label, sitl_command(args, index), None))
 
     if args.dry_run:
-        for label, command, cwd in [*setup_commands, *commands]:
+        for label, command, cwd in commands:
             prefix = f"(cd {cwd} && " if cwd is not None else ""
             suffix = ")" if cwd is not None else ""
             print(f"{label}: {prefix}{quote_command(command)}{suffix}")
         return 0
 
     processes: list[ManagedProcess] = []
-    child_env: dict[str, str] | None = None
     previous_sigterm = signal.getsignal(signal.SIGTERM)
 
     def stop(_signum, _frame) -> None:
@@ -421,37 +285,18 @@ def run(args: argparse.Namespace) -> int:
 
     signal.signal(signal.SIGTERM, stop)
     try:
-        print(
-            (
-                "viewer=app"
-                if args.app
-                else (
-                    f"viewer=http://{args.viewer_host}:{args.viewer_port}"
-                    if args.viewer
-                    else "viewer=disabled"
-                )
-            ),
-            flush=True,
-        )
+        print(f"bridge=udp://{args.bridge_host}:{args.bridge_port}", flush=True)
+        print(f"animus_ws=ws://{args.ws_host}:{args.ws_port}", flush=True)
         if args.qgc:
             qgc_targets = args.qgc_endpoint or [("127.0.0.1", 14550)]
             print(f"qgc={', '.join(f'{host}:{port}' for host, port in qgc_targets)}", flush=True)
         else:
             print("qgc=disabled", flush=True)
-        for label, command, cwd in setup_commands:
-            print(f"\n== Run {label} ==", flush=True)
-            print(quote_command(command), flush=True)
-            subprocess.run(command, cwd=cwd, text=True, check=True)
-
-        if args.app and requires_virtual_display():
-            virtual_display, display_env = start_virtual_display()
-            processes.append(virtual_display)
-            child_env = {**os.environ, **display_env}
 
         for label, command, cwd in commands[:-1]:
             print(f"\n== Start {label} ==", flush=True)
             print(quote_command(command), flush=True)
-            process = start_process(command, cwd, stdin_pipe=label == "app", env=child_env)
+            process = start_process(command, cwd)
             processes.append(process_policy(label, process))
             time.sleep(0.3)
             if process.poll() is not None:

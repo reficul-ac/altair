@@ -3,17 +3,20 @@
 #include <QObject>
 #include <QString>
 
-namespace animus {
+namespace animus
+{
 
 class MapSourceRegistry;
 
-class OfflineMapManager final : public QObject {
+class OfflineMapManager final : public QObject
+{
     Q_OBJECT
     Q_PROPERTY(Mode mode READ mode WRITE setMode NOTIFY modeChanged)
     Q_PROPERTY(bool networkAllowed READ networkAllowed NOTIFY modeChanged)
 
-public:
-    enum Mode {
+  public:
+    enum Mode
+    {
         Online,
         CachedOffline,
         StrictOffline
@@ -29,10 +32,10 @@ public:
     Q_INVOKABLE bool canUseSource(const QString &sourceId) const;
     Q_INVOKABLE QString modeLabel() const;
 
-signals:
+  signals:
     void modeChanged();
 
-private:
+  private:
     MapSourceRegistry *m_registry;
     Mode m_mode;
 };

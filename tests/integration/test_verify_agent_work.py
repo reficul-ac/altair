@@ -39,11 +39,11 @@ def main():
         (["vehicle/altair_fsw.c"], ["format", "cmake", "release"]),
         (["tests/integration/cruise6dof_case_initial.ini"], ["cmake", "sitl_plots"]),
         (["vehicle/mc_runner.c"], ["format", "cmake", "release", "mc"]),
-        (["tools/animus/src/styles/base.css"], ["animus"]),
+        (["tools/animus-qt/qml/Main.qml"], ["animus_qt"]),
         (["docs/testing.md"], ["format"]),
         (
-            ["docs/testing.md", "tools/animus/src/main.ts", "mixer/altair_mixer.c"],
-            ["format", "cmake", "release", "animus"],
+            ["docs/testing.md", "tools/animus-qt/src/main.cpp", "mixer/altair_mixer.c"],
+            ["format", "cmake", "release", "animus_qt"],
         ),
     )
     status = 0

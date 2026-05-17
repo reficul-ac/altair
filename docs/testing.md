@@ -40,8 +40,6 @@ python3 tools/python/format_repo.py --check
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
-npm test --prefix tools/animus
-npm run build --prefix tools/animus
 cmake -S . -B build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build-animus-qt --target animus_qt animus_qt_unit_tests --parallel
 ctest --test-dir build-animus-qt --output-on-failure -R animus_qt
@@ -61,7 +59,7 @@ Use fix mode for local rewrites:
 python3 tools/python/format_repo.py --fix
 ```
 
-To block merges on GitHub, configure a branch protection rule or repository ruleset for the default branch and require the `format-check`, `cmake-test`, `animus`, and `animus-qt` status checks to pass before merging.
+To block merges on GitHub, configure a branch protection rule or repository ruleset for the default branch and require the `format-check`, `cmake-test`, and `animus-qt` status checks to pass before merging.
 
 Optional later checks:
 
@@ -73,39 +71,7 @@ Optional later checks:
 
 ## Animus UI Verification
 
-Animus UI and layout changes require local screenshot verification in addition to automated tests:
-
-```sh
-npm test --prefix tools/animus
-npm run build --prefix tools/animus
-python3 tools/python/capture_animus_sitl.py
-```
-
-The capture workflow starts a no-QGC live SITL session, opens Animus through Electron, captures the `flight`, `dashboard`, `map`, `inspector`, `plan`, `setup`, and `video` workspaces with a requested `1440x900` Electron outer window, and writes screenshots, logs, `run-manifest.json`, the Electron `manifest.json`, and `visual-report.md` under `artifacts/animus-screenshots/<timestamp>/`. The saved PNG dimensions reflect Electron's web contents area after the window frame is allocated; use that as the current visual contract unless a future capture mode explicitly requests web-contents sizing.
-
-Inspect `visual-report.md` first for capture status, live telemetry, workspace/panel mismatches, renderer state, and screenshot diagnostics, then inspect the generated screenshots before review. Check that the 3D scene is nonblank, live link/telemetry state is visible, the selected workspace matches the file name, desktop layout is usable, and controls/text are not obviously clipped or overlapping. The Map workspace must show selected offline satellite imagery behind vehicle overlays when an active licensed tile cache is configured; an offline-satellite-cache-unavailable state is acceptable when intentionally testing a missing cache. When an active DEM cache is configured, also check that `Terrain 3D` is enabled and that Flight View terrain remains visible with shaded terrain if satellite imagery is unavailable. This workflow is required for Animus UI/layout changes even before it becomes a GitHub Actions status check; if it cannot run, note the reason and the residual visual risk in the review or final response.
-
-For a focused map capture after changing map rendering or overlays:
-
-```sh
-python3 tools/python/capture_animus_sitl.py --workspace map
-```
-
-For deeper interaction coverage, run the Playwright-backed live SITL harness:
-
-```sh
-python3 tools/python/interact_animus_sitl.py
-```
-
-The interaction workflow starts the same no-QGC live SITL, bridge, and Vite viewer stack, then runs Chromium Playwright scenarios across Flight, Dashboard, Map, Inspector, Video, Plan, Setup, and the session side panel. It exercises local buttons, workspace switches, dashboard widget add/resize/remove, gated command controls, mission waypoint editing, replay/sync controls, and arbitrary checkpoint screenshots. Artifacts are written under `artifacts/animus-interactions/<timestamp>/`, including `run-manifest.json`, service logs, `playwright.log`, `playwright-report/`, `playwright-results/`, and screenshots under `screenshots/`.
-
-Use `capture_animus_sitl.py` as the normal visual pre-merge check for Animus layout work. Use `interact_animus_sitl.py` for complex interaction changes, guarded command UX, dashboard widget workflows, workspace switching, or when checkpoint screenshots are needed after specific UI actions. The interaction harness is intentionally kept outside `verify_agent_work.py --animus` for now so the standard Animus check remains the faster screenshot workflow.
-
-Protocol-backed GCS workflow changes should also include Vitest coverage for MAVLink encode/decode helpers, operation state transitions, authority blocking, timeouts, and confirmation rejection for the affected domains: parameters, mission transfer, terrain/map, onboard logs, and camera commands.
-
-## Animus Qt Verification
-
-Qt Animus has its own CI lane so the C++/QML replacement path cannot drift while the Electron app remains supported:
+Animus UI and layout changes require Qt build, unit, and screenshot verification:
 
 ```sh
 cmake -S . -B build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON -DCMAKE_BUILD_TYPE=Debug
@@ -116,4 +82,4 @@ python3 tools/python/capture_animus_qt_sitl.py
 
 The Qt capture launches the built `animus_qt` executable once per workspace. If `DISPLAY` is already set, the capture uses that display unchanged. If no display is present, the helper starts `Xvfb` directly with a managed virtual display and passes the allocated `DISPLAY` to each capture process. Constrained environments without a usable `Xvfb` fall back to Qt offscreen rendering with the software backend, and the manifest records that fallback. It captures `map-2d`, `terrain-3d`, and `setup` with deterministic mock telemetry, writes PNGs under `artifacts/animus-qt-screenshots/<timestamp>/screenshots/`, records per-workspace logs, and fails when a PNG is missing, zero-sized, visually blank, the wrong size, or too similar to another workspace capture. `visual-report.md` and `run-manifest.json` also include region diagnostics for toolbar/tab visibility, workspace content variation, and color diversity warnings. The `--no-run` flag remains available for dependency-light readiness checks only.
 
-Use `python3 tools/python/verify_agent_work.py --animus-qt` for the same local bundle. The `--animus` check remains scoped to the Electron app; `--all` includes both Electron and Qt lanes.
+Use `python3 tools/python/verify_agent_work.py --animus-qt` for the same local bundle. The deprecated `--animus` flag is an alias for `--animus-qt`; `--all` includes the Qt Animus lane only.

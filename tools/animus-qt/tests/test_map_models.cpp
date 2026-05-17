@@ -12,9 +12,11 @@
 #include <QtTest/QtTest>
 #include <cstring>
 
-namespace {
+namespace
+{
 
-uint16_t crcAccumulate(unsigned char data, uint16_t crc) {
+uint16_t crcAccumulate(unsigned char data, uint16_t crc)
+{
     unsigned char tmp = data ^ static_cast<unsigned char>(crc & 0xffU);
     tmp ^= static_cast<unsigned char>(tmp << 4U);
     return static_cast<uint16_t>((crc >> 8U) ^ (static_cast<uint16_t>(tmp) << 8U) ^
@@ -22,29 +24,39 @@ uint16_t crcAccumulate(unsigned char data, uint16_t crc) {
                                  (static_cast<uint16_t>(tmp) >> 4U));
 }
 
-void putU16(QByteArray *payload, int offset, uint16_t value) {
+void putU16(QByteArray *payload, int offset, uint16_t value)
+{
     (*payload)[offset] = static_cast<char>(value & 0xffU);
     (*payload)[offset + 1] = static_cast<char>((value >> 8U) & 0xffU);
 }
 
-void putU32(QByteArray *payload, int offset, uint32_t value) {
+void putU32(QByteArray *payload, int offset, uint32_t value)
+{
     (*payload)[offset] = static_cast<char>(value & 0xffU);
     (*payload)[offset + 1] = static_cast<char>((value >> 8U) & 0xffU);
     (*payload)[offset + 2] = static_cast<char>((value >> 16U) & 0xffU);
     (*payload)[offset + 3] = static_cast<char>((value >> 24U) & 0xffU);
 }
 
-void putI16(QByteArray *payload, int offset, int16_t value) { putU16(payload, offset, static_cast<uint16_t>(value)); }
+void putI16(QByteArray *payload, int offset, int16_t value)
+{
+    putU16(payload, offset, static_cast<uint16_t>(value));
+}
 
-void putI32(QByteArray *payload, int offset, int32_t value) { putU32(payload, offset, static_cast<uint32_t>(value)); }
+void putI32(QByteArray *payload, int offset, int32_t value)
+{
+    putU32(payload, offset, static_cast<uint32_t>(value));
+}
 
-void putFloat(QByteArray *payload, int offset, float value) {
+void putFloat(QByteArray *payload, int offset, float value)
+{
     uint32_t raw = 0;
     std::memcpy(&raw, &value, sizeof(raw));
     putU32(payload, offset, raw);
 }
 
-QByteArray mavlinkV1Frame(unsigned char msgId, unsigned char crcExtra, const QByteArray &payload) {
+QByteArray mavlinkV1Frame(unsigned char msgId, unsigned char crcExtra, const QByteArray &payload)
+{
     QByteArray frame(6 + payload.size() + 2, '\0');
     frame[0] = static_cast<char>(0xfeU);
     frame[1] = static_cast<char>(payload.size());
@@ -52,10 +64,12 @@ QByteArray mavlinkV1Frame(unsigned char msgId, unsigned char crcExtra, const QBy
     frame[3] = 1;
     frame[4] = 1;
     frame[5] = static_cast<char>(msgId);
-    for (int i = 0; i < payload.size(); ++i) frame[6 + i] = payload[i];
+    for (int i = 0; i < payload.size(); ++i)
+        frame[6 + i] = payload[i];
 
     uint16_t checksum = 0xffffU;
-    for (int i = 1; i < 6 + payload.size(); ++i) {
+    for (int i = 1; i < 6 + payload.size(); ++i)
+    {
         checksum = crcAccumulate(static_cast<unsigned char>(frame[i]), checksum);
     }
     checksum = crcAccumulate(crcExtra, checksum);
@@ -66,11 +80,13 @@ QByteArray mavlinkV1Frame(unsigned char msgId, unsigned char crcExtra, const QBy
 
 } // namespace
 
-class AnimusQtMapModelTests final : public QObject {
+class AnimusQtMapModelTests final : public QObject
+{
     Q_OBJECT
 
-private slots:
-    void strictOfflineRejectsNetworkSource() {
+  private slots:
+    void strictOfflineRejectsNetworkSource()
+    {
         animus::MapSourceRegistry registry;
         animus::OfflineMapManager manager(&registry);
 
@@ -80,7 +96,8 @@ private slots:
         QVERIFY(!manager.canUseSource(QStringLiteral("osm")));
     }
 
-    void breadcrumbModelBoundsGrowth() {
+    void breadcrumbModelBoundsGrowth()
+    {
         animus::BreadcrumbPathModel model;
         model.setMaxPoints(3);
         model.setMinDistanceM(0.0);
@@ -92,7 +109,8 @@ private slots:
         QCOMPARE(model.rowCount(), 3);
     }
 
-    void breadcrumbModelDecimatesByDistance() {
+    void breadcrumbModelDecimatesByDistance()
+    {
         animus::BreadcrumbPathModel model;
         model.setMaxPoints(10);
         model.setMinDistanceM(50.0);
@@ -102,7 +120,8 @@ private slots:
         QCOMPARE(model.rowCount(), 1);
     }
 
-    void mapPackLoadsValidMetadata() {
+    void mapPackLoadsValidMetadata()
+    {
         QTemporaryDir root;
         QVERIFY(root.isValid());
         QDir rootDir(root.path());
@@ -110,11 +129,10 @@ private slots:
 
         QFile metadata(rootDir.filePath(QStringLiteral("stanford/metadata.json")));
         QVERIFY(metadata.open(QIODevice::WriteOnly));
-        metadata.write(
-            "{\"schemaVersion\":1,\"name\":\"Stanford\",\"description\":\"SITL range\","
-            "\"minZoom\":12,\"maxZoom\":16,\"license\":\"test-license\","
-            "\"attribution\":\"test data\",\"imagery\":{\"format\":\"xyz\"},"
-            "\"terrain\":{\"format\":\"quantized-mesh\"}}");
+        metadata.write("{\"schemaVersion\":1,\"name\":\"Stanford\",\"description\":\"SITL range\","
+                       "\"minZoom\":12,\"maxZoom\":16,\"license\":\"test-license\","
+                       "\"attribution\":\"test data\",\"imagery\":{\"format\":\"xyz\"},"
+                       "\"terrain\":{\"format\":\"quantized-mesh\"}}");
         metadata.close();
 
         QFile terrain(rootDir.filePath(QStringLiteral("stanford/3d/terrain/layer.json")));
@@ -130,7 +148,8 @@ private slots:
         QCOMPARE(manager.activeAttribution(), QStringLiteral("test data"));
     }
 
-    void mapPackRejectsMissingLicenseAndUnsupportedFormats() {
+    void mapPackRejectsMissingLicenseAndUnsupportedFormats()
+    {
         QTemporaryDir root;
         QVERIFY(root.isValid());
         QDir rootDir(root.path());
@@ -138,9 +157,8 @@ private slots:
 
         QFile metadata(rootDir.filePath(QStringLiteral("bad/metadata.json")));
         QVERIFY(metadata.open(QIODevice::WriteOnly));
-        metadata.write(
-            "{\"schemaVersion\":1,\"name\":\"Bad\",\"attribution\":\"test\","
-            "\"imagery\":{\"format\":\"pmtiles\"}}");
+        metadata.write("{\"schemaVersion\":1,\"name\":\"Bad\",\"attribution\":\"test\","
+                       "\"imagery\":{\"format\":\"pmtiles\"}}");
         metadata.close();
 
         animus::MapPackManager manager;
@@ -150,7 +168,8 @@ private slots:
         QVERIFY(manager.validationError().contains(QStringLiteral("license")));
     }
 
-    void mavlinkDecoderCoversCoreTelemetryMessages() {
+    void mavlinkDecoderCoversCoreTelemetryMessages()
+    {
         animus::MavlinkDecoder decoder;
 
         QByteArray heartbeat(9, '\0');
@@ -190,9 +209,10 @@ private slots:
         putU16(&terrain, 18, 2);
         putU16(&terrain, 20, 7);
 
-        const QByteArray datagram = mavlinkV1Frame(0, 50, heartbeat) + mavlinkV1Frame(30, 39, attitude) +
-                                    mavlinkV1Frame(33, 104, globalPosition) + mavlinkV1Frame(42, 28, mission) +
-                                    mavlinkV1Frame(242, 104, home) + mavlinkV1Frame(136, 1, terrain);
+        const QByteArray datagram =
+            mavlinkV1Frame(0, 50, heartbeat) + mavlinkV1Frame(30, 39, attitude) +
+            mavlinkV1Frame(33, 104, globalPosition) + mavlinkV1Frame(42, 28, mission) +
+            mavlinkV1Frame(242, 104, home) + mavlinkV1Frame(136, 1, terrain);
         const QVector<animus::MavlinkTelemetrySample> samples = decoder.decodeDatagram(datagram);
         QCOMPARE(samples.size(), 6);
         QVERIFY(samples[0].hasHeartbeat);
@@ -206,7 +226,8 @@ private slots:
         QCOMPARE(samples[5].terrainLoaded, 7);
     }
 
-    void telemetryServicePublishesLatestMavlinkValueAtBoundedUiRate() {
+    void telemetryServicePublishesLatestMavlinkValueAtBoundedUiRate()
+    {
         animus::VehicleModel vehicle;
         animus::BreadcrumbPathModel trail;
         animus::TelemetryService service(&vehicle, &trail);

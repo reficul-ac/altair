@@ -3,9 +3,11 @@
 #include <QObject>
 #include <QString>
 
-namespace animus {
+namespace animus
+{
 
-class VehicleModel final : public QObject {
+class VehicleModel final : public QObject
+{
     Q_OBJECT
     Q_PROPERTY(QString vehicleId READ vehicleId WRITE setVehicleId NOTIFY vehicleChanged)
     Q_PROPERTY(bool connected READ connected WRITE setConnected NOTIFY vehicleChanged)
@@ -16,7 +18,8 @@ class VehicleModel final : public QObject {
     Q_PROPERTY(double rollRad READ rollRad WRITE setRollRad NOTIFY attitudeChanged)
     Q_PROPERTY(double pitchRad READ pitchRad WRITE setPitchRad NOTIFY attitudeChanged)
     Q_PROPERTY(double yawRad READ yawRad WRITE setYawRad NOTIFY attitudeChanged)
-    Q_PROPERTY(double groundspeedMps READ groundspeedMps WRITE setGroundspeedMps NOTIFY vehicleChanged)
+    Q_PROPERTY(
+        double groundspeedMps READ groundspeedMps WRITE setGroundspeedMps NOTIFY vehicleChanged)
     Q_PROPERTY(double vxNorthMps READ vxNorthMps WRITE setVxNorthMps NOTIFY velocityChanged)
     Q_PROPERTY(double vyEastMps READ vyEastMps WRITE setVyEastMps NOTIFY velocityChanged)
     Q_PROPERTY(double vzDownMps READ vzDownMps WRITE setVzDownMps NOTIFY velocityChanged)
@@ -28,19 +31,26 @@ class VehicleModel final : public QObject {
     Q_PROPERTY(int systemStatus READ systemStatus WRITE setSystemStatus NOTIFY statusChanged)
     Q_PROPERTY(bool armed READ armed WRITE setArmed NOTIFY statusChanged)
     Q_PROPERTY(int gpsFixType READ gpsFixType WRITE setGpsFixType NOTIFY gpsChanged)
-    Q_PROPERTY(int satellitesVisible READ satellitesVisible WRITE setSatellitesVisible NOTIFY gpsChanged)
+    Q_PROPERTY(
+        int satellitesVisible READ satellitesVisible WRITE setSatellitesVisible NOTIFY gpsChanged)
     Q_PROPERTY(int missionSeq READ missionSeq WRITE setMissionSeq NOTIFY missionChanged)
-    Q_PROPERTY(double homeLatitudeDeg READ homeLatitudeDeg WRITE setHomeLatitudeDeg NOTIFY homeChanged)
-    Q_PROPERTY(double homeLongitudeDeg READ homeLongitudeDeg WRITE setHomeLongitudeDeg NOTIFY homeChanged)
+    Q_PROPERTY(
+        double homeLatitudeDeg READ homeLatitudeDeg WRITE setHomeLatitudeDeg NOTIFY homeChanged)
+    Q_PROPERTY(
+        double homeLongitudeDeg READ homeLongitudeDeg WRITE setHomeLongitudeDeg NOTIFY homeChanged)
     Q_PROPERTY(double homeAltitudeM READ homeAltitudeM WRITE setHomeAltitudeM NOTIFY homeChanged)
-    Q_PROPERTY(double terrainLatitudeDeg READ terrainLatitudeDeg WRITE setTerrainLatitudeDeg NOTIFY terrainChanged)
-    Q_PROPERTY(double terrainLongitudeDeg READ terrainLongitudeDeg WRITE setTerrainLongitudeDeg NOTIFY terrainChanged)
-    Q_PROPERTY(double terrainHeightM READ terrainHeightM WRITE setTerrainHeightM NOTIFY terrainChanged)
-    Q_PROPERTY(double terrainCurrentHeightM READ terrainCurrentHeightM WRITE setTerrainCurrentHeightM NOTIFY terrainChanged)
+    Q_PROPERTY(double terrainLatitudeDeg READ terrainLatitudeDeg WRITE setTerrainLatitudeDeg NOTIFY
+                   terrainChanged)
+    Q_PROPERTY(double terrainLongitudeDeg READ terrainLongitudeDeg WRITE setTerrainLongitudeDeg
+                   NOTIFY terrainChanged)
+    Q_PROPERTY(
+        double terrainHeightM READ terrainHeightM WRITE setTerrainHeightM NOTIFY terrainChanged)
+    Q_PROPERTY(double terrainCurrentHeightM READ terrainCurrentHeightM WRITE
+                   setTerrainCurrentHeightM NOTIFY terrainChanged)
     Q_PROPERTY(int terrainPending READ terrainPending WRITE setTerrainPending NOTIFY terrainChanged)
     Q_PROPERTY(int terrainLoaded READ terrainLoaded WRITE setTerrainLoaded NOTIFY terrainChanged)
 
-public:
+  public:
     explicit VehicleModel(QObject *parent = nullptr);
 
     QString vehicleId() const;
@@ -139,7 +149,7 @@ public:
     int terrainLoaded() const;
     void setTerrainLoaded(int terrainLoaded);
 
-signals:
+  signals:
     void vehicleChanged();
     void positionChanged();
     void attitudeChanged();
@@ -150,7 +160,7 @@ signals:
     void homeChanged();
     void terrainChanged();
 
-private:
+  private:
     QString m_vehicleId;
     bool m_connected;
     double m_latitudeDeg;

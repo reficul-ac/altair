@@ -18,9 +18,11 @@
 #include <QVariant>
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
-namespace {
+namespace
+{
 
-struct CaptureOptions {
+struct CaptureOptions
+{
     QString captureDir;
     QString captureWorkspace;
     bool mockTelemetry = false;
@@ -29,32 +31,49 @@ struct CaptureOptions {
     bool requested = false;
 };
 
-bool parseArgs(const QStringList &args, CaptureOptions *options) {
-    for (int i = 1; i < args.size(); ++i) {
+bool parseArgs(const QStringList &args, CaptureOptions *options)
+{
+    for (int i = 1; i < args.size(); ++i)
+    {
         const QString &arg = args.at(i);
-        if (arg == QStringLiteral("--capture-dir")) {
-            if (i + 1 >= args.size()) return false;
+        if (arg == QStringLiteral("--capture-dir"))
+        {
+            if (i + 1 >= args.size())
+                return false;
             options->captureDir = args.at(++i);
             options->requested = true;
-        } else if (arg == QStringLiteral("--capture-workspace")) {
-            if (i + 1 >= args.size()) return false;
+        }
+        else if (arg == QStringLiteral("--capture-workspace"))
+        {
+            if (i + 1 >= args.size())
+                return false;
             options->captureWorkspace = args.at(++i);
             options->requested = true;
-        } else if (arg == QStringLiteral("--mock-telemetry")) {
+        }
+        else if (arg == QStringLiteral("--mock-telemetry"))
+        {
             options->mockTelemetry = true;
-        } else if (arg == QStringLiteral("--capture-delay-ms")) {
-            if (i + 1 >= args.size()) return false;
+        }
+        else if (arg == QStringLiteral("--capture-delay-ms"))
+        {
+            if (i + 1 >= args.size())
+                return false;
             bool ok = false;
             const int delay = args.at(++i).toInt(&ok);
-            if (!ok || delay < 0) return false;
+            if (!ok || delay < 0)
+                return false;
             options->captureDelayMs = delay;
-        } else if (arg == QStringLiteral("--quit-after-capture")) {
+        }
+        else if (arg == QStringLiteral("--quit-after-capture"))
+        {
             options->quitAfterCapture = true;
         }
     }
 
-    if (!options->requested) return true;
-    if (options->captureDir.isEmpty() || options->captureWorkspace.isEmpty()) return false;
+    if (!options->requested)
+        return true;
+    if (options->captureDir.isEmpty() || options->captureWorkspace.isEmpty())
+        return false;
     return options->captureWorkspace == QStringLiteral("map-2d") ||
            options->captureWorkspace == QStringLiteral("terrain-3d") ||
            options->captureWorkspace == QStringLiteral("setup");
@@ -62,12 +81,14 @@ bool parseArgs(const QStringList &args, CaptureOptions *options) {
 
 } // namespace
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
     QtWebEngineQuick::initialize();
     QGuiApplication app(argc, argv);
 
     CaptureOptions capture;
-    if (!parseArgs(app.arguments(), &capture)) {
+    if (!parseArgs(app.arguments(), &capture))
+    {
         qCritical("invalid animus_qt capture arguments");
         return 2;
     }
@@ -91,45 +112,61 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty(QStringLiteral("telemetryService"), &telemetry);
     engine.rootContext()->setContextProperty(QStringLiteral("cesiumBridge"), &cesium);
 
-    QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, []() { QCoreApplication::exit(-1); },
-                     Qt::QueuedConnection);
+    QObject::connect(
+        &engine,
+        &QQmlApplicationEngine::objectCreationFailed,
+        &app,
+        []() { QCoreApplication::exit(-1); },
+        Qt::QueuedConnection);
     engine.load(QUrl(QStringLiteral("qrc:/Animus/qml/Main.qml")));
-    if (engine.rootObjects().isEmpty()) return 1;
+    if (engine.rootObjects().isEmpty())
+        return 1;
 
-    if (capture.requested) {
+    if (capture.requested)
+    {
         QObject *root = engine.rootObjects().constFirst();
-        if (capture.mockTelemetry) telemetry.startMockTelemetry();
-        const bool selected =
-            QMetaObject::invokeMethod(root, "selectWorkspace", Q_ARG(QVariant, QVariant(capture.captureWorkspace)));
-        if (!selected) {
+        if (capture.mockTelemetry)
+            telemetry.startMockTelemetry();
+        const bool selected = QMetaObject::invokeMethod(
+            root, "selectWorkspace", Q_ARG(QVariant, QVariant(capture.captureWorkspace)));
+        if (!selected)
+        {
             qCritical("failed to select capture workspace");
             return 3;
         }
 
-        QTimer::singleShot(capture.captureDelayMs, &app, [&app, root, capture]() {
-            QQuickWindow *window = qobject_cast<QQuickWindow *>(root);
-            if (!window) {
-                qCritical("root QML object is not a QQuickWindow");
-                QCoreApplication::exit(4);
-                return;
-            }
+        QTimer::singleShot(capture.captureDelayMs,
+                           &app,
+                           [&app, root, capture]()
+                           {
+                               QQuickWindow *window = qobject_cast<QQuickWindow *>(root);
+                               if (!window)
+                               {
+                                   qCritical("root QML object is not a QQuickWindow");
+                                   QCoreApplication::exit(4);
+                                   return;
+                               }
 
-            QDir dir(capture.captureDir);
-            if (!dir.exists() && !dir.mkpath(QStringLiteral("."))) {
-                qCritical("failed to create capture directory");
-                QCoreApplication::exit(5);
-                return;
-            }
+                               QDir dir(capture.captureDir);
+                               if (!dir.exists() && !dir.mkpath(QStringLiteral(".")))
+                               {
+                                   qCritical("failed to create capture directory");
+                                   QCoreApplication::exit(5);
+                                   return;
+                               }
 
-            const QString path = dir.filePath(capture.captureWorkspace + QStringLiteral(".png"));
-            const QImage image = window->grabWindow();
-            if (image.isNull() || !image.save(path, "PNG")) {
-                qCritical("failed to write capture screenshot");
-                QCoreApplication::exit(6);
-                return;
-            }
-            if (capture.quitAfterCapture) QCoreApplication::quit();
-        });
+                               const QString path =
+                                   dir.filePath(capture.captureWorkspace + QStringLiteral(".png"));
+                               const QImage image = window->grabWindow();
+                               if (image.isNull() || !image.save(path, "PNG"))
+                               {
+                                   qCritical("failed to write capture screenshot");
+                                   QCoreApplication::exit(6);
+                                   return;
+                               }
+                               if (capture.quitAfterCapture)
+                                   QCoreApplication::quit();
+                           });
     }
 
     return app.exec();

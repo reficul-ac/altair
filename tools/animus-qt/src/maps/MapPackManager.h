@@ -7,9 +7,11 @@
 #include <QVariant>
 #include <QVector>
 
-namespace animus {
+namespace animus
+{
 
-struct MapPack {
+struct MapPack
+{
     QString id;
     QString name;
     QString description;
@@ -24,13 +26,16 @@ struct MapPack {
     bool has3dTerrain;
 };
 
-class MapPackManager final : public QAbstractListModel {
+class MapPackManager final : public QAbstractListModel
+{
     Q_OBJECT
     Q_PROPERTY(QString rootPath READ rootPath WRITE setRootPath NOTIFY packsChanged)
-    Q_PROPERTY(QString activePackId READ activePackId WRITE setActivePackId NOTIFY activePackChanged)
+    Q_PROPERTY(
+        QString activePackId READ activePackId WRITE setActivePackId NOTIFY activePackChanged)
 
-public:
-    enum Roles {
+  public:
+    enum Roles
+    {
         IdRole = Qt::UserRole + 1,
         NameRole,
         DescriptionRole,
@@ -62,11 +67,11 @@ public:
     Q_INVOKABLE QString validationError() const;
     Q_INVOKABLE QString activeAttribution() const;
 
-signals:
+  signals:
     void packsChanged();
     void activePackChanged();
 
-private:
+  private:
     bool loadPack(const QDir &packDir, MapPack *pack, QString *error) const;
     const MapPack *findPack(const QString &packId) const;
 

@@ -6,9 +6,11 @@
 #include <QVariant>
 #include <QVector>
 
-namespace animus {
+namespace animus
+{
 
-struct MapSource {
+struct MapSource
+{
     QString id;
     QString label;
     QString provider;
@@ -16,12 +18,15 @@ struct MapSource {
     bool networkRequired;
 };
 
-class MapSourceRegistry final : public QAbstractListModel {
+class MapSourceRegistry final : public QAbstractListModel
+{
     Q_OBJECT
-    Q_PROPERTY(QString activeSourceId READ activeSourceId WRITE setActiveSourceId NOTIFY activeSourceChanged)
+    Q_PROPERTY(QString activeSourceId READ activeSourceId WRITE setActiveSourceId NOTIFY
+                   activeSourceChanged)
 
-public:
-    enum Roles {
+  public:
+    enum Roles
+    {
         IdRole = Qt::UserRole + 1,
         LabelRole,
         ProviderRole,
@@ -42,10 +47,10 @@ public:
     Q_INVOKABLE QString activeAttribution() const;
     Q_INVOKABLE bool sourceRequiresNetwork(const QString &sourceId) const;
 
-signals:
+  signals:
     void activeSourceChanged();
 
-private:
+  private:
     const MapSource *findSource(const QString &sourceId) const;
 
     QVector<MapSource> m_sources;

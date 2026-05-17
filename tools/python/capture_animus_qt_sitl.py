@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKSPACES = ("map-2d", "terrain-3d", "setup")
 XVFB_SCREEN = "1280x820x24"
@@ -80,8 +79,12 @@ def parse_args() -> argparse.Namespace:
         default=str(REPO_ROOT / "artifacts" / "animus-qt-screenshots"),
         help="Directory where capture artifacts are written.",
     )
-    parser.add_argument("--capture-delay-ms", type=int, default=1200, help="Render delay before each screenshot.")
-    parser.add_argument("--no-run", action="store_true", help="Only write readiness artifacts; do not launch Qt.")
+    parser.add_argument(
+        "--capture-delay-ms", type=int, default=1200, help="Render delay before each screenshot."
+    )
+    parser.add_argument(
+        "--no-run", action="store_true", help="Only write readiness artifacts; do not launch Qt."
+    )
     return parser.parse_args()
 
 
@@ -184,7 +187,9 @@ def pixel_rgb(image: PngImage, x: int, y: int) -> tuple[int, int, int]:
     return (value[0], value[1], value[2])
 
 
-def sampled_pixels(image: PngImage, columns: int = 32, rows: int = 32) -> list[tuple[int, int, int]]:
+def sampled_pixels(
+    image: PngImage, columns: int = 32, rows: int = 32
+) -> list[tuple[int, int, int]]:
     pixels: list[tuple[int, int, int]] = []
     sample_step_x = max(1, image.width // columns)
     sample_step_y = max(1, image.height // rows)
@@ -203,7 +208,9 @@ def luminance(pixel: tuple[int, int, int]) -> float:
     return 0.2126 * pixel[0] + 0.7152 * pixel[1] + 0.0722 * pixel[2]
 
 
-def region_bounds(image: PngImage, bounds: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
+def region_bounds(
+    image: PngImage, bounds: tuple[float, float, float, float]
+) -> tuple[int, int, int, int]:
     left = min(max(int(round(bounds[0] * image.width)), 0), image.width - 1)
     top = min(max(int(round(bounds[1] * image.height)), 0), image.height - 1)
     right = min(max(int(round(bounds[2] * image.width)), left + 1), image.width)
@@ -211,7 +218,9 @@ def region_bounds(image: PngImage, bounds: tuple[float, float, float, float]) ->
     return left, top, right, bottom
 
 
-def sample_region(image: PngImage, spec: RegionSpec, columns: int = 28, rows: int = 12) -> list[tuple[int, int, int]]:
+def sample_region(
+    image: PngImage, spec: RegionSpec, columns: int = 28, rows: int = 12
+) -> list[tuple[int, int, int]]:
     left, top, right, bottom = region_bounds(image, spec.bounds)
     width = right - left
     height = bottom - top
@@ -247,7 +256,9 @@ def inspect_region(image: PngImage, spec: RegionSpec) -> dict[str, object]:
     elif len(colors) < spec.min_colors:
         warnings.append(f"low color diversity: {len(colors)} < {spec.min_colors}")
     if luminance_range < spec.min_luminance_range:
-        warnings.append(f"low luminance variation: {luminance_range:.1f} < {spec.min_luminance_range:.1f}")
+        warnings.append(
+            f"low luminance variation: {luminance_range:.1f} < {spec.min_luminance_range:.1f}"
+        )
     if dominant_fraction > spec.max_dominant_fraction:
         warnings.append(f"dominant color covers {dominant_fraction:.1%} of sampled region")
     return {
@@ -261,13 +272,22 @@ def inspect_region(image: PngImage, spec: RegionSpec) -> dict[str, object]:
     }
 
 
-def inspect_png(path: Path, workspace: str = "", expected_size: tuple[int, int] = EXPECTED_CAPTURE_SIZE) -> dict[str, object]:
+def inspect_png(
+    path: Path, workspace: str = "", expected_size: tuple[int, int] = EXPECTED_CAPTURE_SIZE
+) -> dict[str, object]:
     result: dict[str, object] = {"path": str(path), "exists": path.exists(), "diagnostics": []}
     failures: list[str] = []
     warnings: list[str] = []
     if not path.exists():
         failures.append("missing screenshot")
-        result.update({"ok": False, "warning": "missing screenshot", "failures": failures, "warnings": warnings})
+        result.update(
+            {
+                "ok": False,
+                "warning": "missing screenshot",
+                "failures": failures,
+                "warnings": warnings,
+            }
+        )
         return result
     try:
         image = read_png_image(path)
@@ -277,7 +297,9 @@ def inspect_png(path: Path, workspace: str = "", expected_size: tuple[int, int] 
         height = image.height
         result.update({"width": width, "height": height, "sampledColors": len(colors)})
         if expected_size and (width, height) != expected_size:
-            failures.append(f"unexpected dimensions: {width}x{height}, expected {expected_size[0]}x{expected_size[1]}")
+            failures.append(
+                f"unexpected dimensions: {width}x{height}, expected {expected_size[0]}x{expected_size[1]}"
+            )
         if len(colors) <= 1:
             failures.append("blank or single-color screenshot")
         elif workspace:
@@ -307,7 +329,9 @@ def inspect_png(path: Path, workspace: str = "", expected_size: tuple[int, int] 
     return result
 
 
-def thumbnail_pixels(image: PngImage, columns: int = 32, rows: int = 24) -> list[tuple[int, int, int]]:
+def thumbnail_pixels(
+    image: PngImage, columns: int = 32, rows: int = 24
+) -> list[tuple[int, int, int]]:
     pixels: list[tuple[int, int, int]] = []
     for row in range(rows):
         y = min(image.height - 1, int((row + 0.5) * image.height / rows))
@@ -323,7 +347,9 @@ def mean_pixel_delta(left: list[tuple[int, int, int]], right: list[tuple[int, in
         return 0.0
     total = 0.0
     for index in range(count):
-        total += sum(abs(left[index][channel] - right[index][channel]) for channel in range(3)) / 3.0
+        total += (
+            sum(abs(left[index][channel] - right[index][channel]) for channel in range(3)) / 3.0
+        )
     return total / count
 
 
@@ -344,7 +370,9 @@ def compare_workspace_screenshots(captures: list[dict[str, object]]) -> list[dic
         for right_workspace in WORKSPACES[index + 1 :]:
             if left_workspace not in images or right_workspace not in images:
                 continue
-            difference = mean_pixel_delta(thumbnail_pixels(images[left_workspace]), thumbnail_pixels(images[right_workspace]))
+            difference = mean_pixel_delta(
+                thumbnail_pixels(images[left_workspace]), thumbnail_pixels(images[right_workspace])
+            )
             failures: list[str] = []
             if difference < WORKSPACE_DIFFERENCE_MINIMUM:
                 failures.append(
@@ -402,7 +430,16 @@ def start_managed_xvfb(log_path: Path, timeout_s: float = 5.0) -> ManagedXvfb:
     try:
         with log_path.open("w", encoding="utf-8") as log:
             process = subprocess.Popen(
-                [xvfb, "-screen", "0", XVFB_SCREEN, "-nolisten", "tcp", "-displayfd", str(write_fd)],
+                [
+                    xvfb,
+                    "-screen",
+                    "0",
+                    XVFB_SCREEN,
+                    "-nolisten",
+                    "tcp",
+                    "-displayfd",
+                    str(write_fd),
+                ],
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -437,7 +474,9 @@ def start_managed_xvfb(log_path: Path, timeout_s: float = 5.0) -> ManagedXvfb:
     return ManagedXvfb(xvfb, process, f":{display_number}")
 
 
-def command_for_workspace(executable: Path, screenshot_dir: Path, workspace: str, delay_ms: int) -> list[str]:
+def command_for_workspace(
+    executable: Path, screenshot_dir: Path, workspace: str, delay_ms: int
+) -> list[str]:
     return [
         str(executable),
         "--capture-dir",
@@ -566,10 +605,14 @@ def main() -> int:
             manifest["notes"].append("no-run requested; Qt app was not launched")
         elif not executable.exists():
             manifest["status"] = "fail"
-            manifest["notes"].append("animus_qt executable not found; build with -DALTAIR_BUILD_ANIMUS_QT=ON first")
+            manifest["notes"].append(
+                "animus_qt executable not found; build with -DALTAIR_BUILD_ANIMUS_QT=ON first"
+            )
         else:
             for workspace in WORKSPACES:
-                command = command_for_workspace(executable, screenshot_dir, workspace, args.capture_delay_ms)
+                command = command_for_workspace(
+                    executable, screenshot_dir, workspace, args.capture_delay_ms
+                )
                 log_path = logs_dir / f"{workspace}.log"
                 with log_path.open("w", encoding="utf-8") as log:
                     completed = subprocess.run(
@@ -603,7 +646,9 @@ def main() -> int:
         if xvfb is not None:
             xvfb.stop()
 
-    (run_dir / "run-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    (run_dir / "run-manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
     write_report(run_dir, manifest)
     print(run_dir)
     for path in manifest["screenshots"]:

@@ -13,9 +13,8 @@ Reusable Bayek framework follow-up is tracked separately in
 
 ## Baseline Health
 
-- [ ] Keep CI green for formatting, Debug/Release CMake, CTest, and Animus.
-- [ ] Keep generated build, CSV, plot, and Animus distribution artifacts out of the worktree.
-- [ ] Periodically refresh Animus dependencies on the Node 24 LTS path and require `npm audit --audit-level=moderate` to pass.
+- [ ] Keep CI green for formatting, Debug/Release CMake, CTest, and Qt Animus.
+- [ ] Keep generated build, CSV, plot, and Animus capture artifacts out of the worktree.
 
 ## Vehicle And SITL
 
@@ -48,69 +47,15 @@ Reusable Bayek framework follow-up is tracked separately in
   terrain-3d, and setup screenshots plus nonblank scene checks.
 - [ ] Add QtLocation-backed Animus Qt map rendering once CI and operator
   installs have a portable runtime package strategy.
+- [ ] Port still-desired retired dashboard, inspector, replay import/export,
+  flight view, and guarded command workflows into Qt Animus with Qt-native
+  tests and capture coverage.
 - [x] Extend Animus Qt screenshot analysis beyond nonblank PNG checks to catch
   obvious overlap, clipping, and workspace selection regressions.
 - [ ] Add Animus Qt local tile serving for validated XYZ map packs, then MBTiles,
   before adding PMTiles support.
-- [x] Add a Playwright-backed live SITL interaction harness for Animus workspace controls and checkpoint screenshots.
-- [x] Fix live capture flight workspace rendering so the 3D scene is nonblank under `python3 tools/python/capture_animus_sitl.py`.
-- [x] Resolve flight workspace topbar/status-strip overlap at the default `1440x900` capture viewport.
-- [x] Populate map and inspector live workspaces during SITL capture from browser bridge telemetry.
-- [x] Add firmware-specific readiness checks beyond generic MAVLink telemetry.
-- [x] Make emergency action UX, command cancellation, stale-link protection, and duplicate-GCS handling explicit.
-- [x] Add durable command audit basics with command payload, confirmation, ACK/NACK, timeout, cancellation, and failure reason.
-- [x] Add MAVLink v2/signing awareness to live diagnostics.
-- [x] Add retry dispatch and retry audit semantics for live commands.
-- [x] Expand durable command audit history with operator and session identity.
-- [x] Add broader dialect-driven MAVLink decoding beyond the currently supported message set.
-- [x] Add typed command workflows for high-consequence live actions.
-- [x] Add richer protocol-backed GCS workflows for parameter editing, mission transfer, map/terrain, log, and camera operations.
-- [x] Add dashboard drag-and-drop widget reordering and per-widget resizing.
-- [x] Add dashboard profile import/export for sharing operator layouts.
-- [x] Add dashboard widget groups or presets for flight test, mission planning, and maintenance workflows.
-- [x] Add richer dashboard widget configuration such as thresholds, units, and selected vehicle/fleet scoping.
-- [x] Add persisted application settings beyond the dashboard layout.
-- [x] Add real 2D and 3D terrain map views in Animus for clearer terrain and
-  vehicle-position visualization.
-- [x] Replace the initial Flight View DEM terrain surface with true RGB DEM
-  tile sampling and satellite texture atlas generation in the renderer.
-- [x] Correct the flight-view 3D aircraft model heading so the nose points in
-  the vehicle's telemetry-derived direction of travel.
-- [x] Verify and fix 3D aircraft roll, pitch, and yaw rendering so the model
-  attitude follows telemetry correctly across all axes.
-- [x] Add finer 3D aircraft model details, including visible actuator surfaces
-  that deflect from live actuator or control telemetry.
-- [x] Rearrange the main flight-tab status strip so longer status labels remain
-  fully readable at the default capture viewport.
-- [x] Add an FPV camera preset alongside Chase, Orbit, Top, Side, and Free.
-- [x] Make camera preset views snap to useful positions without locking normal
-  rotate and zoom controls by default.
-- [x] Add an explicit camera-view lock option near the view controls, defaulting
-  off, to enforce fixed preset views when desired.
-- [x] Rework tactical attitude rings into three dimensional gyro-style rings
-  around the aircraft that track roll, pitch, and yaw with vehicle motion.
-- [x] Fix the Electron screenshot capture hang so `capture_animus_sitl.py`
-  produces screenshots reliably instead of relying on timeout failure.
-- [x] Decide whether Animus capture artifacts should represent the requested
-  outer viewport or Electron web contents size; current `1440x900` captures
-  save `1440x835` PNGs.
-- [x] Reduce unnecessary vertical scrollbars in default Animus `1440x900`
-  capture views, especially the live debugger pane and longer workspace panels.
-- [x] Fix narrow `390x844` Animus workspace navigation so the tab row does not
-  create horizontal overflow across live workspaces.
-- [x] Fix narrow `390x844` flight workspace control wrapping so camera/HUD
-  controls do not overlap telemetry cards and the lower scene HUD.
-- [x] Fix narrow `390x844` inspector message table overflow so message names,
-  rates, and counts remain readable without clipped columns.
-- [x] Recenter the `1440x900` flight Free camera state so the vehicle remains
-  visible instead of rendering off-canvas or clipped into the top status area.
-- [x] Persist completed onboard MAVLink log downloads as raw `.tlog` or `.bin`
-  files once `LOG_DATA` byte assembly is promoted from operation progress to
-  durable file output.
-- [x] Replace the generated Animus offline topo PMTiles placeholder with an
-  operator-managed licensed XYZ tile cache workflow.
-- [x] Fix `integration_sitl_session` when Electron exits with `SIGTRAP` after
-  WebGL2 is blocklisted during shutdown.
+- [x] Retire the obsolete TypeScript Animus app, generated dependency tree,
+  interaction harnesses, and old CI lane now that Qt Animus is canonical.
 
 ## Test Ownership
 

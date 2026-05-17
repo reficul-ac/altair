@@ -1,6 +1,6 @@
 # Animus Qt Map And Terrain Architecture
 
-Animus Qt is an experimental ground-control shell that will coexist with the current Electron app until it is feature-complete enough to replace it.
+Animus Qt is the canonical Altair ground-control shell. It owns the current Animus build, capture, telemetry, map, and operator workflows.
 
 ## Process Boundary
 
@@ -17,7 +17,7 @@ The map system is a passive consumer. Tile loading, terrain loading, network req
 
 ## Build
 
-The Qt shell is opt-in so the default Altair C build remains usable on systems without Qt:
+The Qt shell remains behind `ALTAIR_BUILD_ANIMUS_QT` so the default Altair C build stays usable on systems without Qt:
 
 ```sh
 cmake -S . -B build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON
@@ -63,7 +63,7 @@ Future phases will extend validation for bounds, layers, versioning, generated-a
 
 Implemented now:
 
-- Opt-in Qt/QML application under `tools/animus-qt`.
+- Qt/QML application under `tools/animus-qt`.
 - QML workspace shell with 2D map, 3D terrain placeholder, and setup views.
 - Deterministic Qt screenshot capture for `map-2d`, `terrain-3d`, and `setup` with mock telemetry and PNG nonblank checks.
 - Vehicle state, bounded/decimated breadcrumb trail, map source registry, offline policy, map-pack discovery/validation, and Cesium WebChannel bridge.
@@ -78,4 +78,4 @@ Not implemented yet:
 - Bundled CesiumJS vendor assets and quantized-mesh terrain loading.
 - Mission, geofence, rally, and multi-vehicle model adapters.
 - QtLocation-backed 2D map rendering once a portable install/runtime strategy exists.
-- Rich overlap, clipping, and semantic visual assertions beyond nonblank screenshot checks.
+- Broader semantic visual assertions beyond the current screenshot diagnostics.

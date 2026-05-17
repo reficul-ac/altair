@@ -3,9 +3,11 @@
 #include <QByteArray>
 #include <QVector>
 
-namespace animus {
+namespace animus
+{
 
-struct MavlinkTelemetrySample {
+struct MavlinkTelemetrySample
+{
     bool hasHeartbeat = false;
     bool hasAttitude = false;
     bool hasGlobalPosition = false;
@@ -52,12 +54,14 @@ struct MavlinkTelemetrySample {
     int terrainLoaded = 0;
 };
 
-class MavlinkDecoder final {
-public:
+class MavlinkDecoder final
+{
+  public:
     QVector<MavlinkTelemetrySample> decodeDatagram(const QByteArray &datagram) const;
 
-private:
-    static bool decodeFrame(const unsigned char *frame, int frameLength, MavlinkTelemetrySample *sample);
+  private:
+    static bool
+    decodeFrame(const unsigned char *frame, int frameLength, MavlinkTelemetrySample *sample);
 };
 
 } // namespace animus

@@ -376,9 +376,10 @@ if(Python3_Interpreter_FOUND)
                      "${CMAKE_SOURCE_DIR}"
     )
 
-    add_test(NAME integration_capture_animus_qt_sitl_png_checks
-             COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_capture_animus_qt_sitl.py"
-                     "${CMAKE_SOURCE_DIR}"
+    add_test(
+        NAME integration_capture_animus_qt_sitl_png_checks
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_capture_animus_qt_sitl.py"
+                "${CMAKE_SOURCE_DIR}"
     )
 
     add_test(NAME integration_sitl_session

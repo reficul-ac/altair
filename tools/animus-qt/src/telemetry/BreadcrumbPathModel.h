@@ -6,20 +6,24 @@
 #include <QVariant>
 #include <QVector>
 
-namespace animus {
+namespace animus
+{
 
-struct BreadcrumbPoint {
+struct BreadcrumbPoint
+{
     QGeoCoordinate coordinate;
     double timestampS;
 };
 
-class BreadcrumbPathModel final : public QAbstractListModel {
+class BreadcrumbPathModel final : public QAbstractListModel
+{
     Q_OBJECT
     Q_PROPERTY(int maxPoints READ maxPoints WRITE setMaxPoints NOTIFY limitsChanged)
     Q_PROPERTY(double minDistanceM READ minDistanceM WRITE setMinDistanceM NOTIFY limitsChanged)
 
-public:
-    enum Roles {
+  public:
+    enum Roles
+    {
         LatitudeRole = Qt::UserRole + 1,
         LongitudeRole,
         AltitudeRole,
@@ -40,12 +44,13 @@ public:
     void setMinDistanceM(double minDistanceM);
 
     Q_INVOKABLE void clear();
-    Q_INVOKABLE bool append(double latitudeDeg, double longitudeDeg, double altitudeM, double timestampS);
+    Q_INVOKABLE bool
+    append(double latitudeDeg, double longitudeDeg, double altitudeM, double timestampS);
 
-signals:
+  signals:
     void limitsChanged();
 
-private:
+  private:
     QVector<BreadcrumbPoint> m_points;
     int m_maxPoints;
     double m_minDistanceM;

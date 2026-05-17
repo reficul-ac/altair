@@ -664,7 +664,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--writable-animus",
         action="store_true",
-        help="advertise guarded SITL-only write support to browser Animus clients",
+        help="advertise guarded SITL-only write support to Animus clients",
     )
     args = parser.parse_args(argv)
     if args.no_forward:

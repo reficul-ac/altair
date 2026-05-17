@@ -1,6 +1,6 @@
 # Animus QGC Map Audit
 
-This audit records the QGroundControl map areas that should be inspected before porting behavior into the experimental Qt Animus shell under `tools/animus-qt/`.
+This audit records the QGroundControl map areas that should be inspected while porting behavior into the canonical Qt Animus shell under `tools/animus-qt/`.
 
 ## Licensing Boundary
 

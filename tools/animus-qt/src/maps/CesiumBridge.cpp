@@ -2,19 +2,29 @@
 
 #include "models/VehicleModel.h"
 
-namespace animus {
+namespace animus
+{
 
-CesiumBridge::CesiumBridge(VehicleModel *vehicle, QObject *parent) : QObject(parent), m_vehicle(vehicle) {
+CesiumBridge::CesiumBridge(VehicleModel *vehicle, QObject *parent)
+    : QObject(parent), m_vehicle(vehicle)
+{
     connect(vehicle, &VehicleModel::positionChanged, this, &CesiumBridge::publishVehicle);
     connect(vehicle, &VehicleModel::attitudeChanged, this, &CesiumBridge::publishVehicle);
     publishVehicle();
 }
 
-QVariantMap CesiumBridge::latestVehicle() const { return m_latestVehicle; }
+QVariantMap CesiumBridge::latestVehicle() const
+{
+    return m_latestVehicle;
+}
 
-QVariantMap CesiumBridge::snapshot() const { return m_latestVehicle; }
+QVariantMap CesiumBridge::snapshot() const
+{
+    return m_latestVehicle;
+}
 
-void CesiumBridge::publishVehicle() {
+void CesiumBridge::publishVehicle()
+{
     m_latestVehicle = {
         {QStringLiteral("id"), m_vehicle->vehicleId()},
         {QStringLiteral("latDeg"), m_vehicle->latitudeDeg()},

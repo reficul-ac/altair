@@ -9,20 +9,24 @@
 
 class QUdpSocket;
 
-namespace animus {
+namespace animus
+{
 
 class BreadcrumbPathModel;
 class VehicleModel;
 
-class TelemetryService final : public QObject {
+class TelemetryService final : public QObject
+{
     Q_OBJECT
     Q_PROPERTY(bool running READ running NOTIFY runningChanged)
     Q_PROPERTY(int uiRateHz READ uiRateHz WRITE setUiRateHz NOTIFY uiRateHzChanged)
     Q_PROPERTY(quint16 udpPort READ udpPort WRITE setUdpPort NOTIFY udpEndpointChanged)
     Q_PROPERTY(QString udpHost READ udpHost WRITE setUdpHost NOTIFY udpEndpointChanged)
 
-public:
-    explicit TelemetryService(VehicleModel *vehicle, BreadcrumbPathModel *trail, QObject *parent = nullptr);
+  public:
+    explicit TelemetryService(VehicleModel *vehicle,
+                              BreadcrumbPathModel *trail,
+                              QObject *parent = nullptr);
     ~TelemetryService() override = default;
 
     bool running() const;
@@ -38,17 +42,17 @@ public:
     Q_INVOKABLE void stop();
     bool ingestDatagram(const QByteArray &datagram);
 
-signals:
+  signals:
     void runningChanged();
     void uiRateHzChanged();
     void udpEndpointChanged();
 
-private slots:
+  private slots:
     void publishMockSample();
     void readPendingDatagrams();
     void publishPendingSample();
 
-private:
+  private:
     void applySample(const MavlinkTelemetrySample &sample);
     void setRunning(bool running);
 

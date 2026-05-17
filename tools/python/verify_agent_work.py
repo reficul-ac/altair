@@ -11,7 +11,7 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 RECOMMENDATION_ARTIFACT_DIR = pathlib.Path("artifacts/agent-verification/<timestamp>")
-CHECK_ORDER = ("format", "cmake", "release", "sitl_plots", "mc", "animus", "animus_qt")
+CHECK_ORDER = ("format", "cmake", "release", "sitl_plots", "mc", "animus_qt")
 
 
 def parse_args():
@@ -30,7 +30,9 @@ def parse_args():
     parser.add_argument("--sitl-plots", action="store_true", help="run cruise6dof SITL and plots")
     parser.add_argument("--mc", action="store_true", help="run Monte Carlo smoke summary")
     parser.add_argument(
-        "--animus", action="store_true", help="run Animus test/build/capture workflow"
+        "--animus",
+        action="store_true",
+        help="deprecated alias for --animus-qt",
     )
     parser.add_argument(
         "--animus-qt",
@@ -63,27 +65,13 @@ def is_doc_path(path):
     return path.endswith(".md") or path.startswith("docs/") or path.startswith("bayek/docs/")
 
 
-def is_animus_path(path):
-    return (
-        path.startswith("tools/animus/src/")
-        or path.startswith("tools/animus/tests/")
-        or path
-        in {
-            "tools/animus/package.json",
-            "tools/animus/package-lock.json",
-            "tools/animus/playwright.config.ts",
-            "tools/animus/tsconfig.json",
-            "tools/animus/vite.config.ts",
-        }
-    )
-
-
 def is_animus_qt_path(path):
     return (
         path.startswith("tools/animus-qt/")
         or path == "tools/python/capture_animus_qt_sitl.py"
         or path == "docs/animus_qt_architecture.md"
         or path == "docs/animus_qgc_map_audit.md"
+        or path == "docs/animus_operator_controls.md"
         or path == "CMakeLists.txt"
     )
 
@@ -163,13 +151,6 @@ def select_verification_for_paths(paths):
         for path in changed_paths:
             if is_doc_path(path):
                 add_reason(reasons, "format", "documentation changed alongside code")
-                continue
-            if is_animus_path(path):
-                add_reason(
-                    reasons,
-                    "animus",
-                    "Animus source, style, or UI workflow files changed",
-                )
                 continue
             if is_animus_qt_path(path):
                 add_reason(
@@ -366,17 +347,7 @@ def selected_checks_for_flags(flags, artifact_dir=RECOMMENDATION_ARTIFACT_DIR):
             ],
             [mc_csv],
         )
-    if "all" in requested or "animus" in requested:
-        add_check(
-            checks,
-            "animus",
-            [
-                ["npm", "test", "--prefix", "tools/animus"],
-                ["npm", "run", "build", "--prefix", "tools/animus"],
-                [sys.executable, "tools/python/capture_animus_sitl.py"],
-            ],
-        )
-    if "all" in requested or "animus_qt" in requested:
+    if "all" in requested or "animus_qt" in requested or "animus" in requested:
         add_check(
             checks,
             "animus_qt",
@@ -419,6 +390,8 @@ def selected_checks(args, artifact_dir):
         attr = "sitl_plots" if flag == "sitl_plots" else flag
         if getattr(args, attr, False):
             flags.append(flag)
+    if args.animus:
+        flags.append("animus")
     if args.all:
         flags.append("all")
     return selected_checks_for_flags(flags, artifact_dir)

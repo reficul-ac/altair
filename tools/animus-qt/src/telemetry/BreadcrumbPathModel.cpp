@@ -2,20 +2,28 @@
 
 #include <QtGlobal>
 
-namespace animus {
+namespace animus
+{
 
 BreadcrumbPathModel::BreadcrumbPathModel(QObject *parent)
-    : QAbstractListModel(parent), m_maxPoints(1200), m_minDistanceM(2.0) {}
+    : QAbstractListModel(parent), m_maxPoints(1200), m_minDistanceM(2.0)
+{
+}
 
-int BreadcrumbPathModel::rowCount(const QModelIndex &parent) const {
-    if (parent.isValid()) return 0;
+int BreadcrumbPathModel::rowCount(const QModelIndex &parent) const
+{
+    if (parent.isValid())
+        return 0;
     return m_points.size();
 }
 
-QVariant BreadcrumbPathModel::data(const QModelIndex &index, int role) const {
-    if (!index.isValid() || index.row() < 0 || index.row() >= m_points.size()) return QVariant();
+QVariant BreadcrumbPathModel::data(const QModelIndex &index, int role) const
+{
+    if (!index.isValid() || index.row() < 0 || index.row() >= m_points.size())
+        return QVariant();
     const BreadcrumbPoint &point = m_points.at(index.row());
-    switch (role) {
+    switch (role)
+    {
     case LatitudeRole:
         return point.coordinate.latitude();
     case LongitudeRole:
@@ -29,7 +37,8 @@ QVariant BreadcrumbPathModel::data(const QModelIndex &index, int role) const {
     }
 }
 
-QHash<int, QByteArray> BreadcrumbPathModel::roleNames() const {
+QHash<int, QByteArray> BreadcrumbPathModel::roleNames() const
+{
     QHash<int, QByteArray> roles;
     roles[LatitudeRole] = "latitude";
     roles[LongitudeRole] = "longitude";
@@ -38,13 +47,19 @@ QHash<int, QByteArray> BreadcrumbPathModel::roleNames() const {
     return roles;
 }
 
-int BreadcrumbPathModel::maxPoints() const { return m_maxPoints; }
+int BreadcrumbPathModel::maxPoints() const
+{
+    return m_maxPoints;
+}
 
-void BreadcrumbPathModel::setMaxPoints(int maxPoints) {
+void BreadcrumbPathModel::setMaxPoints(int maxPoints)
+{
     const int bounded = qBound(1, maxPoints, 100000);
-    if (m_maxPoints == bounded) return;
+    if (m_maxPoints == bounded)
+        return;
     m_maxPoints = bounded;
-    while (m_points.size() > m_maxPoints) {
+    while (m_points.size() > m_maxPoints)
+    {
         beginRemoveRows(QModelIndex(), 0, 0);
         m_points.removeFirst();
         endRemoveRows();
@@ -52,30 +67,44 @@ void BreadcrumbPathModel::setMaxPoints(int maxPoints) {
     emit limitsChanged();
 }
 
-double BreadcrumbPathModel::minDistanceM() const { return m_minDistanceM; }
+double BreadcrumbPathModel::minDistanceM() const
+{
+    return m_minDistanceM;
+}
 
-void BreadcrumbPathModel::setMinDistanceM(double minDistanceM) {
+void BreadcrumbPathModel::setMinDistanceM(double minDistanceM)
+{
     const double bounded = qMax(0.0, minDistanceM);
-    if (qFuzzyCompare(m_minDistanceM, bounded)) return;
+    if (qFuzzyCompare(m_minDistanceM, bounded))
+        return;
     m_minDistanceM = bounded;
     emit limitsChanged();
 }
 
-void BreadcrumbPathModel::clear() {
+void BreadcrumbPathModel::clear()
+{
     beginResetModel();
     m_points.clear();
     endResetModel();
 }
 
-bool BreadcrumbPathModel::append(double latitudeDeg, double longitudeDeg, double altitudeM, double timestampS) {
+bool BreadcrumbPathModel::append(double latitudeDeg,
+                                 double longitudeDeg,
+                                 double altitudeM,
+                                 double timestampS)
+{
     const QGeoCoordinate coordinate(latitudeDeg, longitudeDeg, altitudeM);
-    if (!coordinate.isValid()) return false;
-    if (!m_points.isEmpty() && m_minDistanceM > 0.0) {
+    if (!coordinate.isValid())
+        return false;
+    if (!m_points.isEmpty() && m_minDistanceM > 0.0)
+    {
         const double distanceM = m_points.constLast().coordinate.distanceTo(coordinate);
-        if (distanceM < m_minDistanceM) return false;
+        if (distanceM < m_minDistanceM)
+            return false;
     }
 
-    if (m_points.size() >= m_maxPoints) {
+    if (m_points.size() >= m_maxPoints)
+    {
         beginRemoveRows(QModelIndex(), 0, 0);
         m_points.removeFirst();
         endRemoveRows();

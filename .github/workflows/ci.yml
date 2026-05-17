@@ -65,39 +65,6 @@ jobs:
       - name: Test
         run: ctest --test-dir build-${{ matrix.build_type }} --output-on-failure
 
-  animus:
-    name: animus
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: tools/animus
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          submodules: recursive
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: tools/animus/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Test
-        run: npm test
-
-      - name: Build
-        run: npm run build
-
-      - name: Audit
-        run: npm audit --audit-level=moderate
-
   animus-qt:
     name: animus-qt
     runs-on: ubuntu-24.04

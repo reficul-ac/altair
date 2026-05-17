@@ -7,23 +7,18 @@ The Altair Animus is a debugger-oriented MAVLink/SITL viewer. It is read-only by
 From the repository root:
 
 ```sh
-npm run dev --prefix tools/animus
+cmake -S . -B build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON
+cmake --build build-animus-qt --parallel
+./build-animus-qt/tools/animus-qt/animus_qt
 ```
 
-For the Electron app:
+The live SITL bridge remains a separate Python process:
 
 ```sh
-npm run app --prefix tools/animus
+tools/python/run_sitl_session.py
 ```
 
-Writable launches are opt-in:
-
-```sh
-npm run app --prefix tools/animus -- --writable-animus
-npm run app --prefix tools/animus -- --trusted-live-writable
-```
-
-`--writable-animus` is intended for SITL. `--trusted-live-writable` exposes live-vehicle protocol writes only after an operator intentionally chooses that authority mode at launch; Animus still displays endpoint, QGC forwarding, duplicate-GCS risk, and MAVLink signing status in Setup.
+`run_sitl_session.py` starts `mavlink_live_bridge.py`, optional QGroundControl forwarding, and realtime SITL. Animus clients consume decoded state from the bridge WebSocket. `--writable-animus` remains a SITL-only bridge advertisement for guarded write experiments.
 
 For a Python bridge session:
 
@@ -31,35 +26,11 @@ For a Python bridge session:
 python3 tools/python/mavlink_live_bridge.py
 ```
 
-The experimental Qt/QML migration shell is opt-in and coexists with the Electron app:
-
-```sh
-cmake -S . -B build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON
-cmake --build build-animus-qt --parallel
-./build-animus-qt/tools/animus-qt/animus_qt
-```
-
 It requires Qt 6.4 or newer with the Qt modules listed in [Animus Qt Map And Terrain Architecture](animus_qt_architecture.md). The current 2D map capture path uses a strict-offline QtQuick fallback; QtLocation-backed rendering remains future work.
 
 ## Verification Workflows
 
-The lightweight visual workflow launches live SITL, opens Animus, and captures one screenshot per workspace:
-
-```sh
-python3 tools/python/capture_animus_sitl.py
-```
-
-The screenshot artifact directory includes `visual-report.md`, which summarizes live telemetry, requested workspaces and viewports, screenshot diagnostics, warning notes, and links to the manifests and service logs.
-
-The deeper interaction workflow launches the same live stack and drives Chromium through Playwright:
-
-```sh
-python3 tools/python/interact_animus_sitl.py
-```
-
-Use the interaction harness when changing workspace controls, dashboard widget workflows, guarded command surfaces, mission editing, replay/session controls, or any UI behavior that needs screenshots at specific checkpoints. It writes logs, the Playwright report, and checkpoint screenshots under `artifacts/animus-interactions/<timestamp>/`.
-
-The Qt migration has a separate screenshot entrypoint:
+The visual verification workflow captures one screenshot per Qt workspace:
 
 ```sh
 python3 tools/python/capture_animus_qt_sitl.py
@@ -69,53 +40,25 @@ The script captures `map-2d`, `terrain-3d`, and `setup` from the built Qt shell 
 
 ## Flight View
 
-- Camera buttons select `Chase`, `Orbit`, `Top`, `Side`, or `Free`.
-- `C` cycles the camera mode.
-- Free camera keeps the existing mouse-look and keyboard controls: drag to look, `W/A/S/D` to move, `Q/E` down/up, and `Shift` for faster movement.
-- `O` toggles the orthographic trail inset.
-- `V` cycles the visual theme.
-- `M` adds a local debug marker when the Electron service is available.
-- The Flight HUD compass is ground-track primary. It derives direction from
-  north/east velocity when the vehicle is moving, falls back to decoded MAVLink
-  heading when track is unavailable, and finally falls back to yaw-derived
-  heading.
-
-Vehicle meshes are chosen from heartbeat vehicle type: fixed-wing, multirotor, VTOL/tailsitter, or generic MAVLink.
+Flight View parity is future Qt Animus work. The current shell focuses on telemetry-backed setup, 2D map, and 3D terrain workspaces.
 
 ## Map View
 
 - Drag the map to pan.
-- Mouse wheel zooms the map; Satellite uses MapLibre's native cursor-centered zoom.
+- Mouse wheel zooms the map.
 - `Snap` recenters on the selected vehicle and resumes selected-vehicle follow after panning away.
-- `Satellite` shows the active offline satellite tile cache through MapLibre GL JS.
-- `Terrain 3D` is enabled when an active offline DEM cache exists. It keeps vehicle overlays usable when satellite imagery is missing and shows shaded terrain until an active satellite cache can be draped over the Flight View terrain mesh.
+- `Terrain 3D` opens the Cesium/WebEngine terrain preview path when available.
 - Vehicle markers are triangular and point along velocity, with heading as a low-speed fallback. Home/origin markers use an X shape so they are visually distinct from vehicles.
 
-Animus expects operator-provided, licensed XYZ raster tile URL templates with `{z}`, `{x}`, and `{y}` placeholders and any API key embedded in the query string. Setup estimates the tile count for the current Map viewport, or the default SITL origin at `37.4275, -122.1697` when no map viewport is available, then caches satellite tiles under Electron user data at `map-cache/tiles/<setId>/<z>/<x>/<y>.<ext>` and DEM tiles under `map-cache/dem/<setId>/<z>/<x>/<y>.<ext>`. The satellite cache index is stored at `map-cache/index.json`; the DEM cache index is stored at `map-cache/dem-index.json`. Repository artifacts no longer ship generated topo or PMTiles fallbacks.
+Animus expects operator-provided, licensed map packs. Repository artifacts do not ship generated topo or PMTiles fallbacks.
 
 Animus downloads only from `http` or `https` XYZ templates that the operator is licensed to cache. It does not scrape Google, Mapbox, Esri, or other tile services outside their permitted offline or on-prem products. DEM cache setup supports MapLibre-compatible RGB DEM encodings: `terrarium` and `mapbox`. If no active cache exists, or the current view requests missing tiles, Animus shows an explicit offline cache status while keeping vehicle overlays usable.
 
 Vehicle telemetry is used only for overlays: selected and fleet trails, event markers, an origin/home marker when available, mission waypoint paths, geofence polygons/circles, and rally points when decoded records are present. Terrain check requests are protocol-backed and appear in the operation history. Creating or editing geofences, rally points, or terrain tiles remains out of scope unless a decoded MAVLink path is added for that operation.
 
-## Dashboard View
+## Dashboard And Inspector
 
-- `Add Widget` opens the built-in widget catalog for fixed-grid status and guarded-control widgets.
-- Each widget can be dragged within the grid, resized between compact, wide, and full spans, or removed; `Reset Layout` restores the default dashboard.
-- `Import` and `Export` share dashboard profiles as the same JSON layout shape persisted in `dashboard-layout.json`: `schemaVersion: 1` plus a `widgets` array. Import replaces the active layout after normalizing invalid, duplicate, or unsupported widget entries.
-- Threshold customization is intentionally out of scope.
-- The Electron app persists the layout as JSON at `path.join(app.getPath('userData'), 'dashboard-layout.json')`. Missing or invalid settings fall back to the default layout without overwriting the file until the operator changes or resets the layout.
-- Application settings include the default offline map style (`mapStyle: "satellite"`), whether the map should follow the selected vehicle (`mapFollowSelected`), licensed satellite and DEM XYZ tile templates, attribution, DEM encoding, active cache set ids, zoom defaults, and max tile count guards.
-
-Status widgets read the same session snapshot used by Flight, Map, Inspector, and Setup. The guarded control widget uses the existing command authority, confirmation, dispatch, audit, retry, and guard evaluation path. Commands are disabled when the selected vehicle reports read-only authority, stale or non-live link state, unsupported command capability, or a decoded blocked-command reason.
-
-## Inspector View
-
-- Use the message filter to narrow by message name, message id, or `system:component`.
-- Select a message row to inspect its latest decoded fields.
-- Click one or more numeric field buttons to overlay chart traces.
-- `Export CSV` downloads the currently selected chart samples for the active message.
-- `Export Log` downloads the continuous browser-side inspector CSV log across vehicles, messages, and fields.
-- The Compare panel keeps per-vehicle streams visible while synchronized replay inspection is active.
+Dashboard and Inspector parity are future Qt Animus work. Keep any behavior still desired from the retired implementation in `TODO.md` instead of reintroducing stale UI code.
 
 ## Replay And Logs
 
@@ -124,7 +67,7 @@ Status widgets read the same session snapshot used by Flight, Map, Inspector, an
 - Native replay JSON is `type: "altair_session_replay"` with `schemaVersion: 1`, optional metadata/markers, and ordered or unordered frames containing `timestampS` plus a `session_snapshot`. Unsupported replay schema versions are rejected on import instead of being migrated implicitly.
 - Replay and live WebSocket snapshots use tolerant v1 compatibility checks: required session fields (`vehicles`, `messages`, `events`, `packetCount`, `decodedCount`) and required vehicle basics must be present, while missing optional domains such as logs, console, command/audit state, protocol operations, and mock links normalize to empty arrays.
 - Replay controls support pause/play, scrub, speed selection, reset, and marker navigation.
-- `Download` saves the current replay/session metadata path exposed by Electron.
+- Download/export parity is future Qt Animus work.
 - Setup can request the onboard MAVLink log list, start per-log download operations, and erase onboard logs behind typed confirmation. Completed `LOG_DATA` downloads are assembled by byte offset and saved as raw `.bin` files under `path.join(app.getPath('userData'), 'onboard-logs')`; the saved path appears in the logs operation history. Imported replay behavior is unchanged.
 
 ## Analysis And GCS Parity
