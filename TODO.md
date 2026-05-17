@@ -94,7 +94,7 @@ Reusable Bayek framework follow-up is tracked separately in
   durable file output.
 - [x] Replace the generated Animus offline topo PMTiles placeholder with a
   production map pack and documented source/licensing refresh workflow.
-- [ ] Fix `integration_sitl_session` when Electron exits with `SIGTRAP` after
+- [x] Fix `integration_sitl_session` when Electron exits with `SIGTRAP` after
   WebGL2 is blocklisted during shutdown.
 
 ## Test Ownership

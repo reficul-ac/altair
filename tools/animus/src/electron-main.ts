@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import {
   commandSpec,
@@ -85,6 +86,8 @@ const dashboardLayoutFile = dashboardLayoutPath(app.getPath('userData'));
 const animusSettingsFile = animusSettingsPath(app.getPath('userData'));
 let recentCommandAudit: CommandAuditEntry[] = [];
 let mockLink: MockLinkState | null = null;
+let shutdownPromise: Promise<void> | null = null;
+let exiting = false;
 
 function sendToWindows(channel: string, payload: WindowMessage): void {
   const message = channel === 'session-snapshot' && isSessionSnapshot(payload) ? withRecentCommandAudit(payload) : payload;
@@ -102,6 +105,41 @@ function withRecentCommandAudit(snapshot: SessionSnapshotPayload): SessionSnapsh
     ...snapshot,
     commandAudit: recentCommandAudit.slice(0, 20)
   };
+}
+
+async function stopRuntimeServices(): Promise<void> {
+  await telemetry.stop();
+}
+
+async function shutdown(exitCode: number): Promise<void> {
+  if (!shutdownPromise) {
+    shutdownPromise = stopRuntimeServices();
+  }
+  try {
+    await shutdownPromise;
+  } catch (error) {
+    console.error('Failed to stop Animus runtime services during shutdown', error);
+    exitCode = exitCode === 0 ? 1 : exitCode;
+  }
+  exiting = true;
+  process.exit(exitCode);
+}
+
+function requestShutdown(exitCode = 0): void {
+  void shutdown(exitCode);
+}
+
+function installStdinShutdownHandler(): void {
+  if (process.stdin.isTTY) {
+    return;
+  }
+  const input = createInterface({ input: process.stdin });
+  input.on('line', (line) => {
+    if (line.trim() === 'shutdown') {
+      input.close();
+      requestShutdown(0);
+    }
+  });
 }
 
 async function appendAudit(entry: CommandAuditEntry): Promise<void> {
@@ -423,6 +461,7 @@ app.whenReady().then(async () => {
   });
 }).catch((error) => {
   console.error(error);
+  exiting = true;
   app.exit(1);
 });
 
@@ -432,6 +471,14 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
-  void telemetry.stop();
+app.on('before-quit', (event) => {
+  if (exiting) {
+    return;
+  }
+  event.preventDefault();
+  requestShutdown(0);
 });
+
+process.on('SIGINT', () => requestShutdown(0));
+process.on('SIGTERM', () => requestShutdown(0));
+installStdinShutdownHandler();

@@ -300,17 +300,12 @@ def run_lifecycle_checks(repo_root):
             "--output",
             str(app_output),
         ]
-        app_command = app
         if "DISPLAY" not in os.environ and "WAYLAND_DISPLAY" not in os.environ:
-            xvfb = shutil.which("xvfb-run")
-            if xvfb is None:
-                print(
-                    "skipping app lifecycle check: no display server or xvfb-run", file=sys.stderr
-                )
+            if shutil.which("Xvfb") is None:
+                print("skipping app lifecycle check: no display server or Xvfb", file=sys.stderr)
                 return 0
-            app_command = [xvfb, "-a", *app]
         code, output = run_pty_interrupt(
-            app_command,
+            app,
             repo_root,
             ready_text="== Run sitl ==",
             post_ready_delay=0.5,
@@ -324,8 +319,6 @@ def run_lifecycle_checks(repo_root):
             return 1
         port_is_free("127.0.0.1", app_bridge_port, "udp")
         rerun_app = [*app[:-4], "--duration", "0.05", "--output", str(tmp_path / "app-rerun.csv")]
-        if app_command is not app:
-            rerun_app = [app_command[0], app_command[1], *rerun_app]
         if not run_short_rerun(rerun_app, repo_root):
             return 1
 
@@ -377,7 +370,8 @@ def main():
         "app build: (cd" not in result.stdout
         or "npm run build" not in result.stdout
         or "app: (cd" not in result.stdout
-        or "npm exec -- electron . --listen-host 127.0.0.1 --listen-port 14551" not in result.stdout
+        or "tools/animus/node_modules/.bin/electron --ignore-gpu-blocklist --enable-unsafe-swiftshader --use-angle=swiftshader . --listen-host 127.0.0.1 --listen-port 14551"
+        not in result.stdout
     ):
         print("session did not start the Electron Animus with --app", file=sys.stderr)
         return 1

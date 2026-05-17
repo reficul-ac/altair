@@ -4,14 +4,25 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import os
 import pathlib
 import shlex
 import shutil
 import signal
+import select
 import subprocess
 import sys
 import time
+
+
+@dataclass
+class ManagedProcess:
+    label: str
+    process: subprocess.Popen
+    interrupt_signal: signal.Signals = signal.SIGINT
+    interrupt_timeout_s: float = 3.0
+    shutdown_command: str | None = None
 
 
 def repo_root() -> pathlib.Path:
@@ -183,11 +194,20 @@ def viewer_command(args: argparse.Namespace) -> list[str]:
 
 
 def app_command(args: argparse.Namespace) -> list[str]:
+    root = repo_root()
+    electron = (
+        root
+        / "tools"
+        / "animus"
+        / "node_modules"
+        / ".bin"
+        / ("electron.cmd" if os.name == "nt" else "electron")
+    )
     command = [
-        "npm",
-        "exec",
-        "--",
-        "electron",
+        str(electron),
+        "--ignore-gpu-blocklist",
+        "--enable-unsafe-swiftshader",
+        "--use-angle=swiftshader",
         ".",
         "--listen-host",
         args.bridge_host,
@@ -268,31 +288,77 @@ def require_viewer_ready(root: pathlib.Path, install_deps: bool, dry_run: bool) 
         raise RuntimeError("tools/animus/node_modules is missing; rerun with --install-viewer-deps")
 
 
-def terminate(processes: list[subprocess.Popen]) -> None:
-    for process in reversed(processes):
+def requires_virtual_display() -> bool:
+    return "DISPLAY" not in os.environ and "WAYLAND_DISPLAY" not in os.environ
+
+
+def start_virtual_display() -> tuple[ManagedProcess, dict[str, str]]:
+    xvfb = shutil.which("Xvfb")
+    if xvfb is None:
+        raise RuntimeError("Electron app mode requires DISPLAY, WAYLAND_DISPLAY, or Xvfb")
+    read_fd, write_fd = os.pipe()
+    process = subprocess.Popen(
+        [xvfb, "-screen", "0", "1440x900x24", "-nolisten", "tcp", "-displayfd", str(write_fd)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        start_new_session=True,
+        pass_fds=(write_fd,),
+    )
+    os.close(write_fd)
+    try:
+        readable, _, _ = select.select([read_fd], [], [], 5.0)
+        if not readable:
+            raise RuntimeError("timed out waiting for Xvfb display allocation")
+        display = os.read(read_fd, 32).decode("utf-8", errors="replace").strip()
+    finally:
+        os.close(read_fd)
+    if not display or process.poll() is not None:
+        raise RuntimeError("Xvfb failed to start")
+    return ManagedProcess("xvfb", process, signal.SIGTERM, 3.0), {"DISPLAY": f":{display}"}
+
+
+def process_policy(label: str, process: subprocess.Popen) -> ManagedProcess:
+    if label == "app":
+        return ManagedProcess(label, process, signal.SIGINT, 8.0, "shutdown\n")
+    return ManagedProcess(label, process)
+
+
+def terminate(processes: list[ManagedProcess]) -> None:
+    for managed in reversed(processes):
+        process = managed.process
         if process.poll() is None:
+            if managed.shutdown_command is not None and process.stdin is not None:
+                try:
+                    process.stdin.write(managed.shutdown_command)
+                    process.stdin.flush()
+                    process.stdin.close()
+                    continue
+                except OSError:
+                    pass
             try:
-                os.killpg(process.pid, signal.SIGINT)
+                os.killpg(process.pid, managed.interrupt_signal)
             except ProcessLookupError:
                 pass
-    interrupt_deadline = time.monotonic() + 3.0
-    for process in reversed(processes):
+    for managed in reversed(processes):
+        process = managed.process
         if process.poll() is not None:
             continue
-        remaining = max(0.0, interrupt_deadline - time.monotonic())
         try:
-            process.wait(timeout=remaining)
+            process.wait(timeout=managed.interrupt_timeout_s)
         except subprocess.TimeoutExpired:
             pass
 
-    for process in reversed(processes):
+    for managed in reversed(processes):
+        process = managed.process
         if process.poll() is None:
             try:
                 os.killpg(process.pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
     deadline = time.monotonic() + 5.0
-    for process in reversed(processes):
+    for managed in reversed(processes):
+        process = managed.process
         remaining = max(0.0, deadline - time.monotonic())
         try:
             process.wait(timeout=remaining)
@@ -304,8 +370,17 @@ def terminate(processes: list[subprocess.Popen]) -> None:
             process.wait()
 
 
-def start_process(command: list[str], cwd: pathlib.Path | None) -> subprocess.Popen:
-    return subprocess.Popen(command, cwd=cwd, text=True, start_new_session=True)
+def start_process(
+    command: list[str],
+    cwd: pathlib.Path | None,
+    *,
+    stdin_pipe: bool = False,
+    env: dict[str, str] | None = None,
+) -> subprocess.Popen:
+    stdin = subprocess.PIPE if stdin_pipe else None
+    return subprocess.Popen(
+        command, cwd=cwd, text=True, start_new_session=True, stdin=stdin, env=env
+    )
 
 
 def run(args: argparse.Namespace) -> int:
@@ -337,7 +412,8 @@ def run(args: argparse.Namespace) -> int:
             print(f"{label}: {prefix}{quote_command(command)}{suffix}")
         return 0
 
-    processes: list[subprocess.Popen] = []
+    processes: list[ManagedProcess] = []
+    child_env: dict[str, str] | None = None
     previous_sigterm = signal.getsignal(signal.SIGTERM)
 
     def stop(_signum, _frame) -> None:
@@ -367,27 +443,33 @@ def run(args: argparse.Namespace) -> int:
             print(quote_command(command), flush=True)
             subprocess.run(command, cwd=cwd, text=True, check=True)
 
+        if args.app and requires_virtual_display():
+            virtual_display, display_env = start_virtual_display()
+            processes.append(virtual_display)
+            child_env = {**os.environ, **display_env}
+
         for label, command, cwd in commands[:-1]:
             print(f"\n== Start {label} ==", flush=True)
             print(quote_command(command), flush=True)
-            processes.append(start_process(command, cwd))
+            process = start_process(command, cwd, stdin_pipe=label == "app", env=child_env)
+            processes.append(process_policy(label, process))
             time.sleep(0.3)
-            if processes[-1].poll() is not None:
-                return processes[-1].returncode or 1
+            if process.poll() is not None:
+                return process.returncode or 1
 
         if args.vehicles == 1:
             label, command, cwd = commands[-1]
             print(f"\n== Run {label} ==", flush=True)
             print(quote_command(command), flush=True)
             sitl = start_process(command, cwd)
-            processes.append(sitl)
+            processes.append(process_policy(label, sitl))
             return sitl.wait()
         print(f"\n== Run swarm ({args.vehicles} vehicles) ==", flush=True)
         for label, command, cwd in commands[-args.vehicles :]:
             print(f"{label}: {quote_command(command)}", flush=True)
-            processes.append(start_process(command, cwd))
+            processes.append(process_policy(label, start_process(command, cwd)))
             time.sleep(0.2)
-        return max(process.wait() for process in processes[-args.vehicles :])
+        return max(managed.process.wait() for managed in processes[-args.vehicles :])
     except KeyboardInterrupt:
         return 130
     except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
