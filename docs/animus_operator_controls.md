@@ -39,6 +39,8 @@ The lightweight visual workflow launches live SITL, opens Animus, and captures o
 python3 tools/python/capture_animus_sitl.py
 ```
 
+The screenshot artifact directory includes `visual-report.md`, which summarizes live telemetry, requested workspaces and viewports, screenshot diagnostics, warning notes, and links to the manifests and service logs.
+
 The deeper interaction workflow launches the same live stack and drives Chromium through Playwright:
 
 ```sh

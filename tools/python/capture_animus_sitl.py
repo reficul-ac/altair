@@ -14,6 +14,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+from typing import Any
 
 
 def repo_root() -> pathlib.Path:
@@ -185,6 +186,218 @@ def run_logged_with_timeout(
                     pass
                 process.wait()
             raise RuntimeError(f"capture timed out after {timeout_s:.1f}s; see {log_path}")
+
+
+def markdown_cell(value: object) -> str:
+    text = "" if value is None else str(value)
+    return text.replace("\n", " ").replace("|", "\\|")
+
+
+def markdown_path(path: object, artifact_dir: pathlib.Path) -> str:
+    if isinstance(path, pathlib.Path):
+        path_obj = path
+    elif isinstance(path, str) and path:
+        path_obj = pathlib.Path(path)
+    else:
+        return "-"
+    try:
+        label = path_obj.relative_to(artifact_dir)
+    except ValueError:
+        label = path_obj
+    return f"`{label}`"
+
+
+def format_bool(value: object) -> str:
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    return "-"
+
+
+def format_size(value: object) -> str:
+    if isinstance(value, list) and len(value) >= 2:
+        return f"{value[0]}x{value[1]}"
+    if isinstance(value, tuple) and len(value) >= 2:
+        return f"{value[0]}x{value[1]}"
+    return "-"
+
+
+def format_scene_size(diagnostics: dict[str, Any]) -> str:
+    scene = diagnostics.get("sceneClient")
+    if not isinstance(scene, dict):
+        return "-"
+    client_width = scene.get("width")
+    client_height = scene.get("height")
+    canvas_width = scene.get("canvasWidth")
+    canvas_height = scene.get("canvasHeight")
+    if client_width is None or client_height is None:
+        return "-"
+    if canvas_width is None or canvas_height is None:
+        return f"{client_width}x{client_height}"
+    return f"{client_width}x{client_height} / canvas {canvas_width}x{canvas_height}"
+
+
+def scene_has_zero_dimension(diagnostics: dict[str, Any]) -> bool:
+    scene = diagnostics.get("sceneClient")
+    if not isinstance(scene, dict):
+        return True
+    keys = ("width", "height", "canvasWidth", "canvasHeight")
+    values = [scene.get(key) for key in keys]
+    return any(not isinstance(value, (int, float)) or value <= 0 for value in values)
+
+
+def capture_warnings(
+    capture: dict[str, Any],
+    requested_workspace: str,
+) -> list[str]:
+    warnings: list[str] = []
+    path = capture.get("path")
+    if not isinstance(path, str) or not pathlib.Path(path).exists():
+        warnings.append("missing screenshot")
+    if not bool(capture.get("liveTelemetry")):
+        warnings.append("no live telemetry")
+
+    diagnostics = capture.get("diagnostics")
+    if not isinstance(diagnostics, dict):
+        warnings.append("missing diagnostics")
+        return warnings
+
+    active_workspace = diagnostics.get("activeWorkspace")
+    if active_workspace != requested_workspace:
+        warnings.append("active workspace mismatch")
+    visible_panel = diagnostics.get("visiblePanel")
+    if visible_panel != requested_workspace:
+        warnings.append("visible panel mismatch")
+    if requested_workspace == "flight" and scene_has_zero_dimension(diagnostics):
+        warnings.append("flight scene/canvas dimensions missing or zero")
+    if diagnostics.get("isCrashed"):
+        warnings.append("renderer crashed")
+    if diagnostics.get("isLoading"):
+        warnings.append("renderer still loading")
+    if diagnostics.get("rendererSnapshotError"):
+        warnings.append("renderer snapshot error")
+
+    return warnings
+
+
+def read_capture_manifest(path: pathlib.Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        parsed = json.loads(path.read_text(encoding="utf8"))
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def generate_visual_report(
+    *,
+    out_dir: pathlib.Path,
+    run_manifest: dict[str, Any],
+    requested_workspaces: list[str],
+    requested_viewports: list[str],
+) -> pathlib.Path:
+    capture_manifest_path = out_dir / "manifest.json"
+    capture_manifest = read_capture_manifest(capture_manifest_path)
+    captures_raw = capture_manifest.get("captures", []) if capture_manifest else []
+    captures = [item for item in captures_raw if isinstance(item, dict)]
+    capture_by_key = {
+        (str(item.get("workspace")), str(item.get("viewport"))): item for item in captures
+    }
+
+    report_warnings: list[str] = []
+    rows: list[list[str]] = []
+    for viewport in requested_viewports:
+        for workspace in requested_workspaces:
+            capture = capture_by_key.get((workspace, viewport))
+            if capture is None:
+                report_warnings.append(f"missing screenshot entry for {workspace} {viewport}")
+                rows.append(
+                    [workspace, viewport, "-", "-", "-", "-", "-", "-", "missing screenshot entry"]
+                )
+                continue
+
+            diagnostics_raw = capture.get("diagnostics")
+            diagnostics = diagnostics_raw if isinstance(diagnostics_raw, dict) else {}
+            warnings = capture_warnings(capture, workspace)
+            report_warnings.extend(f"{workspace} {viewport}: {warning}" for warning in warnings)
+            rows.append(
+                [
+                    workspace,
+                    viewport,
+                    markdown_path(capture.get("path"), out_dir),
+                    format_size(diagnostics.get("contentSize")),
+                    str(diagnostics.get("activeWorkspace") or "-"),
+                    str(diagnostics.get("visiblePanel") or "-"),
+                    format_scene_size(diagnostics),
+                    str(diagnostics.get("vehicleId") or diagnostics.get("statusText") or "-"),
+                    "pass" if not warnings else "; ".join(warnings),
+                ]
+            )
+
+    if not bool(run_manifest.get("liveTelemetry")):
+        report_warnings.append("no live telemetry")
+    for error in run_manifest.get("errors", []):
+        report_warnings.append(f"capture error: {error}")
+
+    status = "PASS" if not report_warnings else "WARN"
+    capture_status = "failed" if run_manifest.get("errors") else "completed"
+    capture_manifest_live = capture_manifest.get("liveTelemetry") if capture_manifest else None
+
+    logs = run_manifest.get("logs", {})
+    if not isinstance(logs, dict):
+        logs = {}
+
+    lines = [
+        "# Animus Visual Verification Report",
+        "",
+        "## Summary",
+        "",
+        f"- Status: **{status}**",
+        f"- Capture status: {capture_status}",
+        f"- Live telemetry: {format_bool(run_manifest.get('liveTelemetry'))}",
+        f"- Electron live telemetry: {format_bool(capture_manifest_live)}",
+        f"- Workspaces requested: {len(requested_workspaces)} ({', '.join(requested_workspaces)})",
+        f"- Viewports requested: {', '.join(requested_viewports)}",
+        f"- Screenshots captured: {len(captures)}",
+        "",
+        "## Warnings",
+        "",
+    ]
+    if report_warnings:
+        lines.extend(f"- {warning}" for warning in sorted(set(report_warnings)))
+    else:
+        lines.append("- None")
+
+    lines.extend(
+        [
+            "",
+            "## Screenshots",
+            "",
+            "| Workspace | Viewport | PNG | Content size | Active workspace | Visible panel | Scene/canvas | Vehicle/status | Notes |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    for row in rows:
+        lines.append("| " + " | ".join(markdown_cell(value) for value in row) + " |")
+
+    lines.extend(
+        [
+            "",
+            "## Artifacts",
+            "",
+            f"- Run manifest: {markdown_path(out_dir / 'run-manifest.json', out_dir)}",
+            f"- Electron manifest: {markdown_path(capture_manifest_path, out_dir)}",
+            f"- Capture log: {markdown_path(logs.get('capture'), out_dir)}",
+            f"- Viewer log: {markdown_path(logs.get('viewer'), out_dir)}",
+            f"- Bridge log: {markdown_path(logs.get('bridge'), out_dir)}",
+            f"- SITL log: {markdown_path(logs.get('sitl'), out_dir)}",
+            "",
+        ]
+    )
+
+    report_path = out_dir / "visual-report.md"
+    report_path.write_text("\n".join(lines), encoding="utf8")
+    return report_path
 
 
 def require_tools(root: pathlib.Path, install_deps: bool) -> None:
@@ -362,11 +575,27 @@ def run(args: argparse.Namespace) -> int:
         terminate(processes)
         for log_file in log_files:
             log_file.close()
-        (out_dir / "run-manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n", encoding="utf8"
-        )
+        run_manifest_path = out_dir / "run-manifest.json"
+        run_manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf8")
+        try:
+            report_viewports = [
+                f"fullscreen-{viewport}" if args.fullscreen else viewport
+                for viewport in args.viewports
+            ]
+            report_path = generate_visual_report(
+                out_dir=out_dir,
+                run_manifest=manifest,
+                requested_workspaces=args.workspaces,
+                requested_viewports=report_viewports,
+            )
+            manifest["visualReport"] = str(report_path)
+            run_manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf8")
+        except Exception as exc:
+            print(f"visual report generation failed: {exc}", file=sys.stderr)
         print(f"artifactDir={out_dir}")
         print(f"liveTelemetry={manifest['liveTelemetry']}")
+        if manifest.get("visualReport"):
+            print(f"visualReport={manifest['visualReport']}")
         for path in manifest["screenshots"]:
             print(f"screenshot={path}")
         if manifest["errors"]:
