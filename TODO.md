@@ -38,11 +38,40 @@ Reusable Bayek framework follow-up is tracked separately in
 
 ## Animus
 
+- [ ] Update stale Animus docs and agent guidance that still reference the
+  retired TypeScript app, `tools/animus`, npm workflows, browser launch, or
+  `capture_animus_sitl.py`; point them to `tools/animus-qt`,
+  `build-animus-qt`, and `capture_animus_qt_sitl.py`.
 - [ ] Complete the remaining Animus Qt migration work: QGC-derived 2D
   provider/cache workers, offline MBTiles/PMTiles serving, Cesium terrain,
   mission/fence/rally overlays, and broader Qt parity.
-- [ ] Move Animus Qt UDP telemetry receive/decode onto an explicit worker thread
-  if UI rendering or map loading can contend with packet ingestion under load.
+- [ ] Record the exact upstream QGroundControl revision, license headers, and
+  source-to-Animus mapping in `docs/animus_qgc_map_audit.md` before importing
+  or adapting QGC-derived map/provider code.
+- [ ] Replace the QtQuick placeholder 2D map with a real provider-backed map
+  path: tile source selection, zoom scale, pan/follow behavior, attribution,
+  cache status, and offline failure states.
+- [ ] Implement a local tile/cache service for validated XYZ map packs, then
+  MBTiles before PMTiles support, with worker-thread disk IO, cache metadata,
+  bounds/zoom validation, and operator-visible cache health.
+- [ ] Replace the 3D terrain canvas/WebEngine placeholder with bundled Cesium
+  assets, Qt WebChannel vehicle updates, quantized-mesh terrain loading, and
+  deterministic fallback/error UI.
+- [ ] Add typed Qt models and QML overlays for mission items, geofences, rally
+  points, home/origin, event markers, and breadcrumb/history layers.
+- [ ] Add multi-vehicle support: per-system vehicle models, fleet
+  list/selection, per-vehicle trails/status, and graceful degradation toward
+  the documented 12-vehicle analysis target.
+- [ ] Build Qt-native Flight, Dashboard, Inspector, Replay, Plan, Setup
+  readiness, and guarded-command workflows only for features still wanted from
+  the retired UI, with capture/test coverage for each workspace.
+- [ ] Add operator-grade telemetry/link diagnostics: packet counters, decode
+  errors, link freshness, MAVLink system/component identity, firmware/mode
+  labels, GPS/battery/readiness summaries, and explicit unsupported/unknown
+  states.
+- [ ] Move UDP receive/decode, map/tile IO, and terrain/cache work behind
+  explicit worker boundaries so rendering and map loading cannot contend with
+  telemetry ingestion.
 - [x] Replace Animus Qt capture readiness artifacts with real map-2d,
   terrain-3d, and setup screenshots plus nonblank scene checks.
 - [ ] Add QtLocation-backed Animus Qt map rendering once CI and operator
@@ -52,8 +81,6 @@ Reusable Bayek framework follow-up is tracked separately in
   tests and capture coverage.
 - [x] Extend Animus Qt screenshot analysis beyond nonblank PNG checks to catch
   obvious overlap, clipping, and workspace selection regressions.
-- [ ] Add Animus Qt local tile serving for validated XYZ map packs, then MBTiles,
-  before adding PMTiles support.
 - [x] Retire the obsolete TypeScript Animus app, generated dependency tree,
   interaction harnesses, and old CI lane now that Qt Animus is canonical.
 
