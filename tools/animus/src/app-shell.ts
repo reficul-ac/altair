@@ -97,9 +97,7 @@ export function renderAppShell(root: HTMLElement): void {
           <button class="active" data-map-mode="satellite" type="button">Satellite</button>
           <button data-map-mode="terrain-3d" type="button" disabled title="Create or activate an offline DEM cache in Setup">Terrain 3D</button>
         </div>
-        <button id="map-focus" type="button">Focus</button>
-        <button id="map-zoom-in" type="button">+</button>
-        <button id="map-zoom-out" type="button">-</button>
+        <button id="map-focus" type="button" title="Snap to selected vehicle and resume follow">Snap</button>
         <span id="map-cache-status" class="map-cache-status">Offline cache loading</span>
       </div>
       <div id="map-container" aria-label="Offline satellite map"></div>

@@ -56,6 +56,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="maximum seconds to wait for the Electron screenshot capture step",
     )
     parser.add_argument(
+        "--settle-ms",
+        type=int,
+        default=800,
+        help="milliseconds to wait after selecting each workspace before screenshot capture",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="write structured Electron capture diagnostics to capture.log",
@@ -72,6 +78,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--warmup must be non-negative")
     if args.capture_timeout <= 0:
         parser.error("--capture-timeout must be positive")
+    if args.settle_ms < 0:
+        parser.error("--settle-ms must be non-negative")
     args.workspaces = args.workspaces or [
         "flight",
         "dashboard",
@@ -542,6 +550,8 @@ def run(args: argparse.Namespace) -> int:
                 str(max(5000, int((args.warmup + 4.0) * 1000))),
                 "--capture-timeout-ms",
                 str(int(args.capture_timeout * 1000)),
+                "--settle-ms",
+                str(args.settle_ms),
             ]
         )
         if args.debug:

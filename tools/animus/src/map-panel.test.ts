@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMapOverlayModel, geofenceLocalPoints, homePointFromVehicle, mapMode, mapScreenToWorld, mapWorldToScreen, rallyLocalPoints, satelliteStyle, selectedMapVehicle, setMapMode, terrainModelFromVehicle, terrainStyle, type MapViewState } from './map-panel';
+import { applyTerrainDragPan, applyTerrainWheelZoom, buildMapOverlayModel, geofenceLocalPoints, homePointFromVehicle, mapMode, mapScreenToWorld, mapWorldToScreen, rallyLocalPoints, satelliteStyle, selectedMapVehicle, setMapMode, terrainModelFromVehicle, terrainStyle, vehicleMapBearingDeg, type MapViewState } from './map-panel';
 import { buildFlightTerrainModel, localTerrainTileUrl, lonLatToXyzPixel, sampleRgbDemImageData } from './map-assets';
 import { normalizeMapCacheStatus } from './map-cache';
 import type { SessionSnapshotMessage, VehicleStateMessage } from './state';
@@ -28,6 +28,21 @@ describe('map panel helpers', () => {
     const world = { eastM: 22, northM: 35 };
     const screen = mapWorldToScreen(world, center, view, 1200, 760);
     expect(mapScreenToWorld(screen, center, view, 1200, 760)).toEqual(world);
+  });
+
+  it('updates terrain pan and zoom state from pointer interactions', () => {
+    const panned = applyTerrainDragPan(view, 20, -10);
+    expect(panned.followSelected).toBe(false);
+    expect(panned.panEastM).toBe(15);
+    expect(panned.panNorthM).toBe(2);
+    expect(applyTerrainWheelZoom(view, -1).scale).toBeGreaterThan(view.scale);
+    expect(applyTerrainWheelZoom(view, 1).scale).toBeLessThan(view.scale);
+  });
+
+  it('orients map vehicle markers from velocity with heading fallback', () => {
+    expect(vehicleMapBearingDeg({ ...vehicle, velocity: { northMps: 1, eastMps: 0, downMps: 0 } })).toBeCloseTo(0, 6);
+    expect(vehicleMapBearingDeg({ ...vehicle, velocity: { northMps: 0, eastMps: 1, downMps: 0 } })).toBeCloseTo(90, 6);
+    expect(vehicleMapBearingDeg({ ...vehicle, velocity: { northMps: 0, eastMps: 0, downMps: 0 }, metrics: { ...vehicle.metrics, headingDeg: 225 } })).toBe(225);
   });
 
   it('selects the chosen vehicle with a first-vehicle fallback', () => {
@@ -108,6 +123,19 @@ describe('map panel helpers', () => {
     expect(JSON.stringify(style.sources.satellite)).toContain('animus-cache://tiles/set-1');
     expect(style.layers.some((layer) => layer.id === 'satellite')).toBe(true);
     expect(style.terrain).toBeUndefined();
+  });
+
+  it('styles the selected trail as the red map focus path', () => {
+    const style = satelliteStyle(normalizeMapCacheStatus({
+      available: true,
+      activeSet: { id: 'set-1', label: 'Field', templateHost: 'tiles.example', attribution: 'Licensed', bbox: { west: -122, south: 37, east: -121, north: 38 }, minZoom: 12, maxZoom: 14, tileCount: 3, downloadedCount: 3, failedCount: 0, bytes: 10, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', extension: 'png' },
+      sets: []
+    }));
+    const trailLayer = style.layers.find((layer) => layer.id === 'trail-line');
+    expect(JSON.stringify(trailLayer)).toContain('#ff3b30');
+    expect(JSON.stringify(trailLayer)).toContain('#3aa0ff');
+    expect(JSON.stringify(style.layers.find((layer) => layer.id === 'vehicle-points'))).toContain('circle-opacity');
+    expect(JSON.stringify(style.layers.find((layer) => layer.id === 'home-points'))).toContain('circle-opacity');
   });
 
   it('builds a MapLibre terrain style with raster-dem tiles', () => {
@@ -215,6 +243,23 @@ describe('map panel helpers', () => {
     expect(model.home.features).toHaveLength(1);
     expect(model.rally.features).toHaveLength(1);
     expect(model.events.features).toHaveLength(1);
+  });
+
+  it('marks selected and non-selected vehicle trails in the overlay model', () => {
+    const snapshot: SessionSnapshotMessage = {
+      type: 'session_snapshot',
+      vehicles: [
+        { ...vehicle, trail: [{ eastM: 12, northM: 18, upM: 10, timestampS: 1 }, { eastM: 14, northM: 20, upM: 10, timestampS: 2 }] },
+        { ...vehicle, id: '2:1', systemId: 2, trail: [{ eastM: 1, northM: 2, upM: 0, timestampS: 1 }, { eastM: 2, northM: 3, upM: 0, timestampS: 2 }] }
+      ],
+      selectedVehicleId: '1:1',
+      messages: [],
+      events: [],
+      packetCount: 0,
+      decodedCount: 0
+    };
+    const selectedStates = buildMapOverlayModel(snapshot).trails.features.map((feature) => feature.properties.selected);
+    expect(selectedStates).toEqual([true, false]);
   });
 
   it('falls back to local overlay geometry when global coordinates are missing', () => {

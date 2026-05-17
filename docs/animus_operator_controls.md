@@ -67,11 +67,11 @@ Vehicle meshes are chosen from heartbeat vehicle type: fixed-wing, multirotor, V
 ## Map View
 
 - Drag the map to pan.
-- Mouse wheel zooms around the cursor.
-- `Focus` recenters on the selected vehicle and resumes selected-vehicle follow.
-- `+` and `-` adjust zoom.
+- Mouse wheel zooms the map; Satellite uses MapLibre's native cursor-centered zoom.
+- `Snap` recenters on the selected vehicle and resumes selected-vehicle follow after panning away.
 - `Satellite` shows the active offline satellite tile cache through MapLibre GL JS.
 - `Terrain 3D` is enabled when an active offline DEM cache exists. It keeps vehicle overlays usable when satellite imagery is missing and shows shaded terrain until an active satellite cache can be draped over the Flight View terrain mesh.
+- Vehicle markers are triangular and point along velocity, with heading as a low-speed fallback. Home/origin markers use an X shape so they are visually distinct from vehicles.
 
 Animus expects operator-provided, licensed XYZ raster tile URL templates with `{z}`, `{x}`, and `{y}` placeholders and any API key embedded in the query string. Setup estimates the tile count for the current Map viewport, or the default SITL origin at `37.4275, -122.1697` when no map viewport is available, then caches satellite tiles under Electron user data at `map-cache/tiles/<setId>/<z>/<x>/<y>.<ext>` and DEM tiles under `map-cache/dem/<setId>/<z>/<x>/<y>.<ext>`. The satellite cache index is stored at `map-cache/index.json`; the DEM cache index is stored at `map-cache/dem-index.json`. Repository artifacts no longer ship generated topo or PMTiles fallbacks.
 

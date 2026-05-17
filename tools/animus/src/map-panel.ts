@@ -77,9 +77,33 @@ let mapCacheStatusPromise: Promise<MapCacheStatus> | null = null;
 let demCacheStatusPromise: Promise<MapCacheStatus> | null = null;
 let mapFollowChanged: ((follow: boolean) => void) | null = null;
 let renderedMapCacheSetId: string | null = null;
+let terrainDrag: { pointerId: number; x: number; y: number } | null = null;
 
 const overlaySourceIds = ['vehicles', 'trails', 'mission', 'home', 'geofences', 'rally', 'events'] as const;
 const fallbackLocalOrigin = { originLat: 37, originLon: -122, originAlt: 0, originEastM: 0, originNorthM: 0 };
+const selectedTrailColor = '#ff3b30';
+const fleetTrailColor = '#3aa0ff';
+const selectedFollowZoom = 15;
+const minTerrainScale = 0.2;
+const maxTerrainScale = 18;
+
+if (typeof window !== 'undefined') {
+  (window as unknown as { __animusMapDebug?: () => unknown }).__animusMapDebug = () => ({
+    mode: view.mode,
+    followSelected: view.followSelected,
+    zoom: map?.getZoom() ?? null,
+    center: map ? { lon: map.getCenter().lng, lat: map.getCenter().lat } : null,
+    trails: latestSnapshot?.vehicles.map((vehicle) => ({
+      id: vehicle.id ?? `${vehicle.systemId ?? '--'}:${vehicle.componentId ?? '--'}`,
+      selected: vehicle.id === latestSnapshot?.selectedVehicleId,
+      count: vehicle.trail?.length ?? 0,
+      first: vehicle.trail?.[0] ?? null,
+      last: vehicle.trail?.[(vehicle.trail?.length ?? 0) - 1] ?? null,
+      localPosition: vehicle.localPosition,
+      globalPosition: vehicle.globalPosition
+    })) ?? []
+  });
+}
 
 export function mapWorldToScreen(point: LocalPoint, center: LocalPoint, state: MapViewState, width: number, height: number): ScreenPoint {
   return {
@@ -146,6 +170,26 @@ export function mapMode(): MapMode {
 
 export function setMapFollowSelected(followSelected: boolean): void {
   view.followSelected = followSelected;
+}
+
+export function applyTerrainDragPan(state: MapViewState, deltaX: number, deltaY: number): MapViewState {
+  return {
+    ...state,
+    panEastM: state.panEastM + deltaX / Math.max(state.scale, 0.001),
+    panNorthM: state.panNorthM - deltaY / Math.max(state.scale, 0.001),
+    followSelected: false
+  };
+}
+
+export function applyTerrainWheelZoom(state: MapViewState, deltaY: number): MapViewState {
+  const factor = deltaY < 0 ? 1.15 : 1 / 1.15;
+  return { ...state, scale: Math.max(minTerrainScale, Math.min(maxTerrainScale, state.scale * factor)) };
+}
+
+export function vehicleMapBearingDeg(vehicle: VehicleStateMessage): number | null {
+  const { northMps, eastMps } = vehicle.velocity;
+  if (Math.hypot(northMps, eastMps) > 0.25) return (Math.atan2(eastMps, northMps) * 180 / Math.PI + 360) % 360;
+  return vehicle.metrics.headingDeg;
 }
 
 export function terrainModelFromVehicle(vehicle: VehicleStateMessage | null): TerrainModel | null {
@@ -252,21 +296,14 @@ export function bindMapControls(snapshotProvider: () => SessionSnapshotMessage |
   if (bound) return;
   bound = true;
   document.querySelector<HTMLButtonElement>('#map-focus')?.addEventListener('click', () => {
+    const snapshot = snapshotProvider() ?? emptyMapSnapshot();
     view.panEastM = 0;
     view.panNorthM = 0;
     setFollowSelected(true);
-    redraw(snapshotProvider);
+    focusSelectedMap(snapshot);
+    drawMap(snapshot);
   });
-  document.querySelector<HTMLButtonElement>('#map-zoom-in')?.addEventListener('click', () => {
-    if (view.mode === 'terrain-3d') view.scale = Math.min(18, view.scale * 1.25);
-    else map?.zoomIn();
-    redraw(snapshotProvider);
-  });
-  document.querySelector<HTMLButtonElement>('#map-zoom-out')?.addEventListener('click', () => {
-    if (view.mode === 'terrain-3d') view.scale = Math.max(0.2, view.scale / 1.25);
-    else map?.zoomOut();
-    redraw(snapshotProvider);
-  });
+  bindTerrainPointerControls(snapshotProvider);
   document.querySelectorAll<HTMLButtonElement>('[data-map-mode]').forEach((button) => {
     button.addEventListener('click', () => {
       const mode = button.dataset.mapMode as MapMode;
@@ -274,6 +311,16 @@ export function bindMapControls(snapshotProvider: () => SessionSnapshotMessage |
       document.querySelectorAll<HTMLButtonElement>('[data-map-mode]').forEach((candidate) => candidate.classList.toggle('active', candidate === button));
       redraw(snapshotProvider);
     });
+  });
+}
+
+function focusSelectedMap(snapshot: SessionSnapshotMessage): void {
+  if (view.mode !== 'satellite' || !map) return;
+  const overlays = buildMapOverlayModel(snapshot);
+  if (!overlays.center) return;
+  map.jumpTo({
+    center: [overlays.center.lon, overlays.center.lat],
+    zoom: Math.max(map.getZoom(), selectedFollowZoom)
   });
 }
 
@@ -334,11 +381,11 @@ async function drawSatelliteMap(snapshot: SessionSnapshotMessage): Promise<void>
   const mapInstance = await ensureMap(status);
   if (!mapInstance || !mapReady) return;
   const overlays = buildMapOverlayModel(snapshot);
+  if (view.followSelected && overlays.center) {
+    mapInstance.jumpTo({ center: [overlays.center.lon, overlays.center.lat], zoom: Math.max(mapInstance.getZoom(), selectedFollowZoom) });
+  }
   updateOverlaySources(mapInstance, overlays);
   drawProjectedOverlay(mapInstance, overlays);
-  if (view.followSelected && overlays.center) {
-    mapInstance.easeTo({ center: [overlays.center.lon, overlays.center.lat], duration: 220, zoom: Math.max(mapInstance.getZoom(), 13) });
-  }
 }
 
 async function ensureMap(status: MapCacheStatus): Promise<MapLibreMap | null> {
@@ -369,6 +416,7 @@ async function ensureMap(status: MapCacheStatus): Promise<MapLibreMap | null> {
     });
     map.on('error', (event) => {
       const message = event.error?.message ?? 'MapLibre failed to load the offline satellite cache.';
+      if (/animus-cache:\/\//.test(message)) return;
       showMapUnavailable(message);
     });
   } catch (error) {
@@ -427,12 +475,12 @@ function mapStyle(status: MapCacheStatus, demStatus: MapCacheStatus | null): Sty
       { id: 'geofence-fill', type: 'fill', source: 'geofences', paint: { 'fill-color': ['case', ['==', ['get', 'inclusion'], true], '#66e0a3', '#ff6b7a'], 'fill-opacity': 0.16 } },
       { id: 'geofence-line', type: 'line', source: 'geofences', paint: { 'line-color': ['case', ['==', ['get', 'inclusion'], true], '#66e0a3', '#ff6b7a'], 'line-width': 2 } },
       { id: 'mission-line', type: 'line', source: 'mission', filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-color': '#ffc857', 'line-width': 2.4, 'line-opacity': 0.88 } },
-      { id: 'trail-line', type: 'line', source: 'trails', paint: { 'line-color': ['case', ['==', ['get', 'selected'], true], '#66e0a3', '#3aa0ff'], 'line-width': ['case', ['==', ['get', 'selected'], true], 3, 1.8], 'line-opacity': 0.82 } },
+      { id: 'trail-line', type: 'line', source: 'trails', paint: { 'line-color': ['case', ['==', ['get', 'selected'], true], selectedTrailColor, fleetTrailColor], 'line-width': ['case', ['==', ['get', 'selected'], true], 3.6, 1.6], 'line-opacity': ['case', ['==', ['get', 'selected'], true], 0.95, 0.48] } },
       { id: 'mission-points', type: 'circle', source: 'mission', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 5, 'circle-color': '#0b1116', 'circle-stroke-color': '#ffc857', 'circle-stroke-width': 2 } },
-      { id: 'home-points', type: 'circle', source: 'home', paint: { 'circle-radius': 7, 'circle-color': '#ffc857', 'circle-stroke-color': '#0b1116', 'circle-stroke-width': 2 } },
+      { id: 'home-points', type: 'circle', source: 'home', paint: { 'circle-radius': 7, 'circle-opacity': 0, 'circle-stroke-opacity': 0 } },
       { id: 'rally-points', type: 'circle', source: 'rally', paint: { 'circle-radius': 6, 'circle-color': '#e464ff', 'circle-stroke-color': '#0b1116', 'circle-stroke-width': 2 } },
       { id: 'event-points', type: 'circle', source: 'events', paint: { 'circle-radius': 5, 'circle-color': ['match', ['get', 'level'], 'warning', '#ffc857', 'error', '#ff6b7a', '#3aa0ff'], 'circle-stroke-color': '#0b1116', 'circle-stroke-width': 1.5 } },
-      { id: 'vehicle-points', type: 'circle', source: 'vehicles', paint: { 'circle-radius': ['case', ['==', ['get', 'selected'], true], 8, 5], 'circle-color': ['case', ['==', ['get', 'selected'], true], '#ffc857', '#3aa0ff'], 'circle-stroke-color': '#0b1116', 'circle-stroke-width': 2 } }
+      { id: 'vehicle-points', type: 'circle', source: 'vehicles', paint: { 'circle-radius': ['case', ['==', ['get', 'selected'], true], 8, 5], 'circle-opacity': 0, 'circle-stroke-opacity': 0 } }
     ]
   };
 }
@@ -456,27 +504,35 @@ function drawProjectedOverlay(mapInstance: MapLibreMap, overlays: MapOverlayMode
   ctx.save();
   ctx.scale(ratio, ratio);
   drawPolygonFeatures(ctx, mapInstance, overlays.geofences);
-  drawLineFeatures(ctx, mapInstance, overlays.trails, (feature) => feature.properties.selected === true ? '#66e0a3' : '#3aa0ff', 2.4);
+  drawLineFeatures(ctx, mapInstance, overlays.trails, (feature) => feature.properties.selected === true ? selectedTrailColor : fleetTrailColor, (feature) => feature.properties.selected === true ? 3.4 : 1.7, (feature) => feature.properties.selected === true ? 0.95 : 0.48);
+  if (latestSnapshot) drawSelectedTrailFromLocal(ctx, mapInstance, latestSnapshot);
   drawLineFeatures(ctx, mapInstance, overlays.mission, () => '#ffc857', 2);
   drawPointFeatures(ctx, mapInstance, overlays.mission, () => '#ffc857', 5, true);
-  drawPointFeatures(ctx, mapInstance, overlays.home, () => '#ffc857', 7, false);
+  drawHomeXFeatures(ctx, mapInstance, overlays.home);
   drawPointFeatures(ctx, mapInstance, overlays.rally, () => '#e464ff', 6, true);
   drawPointFeatures(ctx, mapInstance, overlays.events, (feature) => feature.properties.level === 'warning' ? '#ffc857' : feature.properties.level === 'error' ? '#ff6b7a' : '#3aa0ff', 5, false);
-  drawPointFeatures(ctx, mapInstance, overlays.vehicles, (feature) => feature.properties.selected === true ? '#ffc857' : '#3aa0ff', 8, false);
-  if (view.followSelected && latestSnapshot?.vehicles.length) {
-    drawFollowMarker(ctx, rect.width / 2, rect.height / 2);
-  }
+  if (latestSnapshot) drawVehicleHeadingMarkers(ctx, mapInstance, latestSnapshot);
   ctx.restore();
 }
 
-function drawFollowMarker(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+function drawSelectedTrailFromLocal(ctx: CanvasRenderingContext2D, mapInstance: MapLibreMap, snapshot: SessionSnapshotMessage): void {
+  const selected = selectedMapVehicle(snapshot);
+  if (!selected || !selected.trail || selected.trail.length < 2) return;
+  const context = geoContextForVehicle(selected);
+  if (!context) return;
   ctx.beginPath();
-  ctx.arc(x, y, 9, 0, Math.PI * 2);
-  ctx.fillStyle = '#ffc857';
-  ctx.strokeStyle = '#0b1116';
-  ctx.lineWidth = 2;
-  ctx.fill();
+  selected.trail.forEach((point, index) => {
+    const geo = geoPointFromLocal(point, context);
+    if (!geo) return;
+    const projected = mapInstance.project([geo.lon, geo.lat]);
+    if (index === 0) ctx.moveTo(projected.x, projected.y);
+    else ctx.lineTo(projected.x, projected.y);
+  });
+  ctx.strokeStyle = selectedTrailColor;
+  ctx.lineWidth = 4.2;
+  ctx.globalAlpha = 0.98;
   ctx.stroke();
+  ctx.globalAlpha = 1;
 }
 
 function drawPolygonFeatures(ctx: CanvasRenderingContext2D, mapInstance: MapLibreMap, collection: FeatureCollection): void {
@@ -498,7 +554,66 @@ function drawPolygonFeatures(ctx: CanvasRenderingContext2D, mapInstance: MapLibr
   }
 }
 
-function drawLineFeatures(ctx: CanvasRenderingContext2D, mapInstance: MapLibreMap, collection: FeatureCollection, color: (feature: Feature) => string, width: number): void {
+function drawHomeXFeatures(ctx: CanvasRenderingContext2D, mapInstance: MapLibreMap, collection: FeatureCollection): void {
+  for (const feature of collection.features) {
+    if (feature.geometry.type !== 'Point') continue;
+    const point = mapInstance.project(feature.geometry.coordinates as LngLatLike);
+    const radius = 8;
+    ctx.save();
+    ctx.strokeStyle = '#e464ff';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(point.x - radius, point.y - radius);
+    ctx.lineTo(point.x + radius, point.y + radius);
+    ctx.moveTo(point.x + radius, point.y - radius);
+    ctx.lineTo(point.x - radius, point.y + radius);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawVehicleHeadingMarkers(ctx: CanvasRenderingContext2D, mapInstance: MapLibreMap, snapshot: SessionSnapshotMessage): void {
+  for (const vehicle of snapshot.vehicles) {
+    const context = geoContextForVehicle(vehicle);
+    const geo = geoPointFromVehicle(vehicle, context);
+    if (!geo) continue;
+    const point = mapInstance.project([geo.lon, geo.lat]);
+    const selected = vehicle.id === snapshot.selectedVehicleId;
+    const bearingDeg = vehicleMapBearingDeg(vehicle) ?? 0;
+    drawHeadingTriangle(ctx, point.x, point.y, bearingDeg, selected ? 13 : 9, selected ? '#ffc857' : '#3aa0ff');
+  }
+}
+
+function drawHeadingTriangle(ctx: CanvasRenderingContext2D, x: number, y: number, bearingDeg: number, radius: number, color: string): void {
+  const bearingRad = bearingDeg * Math.PI / 180;
+  const nose = { x: x + Math.sin(bearingRad) * radius, y: y - Math.cos(bearingRad) * radius };
+  const leftRad = bearingRad + Math.PI * 0.78;
+  const rightRad = bearingRad - Math.PI * 0.78;
+  const left = { x: x + Math.sin(leftRad) * radius * 0.74, y: y - Math.cos(leftRad) * radius * 0.74 };
+  const right = { x: x + Math.sin(rightRad) * radius * 0.74, y: y - Math.cos(rightRad) * radius * 0.74 };
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(nose.x, nose.y);
+  ctx.lineTo(left.x, left.y);
+  ctx.lineTo(right.x, right.y);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#0b1116';
+  ctx.lineWidth = 2;
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLineFeatures(
+  ctx: CanvasRenderingContext2D,
+  mapInstance: MapLibreMap,
+  collection: FeatureCollection,
+  color: (feature: Feature) => string,
+  width: number | ((feature: Feature) => number),
+  alpha: number | ((feature: Feature) => number) = 1
+): void {
   for (const feature of collection.features) {
     if (feature.geometry.type !== 'LineString') continue;
     ctx.beginPath();
@@ -508,8 +623,10 @@ function drawLineFeatures(ctx: CanvasRenderingContext2D, mapInstance: MapLibreMa
       else ctx.lineTo(point.x, point.y);
     });
     ctx.strokeStyle = color(feature);
-    ctx.lineWidth = width;
+    ctx.lineWidth = typeof width === 'function' ? width(feature) : width;
+    ctx.globalAlpha = typeof alpha === 'function' ? alpha(feature) : alpha;
     ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -537,6 +654,46 @@ function colorWithAlpha(color: string, alpha: number): string {
 
 function redraw(snapshotProvider: () => SessionSnapshotMessage | null): void {
   drawMap(snapshotProvider() ?? emptyMapSnapshot());
+}
+
+function bindTerrainPointerControls(snapshotProvider: () => SessionSnapshotMessage | null): void {
+  const canvas = document.querySelector<HTMLCanvasElement>('#terrain-canvas');
+  if (!canvas) return;
+  canvas.addEventListener('pointerdown', (event) => {
+    if (view.mode !== 'terrain-3d') return;
+    if (view.followSelected) {
+      const selected = selectedMapVehicle(snapshotProvider() ?? emptyMapSnapshot());
+      const center = pointFromVehicle(selected) ?? { eastM: 0, northM: 0 };
+      view.panEastM = -center.eastM;
+      view.panNorthM = -center.northM;
+    }
+    terrainDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    canvas.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    if (view.mode !== 'terrain-3d' || !terrainDrag || terrainDrag.pointerId !== event.pointerId) return;
+    const next = applyTerrainDragPan(view, event.clientX - terrainDrag.x, event.clientY - terrainDrag.y);
+    view.panEastM = next.panEastM;
+    view.panNorthM = next.panNorthM;
+    setFollowSelected(next.followSelected);
+    terrainDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    redraw(snapshotProvider);
+    event.preventDefault();
+  });
+  canvas.addEventListener('pointerup', (event) => {
+    if (terrainDrag?.pointerId === event.pointerId) terrainDrag = null;
+  });
+  canvas.addEventListener('pointercancel', (event) => {
+    if (terrainDrag?.pointerId === event.pointerId) terrainDrag = null;
+  });
+  canvas.addEventListener('wheel', (event) => {
+    if (view.mode !== 'terrain-3d') return;
+    const next = applyTerrainWheelZoom(view, event.deltaY);
+    view.scale = next.scale;
+    redraw(snapshotProvider);
+    event.preventDefault();
+  }, { passive: false });
 }
 
 function emptyMapSnapshot(): SessionSnapshotMessage {
@@ -642,7 +799,7 @@ class TerrainRenderer {
     this.scene.children = this.scene.children.slice(0, 2);
     const vehicle = selectedMapVehicle(snapshot);
     const model = terrainModelFromVehicle(vehicle);
-    const center = view.followSelected ? pointFromVehicle(vehicle) ?? { eastM: 0, northM: 0, upM: 0 } : { eastM: 0, northM: 0, upM: 0 };
+    const center = terrainCameraCenter(vehicle);
     if (model) this.addTerrain(model);
     this.addOverlays(snapshot, center);
     this.camera.position.set(center.eastM - 170 / view.scale, 130, -center.northM + 210 / view.scale);
@@ -685,7 +842,8 @@ class TerrainRenderer {
       this.addLine(mission, '#ffc857');
     }
     for (const vehicle of snapshot.vehicles) {
-      this.addLine(vehicle.trail ?? [], vehicle.id === snapshot.selectedVehicleId ? '#66e0a3' : '#3aa0ff');
+      const selectedTrail = vehicle.id === snapshot.selectedVehicleId;
+      this.addLine(vehicle.trail ?? [], selectedTrail ? selectedTrailColor : fleetTrailColor, selectedTrail ? 3 : 1.3, selectedTrail ? 0.95 : 0.42);
       const point = pointFromVehicle(vehicle);
       if (point) this.addMarker(point, vehicle.id === snapshot.selectedVehicleId ? '#ffc857' : '#3aa0ff', vehicle.id === snapshot.selectedVehicleId ? 4.5 : 3);
     }
@@ -698,12 +856,28 @@ class TerrainRenderer {
     this.scene.add(marker);
   }
 
-  private addLine(points: readonly LocalPoint[], color: string): void {
+  private addLine(points: readonly LocalPoint[], color: string, width = 2, opacity = 0.82): void {
     if (points.length < 2) return;
     const geometry = new BufferGeometry();
     geometry.setAttribute('position', new BufferAttribute(new Float32Array(points.flatMap((point) => [point.eastM, point.upM ?? 0, -point.northM])), 3));
-    this.scene.add(new Line(geometry, new LineBasicMaterial({ color, linewidth: 2 })));
+    this.scene.add(new Line(geometry, new LineBasicMaterial({ color, linewidth: width, transparent: opacity < 1, opacity })));
   }
+}
+
+function terrainCameraCenter(vehicle: VehicleStateMessage | null): LocalPoint {
+  const base = pointFromVehicle(vehicle) ?? { eastM: 0, northM: 0, upM: 0 };
+  if (!view.followSelected) {
+    return {
+      eastM: -view.panEastM,
+      northM: -view.panNorthM,
+      upM: base.upM
+    };
+  }
+  return {
+    eastM: base.eastM - view.panEastM,
+    northM: base.northM - view.panNorthM,
+    upM: base.upM
+  };
 }
 
 function pointFromVehicle(vehicle: VehicleStateMessage | null): LocalPoint | null {

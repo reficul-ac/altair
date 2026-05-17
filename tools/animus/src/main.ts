@@ -38,6 +38,8 @@ import {
   type ParameterEditResult,
   parseSessionSnapshot,
   parseVehicleState,
+  TrailBuffer,
+  trailPointFromState,
   type ReplayTimelineMessage,
   type SessionSnapshotMessage,
   type VehicleStateMessage
@@ -201,6 +203,7 @@ const state = {
 let mapCachePoll: number | null = null;
 const MAP_PROVIDER_DEFAULT = 'altair-usgs';
 const DEM_PROVIDER_DEFAULT = 'altair-terrarium';
+const mapTrails = new Map<string, TrailBuffer>();
 bindMapControls(() => state.snapshot, (followSelected) => saveUiSettings({ mapFollowSelected: followSelected }));
 const dashboard = createDashboardController({
   getSnapshot: () => state.snapshot,
@@ -225,18 +228,19 @@ function applyVehicle(message: VehicleStateMessage): void {
 }
 
 function applySnapshot(snapshot: SessionSnapshotMessage): void {
-  state.snapshot = snapshot;
-  recordInspectorSnapshot(snapshot, state.replay?.loaded ? state.replay.timestampS : performance.now() / 1000);
-  const selected = snapshot.vehicles.find((vehicle) => vehicle.id === snapshot.selectedVehicleId) ?? snapshot.vehicles[0] ?? null;
+  const mapSnapshot = snapshotWithMapTrails(snapshot);
+  state.snapshot = mapSnapshot;
+  recordInspectorSnapshot(mapSnapshot, state.replay?.loaded ? state.replay.timestampS : performance.now() / 1000);
+  const selected = mapSnapshot.vehicles.find((vehicle) => vehicle.id === mapSnapshot.selectedVehicleId) ?? mapSnapshot.vehicles[0] ?? null;
   if (selected) applyVehicle(selected);
-  scene.applyFleet(snapshot.vehicles, snapshot.selectedVehicleId, snapshot.events);
-  updateVehicleList(snapshot, (id) => void window.altairAnimus?.selectVehicle?.(id).then(applySnapshot));
-  updateInspector(snapshot);
-  drawMap(snapshot);
-  updateVehicleComparison(snapshot);
-  updateAnalysis(snapshot);
-  updateGcsSurfaces(snapshot);
-  dashboard.update(snapshot);
+  scene.applyFleet(mapSnapshot.vehicles, mapSnapshot.selectedVehicleId, mapSnapshot.events);
+  updateVehicleList(mapSnapshot, (id) => void window.altairAnimus?.selectVehicle?.(id).then(applySnapshot));
+  updateInspector(mapSnapshot);
+  drawMap(mapSnapshot);
+  updateVehicleComparison(mapSnapshot);
+  updateAnalysis(mapSnapshot);
+  updateGcsSurfaces(mapSnapshot);
+  dashboard.update(mapSnapshot);
 }
 
 function updateConfig(config: AnimusConfig): void {
@@ -277,23 +281,38 @@ if (viewport) layoutObserver.observe(viewport);
 window.altairAnimus?.onLayoutRefresh?.((message) => scheduleLayoutRefresh(message.reason));
 
 function mapSnapshotForVehicle(message: VehicleStateMessage): SessionSnapshotMessage {
+  const mapVehicle = vehicleWithMapTrail(message);
   if (!state.snapshot) {
     return {
       type: 'session_snapshot',
-      vehicles: [message],
-      selectedVehicleId: message.id ?? null,
+      vehicles: [mapVehicle],
+      selectedVehicleId: mapVehicle.id ?? null,
       messages: [],
       events: [],
       packetCount: 0,
       decodedCount: 0
     };
   }
-  const selectedId = state.snapshot.selectedVehicleId ?? message.id ?? null;
-  const messageKey = message.id ?? `${message.systemId ?? '--'}:${message.componentId ?? '--'}`;
+  const selectedId = state.snapshot.selectedVehicleId ?? mapVehicle.id ?? null;
+  const messageKey = mapVehicle.id ?? `${mapVehicle.systemId ?? '--'}:${mapVehicle.componentId ?? '--'}`;
   const vehicles = state.snapshot.vehicles.some((vehicle) => (vehicle.id ?? `${vehicle.systemId ?? '--'}:${vehicle.componentId ?? '--'}`) === messageKey)
-    ? state.snapshot.vehicles.map((vehicle) => ((vehicle.id ?? `${vehicle.systemId ?? '--'}:${vehicle.componentId ?? '--'}`) === messageKey ? message : vehicle))
-    : [...state.snapshot.vehicles, message];
+    ? state.snapshot.vehicles.map((vehicle) => ((vehicle.id ?? `${vehicle.systemId ?? '--'}:${vehicle.componentId ?? '--'}`) === messageKey ? mapVehicle : vehicle))
+    : [...state.snapshot.vehicles, mapVehicle];
   return { ...state.snapshot, vehicles, selectedVehicleId: selectedId };
+}
+
+function snapshotWithMapTrails(snapshot: SessionSnapshotMessage): SessionSnapshotMessage {
+  return { ...snapshot, vehicles: snapshot.vehicles.map(vehicleWithMapTrail) };
+}
+
+function vehicleWithMapTrail(vehicle: VehicleStateMessage): VehicleStateMessage {
+  const key = vehicle.id ?? `${vehicle.systemId ?? '--'}:${vehicle.componentId ?? '--'}`;
+  const trail = mapTrails.get(key) ?? new TrailBuffer();
+  mapTrails.set(key, trail);
+  const point = trailPointFromState(vehicle);
+  if (point) trail.add(point);
+  const points = trail.values();
+  return { ...vehicle, trail: points.length > 0 ? [...points] : vehicle.trail };
 }
 
 function connect(): void {
@@ -638,7 +657,11 @@ document.querySelector<HTMLButtonElement>('#pause')!.addEventListener('click', (
   scene.paused = !scene.paused;
   (event.currentTarget as HTMLButtonElement).textContent = scene.paused ? 'Resume' : 'Pause';
 });
-document.querySelector<HTMLButtonElement>('#clear')!.addEventListener('click', () => scene.clearTrail());
+document.querySelector<HTMLButtonElement>('#clear')!.addEventListener('click', () => {
+  scene.clearTrail();
+  mapTrails.clear();
+  if (state.snapshot) drawMap(snapshotWithMapTrails(state.snapshot));
+});
 document.querySelector<HTMLButtonElement>('#heading-mode')!.addEventListener('click', (event) => {
   state.showYaw = !state.showYaw;
   (event.currentTarget as HTMLButtonElement).textContent = state.showYaw ? 'YAW' : 'TRK';

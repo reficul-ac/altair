@@ -33,6 +33,7 @@ type DebugLog = ((phase: string, event: string, fields?: Record<string, unknown>
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 protocol.registerSchemesAsPrivileged([{ scheme: ANIMUS_MAP_CACHE_PROTOCOL, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
+app.setName('Altair Animus');
 
 function parseArgs(argv: string[]): CaptureArgs {
   const args: CaptureArgs = {
@@ -168,6 +169,7 @@ async function rendererSnapshot(window: BrowserWindow): Promise<Record<string, u
         const liveTelemetry = Boolean(status?.classList.contains('online')) ||
           /Connected/.test(status?.textContent || '') ||
           !/^sys\\s+--$/.test((vehicle?.textContent || '').trim());
+        const mapDebug = typeof window.__animusMapDebug === 'function' ? window.__animusMapDebug() : null;
         return {
           url: window.location.href,
           innerWidth: window.innerWidth,
@@ -195,6 +197,7 @@ async function rendererSnapshot(window: BrowserWindow): Promise<Record<string, u
           statusText: (status?.textContent || '').trim(),
           statusClasses: status ? [...status.classList] : [],
           vehicleId: (vehicle?.textContent || '').trim(),
+          mapDebug,
           activeWorkspace,
           visiblePanel,
           canvasCount: canvases.length,
