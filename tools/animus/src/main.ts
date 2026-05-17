@@ -5,6 +5,7 @@ import { SceneRenderer, nextCameraMode, type CameraMode, type ThemeName } from '
 import { createDashboardController } from './dashboard-ui';
 import type { AnimusDashboardLayout } from './dashboard-types';
 import {
+  ANIMUS_DEM_CACHE_DEFAULT_ENCODING,
   ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT,
   ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM,
   ANIMUS_MAP_CACHE_DEFAULT_MIN_ZOOM,
@@ -64,6 +65,13 @@ type AnimusUiSettings = {
   mapCacheMinZoom: number;
   mapCacheMaxZoom: number;
   mapCacheMaxTileCount: number;
+  demTileUrlTemplate: string;
+  demTileAttribution: string;
+  demTileEncoding: 'terrarium' | 'mapbox';
+  activeDemCacheSetId: string | null;
+  demCacheMinZoom: number;
+  demCacheMaxZoom: number;
+  demCacheMaxTileCount: number;
   lastDashboardPresetLabel: string | null;
 };
 
@@ -85,6 +93,13 @@ type AnimusApi = {
   listMapCacheSets?: () => Promise<MapCacheSet[]>;
   activateMapCacheSet?: (setId: string) => Promise<MapCacheActionResult>;
   deleteMapCacheSet?: (setId: string) => Promise<MapCacheActionResult>;
+  getDemCacheStatus?: () => Promise<MapCacheStatus>;
+  estimateDemCache?: (request: { bbox: ReturnType<typeof currentMapCacheBbox>; minZoom: number; maxZoom: number; maxTileCount?: number }) => Promise<MapCacheEstimate>;
+  startDemCacheDownload?: (request: { urlTemplate: string; attribution?: string | null; label?: string | null; encoding?: 'terrarium' | 'mapbox'; bbox: ReturnType<typeof currentMapCacheBbox>; minZoom: number; maxZoom: number; maxTileCount?: number }) => Promise<MapCacheActionResult>;
+  cancelDemCacheDownload?: () => Promise<MapCacheActionResult>;
+  listDemCacheSets?: () => Promise<MapCacheSet[]>;
+  activateDemCacheSet?: (setId: string) => Promise<MapCacheActionResult>;
+  deleteDemCacheSet?: (setId: string) => Promise<MapCacheActionResult>;
   getDashboardLayout?: () => Promise<AnimusDashboardLayout>;
   saveDashboardLayout?: (layout: AnimusDashboardLayout) => Promise<AnimusDashboardLayout>;
   resetDashboardLayout?: () => Promise<AnimusDashboardLayout>;
@@ -167,6 +182,13 @@ const state = {
     mapCacheMinZoom: ANIMUS_MAP_CACHE_DEFAULT_MIN_ZOOM,
     mapCacheMaxZoom: ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM,
     mapCacheMaxTileCount: ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT,
+    demTileUrlTemplate: '',
+    demTileAttribution: '',
+    demTileEncoding: ANIMUS_DEM_CACHE_DEFAULT_ENCODING,
+    activeDemCacheSetId: null,
+    demCacheMinZoom: ANIMUS_MAP_CACHE_DEFAULT_MIN_ZOOM,
+    demCacheMaxZoom: ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM,
+    demCacheMaxTileCount: ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT,
     lastDashboardPresetLabel: null
   } as AnimusUiSettings,
   settingsLoaded: false
@@ -795,6 +817,15 @@ document.querySelector<HTMLButtonElement>('#map-cache-download')?.addEventListen
 document.querySelector<HTMLButtonElement>('#map-cache-cancel')?.addEventListener('click', () => {
   void window.altairAnimus?.cancelMapCacheDownload?.().then((result) => applyMapCacheStatus(result.status));
 });
+document.querySelector<HTMLButtonElement>('#dem-cache-estimate')?.addEventListener('click', () => {
+  void estimateDemCache();
+});
+document.querySelector<HTMLButtonElement>('#dem-cache-download')?.addEventListener('click', () => {
+  void startDemCacheDownload();
+});
+document.querySelector<HTMLButtonElement>('#dem-cache-cancel')?.addEventListener('click', () => {
+  void window.altairAnimus?.cancelDemCacheDownload?.().then((result) => applyDemCacheStatus(result.status));
+});
 window.addEventListener('keydown', (event) => {
   if (event.code === 'KeyC') setCameraMode(nextCameraMode(scene.cameraMode));
   if (event.code === 'KeyH') document.querySelector<HTMLButtonElement>(`[data-hud="${state.hudMode === 'console' ? 'tactical' : state.hudMode === 'tactical' ? 'off' : 'console'}"]`)?.click();
@@ -853,11 +884,28 @@ function applyMapCacheStatus(status: MapCacheStatus): void {
   if (state.snapshot) drawMap(state.snapshot);
 }
 
+function applyDemCacheStatus(status: MapCacheStatus): void {
+  const normalized = normalizeMapCacheStatus(status);
+  scene.setDemCacheStatus(normalized);
+  renderSetupDemCacheStatus(normalized);
+  void refreshMapCacheStatus();
+  scheduleDemCachePoll(normalized);
+  if (state.snapshot) drawMap(state.snapshot);
+}
+
 function scheduleMapCachePoll(status: MapCacheStatus): void {
   if (!status.downloadState?.active || mapCachePoll !== null) return;
   mapCachePoll = window.setTimeout(() => {
     mapCachePoll = null;
     void window.altairAnimus?.getMapCacheStatus?.().then(applyMapCacheStatus);
+  }, 1000);
+}
+
+function scheduleDemCachePoll(status: MapCacheStatus): void {
+  if (!status.downloadState?.active || mapCachePoll !== null) return;
+  mapCachePoll = window.setTimeout(() => {
+    mapCachePoll = null;
+    void window.altairAnimus?.getDemCacheStatus?.().then(applyDemCacheStatus);
   }, 1000);
 }
 
@@ -873,7 +921,6 @@ function renderSetupMapCacheStatus(status: MapCacheStatus): void {
   target.innerHTML = [
     row('Active cache', Boolean(status.activeSet), status.activeSet ? `${status.activeSet.label} / ${status.activeSet.downloadedCount} tiles` : status.error),
     download ? row('Download', download.active, `${download.downloaded}/${download.downloaded + download.queued + download.failed} ok, ${download.failed} failed, ${formatBytes(download.bytes)}${download.lastError ? ` / ${download.lastError}` : ''}`) : '',
-    row('Terrain 3D', false, 'DEM cache support is not implemented in v1.'),
     ...setRows
   ].join('');
   target.querySelectorAll<HTMLButtonElement>('[data-map-cache-activate]').forEach((button) => {
@@ -888,17 +935,55 @@ function renderSetupMapCacheStatus(status: MapCacheStatus): void {
   });
 }
 
+function renderSetupDemCacheStatus(status: MapCacheStatus): void {
+  const target = document.querySelector<HTMLElement>('#setup-dem-cache-status');
+  if (!target) return;
+  const row = (label: string, available: boolean, detail: string | null | undefined): string =>
+    `<div><strong>${escapeHtml(label)}</strong><span>${available ? 'ready' : 'unavailable'}</span><span>${escapeHtml(detail ?? '--')}</span></div>`;
+  const download = status.downloadState;
+  const setRows = status.sets.map((set) => `
+    <div><strong>${escapeHtml(set.label)}</strong><span>${set.id === status.activeSet?.id ? 'active' : `${set.downloadedCount}/${set.tileCount}`}</span><span>${escapeHtml(`${set.encoding ?? 'terrarium'} / ${set.minZoom}-${set.maxZoom} / ${formatBytes(set.bytes)} / ${set.templateHost}`)}</span><button type="button" data-dem-cache-activate="${escapeHtml(set.id)}">Use</button><button type="button" data-dem-cache-delete="${escapeHtml(set.id)}">Delete</button></div>
+  `);
+  target.innerHTML = [
+    row('Active DEM', Boolean(status.activeSet), status.activeSet ? `${status.activeSet.label} / ${status.activeSet.downloadedCount} tiles / ${status.activeSet.encoding ?? 'terrarium'}` : status.error),
+    download ? row('Download', download.active, `${download.downloaded}/${download.downloaded + download.queued + download.failed} ok, ${download.failed} failed, ${formatBytes(download.bytes)}${download.lastError ? ` / ${download.lastError}` : ''}`) : '',
+    ...setRows
+  ].join('');
+  target.querySelectorAll<HTMLButtonElement>('[data-dem-cache-activate]').forEach((button) => {
+    button.addEventListener('click', () => {
+      void window.altairAnimus?.activateDemCacheSet?.(button.dataset.demCacheActivate ?? '').then((result) => applyDemCacheStatus(result.status));
+    });
+  });
+  target.querySelectorAll<HTMLButtonElement>('[data-dem-cache-delete]').forEach((button) => {
+    button.addEventListener('click', () => {
+      void window.altairAnimus?.deleteDemCacheSet?.(button.dataset.demCacheDelete ?? '').then((result) => applyDemCacheStatus(result.status));
+    });
+  });
+}
+
 function populateMapCacheInputs(settings: AnimusUiSettings): void {
   const template = document.querySelector<HTMLInputElement>('#map-cache-template');
   const attribution = document.querySelector<HTMLInputElement>('#map-cache-attribution');
   const minZoom = document.querySelector<HTMLInputElement>('#map-cache-min-zoom');
   const maxZoom = document.querySelector<HTMLInputElement>('#map-cache-max-zoom');
   const maxTiles = document.querySelector<HTMLInputElement>('#map-cache-max-tiles');
+  const demTemplate = document.querySelector<HTMLInputElement>('#dem-cache-template');
+  const demAttribution = document.querySelector<HTMLInputElement>('#dem-cache-attribution');
+  const demEncoding = document.querySelector<HTMLSelectElement>('#dem-cache-encoding');
+  const demMinZoom = document.querySelector<HTMLInputElement>('#dem-cache-min-zoom');
+  const demMaxZoom = document.querySelector<HTMLInputElement>('#dem-cache-max-zoom');
+  const demMaxTiles = document.querySelector<HTMLInputElement>('#dem-cache-max-tiles');
   if (template) template.value = settings.mapTileUrlTemplate;
   if (attribution) attribution.value = settings.mapTileAttribution;
   if (minZoom) minZoom.value = String(settings.mapCacheMinZoom);
   if (maxZoom) maxZoom.value = String(settings.mapCacheMaxZoom);
   if (maxTiles) maxTiles.value = String(settings.mapCacheMaxTileCount);
+  if (demTemplate) demTemplate.value = settings.demTileUrlTemplate;
+  if (demAttribution) demAttribution.value = settings.demTileAttribution;
+  if (demEncoding) demEncoding.value = settings.demTileEncoding;
+  if (demMinZoom) demMinZoom.value = String(settings.demCacheMinZoom);
+  if (demMaxZoom) demMaxZoom.value = String(settings.demCacheMaxZoom);
+  if (demMaxTiles) demMaxTiles.value = String(settings.demCacheMaxTileCount);
 }
 
 function mapCacheForm() {
@@ -929,6 +1014,36 @@ async function startMapCacheDownload(): Promise<void> {
   applyMapCacheStatus(result.status);
 }
 
+function demCacheForm() {
+  const template = document.querySelector<HTMLInputElement>('#dem-cache-template')?.value.trim() ?? '';
+  const attribution = document.querySelector<HTMLInputElement>('#dem-cache-attribution')?.value.trim() ?? '';
+  const label = document.querySelector<HTMLInputElement>('#dem-cache-label')?.value.trim() ?? '';
+  const encodingValue = document.querySelector<HTMLSelectElement>('#dem-cache-encoding')?.value;
+  const encoding: 'terrarium' | 'mapbox' = encodingValue === 'mapbox' ? 'mapbox' : 'terrarium';
+  const minZoom = Number(document.querySelector<HTMLInputElement>('#dem-cache-min-zoom')?.value ?? ANIMUS_MAP_CACHE_DEFAULT_MIN_ZOOM);
+  const maxZoom = Number(document.querySelector<HTMLInputElement>('#dem-cache-max-zoom')?.value ?? ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM);
+  const maxTileCount = Number(document.querySelector<HTMLInputElement>('#dem-cache-max-tiles')?.value ?? ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT);
+  saveUiSettings({ demTileUrlTemplate: template, demTileAttribution: attribution, demTileEncoding: encoding, demCacheMinZoom: minZoom, demCacheMaxZoom: maxZoom, demCacheMaxTileCount: maxTileCount });
+  return { urlTemplate: template, attribution, label, encoding, bbox: currentMapCacheBbox(state.snapshot), minZoom, maxZoom, maxTileCount };
+}
+
+async function estimateDemCache(): Promise<void> {
+  const request = demCacheForm();
+  const result = await window.altairAnimus?.estimateDemCache?.(request);
+  if (!result) return;
+  const target = document.querySelector<HTMLElement>('#setup-dem-cache-status');
+  if (target) {
+    target.innerHTML = `<div><strong>Estimate</strong><span>${result.tileCount} tiles</span><span>${result.exceedsLimit ? `exceeds max ${result.maxTileCount}` : `zoom ${result.minZoom}-${result.maxZoom}`}</span></div>` + target.innerHTML;
+  }
+}
+
+async function startDemCacheDownload(): Promise<void> {
+  const result = await window.altairAnimus?.startDemCacheDownload?.(demCacheForm());
+  if (!result) return;
+  if (!result.ok && result.error) document.querySelector<HTMLElement>('#status')!.textContent = result.error;
+  applyDemCacheStatus(result.status);
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
@@ -946,6 +1061,9 @@ void window.altairAnimus?.getSettings?.().then(applyUiSettings).catch(() => {
 });
 void (window.altairAnimus?.getMapCacheStatus?.() ?? refreshMapCacheStatus()).then(applyMapCacheStatus).catch(() => {
   renderSetupMapCacheStatus(createUnavailableMapCacheStatus('map cache status unavailable'));
+});
+void window.altairAnimus?.getDemCacheStatus?.().then(applyDemCacheStatus).catch(() => {
+  renderSetupDemCacheStatus(createUnavailableMapCacheStatus('DEM cache status unavailable'));
 });
 connect();
 scene.start();

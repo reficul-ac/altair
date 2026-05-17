@@ -4,6 +4,7 @@ import {
   ANIMUS_MAP_CACHE_DEFAULT_RADIUS_M,
   bboxAround,
   createUnavailableMapCacheStatus,
+  localDemTileUrlTemplate,
   localTileUrlTemplate,
   normalizeMapCacheStatus,
   type MapCacheBbox,
@@ -73,6 +74,7 @@ let mapFailed = false;
 let latestSnapshot: SessionSnapshotMessage | null = null;
 let terrain3d: TerrainRenderer | null = null;
 let mapCacheStatusPromise: Promise<MapCacheStatus> | null = null;
+let demCacheStatusPromise: Promise<MapCacheStatus> | null = null;
 let mapFollowChanged: ((follow: boolean) => void) | null = null;
 let renderedMapCacheSetId: string | null = null;
 
@@ -135,7 +137,7 @@ export function rallyLocalPoints(vehicle: VehicleStateMessage): LocalPoint[] {
 }
 
 export function setMapMode(mode: MapMode): void {
-  view.mode = mode === 'terrain-3d' ? 'satellite' : mode;
+  view.mode = mode;
 }
 
 export function mapMode(): MapMode {
@@ -268,7 +270,6 @@ export function bindMapControls(snapshotProvider: () => SessionSnapshotMessage |
   document.querySelectorAll<HTMLButtonElement>('[data-map-mode]').forEach((button) => {
     button.addEventListener('click', () => {
       const mode = button.dataset.mapMode as MapMode;
-      if (mode === 'terrain-3d') return;
       setMapMode(mode);
       document.querySelectorAll<HTMLButtonElement>('[data-map-mode]').forEach((candidate) => candidate.classList.toggle('active', candidate === button));
       redraw(snapshotProvider);
@@ -297,10 +298,14 @@ export function refreshMapLayout(): void {
 }
 
 async function drawTerrainMap(canvas: HTMLCanvasElement, snapshot: SessionSnapshotMessage): Promise<void> {
-  void canvas;
-  void snapshot;
-  updateMapCacheStatus(await getMapCacheStatus());
-  showMapUnavailable('DEM cache support is not implemented in v1.');
+  const demStatus = await getDemCacheStatus();
+  updateMapCacheStatus(await getMapCacheStatus(), demStatus);
+  if (!demStatus.available || !demStatus.activeSet) {
+    showMapUnavailable(demStatus.error ?? 'offline DEM cache unavailable');
+    return;
+  }
+  hideMapUnavailable();
+  drawTerrain3d(canvas, snapshot);
 }
 
 function drawTerrain3d(canvas: HTMLCanvasElement, snapshot: SessionSnapshotMessage): void {
@@ -374,6 +379,14 @@ async function ensureMap(status: MapCacheStatus): Promise<MapLibreMap | null> {
 }
 
 export function satelliteStyle(status: MapCacheStatus): StyleSpecification {
+  return mapStyle(status, null);
+}
+
+export function terrainStyle(status: MapCacheStatus, demStatus: MapCacheStatus): StyleSpecification {
+  return mapStyle(status, demStatus);
+}
+
+function mapStyle(status: MapCacheStatus, demStatus: MapCacheStatus | null): StyleSpecification {
   const empty = collection([]);
   const activeSet = status.activeSet;
   const sources: StyleSpecification['sources'] = {
@@ -393,9 +406,21 @@ export function satelliteStyle(status: MapCacheStatus): StyleSpecification {
     rally: { type: 'geojson', data: empty },
     events: { type: 'geojson', data: empty }
   };
+  if (demStatus?.available && demStatus.activeSet) {
+    sources.dem = {
+      type: 'raster-dem',
+      tiles: [localDemTileUrlTemplate(demStatus.activeSet.id)],
+      tileSize: 256,
+      encoding: demStatus.activeSet.encoding ?? 'terrarium',
+      minzoom: demStatus.activeSet.minZoom,
+      maxzoom: demStatus.activeSet.maxZoom,
+      attribution: demStatus.activeSet.attribution ?? 'Offline DEM cache'
+    };
+  }
   return {
     version: 8,
     sources,
+    terrain: demStatus?.available && demStatus.activeSet ? { source: 'dem', exaggeration: 1 } : undefined,
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': '#223129' } },
       { id: 'satellite', type: 'raster', source: 'satellite', paint: { 'raster-opacity': 1, 'raster-contrast': 0.08, 'raster-saturation': -0.08 } },
@@ -544,10 +569,20 @@ async function getMapCacheStatus(): Promise<MapCacheStatus> {
   return mapCacheStatusPromise;
 }
 
+async function getDemCacheStatus(): Promise<MapCacheStatus> {
+  if (!demCacheStatusPromise) {
+    demCacheStatusPromise = window.altairAnimus?.getDemCacheStatus
+      ? window.altairAnimus.getDemCacheStatus().then(normalizeMapCacheStatus)
+      : Promise.resolve(createUnavailableMapCacheStatus('offline DEM cache unavailable in browser runtime'));
+  }
+  return demCacheStatusPromise;
+}
+
 export async function refreshMapCacheStatus(): Promise<MapCacheStatus> {
   mapCacheStatusPromise = null;
+  demCacheStatusPromise = null;
   const status = await getMapCacheStatus();
-  updateMapCacheStatus(status);
+  updateMapCacheStatus(status, await getDemCacheStatus());
   return status;
 }
 
@@ -562,12 +597,17 @@ export function currentMapCacheBbox(snapshot: SessionSnapshotMessage | null = la
   return bboxAround(lat, lon, ANIMUS_MAP_CACHE_DEFAULT_RADIUS_M);
 }
 
-function updateMapCacheStatus(status: MapCacheStatus): void {
+function updateMapCacheStatus(status: MapCacheStatus, demStatus?: MapCacheStatus): void {
   const target = document.querySelector<HTMLElement>('#map-cache-status');
   if (target) {
     target.textContent = status.activeSet
-      ? `${status.activeSet.label} / ${status.activeSet.downloadedCount}/${status.activeSet.tileCount} tiles`
-      : 'Offline satellite cache unavailable';
+      ? `${status.activeSet.label} / ${status.activeSet.downloadedCount}/${status.activeSet.tileCount} tiles${demStatus?.activeSet ? ` / DEM ${demStatus.activeSet.downloadedCount}/${demStatus.activeSet.tileCount}` : ''}`
+      : demStatus?.activeSet ? `DEM ${demStatus.activeSet.label} / satellite unavailable` : 'Offline cache unavailable';
+  }
+  const terrainButton = document.querySelector<HTMLButtonElement>('[data-map-mode="terrain-3d"]');
+  if (terrainButton) {
+    terrainButton.disabled = !demStatus?.available;
+    terrainButton.title = demStatus?.available ? 'Terrain 3D' : 'Create or activate an offline DEM cache in Setup';
   }
 }
 

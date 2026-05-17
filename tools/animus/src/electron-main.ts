@@ -86,6 +86,7 @@ const operationAuditLog = createCommandAuditLog(path.join(app.getPath('userData'
 const dashboardLayoutFile = dashboardLayoutPath(app.getPath('userData'));
 const animusSettingsFile = animusSettingsPath(app.getPath('userData'));
 const mapCache = new MapCacheManager(app.getPath('userData'));
+const demCache = new MapCacheManager(app.getPath('userData'), 'dem');
 let recentCommandAudit: CommandAuditEntry[] = [];
 let mockLink: MockLinkState | null = null;
 let shutdownPromise: Promise<void> | null = null;
@@ -190,10 +191,11 @@ function registerMapCacheProtocol(): void {
   protocol.handle(ANIMUS_MAP_CACHE_PROTOCOL, async (request) => {
     const url = new URL(request.url);
     const [setId, z, x, y] = url.pathname.split('/').filter(Boolean);
-    if (url.hostname !== 'tiles' || !setId || !z || !x || !y) {
+    const manager = url.hostname === 'dem' ? demCache : mapCache;
+    if ((url.hostname !== 'tiles' && url.hostname !== 'dem') || !setId || !z || !x || !y) {
       return new Response(mapCache.emptyTileBytes(), { headers: { 'content-type': 'image/png' } });
     }
-    const tile = await mapCache.tilePath(decodeURIComponent(setId), z, x, y);
+    const tile = await manager.tilePath(decodeURIComponent(setId), z, x, y);
     if (!tile.found) {
       return new Response(mapCache.emptyTileBytes(), { headers: { 'content-type': 'image/png' } });
     }
@@ -274,6 +276,13 @@ ipcMain.handle('map-cache:start-download', async (_event, request: MapCacheDownl
 ipcMain.handle('map-cache:cancel-download', async () => mapCache.cancelDownload());
 ipcMain.handle('map-cache:activate', async (_event, setId: string) => mapCache.activate(String(setId)));
 ipcMain.handle('map-cache:delete', async (_event, setId: string) => mapCache.delete(String(setId)));
+ipcMain.handle('dem-cache:status', async () => demCache.status());
+ipcMain.handle('dem-cache:list', async () => (await demCache.status()).sets);
+ipcMain.handle('dem-cache:estimate', async (_event, request: MapCacheEstimateRequest) => demCache.estimate(request));
+ipcMain.handle('dem-cache:start-download', async (_event, request: MapCacheDownloadRequest) => demCache.startDownload(request));
+ipcMain.handle('dem-cache:cancel-download', async () => demCache.cancelDownload());
+ipcMain.handle('dem-cache:activate', async (_event, setId: string) => demCache.activate(String(setId)));
+ipcMain.handle('dem-cache:delete', async (_event, setId: string) => demCache.delete(String(setId)));
 ipcMain.handle('dashboard:get-layout', () => readDashboardLayout(dashboardLayoutFile));
 ipcMain.handle('dashboard:save-layout', (_event, layout: AnimusDashboardLayout) => writeDashboardLayout(dashboardLayoutFile, layout));
 ipcMain.handle('dashboard:reset-layout', () => resetDashboardLayout(dashboardLayoutFile));

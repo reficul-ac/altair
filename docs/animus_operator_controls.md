@@ -67,11 +67,11 @@ Vehicle meshes are chosen from heartbeat vehicle type: fixed-wing, multirotor, V
 - `Focus` recenters on the selected vehicle and resumes selected-vehicle follow.
 - `+` and `-` adjust zoom.
 - `Satellite` shows the active offline satellite tile cache through MapLibre GL JS.
-- `Terrain 3D` is disabled for the v1 cache workflow because DEM cache support is not implemented yet.
+- `Terrain 3D` is enabled when an active offline DEM cache exists. It keeps vehicle overlays usable when satellite imagery is missing and shows shaded terrain until an active satellite cache can be draped over the Flight View terrain mesh.
 
-Animus expects an operator-provided, licensed XYZ raster tile URL template with `{z}`, `{x}`, and `{y}` placeholders and any API key embedded in the query string. Setup estimates the tile count for the current Map viewport, or the default SITL origin at `37.4275, -122.1697` when no map viewport is available, then caches tiles under Electron user data at `map-cache/tiles/<setId>/<z>/<x>/<y>.<ext>`. The cache index is stored at `map-cache/index.json`; repository artifacts no longer ship generated topo or PMTiles fallbacks.
+Animus expects operator-provided, licensed XYZ raster tile URL templates with `{z}`, `{x}`, and `{y}` placeholders and any API key embedded in the query string. Setup estimates the tile count for the current Map viewport, or the default SITL origin at `37.4275, -122.1697` when no map viewport is available, then caches satellite tiles under Electron user data at `map-cache/tiles/<setId>/<z>/<x>/<y>.<ext>` and DEM tiles under `map-cache/dem/<setId>/<z>/<x>/<y>.<ext>`. The satellite cache index is stored at `map-cache/index.json`; the DEM cache index is stored at `map-cache/dem-index.json`. Repository artifacts no longer ship generated topo or PMTiles fallbacks.
 
-Animus downloads only from `http` or `https` XYZ templates that the operator is licensed to cache. It does not scrape Google, Mapbox, Esri, or other tile services outside their permitted offline or on-prem products. If no active cache exists, or the current view requests missing tiles, Animus shows an explicit offline satellite cache status while keeping vehicle overlays usable.
+Animus downloads only from `http` or `https` XYZ templates that the operator is licensed to cache. It does not scrape Google, Mapbox, Esri, or other tile services outside their permitted offline or on-prem products. DEM cache setup supports MapLibre-compatible RGB DEM encodings: `terrarium` and `mapbox`. If no active cache exists, or the current view requests missing tiles, Animus shows an explicit offline cache status while keeping vehicle overlays usable.
 
 Vehicle telemetry is used only for overlays: selected and fleet trails, event markers, an origin/home marker when available, mission waypoint paths, geofence polygons/circles, and rally points when decoded records are present. Terrain check requests are protocol-backed and appear in the operation history. Creating or editing geofences, rally points, or terrain tiles remains out of scope unless a decoded MAVLink path is added for that operation.
 
@@ -82,7 +82,7 @@ Vehicle telemetry is used only for overlays: selected and fleet trails, event ma
 - `Import` and `Export` share dashboard profiles as the same JSON layout shape persisted in `dashboard-layout.json`: `schemaVersion: 1` plus a `widgets` array. Import replaces the active layout after normalizing invalid, duplicate, or unsupported widget entries.
 - Threshold customization is intentionally out of scope.
 - The Electron app persists the layout as JSON at `path.join(app.getPath('userData'), 'dashboard-layout.json')`. Missing or invalid settings fall back to the default layout without overwriting the file until the operator changes or resets the layout.
-- Application settings include the default offline map style (`mapStyle: "satellite"`), whether the map should follow the selected vehicle (`mapFollowSelected`), the licensed XYZ tile template, attribution, active cache set id, zoom defaults, and the max tile count guard.
+- Application settings include the default offline map style (`mapStyle: "satellite"`), whether the map should follow the selected vehicle (`mapFollowSelected`), licensed satellite and DEM XYZ tile templates, attribution, DEM encoding, active cache set ids, zoom defaults, and max tile count guards.
 
 Status widgets read the same session snapshot used by Flight, Map, Inspector, and Setup. The guarded control widget uses the existing command authority, confirmation, dispatch, audit, retry, and guard evaluation path. Commands are disabled when the selected vehicle reports read-only authority, stale or non-live link state, unsupported command capability, or a decoded blocked-command reason.
 

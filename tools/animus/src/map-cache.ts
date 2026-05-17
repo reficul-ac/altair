@@ -6,6 +6,9 @@ export const ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM = 16;
 export const ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT = 8000;
 export const ANIMUS_MAP_CACHE_DEFAULT_RADIUS_M = 1600;
 export const ANIMUS_MAP_CACHE_DEFAULT_ORIGIN = { latDeg: 37.4275, lonDeg: -122.1697 };
+export const ANIMUS_DEM_CACHE_DEFAULT_TEMPLATE = '';
+export const ANIMUS_DEM_CACHE_DEFAULT_ATTRIBUTION = '';
+export const ANIMUS_DEM_CACHE_DEFAULT_ENCODING: DemEncoding = 'terrarium';
 
 export type MapCacheBbox = {
   west: number;
@@ -29,7 +32,10 @@ export type MapCacheSet = {
   createdAt: string;
   updatedAt: string;
   extension: string;
+  encoding?: DemEncoding;
 };
+
+export type DemEncoding = 'terrarium' | 'mapbox';
 
 export type MapCacheDownloadState = {
   active: boolean;
@@ -74,6 +80,7 @@ export type MapCacheDownloadRequest = MapCacheEstimateRequest & {
   urlTemplate: string;
   attribution?: string | null;
   label?: string | null;
+  encoding?: DemEncoding | null;
 };
 
 export type MapCacheActionResult = {
@@ -145,7 +152,8 @@ export function normalizeMapCacheSet(value: unknown): MapCacheSet | null {
     bytes: normalizeCount(value.bytes),
     createdAt: normalizeOptionalString(value.createdAt, 64) ?? new Date(0).toISOString(),
     updatedAt: normalizeOptionalString(value.updatedAt, 64) ?? new Date(0).toISOString(),
-    extension: normalizeTileExtension(value.extension)
+    extension: normalizeTileExtension(value.extension),
+    encoding: normalizeDemEncoding(value.encoding)
   };
 }
 
@@ -208,6 +216,18 @@ export function tileUrl(template: string, tile: { z: number; x: number; y: numbe
 
 export function localTileUrlTemplate(setId: string): string {
   return `${ANIMUS_MAP_CACHE_PROTOCOL}://tiles/${encodeURIComponent(setId)}/{z}/{x}/{y}`;
+}
+
+export function localDemTileUrlTemplate(setId: string): string {
+  return `${ANIMUS_MAP_CACHE_PROTOCOL}://dem/${encodeURIComponent(setId)}/{z}/{x}/{y}`;
+}
+
+export function decodeRgbDemPixel(red: number, green: number, blue: number, encoding: DemEncoding): number {
+  const r = clampInt(red, 0, 255);
+  const g = clampInt(green, 0, 255);
+  const b = clampInt(blue, 0, 255);
+  if (encoding === 'mapbox') return -10000 + ((r * 256 * 256 + g * 256 + b) * 0.1);
+  return (r * 256 + g + b / 256) - 32768;
 }
 
 export function bboxAround(latDeg: number, lonDeg: number, radiusM: number): MapCacheBbox {
@@ -286,6 +306,10 @@ function normalizeCount(value: unknown, fallback = 0): number {
 function normalizeTileExtension(value: unknown): string {
   const normalized = normalizeOptionalString(value, 12)?.replace(/[^a-z0-9]/gi, '').toLowerCase();
   return normalized || 'png';
+}
+
+export function normalizeDemEncoding(value: unknown): DemEncoding | undefined {
+  return value === 'mapbox' || value === 'terrarium' ? value : undefined;
 }
 
 function extensionFromPath(pathname: string): string {

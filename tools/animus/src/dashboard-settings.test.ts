@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { animusSettingsPath, createDefaultAnimusSettings, normalizeAnimusSettings, readAnimusSettings, writeAnimusSettings } from './animus-settings';
 import { createDefaultDashboardLayout } from './dashboard-types';
 import { dashboardLayoutPath, exportDashboardProfile, importDashboardProfile, readDashboardLayout, resetDashboardLayout, writeDashboardLayout } from './dashboard-settings';
-import { estimateTileCount, validateTileUrlTemplate } from './map-cache';
+import { decodeRgbDemPixel, estimateTileCount, validateTileUrlTemplate } from './map-cache';
 import { MapCacheManager } from './map-cache-node';
 
 describe('dashboard settings helpers', () => {
@@ -130,6 +130,13 @@ describe('dashboard settings helpers', () => {
       mapCacheMinZoom: 11,
       mapCacheMaxZoom: 15,
       mapCacheMaxTileCount: 1234,
+      demTileUrlTemplate: 'https://dem.example/{z}/{x}/{y}.png?key=test',
+      demTileAttribution: 'Licensed test DEM',
+      demTileEncoding: 'mapbox',
+      activeDemCacheSetId: 'dem-test',
+      demCacheMinZoom: 10,
+      demCacheMaxZoom: 14,
+      demCacheMaxTileCount: 4321,
       lastDashboardPresetLabel: 'Flight Test'
     });
 
@@ -147,6 +154,13 @@ describe('dashboard settings helpers', () => {
       mapCacheMinZoom: 11,
       mapCacheMaxZoom: 15,
       mapCacheMaxTileCount: 1234,
+      demTileUrlTemplate: 'https://dem.example/{z}/{x}/{y}.png?key=test',
+      demTileAttribution: 'Licensed test DEM',
+      demTileEncoding: 'mapbox',
+      activeDemCacheSetId: 'dem-test',
+      demCacheMinZoom: 10,
+      demCacheMaxZoom: 14,
+      demCacheMaxTileCount: 4321,
       lastDashboardPresetLabel: 'Flight Test'
     });
     expect(JSON.parse(await readFile(filePath, 'utf8')).writableAnimus).toBeUndefined();
@@ -204,6 +218,11 @@ describe('dashboard settings helpers', () => {
     expect(validateTileUrlTemplate('https://tiles.example/{z}/{x}.png').ok).toBe(false);
   });
 
+  it('decodes supported RGB DEM pixels', () => {
+    expect(decodeRgbDemPixel(128, 0, 0, 'terrarium')).toBe(0);
+    expect(decodeRgbDemPixel(1, 134, 160, 'mapbox')).toBeCloseTo(0, 5);
+  });
+
   it('normalizes malformed or missing map cache metadata as unavailable', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'animus-map-cache-'));
     const manager = new MapCacheManager(dir);
@@ -211,5 +230,14 @@ describe('dashboard settings helpers', () => {
     await mkdir(path.join(dir, 'map-cache'), { recursive: true });
     await writeFile(path.join(dir, 'map-cache', 'index.json'), 'not-json', 'utf8');
     expect(await manager.status()).toMatchObject({ available: false, sets: [] });
+  });
+
+  it('keeps satellite and DEM cache indexes independent', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'animus-dem-cache-'));
+    const satellite = new MapCacheManager(dir);
+    const dem = new MapCacheManager(dir, 'dem');
+
+    expect(await satellite.status()).toMatchObject({ available: false, sets: [] });
+    expect(await dem.status()).toMatchObject({ available: false, sets: [] });
   });
 });

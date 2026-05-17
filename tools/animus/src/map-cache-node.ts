@@ -8,6 +8,8 @@ import {
   createEmptyMapCacheDownloadState,
   estimateTileCount,
   localTileUrlTemplate,
+  localDemTileUrlTemplate,
+  normalizeDemEncoding,
   normalizeMapCacheSet,
   tileUrl,
   tilesForZoom,
@@ -28,6 +30,7 @@ type MapCacheIndex = {
 };
 
 const INDEX_FILENAME = 'index.json';
+const DEM_INDEX_FILENAME = 'dem-index.json';
 const TILE_EMPTY_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lU6n1wAAAABJRU5ErkJggg==',
   'base64'
@@ -37,10 +40,21 @@ export class MapCacheManager {
   private downloadState: MapCacheDownloadState | null = null;
   private abortController: AbortController | null = null;
 
-  constructor(private readonly userDataPath: string) {}
+  constructor(
+    private readonly userDataPath: string,
+    private readonly kind: 'tiles' | 'dem' = 'tiles'
+  ) {}
 
   cacheRoot(): string {
     return path.join(this.userDataPath, 'map-cache');
+  }
+
+  private cacheLabel(): string {
+    return this.kind === 'dem' ? 'offline DEM cache' : 'offline satellite cache';
+  }
+
+  private indexPath(): string {
+    return path.join(this.cacheRoot(), this.kind === 'dem' ? DEM_INDEX_FILENAME : INDEX_FILENAME);
   }
 
   async status(): Promise<MapCacheStatus> {
@@ -52,7 +66,7 @@ export class MapCacheManager {
       activeSet: available ? activeSet : null,
       sets: index.sets,
       downloadState: this.downloadState,
-      error: available ? null : activeSet ? 'active offline satellite cache has no readable tiles' : 'offline satellite cache unavailable'
+      error: available ? null : activeSet ? `active ${this.cacheLabel()} has no readable tiles` : `${this.cacheLabel()} unavailable`
     };
   }
 
@@ -61,7 +75,7 @@ export class MapCacheManager {
   }
 
   async startDownload(request: MapCacheDownloadRequest): Promise<MapCacheActionResult> {
-    if (this.downloadState?.active) return { ok: false, status: await this.status(), error: 'offline satellite cache download is already active' };
+    if (this.downloadState?.active) return { ok: false, status: await this.status(), error: `${this.cacheLabel()} download is already active` };
     const validation = validateTileUrlTemplate(request.urlTemplate);
     if (!validation.ok) return { ok: false, status: await this.status(), error: validation.error };
     const estimate = estimateTileCount({
@@ -76,7 +90,7 @@ export class MapCacheManager {
 
     const now = new Date().toISOString();
     const setId = `cache-${Date.now().toString(36)}`;
-    const label = normalizeLabel(request.label) ?? `Offline satellite ${now.slice(0, 10)}`;
+    const label = normalizeLabel(request.label) ?? (this.kind === 'dem' ? `Offline DEM ${now.slice(0, 10)}` : `Offline satellite ${now.slice(0, 10)}`);
     const set: MapCacheSet = {
       id: setId,
       label,
@@ -91,7 +105,8 @@ export class MapCacheManager {
       bytes: 0,
       createdAt: now,
       updatedAt: now,
-      extension: validation.extension
+      extension: validation.extension,
+      encoding: this.kind === 'dem' ? normalizeDemEncoding(request.encoding) ?? 'terrarium' : undefined
     };
 
     this.abortController = new AbortController();
@@ -108,7 +123,7 @@ export class MapCacheManager {
     void this.downloadTiles(request.urlTemplate, set, this.abortController).catch((error) => {
       if (this.downloadState) {
         this.downloadState.active = false;
-        this.downloadState.lastError = error instanceof Error ? error.message : 'offline satellite cache download failed';
+        this.downloadState.lastError = error instanceof Error ? error.message : `${this.cacheLabel()} download failed`;
       }
     });
     return { ok: true, status: await this.status() };
@@ -138,7 +153,7 @@ export class MapCacheManager {
       activeSetId: index.activeSetId === setId ? null : index.activeSetId,
       sets: index.sets.filter((set) => set.id !== setId)
     };
-    await rm(path.join(this.cacheRoot(), 'tiles', setId), { recursive: true, force: true });
+    await rm(path.join(this.cacheRoot(), this.kind, setId), { recursive: true, force: true });
     await this.writeIndex(next);
     return { ok: true, status: await this.status() };
   }
@@ -147,7 +162,7 @@ export class MapCacheManager {
     const index = await this.readIndex();
     const set = index.sets.find((candidate) => candidate.id === setId);
     const safeY = y.replace(/\.[a-z0-9]+$/i, '');
-    const tileFile = set ? path.join(this.cacheRoot(), 'tiles', set.id, z, x, `${safeY}.${set.extension}`) : '';
+    const tileFile = set ? path.join(this.cacheRoot(), this.kind, set.id, z, x, `${safeY}.${set.extension}`) : '';
     if (!set || !safeSegment(z) || !safeSegment(x) || !safeSegment(safeY)) {
       return { path: '', found: false };
     }
@@ -164,11 +179,11 @@ export class MapCacheManager {
   }
 
   localTileTemplateForActive(set: MapCacheSet): string {
-    return localTileUrlTemplate(set.id);
+    return this.kind === 'dem' ? localDemTileUrlTemplate(set.id) : localTileUrlTemplate(set.id);
   }
 
   private async downloadTiles(template: string, set: MapCacheSet, abortController: AbortController): Promise<void> {
-    await mkdir(path.join(this.cacheRoot(), 'tiles', set.id), { recursive: true });
+    await mkdir(path.join(this.cacheRoot(), this.kind, set.id), { recursive: true });
     let downloaded = 0;
     let failed = 0;
     let bytes = 0;
@@ -179,7 +194,7 @@ export class MapCacheManager {
           const response = await fetch(tileUrl(template, tile), { signal: abortController.signal });
           if (!response.ok) throw new Error(`HTTP ${response.status} for z${tile.z}/${tile.x}/${tile.y}`);
           const body = Buffer.from(await response.arrayBuffer());
-          const tilePath = path.join(this.cacheRoot(), 'tiles', set.id, String(tile.z), String(tile.x), `${tile.y}.${set.extension}`);
+          const tilePath = path.join(this.cacheRoot(), this.kind, set.id, String(tile.z), String(tile.x), `${tile.y}.${set.extension}`);
           await mkdir(path.dirname(tilePath), { recursive: true });
           await writeFile(tilePath, body);
           downloaded += 1;
@@ -217,7 +232,7 @@ export class MapCacheManager {
   }
 
   private async hasAnyTile(set: MapCacheSet): Promise<boolean> {
-    const root = path.join(this.cacheRoot(), 'tiles', set.id);
+    const root = path.join(this.cacheRoot(), this.kind, set.id);
     try {
       const info = await stat(root);
       return info.isDirectory() && set.downloadedCount > 0;
@@ -228,7 +243,7 @@ export class MapCacheManager {
 
   private async readIndex(): Promise<MapCacheIndex> {
     try {
-      const parsed = JSON.parse(await readFile(path.join(this.cacheRoot(), INDEX_FILENAME), 'utf8')) as unknown;
+      const parsed = JSON.parse(await readFile(this.indexPath(), 'utf8')) as unknown;
       if (!isRecord(parsed)) return createEmptyIndex();
       const sets = Array.isArray(parsed.sets) ? parsed.sets.map(normalizeMapCacheSet).filter((set): set is MapCacheSet => Boolean(set)) : [];
       const activeSetId = typeof parsed.activeSetId === 'string' && sets.some((set) => set.id === parsed.activeSetId) ? parsed.activeSetId : null;
@@ -240,7 +255,7 @@ export class MapCacheManager {
 
   private async writeIndex(index: MapCacheIndex): Promise<void> {
     await mkdir(this.cacheRoot(), { recursive: true });
-    await writeFile(path.join(this.cacheRoot(), INDEX_FILENAME), `${JSON.stringify(index, null, 2)}\n`, 'utf8');
+    await writeFile(this.indexPath(), `${JSON.stringify(index, null, 2)}\n`, 'utf8');
   }
 }
 

@@ -24,6 +24,13 @@ export type AltairAnimusApi = {
   listMapCacheSets: () => Promise<MapCacheSet[]>;
   activateMapCacheSet: (setId: string) => Promise<MapCacheActionResult>;
   deleteMapCacheSet: (setId: string) => Promise<MapCacheActionResult>;
+  getDemCacheStatus: () => Promise<MapCacheStatus>;
+  estimateDemCache: (request: MapCacheEstimateRequest) => Promise<MapCacheEstimate>;
+  startDemCacheDownload: (request: MapCacheDownloadRequest) => Promise<MapCacheActionResult>;
+  cancelDemCacheDownload: () => Promise<MapCacheActionResult>;
+  listDemCacheSets: () => Promise<MapCacheSet[]>;
+  activateDemCacheSet: (setId: string) => Promise<MapCacheActionResult>;
+  deleteDemCacheSet: (setId: string) => Promise<MapCacheActionResult>;
   getDashboardLayout: () => Promise<AnimusDashboardLayout>;
   saveDashboardLayout: (layout: AnimusDashboardLayout) => Promise<AnimusDashboardLayout>;
   resetDashboardLayout: () => Promise<AnimusDashboardLayout>;
@@ -131,6 +138,27 @@ const api: AltairAnimusApi = {
   },
   deleteMapCacheSet(setId) {
     return ipcRenderer.invoke('map-cache:delete', setId);
+  },
+  getDemCacheStatus() {
+    return ipcRenderer.invoke('dem-cache:status');
+  },
+  estimateDemCache(request) {
+    return ipcRenderer.invoke('dem-cache:estimate', request);
+  },
+  startDemCacheDownload(request) {
+    return ipcRenderer.invoke('dem-cache:start-download', request);
+  },
+  cancelDemCacheDownload() {
+    return ipcRenderer.invoke('dem-cache:cancel-download');
+  },
+  listDemCacheSets() {
+    return ipcRenderer.invoke('dem-cache:list');
+  },
+  activateDemCacheSet(setId) {
+    return ipcRenderer.invoke('dem-cache:activate', setId);
+  },
+  deleteDemCacheSet(setId) {
+    return ipcRenderer.invoke('dem-cache:delete', setId);
   },
   getDashboardLayout() {
     return ipcRenderer.invoke('dashboard:get-layout');

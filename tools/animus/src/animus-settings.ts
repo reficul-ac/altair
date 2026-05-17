@@ -1,11 +1,15 @@
 import path from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import {
+  ANIMUS_DEM_CACHE_DEFAULT_ATTRIBUTION,
+  ANIMUS_DEM_CACHE_DEFAULT_ENCODING,
+  ANIMUS_DEM_CACHE_DEFAULT_TEMPLATE,
   ANIMUS_MAP_CACHE_DEFAULT_ATTRIBUTION,
   ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT,
   ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM,
   ANIMUS_MAP_CACHE_DEFAULT_MIN_ZOOM,
-  ANIMUS_MAP_CACHE_DEFAULT_TEMPLATE
+  ANIMUS_MAP_CACHE_DEFAULT_TEMPLATE,
+  type DemEncoding
 } from './map-cache.js';
 
 export const ANIMUS_SETTINGS_SCHEMA_VERSION = 3;
@@ -34,6 +38,13 @@ export type AnimusUiSettings = {
   mapCacheMinZoom: number;
   mapCacheMaxZoom: number;
   mapCacheMaxTileCount: number;
+  demTileUrlTemplate: string;
+  demTileAttribution: string;
+  demTileEncoding: DemEncoding;
+  activeDemCacheSetId: string | null;
+  demCacheMinZoom: number;
+  demCacheMaxZoom: number;
+  demCacheMaxTileCount: number;
   lastDashboardPresetLabel: string | null;
 };
 
@@ -52,6 +63,13 @@ export function createDefaultAnimusSettings(): AnimusUiSettings {
     mapCacheMinZoom: ANIMUS_MAP_CACHE_DEFAULT_MIN_ZOOM,
     mapCacheMaxZoom: ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM,
     mapCacheMaxTileCount: ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT,
+    demTileUrlTemplate: ANIMUS_DEM_CACHE_DEFAULT_TEMPLATE,
+    demTileAttribution: ANIMUS_DEM_CACHE_DEFAULT_ATTRIBUTION,
+    demTileEncoding: ANIMUS_DEM_CACHE_DEFAULT_ENCODING,
+    activeDemCacheSetId: null,
+    demCacheMinZoom: ANIMUS_MAP_CACHE_DEFAULT_MIN_ZOOM,
+    demCacheMaxZoom: ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM,
+    demCacheMaxTileCount: ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT,
     lastDashboardPresetLabel: null
   };
 }
@@ -66,6 +84,8 @@ export function normalizeAnimusSettings(value: unknown): AnimusUiSettings {
   if (value.schemaVersion !== ANIMUS_SETTINGS_SCHEMA_VERSION && value.schemaVersion !== 2 && value.schemaVersion !== 1) return defaults;
   const minZoom = normalizeInteger(value.mapCacheMinZoom, defaults.mapCacheMinZoom, 0, 22);
   const maxZoom = normalizeInteger(value.mapCacheMaxZoom, defaults.mapCacheMaxZoom, minZoom, 22);
+  const demMinZoom = normalizeInteger(value.demCacheMinZoom, defaults.demCacheMinZoom, 0, 22);
+  const demMaxZoom = normalizeInteger(value.demCacheMaxZoom, defaults.demCacheMaxZoom, demMinZoom, 22);
   return {
     schemaVersion: ANIMUS_SETTINGS_SCHEMA_VERSION,
     defaultWorkspace: isMember(value.defaultWorkspace, ANIMUS_WORKSPACES) ? value.defaultWorkspace : defaults.defaultWorkspace,
@@ -80,6 +100,13 @@ export function normalizeAnimusSettings(value: unknown): AnimusUiSettings {
     mapCacheMinZoom: minZoom,
     mapCacheMaxZoom: maxZoom,
     mapCacheMaxTileCount: normalizeInteger(value.mapCacheMaxTileCount, defaults.mapCacheMaxTileCount, 1, 250000),
+    demTileUrlTemplate: normalizeString(value.demTileUrlTemplate, 4096, defaults.demTileUrlTemplate),
+    demTileAttribution: normalizeString(value.demTileAttribution, 240, defaults.demTileAttribution),
+    demTileEncoding: value.demTileEncoding === 'mapbox' || value.demTileEncoding === 'terrarium' ? value.demTileEncoding : defaults.demTileEncoding,
+    activeDemCacheSetId: normalizeOptionalString(value.activeDemCacheSetId, 96),
+    demCacheMinZoom: demMinZoom,
+    demCacheMaxZoom: demMaxZoom,
+    demCacheMaxTileCount: normalizeInteger(value.demCacheMaxTileCount, defaults.demCacheMaxTileCount, 1, 250000),
     lastDashboardPresetLabel: typeof value.lastDashboardPresetLabel === 'string' && value.lastDashboardPresetLabel.trim()
       ? value.lastDashboardPresetLabel.trim().slice(0, 80)
       : null

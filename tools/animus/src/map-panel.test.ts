@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMapOverlayModel, geofenceLocalPoints, homePointFromVehicle, mapMode, mapScreenToWorld, mapWorldToScreen, rallyLocalPoints, satelliteStyle, selectedMapVehicle, setMapMode, terrainModelFromVehicle, type MapViewState } from './map-panel';
+import { buildMapOverlayModel, geofenceLocalPoints, homePointFromVehicle, mapMode, mapScreenToWorld, mapWorldToScreen, rallyLocalPoints, satelliteStyle, selectedMapVehicle, setMapMode, terrainModelFromVehicle, terrainStyle, type MapViewState } from './map-panel';
 import { buildFlightTerrainModel } from './map-assets';
 import { normalizeMapCacheStatus } from './map-cache';
 import type { SessionSnapshotMessage, VehicleStateMessage } from './state';
@@ -74,9 +74,9 @@ describe('map panel helpers', () => {
     expect(model?.maxTerrainM).toBe(model?.minTerrainM);
   });
 
-  it('keeps terrain 3D disabled for the v1 cache workflow', () => {
+  it('allows terrain 3D mode when selected by the UI', () => {
     setMapMode('terrain-3d');
-    expect(mapMode()).toBe('satellite');
+    expect(mapMode()).toBe('terrain-3d');
     setMapMode('satellite');
     expect(mapMode()).toBe('satellite');
   });
@@ -89,7 +89,7 @@ describe('map panel helpers', () => {
       error: null
     })).toEqual({
       available: true,
-      activeSet: { id: 'set-1', label: 'Field', templateHost: 'tiles.example', attribution: 'Licensed', bbox: { west: -122, south: 37, east: -121, north: 38 }, minZoom: 12, maxZoom: 14, tileCount: 3, downloadedCount: 3, failedCount: 0, bytes: 10, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', extension: 'png' },
+      activeSet: { id: 'set-1', label: 'Field', templateHost: 'tiles.example', attribution: 'Licensed', bbox: { west: -122, south: 37, east: -121, north: 38 }, minZoom: 12, maxZoom: 14, tileCount: 3, downloadedCount: 3, failedCount: 0, bytes: 10, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', extension: 'png', encoding: undefined },
       sets: [],
       downloadState: null,
       error: null
@@ -110,17 +110,40 @@ describe('map panel helpers', () => {
     expect(style.terrain).toBeUndefined();
   });
 
-  it('keeps flight terrain unavailable until DEM cache support exists', () => {
-    const unavailable = buildFlightTerrainModel(normalizeMapCacheStatus({ available: false, error: 'missing' }), vehicle);
-    expect(unavailable.available).toBe(false);
-    const available = buildFlightTerrainModel(normalizeMapCacheStatus({
+  it('builds a MapLibre terrain style with raster-dem tiles', () => {
+    const satellite = normalizeMapCacheStatus({
       available: true,
       activeSet: { id: 'set-1', label: 'Field', templateHost: 'tiles.example', attribution: 'Licensed', bbox: { west: -122, south: 37, east: -121, north: 38 }, minZoom: 12, maxZoom: 14, tileCount: 3, downloadedCount: 3, failedCount: 0, bytes: 10, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', extension: 'png' },
       sets: []
-    }), vehicle, 5, 30);
-    expect(available.available).toBe(false);
-    expect(available.samples).toHaveLength(0);
-    expect(available.textured).toBe(false);
+    });
+    const dem = normalizeMapCacheStatus({
+      available: true,
+      activeSet: { id: 'dem-1', label: 'Field DEM', templateHost: 'dem.example', attribution: 'Licensed DEM', bbox: { west: -122, south: 37, east: -121, north: 38 }, minZoom: 12, maxZoom: 14, tileCount: 3, downloadedCount: 3, failedCount: 0, bytes: 10, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', extension: 'png', encoding: 'mapbox' },
+      sets: []
+    });
+    const style = terrainStyle(satellite, dem);
+    expect(style.sources.dem.type).toBe('raster-dem');
+    expect(JSON.stringify(style.sources.dem)).toContain('animus-cache://dem/dem-1');
+    expect(style.terrain).toEqual({ source: 'dem', exaggeration: 1 });
+  });
+
+  it('builds flight terrain when an active DEM cache exists', () => {
+    const unavailable = buildFlightTerrainModel(normalizeMapCacheStatus({ available: false, error: 'missing' }), vehicle);
+    expect(unavailable.available).toBe(false);
+    const dem = normalizeMapCacheStatus({
+      available: true,
+      activeSet: { id: 'dem-1', label: 'Field DEM', templateHost: 'dem.example', attribution: 'Licensed DEM', bbox: { west: -122, south: 37, east: -121, north: 38 }, minZoom: 12, maxZoom: 14, tileCount: 3, downloadedCount: 3, failedCount: 0, bytes: 10, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', extension: 'png', encoding: 'terrarium' },
+      sets: []
+    });
+    const satellite = normalizeMapCacheStatus({
+      available: true,
+      activeSet: { id: 'set-1', label: 'Field', templateHost: 'tiles.example', attribution: 'Licensed', bbox: { west: -122, south: 37, east: -121, north: 38 }, minZoom: 12, maxZoom: 14, tileCount: 3, downloadedCount: 3, failedCount: 0, bytes: 10, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', extension: 'png' },
+      sets: []
+    });
+    const available = buildFlightTerrainModel(dem, vehicle, 5, 30, satellite);
+    expect(available.available).toBe(true);
+    expect(available.samples).toHaveLength(25);
+    expect(available.textured).toBe(true);
   });
 
   it('converts session overlays to geographic GeoJSON', () => {

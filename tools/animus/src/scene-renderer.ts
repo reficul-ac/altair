@@ -74,6 +74,7 @@ export class SceneRenderer {
   private readonly markers = new Map<string, Mesh>();
   private lastMessage: VehicleStateMessage | null = null;
   private mapCacheStatus: MapCacheStatus | null = null;
+  private demCacheStatus: MapCacheStatus | null = null;
   private lastPoint: TrailPoint | null = null;
   private frames = 0;
   private fps = 0;
@@ -123,6 +124,11 @@ export class SceneRenderer {
 
   setMapCacheStatus(status: MapCacheStatus): void {
     this.mapCacheStatus = status;
+    this.updateGroundTerrain();
+  }
+
+  setDemCacheStatus(status: MapCacheStatus): void {
+    this.demCacheStatus = status;
     this.updateGroundTerrain();
   }
 
@@ -299,7 +305,7 @@ export class SceneRenderer {
   }
 
   private updateGroundTerrain(): void {
-    const model = buildFlightTerrainModel(this.mapCacheStatus, this.lastMessage);
+    const model = buildFlightTerrainModel(this.demCacheStatus, this.lastMessage, 17, 45, this.mapCacheStatus);
     this.terrainMesh.visible = model.available;
     if (!model.available) return;
     this.terrainMesh.geometry.dispose();
@@ -445,10 +451,13 @@ function setText(id: string, value: string): void {
 function terrainGeometry(model: FlightTerrainModel, vehicle: VehicleStateMessage | null): BufferGeometry {
   const originAltM = vehicle?.globalPosition.originAltitudeM ?? vehicle?.home?.altitudeM ?? 0;
   const positions = new Float32Array(model.samples.length * 3);
+  const uvs = new Float32Array(model.samples.length * 2);
   model.samples.forEach((sample, index) => {
     positions[index * 3] = sample.eastM;
     positions[index * 3 + 1] = sample.northM;
     positions[index * 3 + 2] = Math.min(sample.elevationM - originAltM, (vehicle?.localPosition.upM ?? 0) - 12);
+    uvs[index * 2] = sample.u;
+    uvs[index * 2 + 1] = sample.v;
   });
   const indices: number[] = [];
   for (let row = 0; row < model.gridSize - 1; row += 1) {
@@ -459,6 +468,7 @@ function terrainGeometry(model: FlightTerrainModel, vehicle: VehicleStateMessage
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;

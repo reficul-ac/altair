@@ -434,7 +434,8 @@
   text-transform: uppercase;
 }
 
-.map-cache-form input {
+.map-cache-form input,
+.map-cache-form select {
   width: 100%;
   min-width: 0;
 }

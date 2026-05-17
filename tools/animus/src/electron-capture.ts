@@ -389,15 +389,18 @@ async function runCapture(args: CaptureArgs): Promise<void> {
   await mkdir(args.outDir, { recursive: true });
   debugLog('electron-app', 'ready');
   const mapCache = new MapCacheManager(app.getPath('userData'));
+  const demCache = new MapCacheManager(app.getPath('userData'), 'dem');
   protocol.handle(ANIMUS_MAP_CACHE_PROTOCOL, async (request) => {
     const url = new URL(request.url);
     const [setId, z, x, y] = url.pathname.split('/').filter(Boolean);
-    const tile = setId && z && x && y ? await mapCache.tilePath(decodeURIComponent(setId), z, x, y) : { path: '', found: false };
+    const manager = url.hostname === 'dem' ? demCache : mapCache;
+    const tile = setId && z && x && y ? await manager.tilePath(decodeURIComponent(setId), z, x, y) : { path: '', found: false };
     return tile.found
       ? net.fetch(pathToFileURL(tile.path).href)
       : new Response(mapCache.emptyTileBytes(), { headers: { 'content-type': 'image/png' } });
   });
   ipcMain.handle('map-cache:status', async () => mapCache.status());
+  ipcMain.handle('dem-cache:status', async () => demCache.status());
   const window = new BrowserWindow({
     width: args.viewports[0]?.width ?? 1440,
     height: args.viewports[0]?.height ?? 900,
