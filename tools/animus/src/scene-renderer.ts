@@ -1,6 +1,6 @@
-import { AmbientLight, ArrowHelper, AxesHelper, BoxGeometry, BufferAttribute, BufferGeometry, CapsuleGeometry, ConeGeometry, CylinderGeometry, DirectionalLight, Euler, Fog, GridHelper, Group, Line, LineBasicMaterial, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Quaternion, Scene, SphereGeometry, TorusGeometry, Vector3, WebGLRenderer } from 'three';
+import { AmbientLight, ArrowHelper, AxesHelper, BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, CapsuleGeometry, ConeGeometry, CylinderGeometry, DirectionalLight, Euler, Fog, GridHelper, Group, Line, LineBasicMaterial, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Quaternion, Scene, SphereGeometry, TorusGeometry, Vector3, WebGLRenderer } from 'three';
 import { fmt } from './hud-ui';
-import { buildFlightTerrainModel, type FlightTerrainModel } from './map-assets';
+import { buildFlightTerrainModel, localTerrainTileUrl, localToLonLat, lonLatToXyzPixel, sampleRgbDemImageData, type FlightTerrainModel } from './map-assets';
 import type { MapCacheStatus } from './map-cache';
 import { TrailBuffer, trailPointFromState, type SessionEvent, type VehicleStateMessage, type TrailPoint } from './state';
 
@@ -75,6 +75,10 @@ export class SceneRenderer {
   private lastMessage: VehicleStateMessage | null = null;
   private mapCacheStatus: MapCacheStatus | null = null;
   private demCacheStatus: MapCacheStatus | null = null;
+  private terrainRequestId = 0;
+  private terrainSignature: string | null = null;
+  private readonly rasterTileCache = new Map<string, Promise<LoadedRasterTile | null>>();
+  private terrainTexture: CanvasTexture<HTMLCanvasElement | OffscreenCanvas> | null = null;
   private lastPoint: TrailPoint | null = null;
   private frames = 0;
   private fps = 0;
@@ -305,12 +309,118 @@ export class SceneRenderer {
   }
 
   private updateGroundTerrain(): void {
-    const model = buildFlightTerrainModel(this.demCacheStatus, this.lastMessage, 17, 45, this.mapCacheStatus);
-    this.terrainMesh.visible = model.available;
-    if (!model.available) return;
+    if (!this.demCacheStatus?.available || !this.demCacheStatus.activeSet) {
+      this.terrainSignature = null;
+      this.terrainRequestId += 1;
+      this.terrainMesh.visible = false;
+      return;
+    }
+    const signature = terrainLoadSignature(this.demCacheStatus, this.mapCacheStatus, this.lastMessage);
+    if (signature === this.terrainSignature) return;
+    this.terrainSignature = signature;
+    const requestId = ++this.terrainRequestId;
+    void this.loadGroundTerrain(requestId, this.demCacheStatus, this.mapCacheStatus, this.lastMessage);
+  }
+
+  private async loadGroundTerrain(requestId: number, demStatus: MapCacheStatus, satelliteStatus: MapCacheStatus | null, vehicle: VehicleStateMessage | null): Promise<void> {
+    const demSet = demStatus.activeSet;
+    if (!demSet) return;
+    const preview = buildFlightTerrainModel(demStatus, vehicle, { gridSize: 17, spacingM: 45, satelliteStatus, demSampler: () => 0 });
+    const demTiles = new Map<string, LoadedRasterTile | null>();
+    await Promise.all(uniqueTileKeys(preview, demSet.id, demSet.maxZoom).map(async (tile) => {
+      demTiles.set(tile.key, await this.loadRasterTile('dem', demSet.id, tile.z, tile.x, tile.y));
+    }));
+    if (requestId !== this.terrainRequestId) return;
+    const model = buildFlightTerrainModel(demStatus, vehicle, {
+      gridSize: 17,
+      spacingM: 45,
+      satelliteStatus,
+      demSampler: ({ latDeg, lonDeg, z }) => {
+        const coordinate = lonLatToXyzPixel(lonDeg, latDeg, z);
+        const tile = demTiles.get(tileKey('dem', demSet.id, coordinate.z, coordinate.x, coordinate.y));
+        return tile ? sampleRgbDemImageData(tile.data, tile.width, tile.height, coordinate.pixelX, coordinate.pixelY, demSet.encoding ?? 'terrarium') : null;
+      }
+    });
+    if (!model.available) {
+      if (requestId === this.terrainRequestId) this.terrainMesh.visible = false;
+      return;
+    }
+    const textureResult = await this.buildSatelliteTexture(model, satelliteStatus, vehicle);
+    if (requestId !== this.terrainRequestId) return;
+    model.missingSatelliteTiles = textureResult.missingTiles;
+    model.hasSatelliteTexture = Boolean(textureResult.texture);
     this.terrainMesh.geometry.dispose();
-    this.terrainMesh.geometry = terrainGeometry(model, this.lastMessage);
-    this.terrainMaterial.color.setHex(model.textured ? 0x3f5a44 : 0x2f453a);
+    this.terrainMesh.geometry = terrainGeometry(model, vehicle);
+    if (this.terrainTexture) this.terrainTexture.dispose();
+    this.terrainTexture = textureResult.texture;
+    this.terrainMaterial.map = textureResult.texture;
+    this.terrainMaterial.vertexColors = !textureResult.texture;
+    this.terrainMaterial.color.setHex(textureResult.texture ? 0xffffff : 0x2f453a);
+    this.terrainMaterial.needsUpdate = true;
+    this.terrainMesh.visible = true;
+  }
+
+  private async buildSatelliteTexture(model: FlightTerrainModel, satelliteStatus: MapCacheStatus | null, vehicle: VehicleStateMessage | null): Promise<{ texture: CanvasTexture<HTMLCanvasElement | OffscreenCanvas> | null; missingTiles: number }> {
+    const satelliteSet = satelliteStatus?.available ? satelliteStatus.activeSet : null;
+    if (!satelliteSet) return { texture: null, missingTiles: 0 };
+    const originLat = vehicle?.globalPosition.originLatDeg ?? vehicle?.home?.latDeg ?? vehicle?.globalPosition.latDeg;
+    const originLon = vehicle?.globalPosition.originLonDeg ?? vehicle?.home?.lonDeg ?? vehicle?.globalPosition.lonDeg;
+    if (originLat === undefined || originLat === null || originLon === undefined || originLon === null) return { texture: null, missingTiles: 0 };
+    const bounds = terrainLocalBounds(model);
+    const atlasSize = 256;
+    const coordinates: { key: string; coordinate: ReturnType<typeof lonLatToXyzPixel> }[] = [];
+    for (let y = 0; y < atlasSize; y += 1) {
+      for (let x = 0; x < atlasSize; x += 1) {
+        const eastM = bounds.minEastM + (x / Math.max(1, atlasSize - 1)) * (bounds.maxEastM - bounds.minEastM);
+        const northM = bounds.maxNorthM - (y / Math.max(1, atlasSize - 1)) * (bounds.maxNorthM - bounds.minNorthM);
+        const geo = localToLonLat(eastM, northM, originLat, originLon);
+        const coordinate = lonLatToXyzPixel(geo.lonDeg, geo.latDeg, satelliteSet.maxZoom);
+        coordinates.push({ key: tileKey('tiles', satelliteSet.id, coordinate.z, coordinate.x, coordinate.y), coordinate });
+      }
+    }
+    const uniqueKeys = new Map<string, ReturnType<typeof lonLatToXyzPixel>>();
+    coordinates.forEach((entry) => uniqueKeys.set(entry.key, entry.coordinate));
+    const tiles = new Map<string, LoadedRasterTile | null>();
+    await Promise.all([...uniqueKeys].map(async ([key, coordinate]) => {
+      tiles.set(key, await this.loadRasterTile('tiles', satelliteSet.id, coordinate.z, coordinate.x, coordinate.y));
+    }));
+    const canvas = createRasterCanvas(atlasSize, atlasSize);
+    const context = canvas.getContext('2d');
+    if (!context) return { texture: null, missingTiles: uniqueKeys.size };
+    const image = context.createImageData(atlasSize, atlasSize);
+    let missingPixels = 0;
+    for (let index = 0; index < coordinates.length; index += 1) {
+      const entry = coordinates[index];
+      const tile = tiles.get(entry.key);
+      const offset = index * 4;
+      if (!tile) {
+        missingPixels += 1;
+        image.data[offset] = 47;
+        image.data[offset + 1] = 69;
+        image.data[offset + 2] = 58;
+        image.data[offset + 3] = 255;
+        continue;
+      }
+      const px = Math.max(0, Math.min(tile.width - 1, Math.round(entry.coordinate.pixelX)));
+      const py = Math.max(0, Math.min(tile.height - 1, Math.round(entry.coordinate.pixelY)));
+      const sourceOffset = (py * tile.width + px) * 4;
+      image.data[offset] = tile.data[sourceOffset] ?? 47;
+      image.data[offset + 1] = tile.data[sourceOffset + 1] ?? 69;
+      image.data[offset + 2] = tile.data[sourceOffset + 2] ?? 58;
+      image.data[offset + 3] = 255;
+    }
+    context.putImageData(image, 0, 0);
+    const missingTiles = [...tiles.values()].filter((tile) => !tile).length;
+    return { texture: missingTiles > 0 || missingPixels === coordinates.length ? null : new CanvasTexture(canvas), missingTiles };
+  }
+
+  private loadRasterTile(kind: 'dem' | 'tiles', setId: string, z: number, x: number, y: number): Promise<LoadedRasterTile | null> {
+    const key = tileKey(kind, setId, z, x, y);
+    const cached = this.rasterTileCache.get(key);
+    if (cached) return cached;
+    const loaded = loadRasterTile(kind, setId, z, x, y);
+    this.rasterTileCache.set(key, loaded);
+    return loaded;
   }
 
   private animate(nowMs: number): void {
@@ -452,12 +562,21 @@ function terrainGeometry(model: FlightTerrainModel, vehicle: VehicleStateMessage
   const originAltM = vehicle?.globalPosition.originAltitudeM ?? vehicle?.home?.altitudeM ?? 0;
   const positions = new Float32Array(model.samples.length * 3);
   const uvs = new Float32Array(model.samples.length * 2);
+  const colors = new Float32Array(model.samples.length * 3);
+  const elevations = model.samples.map((sample) => sample.elevationM);
+  const minElevation = Math.min(...elevations);
+  const maxElevation = Math.max(...elevations);
+  const elevationSpan = Math.max(1, maxElevation - minElevation);
   model.samples.forEach((sample, index) => {
     positions[index * 3] = sample.eastM;
     positions[index * 3 + 1] = sample.northM;
     positions[index * 3 + 2] = Math.min(sample.elevationM - originAltM, (vehicle?.localPosition.upM ?? 0) - 12);
     uvs[index * 2] = sample.u;
     uvs[index * 2 + 1] = sample.v;
+    const t = (sample.elevationM - minElevation) / elevationSpan;
+    colors[index * 3] = 0.16 + t * 0.18;
+    colors[index * 3 + 1] = 0.27 + t * 0.26;
+    colors[index * 3 + 2] = 0.21 + t * 0.13;
   });
   const indices: number[] = [];
   for (let row = 0; row < model.gridSize - 1; row += 1) {
@@ -469,9 +588,90 @@ function terrainGeometry(model: FlightTerrainModel, vehicle: VehicleStateMessage
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(positions, 3));
   geometry.setAttribute('uv', new BufferAttribute(uvs, 2));
+  geometry.setAttribute('color', new BufferAttribute(colors, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
+}
+
+type LoadedRasterTile = {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+};
+
+function terrainLoadSignature(demStatus: MapCacheStatus, satelliteStatus: MapCacheStatus | null, vehicle: VehicleStateMessage | null): string {
+  const demSet = demStatus.activeSet;
+  const satelliteSet = satelliteStatus?.activeSet;
+  const originLat = vehicle?.globalPosition.originLatDeg ?? vehicle?.home?.latDeg ?? vehicle?.globalPosition.latDeg ?? 0;
+  const originLon = vehicle?.globalPosition.originLonDeg ?? vehicle?.home?.lonDeg ?? vehicle?.globalPosition.lonDeg ?? 0;
+  const east = Math.round((vehicle?.localPosition.eastM ?? 0) / 45);
+  const north = Math.round((vehicle?.localPosition.northM ?? 0) / 45);
+  return [
+    demSet?.id ?? 'none',
+    demSet?.maxZoom ?? 0,
+    demSet?.encoding ?? 'terrarium',
+    satelliteSet?.id ?? 'no-sat',
+    satelliteSet?.maxZoom ?? 0,
+    originLat.toFixed(6),
+    originLon.toFixed(6),
+    east,
+    north
+  ].join(':');
+}
+
+function uniqueTileKeys(model: FlightTerrainModel, setId: string, z: number): { key: string; z: number; x: number; y: number }[] {
+  const keys = new Map<string, { key: string; z: number; x: number; y: number }>();
+  for (const sample of model.samples) {
+    const coordinate = lonLatToXyzPixel(sample.lonDeg, sample.latDeg, z);
+    const key = tileKey('dem', setId, coordinate.z, coordinate.x, coordinate.y);
+    keys.set(key, { key, z: coordinate.z, x: coordinate.x, y: coordinate.y });
+  }
+  return [...keys.values()];
+}
+
+function terrainLocalBounds(model: FlightTerrainModel): { minEastM: number; maxEastM: number; minNorthM: number; maxNorthM: number } {
+  const east = model.samples.map((sample) => sample.eastM);
+  const north = model.samples.map((sample) => sample.northM);
+  return {
+    minEastM: Math.min(...east),
+    maxEastM: Math.max(...east),
+    minNorthM: Math.min(...north),
+    maxNorthM: Math.max(...north)
+  };
+}
+
+function tileKey(kind: 'dem' | 'tiles', setId: string, z: number, x: number, y: number): string {
+  return `${kind}:${setId}:${z}:${x}:${y}`;
+}
+
+async function loadRasterTile(kind: 'dem' | 'tiles', setId: string, z: number, x: number, y: number): Promise<LoadedRasterTile | null> {
+  const response = await fetch(localTerrainTileUrl(kind, setId, { z, x, y }));
+  if (!response.ok) return null;
+  const blob = await response.blob();
+  const bitmap = await createImageBitmap(blob);
+  if (bitmap.width <= 1 || bitmap.height <= 1) {
+    bitmap.close();
+    return null;
+  }
+  const canvas = createRasterCanvas(bitmap.width, bitmap.height);
+  const context = canvas.getContext('2d');
+  if (!context) {
+    bitmap.close();
+    return null;
+  }
+  context.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  return { width: canvas.width, height: canvas.height, data: image.data };
+}
+
+function createRasterCanvas(width: number, height: number): HTMLCanvasElement | OffscreenCanvas {
+  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  return canvas;
 }
 
 function makeVehicleModel(kind: VehicleModelKind, accent = 0x3aa0ff): Group {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildMapOverlayModel, geofenceLocalPoints, homePointFromVehicle, mapMode, mapScreenToWorld, mapWorldToScreen, rallyLocalPoints, satelliteStyle, selectedMapVehicle, setMapMode, terrainModelFromVehicle, terrainStyle, type MapViewState } from './map-panel';
-import { buildFlightTerrainModel } from './map-assets';
+import { buildFlightTerrainModel, localTerrainTileUrl, lonLatToXyzPixel, sampleRgbDemImageData } from './map-assets';
 import { normalizeMapCacheStatus } from './map-cache';
 import type { SessionSnapshotMessage, VehicleStateMessage } from './state';
 
@@ -127,7 +127,7 @@ describe('map panel helpers', () => {
     expect(style.terrain).toEqual({ source: 'dem', exaggeration: 1 });
   });
 
-  it('builds flight terrain when an active DEM cache exists', () => {
+  it('builds flight terrain from sampled RGB DEM cache elevations', () => {
     const unavailable = buildFlightTerrainModel(normalizeMapCacheStatus({ available: false, error: 'missing' }), vehicle);
     expect(unavailable.available).toBe(false);
     const dem = normalizeMapCacheStatus({
@@ -140,10 +140,56 @@ describe('map panel helpers', () => {
       activeSet: { id: 'set-1', label: 'Field', templateHost: 'tiles.example', attribution: 'Licensed', bbox: { west: -122, south: 37, east: -121, north: 38 }, minZoom: 12, maxZoom: 14, tileCount: 3, downloadedCount: 3, failedCount: 0, bytes: 10, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', extension: 'png' },
       sets: []
     });
-    const available = buildFlightTerrainModel(dem, vehicle, 5, 30, satellite);
+    const available = buildFlightTerrainModel(dem, vehicle, {
+      gridSize: 5,
+      spacingM: 30,
+      satelliteStatus: satellite,
+      demSampler: ({ eastM, northM }) => 120 + eastM * 0.1 + northM * 0.01
+    });
     expect(available.available).toBe(true);
     expect(available.samples).toHaveLength(25);
-    expect(available.textured).toBe(true);
+    expect(available.sourceStatus).toBe('sampled');
+    expect(available.hasSatelliteTexture).toBe(true);
+    expect(available.samples[12].elevationM).toBeCloseTo(121.38, 6);
+  });
+
+  it('keeps missing DEM tiles unavailable or partial without throwing', () => {
+    const dem = normalizeMapCacheStatus({
+      available: true,
+      activeSet: { id: 'dem-1', label: 'Field DEM', templateHost: 'dem.example', attribution: 'Licensed DEM', bbox: { west: -122, south: 37, east: -121, north: 38 }, minZoom: 12, maxZoom: 14, tileCount: 3, downloadedCount: 3, failedCount: 0, bytes: 10, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', extension: 'png', encoding: 'terrarium' },
+      sets: []
+    });
+    expect(buildFlightTerrainModel(dem, vehicle, { gridSize: 3, demSampler: () => null })).toMatchObject({ available: false, sourceStatus: 'unavailable' });
+    const partial = buildFlightTerrainModel(dem, vehicle, { gridSize: 3, demSampler: ({ eastM }) => eastM > 12 ? 95 : null });
+    expect(partial.available).toBe(true);
+    expect(partial.sourceStatus).toBe('partial');
+    expect(partial.missingDemSamples).toBeGreaterThan(0);
+  });
+
+  it('converts lon/lat to XYZ tile pixel coordinates and local cache URLs', () => {
+    expect(lonLatToXyzPixel(0, 0, 1)).toMatchObject({ z: 1, x: 1, y: 1, pixelX: 0, pixelY: 0 });
+    const coordinate = lonLatToXyzPixel(-122.1697, 37.4275, 14);
+    expect(coordinate.x).toBeGreaterThan(2600);
+    expect(coordinate.y).toBeGreaterThan(6300);
+    expect(localTerrainTileUrl('dem', 'dem set', { z: 14, x: 1, y: 2 })).toBe('animus-cache://dem/dem%20set/14/1/2');
+  });
+
+  it('bilinearly samples Terrarium and Mapbox DEM pixels from image data', () => {
+    const terrarium = new Uint8ClampedArray([
+      128, 0, 0, 255,
+      128, 1, 0, 255,
+      128, 2, 0, 255,
+      128, 3, 0, 255
+    ]);
+    expect(sampleRgbDemImageData(terrarium, 2, 2, 0.5, 0.5, 'terrarium')).toBeCloseTo(1.5, 6);
+    const mapbox = new Uint8ClampedArray([
+      1, 134, 160, 255,
+      1, 134, 170, 255,
+      1, 134, 180, 255,
+      1, 134, 190, 255
+    ]);
+    expect(sampleRgbDemImageData(mapbox, 2, 2, 0, 0, 'mapbox')).toBeCloseTo(0, 5);
+    expect(sampleRgbDemImageData(mapbox, 2, 2, 1, 1, 'mapbox')).toBeCloseTo(3, 5);
   });
 
   it('converts session overlays to geographic GeoJSON', () => {

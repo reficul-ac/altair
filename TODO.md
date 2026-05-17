@@ -59,7 +59,7 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Add persisted application settings beyond the dashboard layout.
 - [x] Add real 2D and 3D terrain map views in Animus for clearer terrain and
   vehicle-position visualization.
-- [ ] Replace the initial Flight View DEM terrain surface with true RGB DEM
+- [x] Replace the initial Flight View DEM terrain surface with true RGB DEM
   tile sampling and satellite texture atlas generation in the renderer.
 - [x] Correct the flight-view 3D aircraft model heading so the nose points in
   the vehicle's telemetry-derived direction of travel.
