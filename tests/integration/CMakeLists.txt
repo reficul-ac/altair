@@ -371,6 +371,11 @@ if(Python3_Interpreter_FOUND)
                 "${CMAKE_SOURCE_DIR}"
     )
 
+    add_test(NAME integration_verify_agent_work_selector
+             COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_verify_agent_work.py"
+                     "${CMAKE_SOURCE_DIR}"
+    )
+
     add_test(NAME integration_sitl_session
              COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_sitl_session.py"
                      "${CMAKE_SOURCE_DIR}"

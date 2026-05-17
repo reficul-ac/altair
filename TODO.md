@@ -101,6 +101,6 @@ Reusable Bayek framework follow-up is tracked separately in
 
 - [ ] Keep Altair tests focused on Altair params, mixer, vehicle interface, SITL runners/cases/conditions, telemetry integration, and Animus.
 - [ ] Keep only minimal Altair-side Bayek contract coverage needed to protect integration assumptions.
-- [ ] Add path-aware verification selection so agent and human checks can map changed files to the smallest defensible command set.
+- [x] Add path-aware verification selection so agent and human checks can map changed files to the smallest defensible command set.
 - [ ] Build richer non-Animus visual verification reports that combine metrics,
   plots, logs, and manifests in one reviewable artifact.

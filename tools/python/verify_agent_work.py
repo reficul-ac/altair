@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run selected Altair verification checks and collect logs/artifacts."""
+"""Recommend or run selected Altair verification checks."""
 
 import argparse
 import datetime
@@ -10,11 +10,13 @@ import sys
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+RECOMMENDATION_ARTIFACT_DIR = pathlib.Path("artifacts/agent-verification/<timestamp>")
+CHECK_ORDER = ("format", "cmake", "release", "sitl_plots", "mc", "animus")
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Run selected Altair verification checks with an artifact manifest."
+        description="Recommend checks for changed paths or run selected checks with artifacts."
     )
     parser.add_argument("--format", action="store_true", help="run format check")
     parser.add_argument(
@@ -31,6 +33,11 @@ def parse_args():
         "--animus", action="store_true", help="run Animus test/build/capture workflow"
     )
     parser.add_argument("--all", action="store_true", help="run every verification check")
+    parser.add_argument(
+        "--recommend",
+        action="store_true",
+        help="print path-aware recommended checks for changed files without running them",
+    )
     return parser.parse_args()
 
 
@@ -41,6 +48,182 @@ def timestamp():
 
 def command_to_string(command):
     return " ".join(str(part) for part in command)
+
+
+def normalize_repo_path(path):
+    return pathlib.PurePosixPath(str(path).replace("\\", "/").lstrip("./")).as_posix()
+
+
+def is_doc_path(path):
+    return path.endswith(".md") or path.startswith("docs/") or path.startswith("bayek/docs/")
+
+
+def is_animus_path(path):
+    return (
+        path.startswith("tools/animus/src/")
+        or path.startswith("tools/animus/tests/")
+        or path
+        in {
+            "tools/animus/package.json",
+            "tools/animus/package-lock.json",
+            "tools/animus/playwright.config.ts",
+            "tools/animus/tsconfig.json",
+            "tools/animus/vite.config.ts",
+        }
+    )
+
+
+def is_c_or_build_path(path):
+    suffix = pathlib.PurePosixPath(path).suffix
+    return suffix in {".c", ".h", ".cmake"} or pathlib.PurePosixPath(path).name == "CMakeLists.txt"
+
+
+def is_core_path(path):
+    return (
+        is_c_or_build_path(path)
+        or path.startswith(
+            (
+                "params/",
+                "config/",
+                "mixer/",
+                "vehicle/",
+                "boards/",
+                "bayek/common/",
+                "bayek/fsw/",
+                "bayek/host/",
+                "bayek/sim/",
+                "bayek/telemetry/",
+            )
+        )
+        or path in {"CMakeLists.txt", "tests/CMakeLists.txt"}
+    )
+
+
+def is_sitl_path(path):
+    name = pathlib.PurePosixPath(path).name
+    return (
+        "sitl" in path
+        or "simulation" in path
+        or "telemetry" in path
+        or "replay" in path
+        or "mavlink" in path
+        or "sitl_runner" in name
+        or "run_sitl" in name
+        or path.startswith("tests/integration/cruise6dof_")
+        or path.startswith("tests/integration/fixtures/")
+        or path.startswith("bayek/sim/")
+        or path.startswith("bayek/host/sitl_")
+    )
+
+
+def is_mc_path(path):
+    return (
+        "mc_runner" in path
+        or "monte" in path.lower()
+        or "guardrail" in path.lower()
+        or "check_mc_summary" in path
+    )
+
+
+def add_reason(reasons, check_name, reason):
+    reasons.setdefault(check_name, [])
+    if reason not in reasons[check_name]:
+        reasons[check_name].append(reason)
+
+
+def select_verification_for_paths(paths):
+    changed_paths = sorted({normalize_repo_path(path) for path in paths if str(path).strip()})
+    reasons = {}
+    if not changed_paths:
+        return []
+
+    if all(is_doc_path(path) for path in changed_paths):
+        add_reason(
+            reasons,
+            "format",
+            "documentation-only changes; run the lightweight formatting gate unless the docs "
+            "also change generated contracts",
+        )
+    else:
+        for path in changed_paths:
+            if is_doc_path(path):
+                add_reason(reasons, "format", "documentation changed alongside code")
+                continue
+            if is_animus_path(path):
+                add_reason(
+                    reasons,
+                    "animus",
+                    "Animus source, style, or UI workflow files changed",
+                )
+                continue
+            if pathlib.PurePosixPath(path).suffix in {".c", ".h", ".py", ".cmake"} or (
+                pathlib.PurePosixPath(path).name == "CMakeLists.txt"
+            ):
+                add_reason(reasons, "format", "formatted C, Python, or CMake source changed")
+            if is_core_path(path):
+                add_reason(
+                    reasons,
+                    "cmake",
+                    "C, CMake, core parameter, vehicle, or Bayek integration path changed",
+                )
+                add_reason(
+                    reasons,
+                    "release",
+                    "shared C/build path changed; include Release warnings-as-errors coverage",
+                )
+            if is_sitl_path(path):
+                add_reason(
+                    reasons,
+                    "cmake",
+                    "SITL, simulation, telemetry, runner, or case path changed",
+                )
+                add_reason(
+                    reasons,
+                    "sitl_plots",
+                    "SITL/simulation behavior may affect generated CSVs or plots",
+                )
+            if is_mc_path(path):
+                add_reason(reasons, "cmake", "Monte Carlo runner or guardrail path changed")
+                add_reason(reasons, "mc", "Monte Carlo policy or summary semantics may change")
+
+        if not reasons:
+            add_reason(
+                reasons,
+                "format",
+                "changed paths do not match a heavier verification group",
+            )
+
+    checks_by_name = {check["name"]: check for check in selected_checks_for_flags(CHECK_ORDER)}
+    recommendations = []
+    for check_name in CHECK_ORDER:
+        if check_name in reasons:
+            check = dict(checks_by_name[check_name])
+            check["rationale"] = "; ".join(reasons[check_name])
+            recommendations.append(check)
+    return recommendations
+
+
+def changed_files_from_git():
+    commands = (
+        ["git", "diff", "--name-only"],
+        ["git", "diff", "--name-only", "--cached"],
+        ["git", "ls-files", "--others", "--exclude-standard"],
+    )
+    changed = set()
+    for command in commands:
+        result = subprocess.run(
+            command,
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            print(result.stderr, file=sys.stderr, end="")
+            raise SystemExit(result.returncode)
+        changed.update(line.strip() for line in result.stdout.splitlines() if line.strip())
+    return sorted(changed)
 
 
 def run_command(name, command, artifact_dir):
@@ -75,15 +258,16 @@ def add_check(checks, name, commands, artifacts=None):
     checks.append({"name": name, "commands": commands, "artifacts": artifacts or []})
 
 
-def selected_checks(args, artifact_dir):
+def selected_checks_for_flags(flags, artifact_dir=RECOMMENDATION_ARTIFACT_DIR):
+    requested = set(flags)
     checks = []
-    if args.all or args.format:
+    if "all" in requested or "format" in requested:
         add_check(
             checks,
             "format",
             [[sys.executable, "tools/python/format_repo.py", "--check"]],
         )
-    if args.all or args.cmake:
+    if "all" in requested or "cmake" in requested:
         add_check(
             checks,
             "cmake",
@@ -93,7 +277,7 @@ def selected_checks(args, artifact_dir):
                 ["ctest", "--test-dir", "build", "--output-on-failure"],
             ],
         )
-    if args.all or args.release:
+    if "all" in requested or "release" in requested:
         add_check(
             checks,
             "release",
@@ -111,7 +295,7 @@ def selected_checks(args, artifact_dir):
                 ["ctest", "--test-dir", "build-release", "--output-on-failure"],
             ],
         )
-    if args.all or args.sitl_plots:
+    if "all" in requested or "sitl_plots" in requested:
         csv_path = artifact_dir / "sitl_cruise6dof.csv"
         plots_dir = artifact_dir / "plots" / "sitl"
         add_check(
@@ -141,7 +325,7 @@ def selected_checks(args, artifact_dir):
             ],
             [csv_path, plots_dir],
         )
-    if args.all or args.mc:
+    if "all" in requested or "mc" in requested:
         mc_csv = artifact_dir / "mc_summary.csv"
         add_check(
             checks,
@@ -161,7 +345,7 @@ def selected_checks(args, artifact_dir):
             ],
             [mc_csv],
         )
-    if args.all or args.animus:
+    if "all" in requested or "animus" in requested:
         add_check(
             checks,
             "animus",
@@ -172,6 +356,17 @@ def selected_checks(args, artifact_dir):
             ],
         )
     return checks
+
+
+def selected_checks(args, artifact_dir):
+    flags = []
+    for flag in CHECK_ORDER:
+        attr = "sitl_plots" if flag == "sitl_plots" else flag
+        if getattr(args, attr, False):
+            flags.append(flag)
+    if args.all:
+        flags.append("all")
+    return selected_checks_for_flags(flags, artifact_dir)
 
 
 def run_check(check, artifact_dir):
@@ -197,8 +392,46 @@ def write_manifest(manifest_path, manifest):
     )
 
 
+def has_execution_flag(args):
+    return (
+        args.all
+        or args.format
+        or args.cmake
+        or args.release
+        or args.sitl_plots
+        or args.mc
+        or args.animus
+    )
+
+
+def print_recommendations(changed_files, recommendations):
+    print("verify_agent_work.py: recommended checks for changed files")
+    if changed_files:
+        print("changedFiles=" + ",".join(changed_files))
+    else:
+        print("changedFiles=<none>")
+        print("No changed files detected by git diff, staged diff, or untracked file scan.")
+        return
+
+    if not recommendations:
+        print("recommendation=<none>")
+        return
+
+    for check in recommendations:
+        print(f"\n[{check['name']}]")
+        print(f"rationale={check['rationale']}")
+        for command in check["commands"]:
+            print(command_to_string(command))
+
+
 def main():
     args = parse_args()
+    if args.recommend or not has_execution_flag(args):
+        changed_files = changed_files_from_git()
+        recommendations = select_verification_for_paths(changed_files)
+        print_recommendations(changed_files, recommendations)
+        return 0
+
     artifact_dir = ROOT / "artifacts" / "agent-verification" / timestamp()
     checks = selected_checks(args, artifact_dir)
     if not checks:
