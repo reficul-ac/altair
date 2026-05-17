@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildMapOverlayModel, geofenceLocalPoints, homePointFromVehicle, mapMode, mapScreenToWorld, mapWorldToScreen, rallyLocalPoints, selectedMapVehicle, setMapMode, terrainModelFromVehicle, type MapViewState } from './map-panel';
+import { buildMapOverlayModel, geofenceLocalPoints, homePointFromVehicle, mapMode, mapScreenToWorld, mapWorldToScreen, rallyLocalPoints, satelliteStyle, selectedMapVehicle, setMapMode, terrainModelFromVehicle, type MapViewState } from './map-panel';
+import { buildFlightTerrainModel } from './map-assets';
 import { normalizeMapPackStatus } from './map-pack';
 import type { SessionSnapshotMessage, VehicleStateMessage } from './state';
 
-const view: MapViewState = { scale: 2, panEastM: 5, panNorthM: -3, followSelected: true, mode: 'topo' };
+const view: MapViewState = { scale: 2, panEastM: 5, panNorthM: -3, followSelected: true, mode: 'satellite' };
 
 const vehicle: VehicleStateMessage = {
   type: 'vehicle_state',
@@ -70,23 +71,56 @@ describe('map panel helpers', () => {
 
     expect(model?.samples).toHaveLength(25);
     expect(model?.spacingM).toBe(30);
-    expect(model?.maxTerrainM).toBeGreaterThan(model?.minTerrainM ?? 0);
+    expect(model?.maxTerrainM).toBe(model?.minTerrainM);
   });
 
   it('tracks map mode state transitions', () => {
     setMapMode('terrain-3d');
     expect(mapMode()).toBe('terrain-3d');
-    setMapMode('topo');
-    expect(mapMode()).toBe('topo');
+    setMapMode('satellite');
+    expect(mapMode()).toBe('satellite');
   });
 
   it('normalizes map-pack status from the preload boundary', () => {
-    expect(normalizeMapPackStatus({ available: true, url: './maps/altair-topo.pmtiles', label: 'Topo' })).toEqual({
+    expect(normalizeMapPackStatus({
       available: true,
-      url: './maps/altair-topo.pmtiles',
-      label: 'Topo'
+      satellite: { available: true, url: 'file:///sat.pmtiles', path: '/sat.pmtiles', label: 'Satellite', attribution: 'Licensed' },
+      terrain: { available: true, url: 'file:///dem.pmtiles', path: '/dem.pmtiles', label: 'Terrain DEM', attribution: 'Licensed' },
+      label: 'Pack',
+      attribution: 'Licensed'
+    })).toEqual({
+      available: true,
+      satellite: { available: true, url: 'file:///sat.pmtiles', path: '/sat.pmtiles', label: 'Satellite', attribution: 'Licensed' },
+      terrain: { available: true, url: 'file:///dem.pmtiles', path: '/dem.pmtiles', label: 'Terrain DEM', attribution: 'Licensed' },
+      label: 'Pack',
+      attribution: 'Licensed'
     });
     expect(normalizeMapPackStatus({ available: false, error: 'missing' }).available).toBe(false);
+  });
+
+  it('builds a MapLibre satellite plus terrain style', () => {
+    const style = satelliteStyle(normalizeMapPackStatus({
+      available: true,
+      satellite: { available: true, url: 'file:///sat.pmtiles', path: '/sat.pmtiles', label: 'Satellite' },
+      terrain: { available: true, url: 'file:///dem.pmtiles', path: '/dem.pmtiles', label: 'Terrain DEM' }
+    }));
+    expect(style.sources.satellite.type).toBe('raster');
+    expect(style.sources.terrain.type).toBe('raster-dem');
+    expect(style.layers.some((layer) => layer.id === 'satellite')).toBe(true);
+    expect(style.terrain).toEqual({ source: 'terrain', exaggeration: 1 });
+  });
+
+  it('reports flight terrain availability from the selected DEM pack', () => {
+    const unavailable = buildFlightTerrainModel(normalizeMapPackStatus({ available: false, error: 'missing' }), vehicle);
+    expect(unavailable.available).toBe(false);
+    const available = buildFlightTerrainModel(normalizeMapPackStatus({
+      available: true,
+      satellite: { available: true, url: 'file:///sat.pmtiles', path: '/sat.pmtiles', label: 'Satellite' },
+      terrain: { available: true, url: 'file:///dem.pmtiles', path: '/dem.pmtiles', label: 'Terrain DEM' }
+    }), vehicle, 5, 30);
+    expect(available.available).toBe(true);
+    expect(available.samples).toHaveLength(25);
+    expect(available.textured).toBe(true);
   });
 
   it('converts session overlays to geographic GeoJSON', () => {

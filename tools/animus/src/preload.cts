@@ -18,6 +18,8 @@ export type AltairAnimusApi = {
   getSettings: () => Promise<AnimusUiSettings>;
   saveSettings: (settings: AnimusUiSettings) => Promise<AnimusUiSettings>;
   getMapPackStatus: () => Promise<MapPackStatus>;
+  selectSatelliteMapPack: () => Promise<MapPackStatus>;
+  selectTerrainMapPack: () => Promise<MapPackStatus>;
   getDashboardLayout: () => Promise<AnimusDashboardLayout>;
   saveDashboardLayout: (layout: AnimusDashboardLayout) => Promise<AnimusDashboardLayout>;
   resetDashboardLayout: () => Promise<AnimusDashboardLayout>;
@@ -107,6 +109,12 @@ const api: AltairAnimusApi = {
   },
   getMapPackStatus() {
     return ipcRenderer.invoke('map-pack:status');
+  },
+  selectSatelliteMapPack() {
+    return ipcRenderer.invoke('map-pack:select-satellite');
+  },
+  selectTerrainMapPack() {
+    return ipcRenderer.invoke('map-pack:select-terrain');
   },
   getDashboardLayout() {
     return ipcRenderer.invoke('dashboard:get-layout');

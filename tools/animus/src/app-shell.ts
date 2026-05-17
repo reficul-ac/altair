@@ -78,7 +78,7 @@ export function renderAppShell(root: HTMLElement): void {
     <section class="workspace-panel map-workspace" data-panel="map">
       <div class="map-toolbar" aria-label="Map controls">
         <div class="segmented map-mode-controls" aria-label="Map mode">
-          <button class="active" data-map-mode="topo" type="button">Topo</button>
+          <button class="active" data-map-mode="satellite" type="button">Satellite</button>
           <button data-map-mode="terrain-3d" type="button">Terrain 3D</button>
         </div>
         <button id="map-focus" type="button">Focus</button>
@@ -86,11 +86,11 @@ export function renderAppShell(root: HTMLElement): void {
         <button id="map-zoom-out" type="button">-</button>
         <span id="map-pack-status" class="map-pack-status">Offline map loading</span>
       </div>
-      <div id="map-container" aria-label="Offline topographic map"></div>
+      <div id="map-container" aria-label="Offline satellite map"></div>
       <canvas id="map-overlay-canvas" width="1200" height="760"></canvas>
       <div id="map-unavailable" class="map-unavailable hidden" role="status">
         <strong>Offline map unavailable</strong>
-        <span id="map-unavailable-detail">Bundled topographic map pack is missing or unreadable.</span>
+        <span id="map-unavailable-detail">Select satellite imagery and terrain DEM PMTiles files in Setup.</span>
       </div>
       <canvas id="terrain-canvas" class="hidden" width="1200" height="760"></canvas>
     </section>
@@ -131,7 +131,7 @@ export function renderAppShell(root: HTMLElement): void {
     <section class="workspace-panel inspector-workspace" data-panel="setup">
       <div class="analysis-grid">
         <section><h2>Readiness</h2><div id="readiness-list" class="tool-list"></div><div class="command-grid" id="guarded-commands"></div><h2>Command History</h2><div id="command-history" class="tool-list command-history"></div></section>
-        <section><h2>Parameters / Diagnostics</h2><div class="inspector-actions"><input id="parameter-filter" type="search" placeholder="Filter parameters" /><button id="parameter-refresh" type="button">Refresh</button></div><div id="parameter-list" class="tool-list"></div><h2>Onboard Logs</h2><div class="inspector-actions"><button id="onboard-log-list" type="button">List</button><button id="onboard-log-erase" type="button">Erase</button></div><div id="onboard-log-listing" class="tool-list"></div><div id="diagnostics-list" class="tool-list"></div></section>
+        <section><h2>Parameters / Diagnostics</h2><div class="inspector-actions"><input id="parameter-filter" type="search" placeholder="Filter parameters" /><button id="parameter-refresh" type="button">Refresh</button></div><div id="parameter-list" class="tool-list"></div><h2>Offline Map Pack</h2><div class="inspector-actions"><button id="map-select-satellite" type="button">Satellite PMTiles</button><button id="map-select-terrain" type="button">Terrain PMTiles</button></div><div id="setup-map-pack-status" class="tool-list"></div><h2>Onboard Logs</h2><div class="inspector-actions"><button id="onboard-log-list" type="button">List</button><button id="onboard-log-erase" type="button">Erase</button></div><div id="onboard-log-listing" class="tool-list"></div><div id="diagnostics-list" class="tool-list"></div></section>
       </div>
     </section>
     <aside class="metrics workspace-panel active" data-panel="session">

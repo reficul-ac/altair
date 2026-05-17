@@ -64,12 +64,12 @@ Vehicle meshes are chosen from heartbeat vehicle type: fixed-wing, multirotor, V
 - Mouse wheel zooms around the cursor.
 - `Focus` recenters on the selected vehicle and resumes selected-vehicle follow.
 - `+` and `-` adjust zoom.
-- `Topo` shows the bundled offline topographic PMTiles basemap through MapLibre GL JS.
-- `Terrain 3D` switches to the telemetry-derived Three.js terrain surface.
+- `Satellite` shows the operator-selected offline satellite PMTiles basemap through MapLibre GL JS.
+- `Terrain 3D` switches to the selected offline terrain DEM pack and keeps vehicle overlays visible over the 3D surface.
 
-The default map renders a local `tools/animus/public/maps/altair-topo.pmtiles` map pack copied into `dist/maps/` by Vite. It does not use online tiles, network map providers, API keys, or telemetry terrain requests for the basemap. If the bundled map pack is missing or unreadable, Animus shows an explicit offline-map-unavailable state instead of falling back to the old grid.
+Animus expects the operator to select two licensed offline PMTiles files in Setup: one Web Mercator raster satellite imagery pack and one Web Mercator raster-dem terrain pack. The DEM pack must use Terrarium encoding for the current MapLibre terrain path; Mapbox Terrain-RGB is a documented source contract target but requires an encoding update before use. Animus stores only local file paths and attribution in `animus-settings.json`; it does not download, cache, or repackage Google Maps tiles for offline use. If either required file is missing or unreadable, Animus shows an explicit unavailable state instead of silently falling back to a grid or generated topo placeholder.
 
-Vehicle telemetry is used only for overlays: selected and fleet trails, event markers, an origin/home marker when available, mission waypoint paths, geofence polygons/circles, and rally points when decoded records are present. Terrain 3D remains a telemetry terrain visualization based on decoded `TERRAIN_REPORT`, home/origin altitude, selected vehicle position, mission, geofence, and rally data. Terrain check requests are protocol-backed and appear in the operation history. Creating or editing geofences, rally points, or terrain tiles remains out of scope unless a decoded MAVLink path is added for that operation.
+Vehicle telemetry is used only for overlays: selected and fleet trails, event markers, an origin/home marker when available, mission waypoint paths, geofence polygons/circles, and rally points when decoded records are present. Terrain check requests are protocol-backed and appear in the operation history. Creating or editing geofences, rally points, or terrain tiles remains out of scope unless a decoded MAVLink path is added for that operation.
 
 ## Dashboard View
 
@@ -78,7 +78,7 @@ Vehicle telemetry is used only for overlays: selected and fleet trails, event ma
 - `Import` and `Export` share dashboard profiles as the same JSON layout shape persisted in `dashboard-layout.json`: `schemaVersion: 1` plus a `widgets` array. Import replaces the active layout after normalizing invalid, duplicate, or unsupported widget entries.
 - Threshold customization is intentionally out of scope.
 - The Electron app persists the layout as JSON at `path.join(app.getPath('userData'), 'dashboard-layout.json')`. Missing or invalid settings fall back to the default layout without overwriting the file until the operator changes or resets the layout.
-- Application settings include the default offline map style (`mapStyle: "topo"`) and whether the map should follow the selected vehicle (`mapFollowSelected`).
+- Application settings include the default offline map style (`mapStyle: "satellite"`), whether the map should follow the selected vehicle (`mapFollowSelected`), selected satellite and terrain PMTiles paths, a map-pack label, and operator-supplied attribution.
 
 Status widgets read the same session snapshot used by Flight, Map, Inspector, and Setup. The guarded control widget uses the existing command authority, confirmation, dispatch, audit, retry, and guard evaluation path. Commands are disabled when the selected vehicle reports read-only authority, stale or non-live link state, unsupported command capability, or a decoded blocked-command reason.
 

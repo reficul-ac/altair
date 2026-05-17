@@ -20,7 +20,7 @@ import { validateMission } from './state.js';
 import { createCommandAuditLog } from './command-audit.js';
 import { animusSettingsPath, readAnimusSettings, writeAnimusSettings } from './animus-settings.js';
 import { dashboardLayoutPath, exportDashboardProfile, importDashboardProfile, readDashboardLayout, resetDashboardLayout, writeDashboardLayout } from './dashboard-settings.js';
-import { getBundledMapPackStatus } from './map-pack-node.js';
+import { getUserMapPackStatus } from './map-pack-node.js';
 import type { AnimusUiSettings } from './animus-settings.js';
 import type { AnimusDashboardLayout } from './dashboard-types.js';
 import type { CommandAuditEntry, CommandDispatchResult, GuardedCommandRequest, GuardedCommandResult, MissionPlan, MockLinkState } from './state.js';
@@ -144,6 +144,29 @@ function buildRejectedCommandAuditEntry(request: GuardedCommandRequest, reason: 
   };
 }
 
+async function selectMapPackFile(kind: 'satellite' | 'terrain') {
+  const result = await dialog.showOpenDialog({
+    title: kind === 'satellite' ? 'Select satellite imagery PMTiles' : 'Select terrain DEM PMTiles',
+    properties: ['openFile'],
+    filters: [
+      { name: 'PMTiles map pack', extensions: ['pmtiles'] },
+      { name: 'All files', extensions: ['*'] }
+    ]
+  });
+  const settings = await readAnimusSettings(animusSettingsFile);
+  if (!result.canceled && result.filePaths[0]) {
+    const next: AnimusUiSettings = {
+      ...settings,
+      satellitePmtilesPath: kind === 'satellite' ? result.filePaths[0] : settings.satellitePmtilesPath,
+      terrainPmtilesPath: kind === 'terrain' ? result.filePaths[0] : settings.terrainPmtilesPath,
+      mapPackLabel: settings.mapPackLabel ?? 'Operator offline satellite map',
+      schemaVersion: 2
+    };
+    await writeAnimusSettings(animusSettingsFile, next);
+  }
+  return getUserMapPackStatus(await readAnimusSettings(animusSettingsFile));
+}
+
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
@@ -210,7 +233,9 @@ ipcMain.handle('mavlink:select-vehicle', (_event, id: string) => replay.isLoaded
 ipcMain.handle('mavlink:add-marker', (_event, label: string) => telemetry.addMarker(String(label || 'Marker')));
 ipcMain.handle('settings:get', () => readAnimusSettings(animusSettingsFile));
 ipcMain.handle('settings:save', (_event, settings: AnimusUiSettings) => writeAnimusSettings(animusSettingsFile, settings));
-ipcMain.handle('map-pack:status', () => getBundledMapPackStatus(appRoot));
+ipcMain.handle('map-pack:status', async () => getUserMapPackStatus(await readAnimusSettings(animusSettingsFile)));
+ipcMain.handle('map-pack:select-satellite', async () => selectMapPackFile('satellite'));
+ipcMain.handle('map-pack:select-terrain', async () => selectMapPackFile('terrain'));
 ipcMain.handle('dashboard:get-layout', () => readDashboardLayout(dashboardLayoutFile));
 ipcMain.handle('dashboard:save-layout', (_event, layout: AnimusDashboardLayout) => writeDashboardLayout(dashboardLayoutFile, layout));
 ipcMain.handle('dashboard:reset-layout', () => resetDashboardLayout(dashboardLayoutFile));

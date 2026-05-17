@@ -37,7 +37,7 @@ type FeatureGeometry =
   | { type: 'Polygon'; coordinates: [number, number][][] };
 type Feature = { type: 'Feature'; geometry: FeatureGeometry; properties: Record<string, string | number | boolean | null> };
 type FeatureCollection = { type: 'FeatureCollection'; features: Feature[] };
-export type MapMode = 'topo' | 'terrain-3d';
+export type MapMode = 'satellite' | 'terrain-3d';
 export type TerrainSample = LocalPoint & { terrainHeightM: number; currentHeightM: number | null };
 export type TerrainModel = {
   center: LocalPoint;
@@ -57,7 +57,7 @@ export type MapOverlayModel = {
   events: FeatureCollection;
 };
 
-const view: MapViewState = { scale: 2, panEastM: 0, panNorthM: 0, followSelected: true, mode: 'topo' };
+const view: MapViewState = { scale: 2, panEastM: 0, panNorthM: 0, followSelected: true, mode: 'satellite' };
 let bound = false;
 let map: MapLibreMap | null = null;
 let mapReady = false;
@@ -148,12 +148,11 @@ export function terrainModelFromVehicle(vehicle: VehicleStateMessage | null): Te
   const samples: TerrainSample[] = [];
   for (let north = -2; north <= 2; north += 1) {
     for (let east = -2; east <= 2; east += 1) {
-      const ripple = Math.sin((east + 2) * 0.9) * 2.5 + Math.cos((north - 1) * 0.7) * 2;
       samples.push({
         eastM: report.eastM + east * spacing,
         northM: report.northM + north * spacing,
-        upM: (report.upM ?? 0) + ripple,
-        terrainHeightM: vehicle.terrain.terrainHeightM + ripple,
+        upM: report.upM ?? 0,
+        terrainHeightM: vehicle.terrain.terrainHeightM,
         currentHeightM: vehicle.terrain.currentHeightM
       });
     }
@@ -277,15 +276,26 @@ export function drawMap(snapshot: SessionSnapshotMessage): void {
   overlayCanvas?.classList.toggle('hidden', view.mode === 'terrain-3d');
   terrainCanvas?.classList.toggle('hidden', view.mode !== 'terrain-3d');
   if (view.mode === 'terrain-3d' && terrainCanvas) {
-    drawTerrain3d(terrainCanvas, snapshot);
+    void drawTerrainMap(terrainCanvas, snapshot);
     return;
   }
-  void drawTopoMap(snapshot);
+  void drawSatelliteMap(snapshot);
 }
 
 export function refreshMapLayout(): void {
   map?.resize();
   if (latestSnapshot) drawMap(latestSnapshot);
+}
+
+async function drawTerrainMap(canvas: HTMLCanvasElement, snapshot: SessionSnapshotMessage): Promise<void> {
+  const status = await getMapPackStatus();
+  updateMapPackStatus(status);
+  if (!status.terrain.available) {
+    showMapUnavailable(status.terrain.error ?? 'Terrain DEM PMTiles is missing or unreadable.');
+    return;
+  }
+  hideMapUnavailable();
+  drawTerrain3d(canvas, snapshot);
 }
 
 function drawTerrain3d(canvas: HTMLCanvasElement, snapshot: SessionSnapshotMessage): void {
@@ -294,11 +304,11 @@ function drawTerrain3d(canvas: HTMLCanvasElement, snapshot: SessionSnapshotMessa
   terrain3d.render(snapshot);
 }
 
-async function drawTopoMap(snapshot: SessionSnapshotMessage): Promise<void> {
+async function drawSatelliteMap(snapshot: SessionSnapshotMessage): Promise<void> {
   const status = await getMapPackStatus();
   updateMapPackStatus(status);
-  if (!status.available) {
-    showMapUnavailable(status.error ?? 'Bundled topographic map pack is missing or unreadable.');
+  if (!status.satellite.available) {
+    showMapUnavailable(status.satellite.error ?? 'Satellite imagery PMTiles is missing or unreadable.');
     return;
   }
   hideMapUnavailable();
@@ -317,10 +327,10 @@ async function ensureMap(status: MapPackStatus): Promise<MapLibreMap | null> {
   const container = document.querySelector<HTMLElement>('#map-container');
   if (!container) return null;
   try {
-    registerMapPack(status.url);
+    registerMapPack(status);
     map = new maplibregl.Map({
       container,
-      style: topoStyle(status.url),
+      style: satelliteStyle(status),
       center: [-122.0, 37.0],
       zoom: 12,
       attributionControl: false,
@@ -329,7 +339,7 @@ async function ensureMap(status: MapPackStatus): Promise<MapLibreMap | null> {
     });
     map.on('load', () => {
       mapReady = true;
-      if (latestSnapshot) void drawTopoMap(latestSnapshot);
+      if (latestSnapshot) void drawSatelliteMap(latestSnapshot);
     });
     map.on('dragstart', () => setFollowSelected(false));
     map.on('zoomstart', (event) => {
@@ -339,7 +349,7 @@ async function ensureMap(status: MapPackStatus): Promise<MapLibreMap | null> {
       if (latestSnapshot && map) drawProjectedOverlay(map, buildMapOverlayModel(latestSnapshot));
     });
     map.on('error', (event) => {
-      const message = event.error?.message ?? 'MapLibre failed to load the bundled map pack.';
+      const message = event.error?.message ?? 'MapLibre failed to load the offline map pack.';
       showMapUnavailable(message);
     });
   } catch (error) {
@@ -349,36 +359,49 @@ async function ensureMap(status: MapPackStatus): Promise<MapLibreMap | null> {
   return map;
 }
 
-function registerMapPack(url: string): void {
-  if (registeredMapPackUrl === url) return;
+function registerMapPack(status: MapPackStatus): void {
+  const key = [status.satellite.url, status.terrain.url].join('|');
+  if (registeredMapPackUrl === key) return;
   const protocol = new Protocol();
-  protocol.add(new PMTiles(new BundlePmtilesSource(url)));
+  if (status.satellite.url) protocol.add(new PMTiles(new BundlePmtilesSource(status.satellite.url)));
+  if (status.terrain.url) protocol.add(new PMTiles(new BundlePmtilesSource(status.terrain.url)));
   maplibregl.addProtocol('pmtiles', protocol.tile);
-  registeredMapPackUrl = url;
+  registeredMapPackUrl = key;
 }
 
-function topoStyle(url: string): StyleSpecification {
+export function satelliteStyle(status: MapPackStatus): StyleSpecification {
   const empty = collection([]);
+  const sources: StyleSpecification['sources'] = {
+    satellite: {
+      type: 'raster',
+      url: `pmtiles://${status.satellite.url ?? ANIMUS_MAP_PACK_URL}`,
+      tileSize: 256,
+      attribution: status.attribution ?? status.satellite.attribution ?? 'Offline satellite imagery'
+    },
+    vehicles: { type: 'geojson', data: empty },
+    trails: { type: 'geojson', data: empty },
+    mission: { type: 'geojson', data: empty },
+    home: { type: 'geojson', data: empty },
+    geofences: { type: 'geojson', data: empty },
+    rally: { type: 'geojson', data: empty },
+    events: { type: 'geojson', data: empty }
+  };
+  if (status.terrain.available && status.terrain.url) {
+    sources.terrain = {
+      type: 'raster-dem',
+      url: `pmtiles://${status.terrain.url}`,
+      tileSize: 256,
+      encoding: 'terrarium'
+    };
+  }
   return {
     version: 8,
-    sources: {
-      topo: {
-        type: 'raster',
-        url: `pmtiles://${url}`,
-        tileSize: 256,
-        attribution: 'Bundled offline topographic map'
-      },
-      vehicles: { type: 'geojson', data: empty },
-      trails: { type: 'geojson', data: empty },
-      mission: { type: 'geojson', data: empty },
-      home: { type: 'geojson', data: empty },
-      geofences: { type: 'geojson', data: empty },
-      rally: { type: 'geojson', data: empty },
-      events: { type: 'geojson', data: empty }
-    },
+    sources,
+    ...(status.terrain.available ? { terrain: { source: 'terrain', exaggeration: 1 } } : {}),
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': '#223129' } },
-      { id: 'topo', type: 'raster', source: 'topo', paint: { 'raster-opacity': 1 } },
+      { id: 'satellite', type: 'raster', source: 'satellite', paint: { 'raster-opacity': 1, 'raster-contrast': 0.08, 'raster-saturation': -0.08 } },
+      ...(status.terrain.available ? [{ id: 'terrain-shade', type: 'hillshade' as const, source: 'terrain', paint: { 'hillshade-shadow-color': '#05080b', 'hillshade-highlight-color': '#ffffff', 'hillshade-accent-color': '#000000', 'hillshade-exaggeration': 0.22 } }] : []),
       { id: 'geofence-fill', type: 'fill', source: 'geofences', paint: { 'fill-color': ['case', ['==', ['get', 'inclusion'], true], '#66e0a3', '#ff6b7a'], 'fill-opacity': 0.16 } },
       { id: 'geofence-line', type: 'line', source: 'geofences', paint: { 'line-color': ['case', ['==', ['get', 'inclusion'], true], '#66e0a3', '#ff6b7a'], 'line-width': 2 } },
       { id: 'mission-line', type: 'line', source: 'mission', filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-color': '#ffc857', 'line-width': 2.4, 'line-opacity': 0.88 } },
@@ -524,11 +547,24 @@ async function getMapPackStatus(): Promise<MapPackStatus> {
   return mapPackStatusPromise;
 }
 
+export async function refreshMapPackStatus(): Promise<MapPackStatus> {
+  mapPackStatusPromise = null;
+  const status = await getMapPackStatus();
+  updateMapPackStatus(status);
+  return status;
+}
+
 async function probeBrowserMapPackStatus(): Promise<MapPackStatus> {
   try {
     const response = await fetch(ANIMUS_MAP_PACK_URL, { headers: { Range: 'bytes=0-1' } });
     if (!response.ok) return createUnavailableMapPackStatus(`HTTP ${response.status}`);
-    return { available: true, url: ANIMUS_MAP_PACK_URL, label: 'Altair bundled topographic map' };
+    return normalizeMapPackStatus({
+      available: true,
+      satellite: { available: true, url: ANIMUS_MAP_PACK_URL, path: ANIMUS_MAP_PACK_URL, label: 'Development satellite placeholder' },
+      terrain: { available: true, url: ANIMUS_MAP_PACK_URL, path: ANIMUS_MAP_PACK_URL, label: 'Development terrain placeholder' },
+      label: 'Altair bundled development map',
+      attribution: 'Generated Altair offline development basemap'
+    });
   } catch (error) {
     return createUnavailableMapPackStatus(error instanceof Error ? error.message : 'map pack is missing or unreadable');
   }
@@ -536,7 +572,7 @@ async function probeBrowserMapPackStatus(): Promise<MapPackStatus> {
 
 function updateMapPackStatus(status: MapPackStatus): void {
   const target = document.querySelector<HTMLElement>('#map-pack-status');
-  if (target) target.textContent = status.available ? status.label : 'Offline map unavailable';
+  if (target) target.textContent = status.available ? status.label : status.satellite.available ? 'Terrain DEM unavailable' : 'Satellite map unavailable';
 }
 
 function showMapUnavailable(detail: string): void {

@@ -1,5 +1,7 @@
 import { AmbientLight, ArrowHelper, AxesHelper, BoxGeometry, BufferAttribute, BufferGeometry, CapsuleGeometry, ConeGeometry, CylinderGeometry, DirectionalLight, Euler, Fog, GridHelper, Group, Line, LineBasicMaterial, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Quaternion, Scene, SphereGeometry, TorusGeometry, Vector3, WebGLRenderer } from 'three';
 import { fmt } from './hud-ui';
+import { buildFlightTerrainModel, type FlightTerrainModel } from './map-assets';
+import type { MapPackStatus } from './map-pack';
 import { TrailBuffer, trailPointFromState, type SessionEvent, type VehicleStateMessage, type TrailPoint } from './state';
 
 export const CAMERA_MODES = ['chase', 'orbit', 'top', 'side', 'fpv', 'free'] as const;
@@ -66,9 +68,12 @@ export class SceneRenderer {
   private readonly trailGeometry = new BufferGeometry();
   private readonly trailMaterial = new LineBasicMaterial({ color: 0x66e0a3 });
   private readonly runwayMaterial = new MeshStandardMaterial({ color: 0x253640, roughness: 0.9 });
+  private readonly terrainMaterial = new MeshStandardMaterial({ color: 0x2f453a, roughness: 0.96, metalness: 0 });
   private readonly grid = new GridHelper(700, 28, 0x497287, 0x20323d);
+  private readonly terrainMesh = new Mesh(new BufferGeometry(), this.terrainMaterial);
   private readonly markers = new Map<string, Mesh>();
   private lastMessage: VehicleStateMessage | null = null;
+  private mapPackStatus: MapPackStatus | null = null;
   private lastPoint: TrailPoint | null = null;
   private frames = 0;
   private fps = 0;
@@ -106,12 +111,19 @@ export class SceneRenderer {
     runway.rotation.x = Math.PI / 2;
     runway.position.z = -0.04;
     this.scene.add(runway);
+    this.terrainMesh.name = 'offline-map-terrain';
+    this.scene.add(this.terrainMesh);
     this.scene.add(new AxesHelper(90));
     this.scene.add(this.aircraft);
     this.scene.add(this.attitudeRings);
     this.scene.add(this.headingCue);
     this.scene.add(new Line(this.trailGeometry, this.trailMaterial));
     this.bindPointer();
+  }
+
+  setMapPackStatus(status: MapPackStatus): void {
+    this.mapPackStatus = status;
+    this.updateGroundTerrain();
   }
 
   applyVehicle(message: VehicleStateMessage): void {
@@ -127,6 +139,7 @@ export class SceneRenderer {
       }
       this.aircraft.position.set(point.eastM, point.northM, point.upM);
       this.headingCue.position.set(point.eastM, point.northM, point.upM + 8);
+      this.updateGroundTerrain();
     }
     this.applyPose(this.aircraft, message);
     this.updateControlSurfaces(this.aircraft, message);
@@ -285,6 +298,15 @@ export class SceneRenderer {
     this.trailGeometry.computeBoundingSphere();
   }
 
+  private updateGroundTerrain(): void {
+    const model = buildFlightTerrainModel(this.mapPackStatus, this.lastMessage);
+    this.terrainMesh.visible = model.available;
+    if (!model.available) return;
+    this.terrainMesh.geometry.dispose();
+    this.terrainMesh.geometry = terrainGeometry(model, this.lastMessage);
+    this.terrainMaterial.color.setHex(model.textured ? 0x3f5a44 : 0x2f453a);
+  }
+
   private animate(nowMs: number): void {
     const deltaS = Math.min(0.05, (nowMs - this.lastAnimationMs) / 1000);
     this.lastFrameMs = nowMs - this.lastAnimationMs;
@@ -418,6 +440,28 @@ export class SceneRenderer {
 
 function setText(id: string, value: string): void {
   document.querySelector<HTMLElement>(`#${id}`)!.textContent = value;
+}
+
+function terrainGeometry(model: FlightTerrainModel, vehicle: VehicleStateMessage | null): BufferGeometry {
+  const originAltM = vehicle?.globalPosition.originAltitudeM ?? vehicle?.home?.altitudeM ?? 0;
+  const positions = new Float32Array(model.samples.length * 3);
+  model.samples.forEach((sample, index) => {
+    positions[index * 3] = sample.eastM;
+    positions[index * 3 + 1] = sample.northM;
+    positions[index * 3 + 2] = Math.min(sample.elevationM - originAltM, (vehicle?.localPosition.upM ?? 0) - 12);
+  });
+  const indices: number[] = [];
+  for (let row = 0; row < model.gridSize - 1; row += 1) {
+    for (let col = 0; col < model.gridSize - 1; col += 1) {
+      const a = row * model.gridSize + col;
+      indices.push(a, a + 1, a + model.gridSize, a + 1, a + model.gridSize + 1, a + model.gridSize);
+    }
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 function makeVehicleModel(kind: VehicleModelKind, accent = 0x3aa0ff): Group {

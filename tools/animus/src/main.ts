@@ -1,4 +1,4 @@
-import { bindMapControls, drawMap, refreshMapLayout, setMapFollowSelected } from './map-panel';
+import { bindMapControls, drawMap, refreshMapLayout, refreshMapPackStatus, setMapFollowSelected } from './map-panel';
 import { clearInspectorLog, recordInspectorSnapshot, updateInspector } from './inspector-ui';
 import { setHudMode, updateHud, updateStatusStrip, updateVehicleList, type HudMode } from './hud-ui';
 import { SceneRenderer, nextCameraMode, type CameraMode, type ThemeName } from './scene-renderer';
@@ -41,13 +41,17 @@ type AnimusConfig = {
 type AnimusWorkspaceName = 'flight' | 'dashboard' | 'map' | 'inspector' | 'video' | 'plan' | 'setup';
 
 type AnimusUiSettings = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   defaultWorkspace: AnimusWorkspaceName;
   theme: ThemeName;
   cameraMode: CameraMode;
   cameraLock: boolean;
-  mapStyle: 'topo';
+  mapStyle: 'satellite';
   mapFollowSelected: boolean;
+  satellitePmtilesPath: string | null;
+  terrainPmtilesPath: string | null;
+  mapPackLabel: string | null;
+  mapPackAttribution: string | null;
   lastDashboardPresetLabel: string | null;
 };
 
@@ -63,6 +67,8 @@ type AnimusApi = {
   getSettings?: () => Promise<AnimusUiSettings>;
   saveSettings?: (settings: AnimusUiSettings) => Promise<AnimusUiSettings>;
   getMapPackStatus?: () => Promise<MapPackStatus>;
+  selectSatelliteMapPack?: () => Promise<MapPackStatus>;
+  selectTerrainMapPack?: () => Promise<MapPackStatus>;
   getDashboardLayout?: () => Promise<AnimusDashboardLayout>;
   saveDashboardLayout?: (layout: AnimusDashboardLayout) => Promise<AnimusDashboardLayout>;
   resetDashboardLayout?: () => Promise<AnimusDashboardLayout>;
@@ -132,13 +138,17 @@ const state = {
   replay: null as ReplayTimelineMessage | null,
   syncInspection: true,
   settings: {
-    schemaVersion: 1,
+    schemaVersion: 2,
     defaultWorkspace: 'flight',
     theme: 'grid',
     cameraMode: 'chase',
     cameraLock: false,
-    mapStyle: 'topo',
+    mapStyle: 'satellite',
     mapFollowSelected: true,
+    satellitePmtilesPath: null,
+    terrainPmtilesPath: null,
+    mapPackLabel: null,
+    mapPackAttribution: null,
     lastDashboardPresetLabel: null
   } as AnimusUiSettings,
   settingsLoaded: false
@@ -757,6 +767,12 @@ document.querySelector<HTMLInputElement>('#qgc')!.addEventListener('change', (ev
 document.querySelector<HTMLInputElement>('#listen-port')!.addEventListener('change', (event) => {
   void window.altairAnimus?.setListenPort(Number((event.currentTarget as HTMLInputElement).value)).then(updateConfig);
 });
+document.querySelector<HTMLButtonElement>('#map-select-satellite')?.addEventListener('click', () => {
+  void window.altairAnimus?.selectSatelliteMapPack?.().then(applyMapPackStatus);
+});
+document.querySelector<HTMLButtonElement>('#map-select-terrain')?.addEventListener('click', () => {
+  void window.altairAnimus?.selectTerrainMapPack?.().then(applyMapPackStatus);
+});
 window.addEventListener('keydown', (event) => {
   if (event.code === 'KeyC') setCameraMode(nextCameraMode(scene.cameraMode));
   if (event.code === 'KeyH') document.querySelector<HTMLButtonElement>(`[data-hud="${state.hudMode === 'console' ? 'tactical' : state.hudMode === 'tactical' ? 'off' : 'console'}"]`)?.click();
@@ -782,7 +798,7 @@ function setCameraLocked(locked: boolean, persist = true): void {
 }
 
 function saveUiSettings(patch: Partial<AnimusUiSettings>): void {
-  state.settings = { ...state.settings, ...patch, schemaVersion: 1 };
+  state.settings = { ...state.settings, ...patch, schemaVersion: 2 };
   if (!state.settingsLoaded) return;
   void window.altairAnimus?.saveSettings?.(state.settings).then((saved) => {
     state.settings = saved;
@@ -805,6 +821,25 @@ function applyUiSettings(settings: AnimusUiSettings): void {
   state.settingsLoaded = true;
 }
 
+function applyMapPackStatus(status: MapPackStatus): void {
+  scene.setMapPackStatus(status);
+  renderSetupMapPackStatus(status);
+  void refreshMapPackStatus();
+  if (state.snapshot) drawMap(state.snapshot);
+}
+
+function renderSetupMapPackStatus(status: MapPackStatus): void {
+  const target = document.querySelector<HTMLElement>('#setup-map-pack-status');
+  if (!target) return;
+  const row = (label: string, available: boolean, detail: string | null | undefined): string =>
+    `<div><strong>${escapeHtml(label)}</strong><span>${available ? 'ready' : 'unavailable'}</span><span>${escapeHtml(detail ?? '--')}</span></div>`;
+  target.innerHTML = [
+    row('Satellite', status.satellite.available, status.satellite.path ?? status.satellite.error),
+    row('Terrain DEM', status.terrain.available, status.terrain.path ?? status.terrain.error),
+    row('Attribution', Boolean(status.attribution), status.attribution ?? 'operator supplied')
+  ].join('');
+}
+
 setHudMode('console');
 setTheme('grid', false);
 setCameraLocked(false, false);
@@ -813,6 +848,16 @@ setWorkspace('flight', false);
 dashboard.load();
 void window.altairAnimus?.getSettings?.().then(applyUiSettings).catch(() => {
   state.settingsLoaded = true;
+});
+void (window.altairAnimus?.getMapPackStatus?.() ?? refreshMapPackStatus()).then(applyMapPackStatus).catch(() => {
+  renderSetupMapPackStatus({
+    available: false,
+    satellite: { available: false, url: null, path: null, label: 'Satellite imagery', attribution: null, error: 'map pack status unavailable' },
+    terrain: { available: false, url: null, path: null, label: 'Terrain DEM', attribution: null, error: 'map pack status unavailable' },
+    label: 'Offline satellite map unavailable',
+    attribution: null,
+    error: 'map pack status unavailable'
+  });
 });
 connect();
 scene.start();

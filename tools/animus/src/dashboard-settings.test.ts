@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { animusSettingsPath, createDefaultAnimusSettings, normalizeAnimusSettings, readAnimusSettings, writeAnimusSettings } from './animus-settings';
 import { createDefaultDashboardLayout } from './dashboard-types';
 import { dashboardLayoutPath, exportDashboardProfile, importDashboardProfile, readDashboardLayout, resetDashboardLayout, writeDashboardLayout } from './dashboard-settings';
+import { getUserMapPackStatus } from './map-pack-node';
 
 describe('dashboard settings helpers', () => {
   it('reads missing files as the default layout without writing', async () => {
@@ -115,30 +116,38 @@ describe('dashboard settings helpers', () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'animus-settings-'));
     const filePath = animusSettingsPath(dir);
     const saved = await writeAnimusSettings(filePath, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       defaultWorkspace: 'dashboard',
       theme: 'snow',
       cameraMode: 'fpv',
       cameraLock: true,
-      mapStyle: 'topo',
+      mapStyle: 'satellite',
       mapFollowSelected: false,
+      satellitePmtilesPath: '/maps/sat.pmtiles',
+      terrainPmtilesPath: '/maps/dem.pmtiles',
+      mapPackLabel: 'Test pack',
+      mapPackAttribution: 'Licensed test data',
       lastDashboardPresetLabel: 'Flight Test'
     });
 
     expect(saved).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       defaultWorkspace: 'dashboard',
       theme: 'snow',
       cameraMode: 'fpv',
       cameraLock: true,
-      mapStyle: 'topo',
+      mapStyle: 'satellite',
       mapFollowSelected: false,
+      satellitePmtilesPath: '/maps/sat.pmtiles',
+      terrainPmtilesPath: '/maps/dem.pmtiles',
+      mapPackLabel: 'Test pack',
+      mapPackAttribution: 'Licensed test data',
       lastDashboardPresetLabel: 'Flight Test'
     });
     expect(JSON.parse(await readFile(filePath, 'utf8')).writableAnimus).toBeUndefined();
   });
 
-  it('migrates missing map settings to offline topographic defaults', () => {
+  it('migrates v1 settings to offline satellite defaults', () => {
     expect(normalizeAnimusSettings({
       schemaVersion: 1,
       defaultWorkspace: 'map',
@@ -155,5 +164,33 @@ describe('dashboard settings helpers', () => {
     await writeFile(filePath, 'not-json', 'utf8');
 
     expect(await readAnimusSettings(filePath)).toEqual(createDefaultAnimusSettings());
+  });
+
+  it('normalizes user map-pack status for valid and missing PMTiles paths', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'animus-map-pack-'));
+    const sat = path.join(dir, 'sat.pmtiles');
+    const dem = path.join(dir, 'dem.pmtiles');
+    await writeFile(sat, 'sat', 'utf8');
+    await writeFile(dem, 'dem', 'utf8');
+
+    const valid = await getUserMapPackStatus({
+      ...createDefaultAnimusSettings(),
+      satellitePmtilesPath: sat,
+      terrainPmtilesPath: dem,
+      mapPackLabel: 'Licensed field pack',
+      mapPackAttribution: 'Operator licensed imagery'
+    });
+    expect(valid.available).toBe(true);
+    expect(valid.satellite.url).toContain('sat.pmtiles');
+    expect(valid.terrain.url).toContain('dem.pmtiles');
+
+    const missing = await getUserMapPackStatus({
+      ...createDefaultAnimusSettings(),
+      satellitePmtilesPath: path.join(dir, 'missing-sat.pmtiles'),
+      terrainPmtilesPath: dem
+    });
+    expect(missing.available).toBe(false);
+    expect(missing.satellite.available).toBe(false);
+    expect(missing.terrain.available).toBe(true);
   });
 });
