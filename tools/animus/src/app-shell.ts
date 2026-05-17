@@ -45,7 +45,23 @@ export function renderAppShell(root: HTMLElement): void {
           <div class="attitude-bank" id="attitude-bank"></div>
           <div class="attitude-cross"></div>
         </div>
-        <div class="heading-tape" id="heading-tape"></div>
+        <div class="flight-compass" id="flight-compass" data-source="track" aria-label="Ground track compass">
+          <div class="compass-pointer" aria-hidden="true"></div>
+          <div class="compass-face" aria-hidden="true">
+            <span class="compass-mark cardinal" style="--angle: 0">N</span>
+            <span class="compass-mark" style="--angle: 45">NE</span>
+            <span class="compass-mark cardinal" style="--angle: 90">E</span>
+            <span class="compass-mark" style="--angle: 135">SE</span>
+            <span class="compass-mark cardinal" style="--angle: 180">S</span>
+            <span class="compass-mark" style="--angle: 225">SW</span>
+            <span class="compass-mark cardinal" style="--angle: 270">W</span>
+            <span class="compass-mark" style="--angle: 315">NW</span>
+          </div>
+          <div class="compass-readout">
+            <strong id="compass-bearing">---</strong>
+            <span id="compass-source">TRK</span>
+          </div>
+        </div>
         <div class="telemetry-row">
           <div><span id="heading-label">HDG</span><strong id="heading">--</strong></div>
           <div><span>ROLL</span><strong id="roll">--</strong></div>
@@ -169,7 +185,7 @@ export function renderAppShell(root: HTMLElement): void {
       <div class="command-strip">
         <button id="pause" type="button">Pause</button>
         <button id="clear" type="button">Clear Trail</button>
-        <button id="heading-mode" type="button">HDG</button>
+        <button id="heading-mode" type="button">TRK</button>
       </div>
       <section class="vehicle-card">
         <span id="vehicle-type">Unknown vehicle</span>

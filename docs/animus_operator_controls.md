@@ -57,6 +57,10 @@ Use the interaction harness when changing workspace controls, dashboard widget w
 - `O` toggles the orthographic trail inset.
 - `V` cycles the visual theme.
 - `M` adds a local debug marker when the Electron service is available.
+- The Flight HUD compass is ground-track primary. It derives direction from
+  north/east velocity when the vehicle is moving, falls back to decoded MAVLink
+  heading when track is unavailable, and finally falls back to yaw-derived
+  heading.
 
 Vehicle meshes are chosen from heartbeat vehicle type: fixed-wing, multirotor, VTOL/tailsitter, or generic MAVLink.
 

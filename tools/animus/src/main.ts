@@ -634,7 +634,7 @@ document.querySelector<HTMLButtonElement>('#pause')!.addEventListener('click', (
 document.querySelector<HTMLButtonElement>('#clear')!.addEventListener('click', () => scene.clearTrail());
 document.querySelector<HTMLButtonElement>('#heading-mode')!.addEventListener('click', (event) => {
   state.showYaw = !state.showYaw;
-  (event.currentTarget as HTMLButtonElement).textContent = state.showYaw ? 'YAW' : 'HDG';
+  (event.currentTarget as HTMLButtonElement).textContent = state.showYaw ? 'YAW' : 'TRK';
   if (state.selected) updateHud(state.selected, state.showYaw);
 });
 document.querySelector<HTMLButtonElement>('#ortho-toggle')!.addEventListener('click', () => {

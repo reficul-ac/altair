@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Vector3 } from 'three';
-import { CAMERA_MODES, aircraftPoseFromTelemetry, cameraPresetOffset, classifyVehicleModel, nextCameraMode } from './scene-renderer';
+import { CAMERA_MODES, aircraftPoseFromTelemetry, aircraftVisualNoseDirection, cameraPresetOffset, classifyVehicleModel, nextCameraMode } from './scene-renderer';
 
 function attitude(rollRad = 0, pitchRad = 0, yawRad = 0) {
   return { rollRad, pitchRad, yawRad };
@@ -34,6 +34,13 @@ describe('scene renderer helpers', () => {
     expectVectorClose(aircraftPoseFromTelemetry(attitude(0, 0, Math.PI / 2)).heading, new Vector3(1, 0, 0));
     expectVectorClose(aircraftPoseFromTelemetry(attitude(0, 0, Math.PI)).heading, new Vector3(0, -1, 0));
     expectVectorClose(aircraftPoseFromTelemetry(attitude(0, 0, Math.PI * 1.5)).heading, new Vector3(-1, 0, 0));
+  });
+
+  it('maps the model visual nose axis to cardinal telemetry directions', () => {
+    expectVectorClose(aircraftVisualNoseDirection(attitude(0, 0, 0)), new Vector3(0, 1, 0));
+    expectVectorClose(aircraftVisualNoseDirection(attitude(0, 0, Math.PI / 2)), new Vector3(1, 0, 0));
+    expectVectorClose(aircraftVisualNoseDirection(attitude(0, 0, Math.PI)), new Vector3(0, -1, 0));
+    expectVectorClose(aircraftVisualNoseDirection(attitude(0, 0, Math.PI * 1.5)), new Vector3(-1, 0, 0));
   });
 
   it('raises the nose for positive pitch without changing flat heading', () => {

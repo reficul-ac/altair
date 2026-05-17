@@ -119,34 +119,85 @@
   width: 2px;
 }
 
-.heading-tape {
+.flight-compass {
+  --compass-bearing: 0;
   position: relative;
-  height: 34px;
+  width: 118px;
+  height: 118px;
   align-self: end;
-  overflow: hidden;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.08) 0 34%, transparent 35%),
+    repeating-conic-gradient(from 0deg, rgba(255, 255, 255, 0.32) 0 1deg, transparent 1deg 15deg),
+    rgba(10, 16, 22, 0.74);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(14px);
 }
 
-.heading-tape::before {
-  content: "N 030 060 E 120 150 S 210 240 W 300 330 N";
-  position: absolute;
-  left: calc(50% + var(--heading-offset, 0px));
-  bottom: 8px;
-  min-width: 680px;
-  color: var(--muted);
-  font-size: 0.78rem;
-  letter-spacing: 0;
-  white-space: nowrap;
-}
-
-.heading-tape::after {
+.flight-compass::before {
   content: "";
   position: absolute;
+  inset: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+}
+
+.compass-pointer {
+  position: absolute;
+  top: -2px;
   left: 50%;
-  bottom: 0;
-  width: 2px;
-  height: 28px;
-  background: var(--warning);
+  z-index: 3;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 16px solid var(--warning);
+  transform: translateX(-50%);
+}
+
+.compass-face {
+  position: absolute;
+  inset: 0;
+}
+
+.compass-mark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1;
+  transform: rotate(calc((var(--angle) - var(--compass-bearing)) * 1deg)) translateY(-48px) rotate(calc((var(--compass-bearing) - var(--angle)) * 1deg)) translate(-50%, -50%);
+  transform-origin: 0 0;
+}
+
+.compass-mark.cardinal {
+  color: var(--text);
+  font-size: 0.74rem;
+}
+
+.compass-readout {
+  position: absolute;
+  inset: 35px 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(6, 10, 14, 0.72);
+  text-align: center;
+}
+
+.compass-readout strong {
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.compass-readout span {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 700;
 }
 
 .hud-tactical {

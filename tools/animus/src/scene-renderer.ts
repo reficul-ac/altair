@@ -40,9 +40,13 @@ export function aircraftPoseFromTelemetry(attitude: AircraftAttitude): AircraftP
   const pitchUp = worldUp.clone().multiplyScalar(Math.cos(pitch)).addScaledVector(flatHeading, -Math.sin(pitch)).normalize();
   const right = flatRight.clone().multiplyScalar(Math.cos(roll)).addScaledVector(pitchUp, -Math.sin(roll)).normalize();
   const up = new Vector3().crossVectors(right, heading).normalize();
-  const matrix = new Matrix4().makeBasis(heading, right, up);
+  const matrix = new Matrix4().makeBasis(heading, right.clone().negate(), up);
   const quaternion = new Quaternion().setFromRotationMatrix(matrix);
   return { quaternion, euler: new Euler().setFromQuaternion(quaternion, 'ZYX'), heading, right, up };
+}
+
+export function aircraftVisualNoseDirection(attitude: AircraftAttitude): Vector3 {
+  return new Vector3(1, 0, 0).applyQuaternion(aircraftPoseFromTelemetry(attitude).quaternion).normalize();
 }
 
 export function cameraPresetOffset(mode: Exclude<CameraMode, 'free'>, attitude: AircraftAttitude): Vector3 {

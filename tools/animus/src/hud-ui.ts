@@ -1,9 +1,39 @@
 import { headingDegFromYaw, yawDegFromRad, type SessionSnapshotMessage, type VehicleStateMessage } from './state';
 
 export type HudMode = 'console' | 'tactical' | 'off';
+export type DisplayDirectionSource = 'track' | 'heading' | 'yaw';
+export type DisplayDirection = {
+  degrees: number;
+  source: DisplayDirectionSource;
+  label: string;
+};
+
+const MIN_TRACK_SPEED_MPS = 0.1;
 
 export function fmt(value: number | null | undefined, suffix = '', digits = 1): string {
   return value === null || value === undefined || Number.isNaN(value) ? '--' : `${value.toFixed(digits)}${suffix}`;
+}
+
+export function normalizeCompassDegrees(degrees: number): number {
+  return ((degrees % 360) + 360) % 360;
+}
+
+export function groundTrackDegreesFromVelocity(velocity: Pick<VehicleStateMessage['velocity'], 'northMps' | 'eastMps'> | null | undefined): number | null {
+  if (!velocity) return null;
+  const north = velocity.northMps;
+  const east = velocity.eastMps;
+  if (!Number.isFinite(north) || !Number.isFinite(east)) return null;
+  if (Math.hypot(north, east) < MIN_TRACK_SPEED_MPS) return null;
+  return normalizeCompassDegrees((Math.atan2(east, north) * 180) / Math.PI);
+}
+
+export function displayDirectionFromVehicle(message: VehicleStateMessage): DisplayDirection {
+  const track = groundTrackDegreesFromVelocity(message.velocity);
+  if (track !== null) return { degrees: track, source: 'track', label: 'TRK' };
+  if (message.metrics.headingDeg !== null && message.metrics.headingDeg !== undefined && Number.isFinite(message.metrics.headingDeg)) {
+    return { degrees: normalizeCompassDegrees(message.metrics.headingDeg), source: 'heading', label: 'HDG' };
+  }
+  return { degrees: headingDegFromYaw(message.attitude.yawRad), source: 'yaw', label: 'YAW' };
 }
 
 function setText(id: string, value: string): void {
@@ -26,9 +56,12 @@ export function setHudMode(mode: HudMode): void {
 }
 
 export function updateHud(message: VehicleStateMessage, showYaw: boolean): void {
-  const heading = showYaw ? yawDegFromRad(message.attitude.yawRad) : (message.metrics.headingDeg ?? headingDegFromYaw(message.attitude.yawRad));
-  setText('heading-label', showYaw ? 'YAW' : 'HDG');
+  const direction = displayDirectionFromVehicle(message);
+  const heading = showYaw ? yawDegFromRad(message.attitude.yawRad) : direction.degrees;
+  setText('heading-label', showYaw ? 'YAW' : direction.label);
   setText('heading', fmt(heading, ' deg', 0));
+  setText('compass-bearing', `${direction.degrees.toFixed(0).padStart(3, '0')} deg`);
+  setText('compass-source', direction.label);
   setText('roll', fmt((message.attitude.rollRad * 180) / Math.PI, ' deg', 0));
   setText('pitch', fmt((message.attitude.pitchRad * 180) / Math.PI, ' deg', 0));
   setText('altitude', fmt(message.globalPosition.altitudeM, ' m'));
@@ -58,7 +91,9 @@ export function updateHud(message: VehicleStateMessage, showYaw: boolean): void 
   status.textContent = message.connected ? `Connected ${message.vehicleType ?? 'MAVLink'} ${message.id ?? ''}` : 'Waiting for MAVLink';
   status.className = `status ${message.connected ? 'online' : ''}`;
   document.querySelector<HTMLElement>('#attitude-bank')!.style.transform = `rotate(${message.attitude.rollRad}rad)`;
-  document.querySelector<HTMLElement>('#heading-tape')!.style.setProperty('--heading-offset', `${heading * -1}px`);
+  const compass = document.querySelector<HTMLElement>('#flight-compass')!;
+  compass.style.setProperty('--compass-bearing', direction.degrees.toFixed(2));
+  compass.dataset.source = direction.source;
 }
 
 export function updateStatusStrip(message: VehicleStateMessage | null): void {
