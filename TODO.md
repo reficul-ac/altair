@@ -33,7 +33,7 @@ Reusable Bayek framework follow-up is tracked separately in
 ## Telemetry And Replay
 
 - [ ] Define required telemetry packets for SITL, embedded, and log replay.
-- [ ] Add Altair replay schema compatibility checks around imported telemetry
+- [x] Add Altair replay schema compatibility checks around imported telemetry
   and live viewer session snapshots.
 - [ ] Add log-to-replay tooling for deterministic regression tests.
 

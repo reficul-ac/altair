@@ -97,6 +97,8 @@ Status widgets read the same session snapshot used by Flight, Map, Inspector, an
 
 - `Open` loads native Altair replay JSON.
 - `Import` accepts native replay JSON plus CSV-style delimited logs and ULog-labeled imports that can be reduced to the currently supported deterministic replay frame fields.
+- Native replay JSON is `type: "altair_session_replay"` with `schemaVersion: 1`, optional metadata/markers, and ordered or unordered frames containing `timestampS` plus a `session_snapshot`. Unsupported replay schema versions are rejected on import instead of being migrated implicitly.
+- Replay and live WebSocket snapshots use tolerant v1 compatibility checks: required session fields (`vehicles`, `messages`, `events`, `packetCount`, `decodedCount`) and required vehicle basics must be present, while missing optional domains such as logs, console, command/audit state, protocol operations, and mock links normalize to empty arrays.
 - Replay controls support pause/play, scrub, speed selection, reset, and marker navigation.
 - `Download` saves the current replay/session metadata path exposed by Electron.
 - Setup can request the onboard MAVLink log list, start per-log download operations, and erase onboard logs behind typed confirmation. Completed `LOG_DATA` downloads are assembled by byte offset and saved as raw `.bin` files under `path.join(app.getPath('userData'), 'onboard-logs')`; the saved path appears in the logs operation history. Imported replay behavior is unchanged.

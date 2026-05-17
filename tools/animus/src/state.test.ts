@@ -79,7 +79,28 @@ describe('Animus state', () => {
     const parsed = parseSessionSnapshot(JSON.stringify(snapshot));
     expect(parsed?.vehicles[0].trail?.[0]).toMatchObject({ eastM: 2, northM: 3 });
     expect(parsed?.messages[0]).toMatchObject({ name: 'ATTITUDE', msgId: 30, count: 3 });
+    expect(parsed?.logSources).toEqual([]);
     expect(parseSessionSnapshot(JSON.stringify({ type: 'vehicle_state' }))).toBeNull();
+  });
+
+  it('rejects structurally invalid live session snapshots', () => {
+    expect(parseSessionSnapshot(JSON.stringify({
+      type: 'session_snapshot',
+      vehicles: [{ ...message, attitude: undefined }],
+      selectedVehicleId: '1:1',
+      messages: [],
+      events: [],
+      packetCount: 1,
+      decodedCount: 1
+    }))).toBeNull();
+    expect(parseSessionSnapshot(JSON.stringify({
+      type: 'session_snapshot',
+      vehicles: [{ ...message }],
+      selectedVehicleId: '1:1',
+      messages: [],
+      events: [],
+      decodedCount: 1
+    }))).toBeNull();
   });
 
   it('keeps the trail bounded', () => {

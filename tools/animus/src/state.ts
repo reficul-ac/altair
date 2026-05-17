@@ -1,3 +1,5 @@
+import { normalizeSessionSnapshot } from './session-compat.js';
+
 export type VehicleStateMessage = {
   type: 'vehicle_state';
   id?: string;
@@ -722,10 +724,7 @@ export function parseSessionSnapshot(raw: string): SessionSnapshotMessage | null
   } catch {
     return null;
   }
-  if (!parsed || typeof parsed !== 'object' || (parsed as { type?: unknown }).type !== 'session_snapshot') {
-    return null;
-  }
-  return parsed as SessionSnapshotMessage;
+  return normalizeSessionSnapshot(parsed).snapshot;
 }
 
 export function trailPointFromState(state: VehicleStateMessage, timestampMs = Date.now()): TrailPoint | null {

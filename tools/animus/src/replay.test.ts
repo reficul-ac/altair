@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { frameIndexAtOrBefore, importLogAsReplay, parseAltairReplayJson, ReplaySession, serializeAltairReplay, type ReplayFrame } from './replay';
+import { frameIndexAtOrBefore, importLogAsReplay, normalizeReplay, parseAltairReplayJson, ReplaySession, serializeAltairReplay, type ReplayFrame } from './replay';
 import type { SessionSnapshotMessage, VehicleStateMessage } from './state';
 
 const vehicle: VehicleStateMessage = {
@@ -57,6 +57,28 @@ describe('replay sessions', () => {
     expect(replay.metadata.vehicleIds).toEqual(['1:1']);
     expect(replay.frames.map((frame) => frame.timestampS)).toEqual([0, 1, 3]);
     expect(replay.markers.map((event) => event.label)).toEqual(['Gate']);
+  });
+
+  it('rejects unsupported Altair replay schema versions', () => {
+    const replay = { ...serializeAltairReplay(frames()), schemaVersion: 2 };
+    expect(() => parseAltairReplayJson(JSON.stringify(replay))).toThrow('unsupported replay schema version 2');
+  });
+
+  it('rejects replay frames with missing required snapshot fields', () => {
+    const replay = serializeAltairReplay(frames());
+    delete (replay.frames[0].snapshot as Partial<SessionSnapshotMessage>).packetCount;
+    expect(() => normalizeReplay(replay)).toThrow('replay frame 0: session snapshot packetCount must be a finite number');
+  });
+
+  it('normalizes snapshots that omit optional session domains', () => {
+    const replay = parseAltairReplayJson(JSON.stringify({
+      type: 'altair_session_replay',
+      schemaVersion: 1,
+      frames: frames()
+    }));
+    expect(replay.frames[0].snapshot.logSources).toEqual([]);
+    expect(replay.frames[0].snapshot.commandAudit).toEqual([]);
+    expect(replay.compatibilityWarnings).toContain('replay frame 0: session snapshot missing optional logSources; normalized to empty array');
   });
 
   it('finds the frame at or before a seek timestamp', () => {
@@ -121,5 +143,6 @@ describe('replay sessions', () => {
     expect(replay.frames.map((frame) => frame.timestampS)).toEqual([0, 1.5]);
     expect(replay.frames[1].snapshot.vehicles[0].localPosition).toEqual({ northM: 3, eastM: 4, upM: 12 });
     expect(replay.frames[1].snapshot.vehicles[0].status?.mode).toBe('AUTO');
+    expect(() => normalizeReplay(replay)).not.toThrow();
   });
 });

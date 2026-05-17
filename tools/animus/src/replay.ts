@@ -1,4 +1,5 @@
 import type { ReplayMetadata, ReplayTimelineMessage, SessionEvent, SessionSnapshotMessage } from './state.js';
+import { assertCompatibleSessionSnapshot } from './session-compat.js';
 
 export const ALTAIR_REPLAY_SCHEMA_VERSION = 1;
 
@@ -17,6 +18,12 @@ export type AltairReplayFile = {
   };
   frames: ReplayFrame[];
   markers?: SessionEvent[];
+};
+
+export type NormalizedAltairReplayFile = AltairReplayFile & {
+  metadata: ReplayMetadata;
+  markers: SessionEvent[];
+  compatibilityWarnings: string[];
 };
 
 export type ImportedLog = {
@@ -198,7 +205,7 @@ export class ReplaySession {
   }
 }
 
-export function parseAltairReplayJson(raw: string): AltairReplayFile {
+export function parseAltairReplayJson(raw: string): NormalizedAltairReplayFile {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -227,7 +234,7 @@ export function importLogAsReplay(log: ImportedLog): AltairReplayFile {
 }
 
 export function serializeAltairReplay(frames: readonly ReplayFrame[], metadata: Partial<ReplayMetadata> = {}, markers: readonly SessionEvent[] = []): AltairReplayFile {
-  const normalized = normalizeFrames(frames);
+  const normalized = normalizeFrames(frames).frames;
   const fallbackMarkers = markerEvents(normalized);
   return {
     type: 'altair_session_replay',
@@ -249,20 +256,20 @@ export function serializeAltairReplay(frames: readonly ReplayFrame[], metadata: 
   };
 }
 
-export function normalizeReplay(replay: AltairReplayFile): AltairReplayFile & { metadata: ReplayMetadata; markers: SessionEvent[] } {
+export function normalizeReplay(replay: AltairReplayFile): NormalizedAltairReplayFile {
   if (replay.type !== 'altair_session_replay') {
     throw new Error('unsupported replay type');
   }
   if (replay.schemaVersion !== ALTAIR_REPLAY_SCHEMA_VERSION) {
     throw new Error(`unsupported replay schema version ${String(replay.schemaVersion)}`);
   }
-  const frames = normalizeFrames(replay.frames);
+  const { frames, warnings } = normalizeFrames(replay.frames);
   if (frames.length === 0) {
     throw new Error('replay must contain at least one frame');
   }
   const metadata = buildMetadata(frames, replay.metadata);
   const markers = [...(replay.markers ?? markerEvents(frames))].sort((a, b) => a.timestampS - b.timestampS);
-  return { ...replay, frames, markers, metadata };
+  return { ...replay, frames, markers, metadata, compatibilityWarnings: warnings };
 }
 
 export function frameIndexAtOrBefore(frames: readonly ReplayFrame[], timestampS: number): number {
@@ -281,10 +288,11 @@ export function frameIndexAtOrBefore(frames: readonly ReplayFrame[], timestampS:
   return result;
 }
 
-function normalizeFrames(frames: readonly ReplayFrame[] | undefined): ReplayFrame[] {
+function normalizeFrames(frames: readonly ReplayFrame[] | undefined): { frames: ReplayFrame[]; warnings: string[] } {
   if (!Array.isArray(frames)) {
     throw new Error('replay frames must be an array');
   }
+  const warnings: string[] = [];
   const normalized = frames.map((frame, index) => {
     if (!frame || typeof frame !== 'object') {
       throw new Error(`replay frame ${index} must be an object`);
@@ -292,13 +300,12 @@ function normalizeFrames(frames: readonly ReplayFrame[] | undefined): ReplayFram
     if (!Number.isFinite(frame.timestampS) || frame.timestampS < 0) {
       throw new Error(`replay frame ${index} has invalid timestamp`);
     }
-    if (!frame.snapshot || frame.snapshot.type !== 'session_snapshot') {
-      throw new Error(`replay frame ${index} must contain a session snapshot`);
-    }
-    return { timestampS: frame.timestampS, snapshot: frame.snapshot };
+    const snapshot = assertCompatibleSessionSnapshot(frame.snapshot, `replay frame ${index}`);
+    warnings.push(...snapshot.warnings.map((warning) => `replay frame ${index}: ${warning}`));
+    return { timestampS: frame.timestampS, snapshot: snapshot.snapshot };
   });
   normalized.sort((a, b) => a.timestampS - b.timestampS);
-  return normalized;
+  return { frames: normalized, warnings };
 }
 
 function buildMetadata(frames: readonly ReplayFrame[], metadata: AltairReplayFile['metadata'] = {}): ReplayMetadata {
