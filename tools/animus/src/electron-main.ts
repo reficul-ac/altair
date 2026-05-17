@@ -85,8 +85,8 @@ const commandAuditLog = createCommandAuditLog(path.join(app.getPath('userData'),
 const operationAuditLog = createCommandAuditLog(path.join(app.getPath('userData'), 'operation-audit.jsonl'));
 const dashboardLayoutFile = dashboardLayoutPath(app.getPath('userData'));
 const animusSettingsFile = animusSettingsPath(app.getPath('userData'));
-const mapCache = new MapCacheManager(app.getPath('userData'));
-const demCache = new MapCacheManager(app.getPath('userData'), 'dem');
+const mapCache = new MapCacheManager(app.getPath('userData'), 'tiles', async () => (await readAnimusSettings(animusSettingsFile)).activeMapCacheSetId);
+const demCache = new MapCacheManager(app.getPath('userData'), 'dem', async () => (await readAnimusSettings(animusSettingsFile)).activeDemCacheSetId);
 let recentCommandAudit: CommandAuditEntry[] = [];
 let mockLink: MockLinkState | null = null;
 let shutdownPromise: Promise<void> | null = null;

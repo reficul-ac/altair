@@ -42,7 +42,8 @@ export class MapCacheManager {
 
   constructor(
     private readonly userDataPath: string,
-    private readonly kind: 'tiles' | 'dem' = 'tiles'
+    private readonly kind: 'tiles' | 'dem' = 'tiles',
+    private readonly preferredActiveSetId: (() => Promise<string | null>) | null = null
   ) {}
 
   cacheRoot(): string {
@@ -59,7 +60,8 @@ export class MapCacheManager {
 
   async status(): Promise<MapCacheStatus> {
     const index = await this.readIndex();
-    const activeSet = index.sets.find((set) => set.id === index.activeSetId) ?? null;
+    const preferredSet = await this.readablePreferredSet(index);
+    const activeSet = preferredSet ?? index.sets.find((set) => set.id === index.activeSetId) ?? null;
     const available = activeSet ? await this.hasAnyTile(activeSet) : false;
     return {
       available,
@@ -239,6 +241,14 @@ export class MapCacheManager {
     } catch {
       return false;
     }
+  }
+
+  private async readablePreferredSet(index: MapCacheIndex): Promise<MapCacheSet | null> {
+    if (!this.preferredActiveSetId) return null;
+    const preferredId = await this.preferredActiveSetId();
+    if (!preferredId) return null;
+    const preferredSet = index.sets.find((set) => set.id === preferredId) ?? null;
+    return preferredSet && await this.hasAnyTile(preferredSet) ? preferredSet : null;
   }
 
   private async readIndex(): Promise<MapCacheIndex> {

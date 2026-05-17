@@ -1,14 +1,15 @@
 export const ANIMUS_MAP_CACHE_PROTOCOL = 'animus-cache';
-export const ANIMUS_MAP_CACHE_DEFAULT_TEMPLATE = '';
-export const ANIMUS_MAP_CACHE_DEFAULT_ATTRIBUTION = '';
+export const ANIMUS_MAP_CACHE_DEFAULT_TEMPLATE = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}';
+export const ANIMUS_MAP_CACHE_DEFAULT_ATTRIBUTION = 'USGS The National Map';
 export const ANIMUS_MAP_CACHE_DEFAULT_MIN_ZOOM = 12;
 export const ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM = 16;
 export const ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT = 8000;
 export const ANIMUS_MAP_CACHE_DEFAULT_RADIUS_M = 1600;
 export const ANIMUS_MAP_CACHE_DEFAULT_ORIGIN = { latDeg: 37.4275, lonDeg: -122.1697 };
-export const ANIMUS_DEM_CACHE_DEFAULT_TEMPLATE = '';
-export const ANIMUS_DEM_CACHE_DEFAULT_ATTRIBUTION = '';
+export const ANIMUS_DEM_CACHE_DEFAULT_TEMPLATE = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
+export const ANIMUS_DEM_CACHE_DEFAULT_ATTRIBUTION = 'AWS Open Data Terrain Tiles';
 export const ANIMUS_DEM_CACHE_DEFAULT_ENCODING: DemEncoding = 'terrarium';
+export const ANIMUS_DEM_CACHE_DEFAULT_MAX_ZOOM = 15;
 
 export type MapCacheBbox = {
   west: number;

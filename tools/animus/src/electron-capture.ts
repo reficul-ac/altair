@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MapCacheManager } from './map-cache-node.js';
 import { ANIMUS_MAP_CACHE_PROTOCOL } from './map-cache.js';
+import { animusSettingsPath, readAnimusSettings } from './animus-settings.js';
 
 type CaptureArgs = {
   url: string;
@@ -388,8 +389,9 @@ async function runCapture(args: CaptureArgs): Promise<void> {
   watchdog.unref();
   await mkdir(args.outDir, { recursive: true });
   debugLog('electron-app', 'ready');
-  const mapCache = new MapCacheManager(app.getPath('userData'));
-  const demCache = new MapCacheManager(app.getPath('userData'), 'dem');
+  const animusSettingsFile = animusSettingsPath(app.getPath('userData'));
+  const mapCache = new MapCacheManager(app.getPath('userData'), 'tiles', async () => (await readAnimusSettings(animusSettingsFile)).activeMapCacheSetId);
+  const demCache = new MapCacheManager(app.getPath('userData'), 'dem', async () => (await readAnimusSettings(animusSettingsFile)).activeDemCacheSetId);
   protocol.handle(ANIMUS_MAP_CACHE_PROTOCOL, async (request) => {
     const url = new URL(request.url);
     const [setId, z, x, y] = url.pathname.split('/').filter(Boolean);

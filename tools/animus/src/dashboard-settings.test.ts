@@ -5,7 +5,16 @@ import { describe, expect, it } from 'vitest';
 import { animusSettingsPath, createDefaultAnimusSettings, normalizeAnimusSettings, readAnimusSettings, writeAnimusSettings } from './animus-settings';
 import { createDefaultDashboardLayout } from './dashboard-types';
 import { dashboardLayoutPath, exportDashboardProfile, importDashboardProfile, readDashboardLayout, resetDashboardLayout, writeDashboardLayout } from './dashboard-settings';
-import { decodeRgbDemPixel, estimateTileCount, validateTileUrlTemplate } from './map-cache';
+import {
+  ANIMUS_DEM_CACHE_DEFAULT_ATTRIBUTION,
+  ANIMUS_DEM_CACHE_DEFAULT_MAX_ZOOM,
+  ANIMUS_DEM_CACHE_DEFAULT_TEMPLATE,
+  ANIMUS_MAP_CACHE_DEFAULT_ATTRIBUTION,
+  ANIMUS_MAP_CACHE_DEFAULT_TEMPLATE,
+  decodeRgbDemPixel,
+  estimateTileCount,
+  validateTileUrlTemplate
+} from './map-cache';
 import { MapCacheManager } from './map-cache-node';
 
 describe('dashboard settings helpers', () => {
@@ -177,6 +186,39 @@ describe('dashboard settings helpers', () => {
     })).toEqual({ ...createDefaultAnimusSettings(), defaultWorkspace: 'map' });
   });
 
+  it('prefills built-in map and DEM source defaults for fresh settings', () => {
+    expect(createDefaultAnimusSettings()).toMatchObject({
+      mapTileUrlTemplate: ANIMUS_MAP_CACHE_DEFAULT_TEMPLATE,
+      mapTileAttribution: ANIMUS_MAP_CACHE_DEFAULT_ATTRIBUTION,
+      mapCacheMinZoom: 12,
+      mapCacheMaxZoom: 16,
+      demTileUrlTemplate: ANIMUS_DEM_CACHE_DEFAULT_TEMPLATE,
+      demTileAttribution: ANIMUS_DEM_CACHE_DEFAULT_ATTRIBUTION,
+      demTileEncoding: 'terrarium',
+      demCacheMinZoom: 12,
+      demCacheMaxZoom: ANIMUS_DEM_CACHE_DEFAULT_MAX_ZOOM,
+      activeMapCacheSetId: null,
+      activeDemCacheSetId: null
+    });
+  });
+
+  it('migrates empty saved cache templates to built-in defaults', () => {
+    expect(normalizeAnimusSettings({
+      ...createDefaultAnimusSettings(),
+      mapTileUrlTemplate: '',
+      mapTileAttribution: '',
+      demTileUrlTemplate: '',
+      demTileAttribution: '',
+      demCacheMaxZoom: 16
+    })).toMatchObject({
+      mapTileUrlTemplate: ANIMUS_MAP_CACHE_DEFAULT_TEMPLATE,
+      mapTileAttribution: ANIMUS_MAP_CACHE_DEFAULT_ATTRIBUTION,
+      demTileUrlTemplate: ANIMUS_DEM_CACHE_DEFAULT_TEMPLATE,
+      demTileAttribution: ANIMUS_DEM_CACHE_DEFAULT_ATTRIBUTION,
+      demCacheMaxZoom: 16
+    });
+  });
+
   it('migrates v2 PMTiles settings to v3 cache defaults without preserving map-pack paths', () => {
     expect(normalizeAnimusSettings({
       schemaVersion: 2,
@@ -214,6 +256,8 @@ describe('dashboard settings helpers', () => {
 
   it('validates licensed XYZ URL templates before download', () => {
     expect(validateTileUrlTemplate('https://tiles.example/{z}/{x}/{y}.jpg?key=test')).toEqual({ ok: true, host: 'tiles.example', extension: 'jpg' });
+    expect(validateTileUrlTemplate(ANIMUS_MAP_CACHE_DEFAULT_TEMPLATE)).toEqual({ ok: true, host: 'basemap.nationalmap.gov', extension: 'png' });
+    expect(validateTileUrlTemplate(ANIMUS_DEM_CACHE_DEFAULT_TEMPLATE)).toEqual({ ok: true, host: 's3.amazonaws.com', extension: 'png' });
     expect(validateTileUrlTemplate('file:///tiles/{z}/{x}/{y}.png').ok).toBe(false);
     expect(validateTileUrlTemplate('https://tiles.example/{z}/{x}.png').ok).toBe(false);
   });
@@ -239,5 +283,69 @@ describe('dashboard settings helpers', () => {
 
     expect(await satellite.status()).toMatchObject({ available: false, sets: [] });
     expect(await dem.status()).toMatchObject({ available: false, sets: [] });
+  });
+
+  it('prefers a readable startup default cache set over the index active set', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'animus-startup-cache-'));
+    const cacheRoot = path.join(dir, 'map-cache');
+    await mkdir(path.join(cacheRoot, 'tiles', 'cache-active'), { recursive: true });
+    await mkdir(path.join(cacheRoot, 'tiles', 'cache-startup'), { recursive: true });
+    const now = '2026-01-01T00:00:00.000Z';
+    const baseSet = {
+      label: 'Cache',
+      templateHost: 'tiles.example',
+      attribution: null,
+      bbox: { west: -122.18, south: 37.42, east: -122.16, north: 37.44 },
+      minZoom: 12,
+      maxZoom: 12,
+      tileCount: 1,
+      downloadedCount: 1,
+      failedCount: 0,
+      bytes: 67,
+      createdAt: now,
+      updatedAt: now,
+      extension: 'png'
+    };
+    await writeFile(path.join(cacheRoot, 'index.json'), JSON.stringify({
+      schemaVersion: 1,
+      activeSetId: 'cache-active',
+      sets: [
+        { ...baseSet, id: 'cache-active', label: 'Index active' },
+        { ...baseSet, id: 'cache-startup', label: 'Startup default' }
+      ]
+    }), 'utf8');
+
+    const manager = new MapCacheManager(dir, 'tiles', async () => 'cache-startup');
+    expect((await manager.status()).activeSet?.id).toBe('cache-startup');
+  });
+
+  it('falls back to the index active cache set when the startup default is missing', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'animus-startup-cache-'));
+    const cacheRoot = path.join(dir, 'map-cache');
+    await mkdir(path.join(cacheRoot, 'tiles', 'cache-active'), { recursive: true });
+    const now = '2026-01-01T00:00:00.000Z';
+    await writeFile(path.join(cacheRoot, 'index.json'), JSON.stringify({
+      schemaVersion: 1,
+      activeSetId: 'cache-active',
+      sets: [{
+        id: 'cache-active',
+        label: 'Index active',
+        templateHost: 'tiles.example',
+        attribution: null,
+        bbox: { west: -122.18, south: 37.42, east: -122.16, north: 37.44 },
+        minZoom: 12,
+        maxZoom: 12,
+        tileCount: 1,
+        downloadedCount: 1,
+        failedCount: 0,
+        bytes: 67,
+        createdAt: now,
+        updatedAt: now,
+        extension: 'png'
+      }]
+    }), 'utf8');
+
+    const manager = new MapCacheManager(dir, 'tiles', async () => 'cache-missing');
+    expect((await manager.status()).activeSet?.id).toBe('cache-active');
   });
 });

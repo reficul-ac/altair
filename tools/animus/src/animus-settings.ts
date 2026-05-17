@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import {
   ANIMUS_DEM_CACHE_DEFAULT_ATTRIBUTION,
   ANIMUS_DEM_CACHE_DEFAULT_ENCODING,
+  ANIMUS_DEM_CACHE_DEFAULT_MAX_ZOOM,
   ANIMUS_DEM_CACHE_DEFAULT_TEMPLATE,
   ANIMUS_MAP_CACHE_DEFAULT_ATTRIBUTION,
   ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT,
@@ -68,7 +69,7 @@ export function createDefaultAnimusSettings(): AnimusUiSettings {
     demTileEncoding: ANIMUS_DEM_CACHE_DEFAULT_ENCODING,
     activeDemCacheSetId: null,
     demCacheMinZoom: ANIMUS_MAP_CACHE_DEFAULT_MIN_ZOOM,
-    demCacheMaxZoom: ANIMUS_MAP_CACHE_DEFAULT_MAX_ZOOM,
+    demCacheMaxZoom: ANIMUS_DEM_CACHE_DEFAULT_MAX_ZOOM,
     demCacheMaxTileCount: ANIMUS_MAP_CACHE_DEFAULT_MAX_TILE_COUNT,
     lastDashboardPresetLabel: null
   };
@@ -86,6 +87,8 @@ export function normalizeAnimusSettings(value: unknown): AnimusUiSettings {
   const maxZoom = normalizeInteger(value.mapCacheMaxZoom, defaults.mapCacheMaxZoom, minZoom, 22);
   const demMinZoom = normalizeInteger(value.demCacheMinZoom, defaults.demCacheMinZoom, 0, 22);
   const demMaxZoom = normalizeInteger(value.demCacheMaxZoom, defaults.demCacheMaxZoom, demMinZoom, 22);
+  const mapTileUrlTemplate = normalizeNonEmptyString(value.mapTileUrlTemplate, 4096, defaults.mapTileUrlTemplate);
+  const demTileUrlTemplate = normalizeNonEmptyString(value.demTileUrlTemplate, 4096, defaults.demTileUrlTemplate);
   return {
     schemaVersion: ANIMUS_SETTINGS_SCHEMA_VERSION,
     defaultWorkspace: isMember(value.defaultWorkspace, ANIMUS_WORKSPACES) ? value.defaultWorkspace : defaults.defaultWorkspace,
@@ -94,14 +97,18 @@ export function normalizeAnimusSettings(value: unknown): AnimusUiSettings {
     cameraLock: typeof value.cameraLock === 'boolean' ? value.cameraLock : defaults.cameraLock,
     mapStyle: isMember(value.mapStyle, ANIMUS_MAP_STYLES) ? value.mapStyle : defaults.mapStyle,
     mapFollowSelected: typeof value.mapFollowSelected === 'boolean' ? value.mapFollowSelected : defaults.mapFollowSelected,
-    mapTileUrlTemplate: normalizeString(value.mapTileUrlTemplate, 4096, defaults.mapTileUrlTemplate),
-    mapTileAttribution: normalizeString(value.mapTileAttribution, 240, defaults.mapTileAttribution),
+    mapTileUrlTemplate,
+    mapTileAttribution: mapTileUrlTemplate === defaults.mapTileUrlTemplate
+      ? normalizeNonEmptyString(value.mapTileAttribution, 240, defaults.mapTileAttribution)
+      : normalizeString(value.mapTileAttribution, 240, ''),
     activeMapCacheSetId: normalizeOptionalString(value.activeMapCacheSetId, 96),
     mapCacheMinZoom: minZoom,
     mapCacheMaxZoom: maxZoom,
     mapCacheMaxTileCount: normalizeInteger(value.mapCacheMaxTileCount, defaults.mapCacheMaxTileCount, 1, 250000),
-    demTileUrlTemplate: normalizeString(value.demTileUrlTemplate, 4096, defaults.demTileUrlTemplate),
-    demTileAttribution: normalizeString(value.demTileAttribution, 240, defaults.demTileAttribution),
+    demTileUrlTemplate,
+    demTileAttribution: demTileUrlTemplate === defaults.demTileUrlTemplate
+      ? normalizeNonEmptyString(value.demTileAttribution, 240, defaults.demTileAttribution)
+      : normalizeString(value.demTileAttribution, 240, ''),
     demTileEncoding: value.demTileEncoding === 'mapbox' || value.demTileEncoding === 'terrarium' ? value.demTileEncoding : defaults.demTileEncoding,
     activeDemCacheSetId: normalizeOptionalString(value.activeDemCacheSetId, 96),
     demCacheMinZoom: demMinZoom,
@@ -146,6 +153,11 @@ function normalizeOptionalString(value: unknown, maxLength: number): string | nu
 
 function normalizeString(value: unknown, maxLength: number, fallback: string): string {
   return typeof value === 'string' ? value.trim().slice(0, maxLength) : fallback;
+}
+
+function normalizeNonEmptyString(value: unknown, maxLength: number, fallback: string): string {
+  const normalized = normalizeString(value, maxLength, fallback);
+  return normalized || fallback;
 }
 
 function normalizeInteger(value: unknown, fallback: number, min: number, max: number): number {

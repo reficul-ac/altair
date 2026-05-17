@@ -440,6 +440,20 @@
   min-width: 0;
 }
 
+.map-cache-form .map-cache-startup,
+.startup-default {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: none;
+  color: var(--text);
+}
+
+.map-cache-form .map-cache-startup input,
+.startup-default input {
+  width: auto;
+}
+
 .map-unavailable {
   position: absolute;
   inset: 0;
