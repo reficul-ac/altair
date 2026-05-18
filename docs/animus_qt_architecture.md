@@ -35,11 +35,14 @@ The initial loader expects this shape:
 map_packs/
   <pack_id>/
     metadata.json
+    attribution.txt
     2d/
-      imagery.mbtiles
+      xyz/
+        <z>/<x>/<y>.png
     3d/
-      terrain/
-        layer.json
+      terrain_quantized_mesh/
+      hillshade_xyz/
+      contours/
 ```
 
 Minimal `metadata.json`:
@@ -50,14 +53,37 @@ Minimal `metadata.json`:
   "name": "Stanford Range",
   "license": "operator-managed",
   "attribution": "Operator-provided licensed imagery",
-  "imagery": { "format": "xyz" },
-  "terrain": { "format": "quantized-mesh" }
+  "minZoom": 12,
+  "maxZoom": 18,
+  "bounds": {
+    "west": -122.25,
+    "south": 37.36,
+    "east": -122.05,
+    "north": 37.50
+  },
+  "imagery": {
+    "format": "xyz",
+    "tileRoot": "2d/xyz",
+    "tileScheme": "xyz",
+    "extension": "png"
+  },
+  "terrain": { "format": "none" }
 }
 ```
 
-`metadata.json` currently requires `schemaVersion: 1`, `name`, `license`, `attribution`, and `imagery.format`. Supported imagery formats are `xyz` and `mbtiles`. Supported terrain formats are `none` and `quantized-mesh`.
+`metadata.json` currently requires `schemaVersion: 1`, `name`, `license`,
+`attribution`, `imagery.format: "xyz"`, valid `minZoom`/`maxZoom`, and a
+relative local XYZ `imagery.tileRoot`. The current C++ loader rejects MBTiles,
+PMTiles, and other imagery formats. Supported terrain metadata values are
+`none` and `quantized-mesh`, but `has3dTerrain` is true only for
+`terrain.format: "quantized-mesh"` with `3d/terrain/layer.json`; leave
+`terrain.format` as `"none"` for staged DEM/topography packs until the Cesium
+runtime path exists.
 
-Future phases will extend validation for bounds, layers, versioning, generated-at metadata, MBTiles schema details, PMTiles support, and quantized-mesh terrain completeness.
+Future phases will extend validation for layer metadata, generated-at metadata,
+MBTiles schema details, PMTiles support, and quantized-mesh terrain
+completeness. See [Animus map packs](animus_map_packs.md) for the current
+Stanford pack workflow and source policy.
 
 ## Current Scope
 

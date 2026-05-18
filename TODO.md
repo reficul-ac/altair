@@ -54,6 +54,9 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Extend the local tile/cache service beyond validated XYZ PNG packs:
   MBTiles before PMTiles support, cache metadata, and operator-visible cache
   health.
+- [ ] Generate the full `default-sitl-stanford` offline map payload from
+  operator-approved NAIP/3DEP source rasters and decide whether large generated
+  tiles are stored in Git, released as artifacts, or installed out of band.
 - [ ] Replace the 3D terrain canvas/WebEngine placeholder with bundled Cesium
   assets, Qt WebChannel vehicle updates, quantized-mesh terrain loading, and
   deterministic fallback/error UI.

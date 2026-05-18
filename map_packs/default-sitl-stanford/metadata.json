@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "name": "Default SITL Stanford / Palo Alto",
+  "description": "Offline map pack for Altair Animus SITL/demo use around Stanford/Palo Alto. This checked-in seed contains placeholder center tiles only; generate a full pack from local NAIP and 3DEP source rasters before field use.",
+  "license": "USGS public domain sources with OSM ODbL attribution where OSM-derived data is included",
+  "attribution": "Map services and data available from U.S. Geological Survey, National Geospatial Program. © OpenStreetMap contributors where OSM-derived data is included.",
+  "minZoom": 12,
+  "maxZoom": 18,
+  "bounds": {
+    "west": -122.25,
+    "south": 37.36,
+    "east": -122.05,
+    "north": 37.50
+  },
+  "center": {
+    "latitude": 37.4275,
+    "longitude": -122.1697
+  },
+  "imagery": {
+    "format": "xyz",
+    "tileRoot": "2d/xyz",
+    "tileScheme": "xyz",
+    "extension": "png",
+    "sourceStatus": "placeholder-center-tiles"
+  },
+  "terrain": {
+    "format": "none",
+    "status": "staged",
+    "preferredFormat": "quantized-mesh",
+    "path": "3d/terrain_quantized_mesh"
+  },
+  "topography": {
+    "hillshade": "3d/hillshade_xyz",
+    "contours": "3d/contours/contours.geojson"
+  },
+  "version": 1,
+  "createdBy": "Altair Animus map-pack generator",
+  "createdAt": "2026-05-18T00:00:00Z"
+}
