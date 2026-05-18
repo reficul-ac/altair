@@ -2,6 +2,7 @@
 #include "maps/MapPackManager.h"
 #include "maps/MapSourceRegistry.h"
 #include "maps/OfflineMapManager.h"
+#include "maps/TileImageProvider.h"
 #include "models/VehicleModel.h"
 #include "telemetry/BreadcrumbPathModel.h"
 #include "telemetry/TelemetryService.h"
@@ -104,6 +105,8 @@ int main(int argc, char *argv[])
     mapPacks.reload();
 
     QQmlApplicationEngine engine;
+    engine.addImageProvider(QStringLiteral("animusTiles"),
+                            new animus::TileImageProvider(&mapPacks));
     engine.rootContext()->setContextProperty(QStringLiteral("vehicleModel"), &vehicle);
     engine.rootContext()->setContextProperty(QStringLiteral("breadcrumbModel"), &trail);
     engine.rootContext()->setContextProperty(QStringLiteral("mapSources"), &mapSources);

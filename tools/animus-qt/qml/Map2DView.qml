@@ -6,20 +6,71 @@ Item {
     id: root
 
     property bool following: true
+    property int zoomLevel: mapPacks.activeHasLocalXyzImagery
+                            ? Math.max(mapPacks.activeMinZoom,
+                                       Math.min(mapPacks.activeMaxZoom, 15))
+                            : 15
     readonly property double centerLatitudeDeg: following ? vehicleModel.latitudeDeg : 37.4275
     readonly property double centerLongitudeDeg: following ? vehicleModel.longitudeDeg : -122.1697
-    readonly property double degreesPerPixel: 0.000014
+    readonly property int tileSize: 256
+    readonly property bool hasRasterTiles: mapPacks.activeHasLocalXyzImagery
+    readonly property double degreesPerPixel: hasRasterTiles
+                                             ? 360.0 / (tileSize * Math.pow(2, zoomLevel))
+                                             : 0.000014
+    readonly property int tileSpan: Math.pow(2, zoomLevel)
+    readonly property double centerPixelX: lonToPixelX(centerLongitudeDeg, zoomLevel)
+    readonly property double centerPixelY: latToPixelY(centerLatitudeDeg, zoomLevel)
+    readonly property int firstTileX: Math.floor((centerPixelX - width / 2) / tileSize)
+    readonly property int firstTileY: Math.floor((centerPixelY - height / 2) / tileSize)
+    readonly property int tileColumns: hasRasterTiles ? Math.ceil(width / tileSize) + 2 : 0
+    readonly property int tileRows: hasRasterTiles ? Math.ceil(height / tileSize) + 2 : 0
+
+    Connections {
+        target: mapPacks
+        function onActivePackChanged() {
+            root.zoomLevel = mapPacks.activeHasLocalXyzImagery
+                    ? Math.max(mapPacks.activeMinZoom, Math.min(mapPacks.activeMaxZoom, 15))
+                    : 15
+        }
+    }
+
+    function clampLatitude(latitudeDeg) {
+        return Math.max(-85.05112878, Math.min(85.05112878, latitudeDeg))
+    }
+
+    function lonToPixelX(longitudeDeg, zoom) {
+        return (longitudeDeg + 180.0) / 360.0 * tileSize * Math.pow(2, zoom)
+    }
+
+    function latToPixelY(latitudeDeg, zoom) {
+        var latRad = clampLatitude(latitudeDeg) * Math.PI / 180.0
+        return (1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) /
+                2.0 * tileSize * Math.pow(2, zoom)
+    }
+
+    function wrappedTileX(tileX) {
+        return ((tileX % tileSpan) + tileSpan) % tileSpan
+    }
+
+    function clampedTileY(tileY) {
+        return Math.max(0, Math.min(tileSpan - 1, tileY))
+    }
 
     function projectX(longitudeDeg) {
+        if (hasRasterTiles)
+            return width / 2 + lonToPixelX(longitudeDeg, zoomLevel) - centerPixelX
         return width / 2 + (longitudeDeg - centerLongitudeDeg) / degreesPerPixel
     }
 
     function projectY(latitudeDeg) {
+        if (hasRasterTiles)
+            return height / 2 + latToPixelY(latitudeDeg, zoomLevel) - centerPixelY
         return height / 2 - (latitudeDeg - centerLatitudeDeg) / degreesPerPixel
     }
 
     Rectangle {
         anchors.fill: parent
+        visible: !root.hasRasterTiles
         color: "#dfe7de"
 
         Repeater {
@@ -62,6 +113,36 @@ Item {
             rotation: 31
             color: "#ccd7cb"
             opacity: 0.8
+        }
+    }
+
+    Item {
+        anchors.fill: parent
+        visible: root.hasRasterTiles
+        clip: true
+
+        Repeater {
+            model: root.tileColumns * root.tileRows
+            delegate: Image {
+                readonly property int column: index % root.tileColumns
+                readonly property int row: Math.floor(index / root.tileColumns)
+                readonly property int tileX: root.firstTileX + column
+                readonly property int tileY: root.firstTileY + row
+                readonly property int sourceX: root.wrappedTileX(tileX)
+                readonly property int sourceY: root.clampedTileY(tileY)
+
+                x: tileX * root.tileSize - (root.centerPixelX - root.width / 2)
+                y: tileY * root.tileSize - (root.centerPixelY - root.height / 2)
+                width: root.tileSize
+                height: root.tileSize
+                sourceSize.width: root.tileSize
+                sourceSize.height: root.tileSize
+                fillMode: Image.Stretch
+                asynchronous: true
+                cache: true
+                source: "image://animusTiles/" + encodeURIComponent(mapPacks.activePackId) +
+                        "/" + root.zoomLevel + "/" + sourceX + "/" + sourceY
+            }
         }
     }
 
@@ -139,8 +220,18 @@ Item {
         RowLayout {
             Label { text: offlineMaps.modeLabel() }
             Label {
-                text: "CI offline renderer"
+                text: root.hasRasterTiles ? "Local XYZ z" + root.zoomLevel : "CI offline renderer"
                 color: "#4b5563"
+            }
+            Button {
+                text: "-"
+                enabled: root.hasRasterTiles && root.zoomLevel > mapPacks.activeMinZoom
+                onClicked: root.zoomLevel = Math.max(mapPacks.activeMinZoom, root.zoomLevel - 1)
+            }
+            Button {
+                text: "+"
+                enabled: root.hasRasterTiles && root.zoomLevel < mapPacks.activeMaxZoom
+                onClicked: root.zoomLevel = Math.min(mapPacks.activeMaxZoom, root.zoomLevel + 1)
             }
             Button {
                 text: "Snap"
@@ -153,7 +244,8 @@ Item {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 10
-        text: (mapPacks.activeAttribution() || mapSources.activeAttribution()) + " | QtQuick fallback"
+        text: (mapPacks.activeAttribution() || mapSources.activeAttribution()) +
+              (root.hasRasterTiles ? " | Local XYZ" : " | QtQuick fallback")
         color: "#202020"
         padding: 6
         background: Rectangle { color: "#f7f7f3"; opacity: 0.9; radius: 4 }

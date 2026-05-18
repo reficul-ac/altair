@@ -3,6 +3,7 @@
 #include <QAbstractListModel>
 #include <QDir>
 #include <QHash>
+#include <QJsonObject>
 #include <QString>
 #include <QVariant>
 #include <QVector>
@@ -20,10 +21,24 @@ struct MapPack
     QString attribution;
     QString imageryFormat;
     QString terrainFormat;
+    QString tileRootPath;
     int minZoom;
     int maxZoom;
+    bool hasBounds;
+    double westDeg;
+    double southDeg;
+    double eastDeg;
+    double northDeg;
     bool has2dImagery;
     bool has3dTerrain;
+};
+
+struct LocalXyzPack
+{
+    bool valid;
+    QString tileRootPath;
+    int minZoom;
+    int maxZoom;
 };
 
 class MapPackManager final : public QAbstractListModel
@@ -32,6 +47,16 @@ class MapPackManager final : public QAbstractListModel
     Q_PROPERTY(QString rootPath READ rootPath WRITE setRootPath NOTIFY packsChanged)
     Q_PROPERTY(
         QString activePackId READ activePackId WRITE setActivePackId NOTIFY activePackChanged)
+    Q_PROPERTY(QString activePackPath READ activePackPath NOTIFY activePackChanged)
+    Q_PROPERTY(QString activeTileRootPath READ activeTileRootPath NOTIFY activePackChanged)
+    Q_PROPERTY(int activeMinZoom READ activeMinZoom NOTIFY activePackChanged)
+    Q_PROPERTY(int activeMaxZoom READ activeMaxZoom NOTIFY activePackChanged)
+    Q_PROPERTY(bool activeHasLocalXyzImagery READ activeHasLocalXyzImagery NOTIFY activePackChanged)
+    Q_PROPERTY(bool activeHasBounds READ activeHasBounds NOTIFY activePackChanged)
+    Q_PROPERTY(double activeWestDeg READ activeWestDeg NOTIFY activePackChanged)
+    Q_PROPERTY(double activeSouthDeg READ activeSouthDeg NOTIFY activePackChanged)
+    Q_PROPERTY(double activeEastDeg READ activeEastDeg NOTIFY activePackChanged)
+    Q_PROPERTY(double activeNorthDeg READ activeNorthDeg NOTIFY activePackChanged)
 
   public:
     enum Roles
@@ -44,8 +69,14 @@ class MapPackManager final : public QAbstractListModel
         AttributionRole,
         ImageryFormatRole,
         TerrainFormatRole,
+        TileRootPathRole,
         MinZoomRole,
         MaxZoomRole,
+        HasBoundsRole,
+        WestDegRole,
+        SouthDegRole,
+        EastDegRole,
+        NorthDegRole,
         Has2dImageryRole,
         Has3dTerrainRole
     };
@@ -62,10 +93,22 @@ class MapPackManager final : public QAbstractListModel
 
     QString activePackId() const;
     void setActivePackId(const QString &activePackId);
+    QString activePackPath() const;
+    QString activeTileRootPath() const;
+    int activeMinZoom() const;
+    int activeMaxZoom() const;
+    bool activeHasLocalXyzImagery() const;
+    bool activeHasBounds() const;
+    double activeWestDeg() const;
+    double activeSouthDeg() const;
+    double activeEastDeg() const;
+    double activeNorthDeg() const;
 
     Q_INVOKABLE bool reload();
     Q_INVOKABLE QString validationError() const;
     Q_INVOKABLE QString activeAttribution() const;
+    Q_INVOKABLE QString localXyzTilePath(const QString &packId, int zoom, int x, int y) const;
+    LocalXyzPack localXyzPackInfo(const QString &packId) const;
 
   signals:
     void packsChanged();
@@ -74,6 +117,7 @@ class MapPackManager final : public QAbstractListModel
   private:
     bool loadPack(const QDir &packDir, MapPack *pack, QString *error) const;
     const MapPack *findPack(const QString &packId) const;
+    static bool parseBounds(const QJsonObject &object, MapPack *pack, QString *error);
 
     QString m_rootPath;
     QString m_activePackId;

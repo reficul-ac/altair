@@ -80,8 +80,8 @@ python3 tools/python/verify_agent_work.py --all
 
 The wrapper writes logs, generated SITL CSVs, plots, Monte Carlo output, and a
 JSON manifest under `artifacts/agent-verification/<timestamp>/`. It wraps the
-existing tools only; it does not replace direct CTest, npm, SITL, or capture
-workflows.
+existing tools only; it does not replace direct CTest, Animus Qt, SITL, or
+capture workflows.
 
 Run a Release warnings-as-errors configure/build/test when touching shared C,
 build settings, or code likely to surface compiler diagnostics:
@@ -98,33 +98,31 @@ changes.
 
 ## Animus UI Verification
 
-Agents modifying `tools/animus/src/**`, `tools/animus/src/styles/**`, or Animus
-shell/layout behavior must run the Animus UI verification workflow before
-finalizing:
+Agents modifying `tools/animus-qt/src/**`, `tools/animus-qt/qml/**`,
+`tools/animus-qt/web/**`, or Animus shell/layout behavior must run the Animus Qt
+verification workflow before finalizing:
 
 ```bash
-npm test --prefix tools/animus
-npm run build --prefix tools/animus
-python3 tools/python/capture_animus_sitl.py
+cmake -S . -B build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-animus-qt --target animus_qt animus_qt_unit_tests --parallel
+ctest --test-dir build-animus-qt --output-on-failure -R animus_qt
+python3 tools/python/capture_animus_qt_sitl.py
 ```
 
 Inspect the generated screenshots under
-`artifacts/animus-screenshots/<timestamp>/` before reporting the work complete.
-Treat this capture workflow like a pre-merge check for Animus UI changes even
-when it is not represented as a GitHub Actions status check.
+`artifacts/animus-qt-screenshots/<timestamp>/` before reporting the work
+complete. Treat this capture workflow like a pre-merge check for Animus UI
+changes even when it is not represented as a GitHub Actions status check.
 
 For deeper interaction changes, run:
 
 ```bash
-python3 tools/python/interact_animus_sitl.py
+./build-animus-qt/tools/animus-qt/animus_qt
 ```
 
-Use `capture_animus_sitl.py` for broad workspace screenshot verification. Use
-`interact_animus_sitl.py` for direct UI interaction, dashboard widget workflows,
-workspace switches, guarded command/control gating, replay/session controls, and
-arbitrary checkpoint screenshots. The interaction workflow writes
-`run-manifest.json`, service logs, Playwright artifacts, and screenshots under
-`artifacts/animus-interactions/<timestamp>/`.
+Use `capture_animus_qt_sitl.py` for broad workspace screenshot verification.
+For direct interaction, launch the built Qt shell from `build-animus-qt` and keep
+any manual notes with the capture artifact bundle.
 
 Final responses for Animus UI changes must mention the screenshot artifact
 directory and any visual issues found. If the capture workflow cannot run, say

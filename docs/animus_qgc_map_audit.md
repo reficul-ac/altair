@@ -8,6 +8,21 @@ QGroundControl is published under Apache 2.0 or GPLv3-or-later for source code, 
 
 The current implementation adds original Altair scaffolding only. No QGC source or artwork has been vendored.
 
+## Pinned QGC Revision
+
+Audit baseline:
+
+- Repository: `https://github.com/mavlink/qgroundcontrol.git`
+- Branch: `master`
+- Commit: `aadca1bed71253a56807ba61021677693215829c`
+- Checked: 2026-05-17 with `git ls-remote`
+
+Any future QGC-derived source import must record the exact source file path,
+copyright holder, SPDX or license header, commit SHA, and Animus destination
+before the code lands. Keep the original license header adjacent to imported or
+substantially adapted code. Do not copy QGC artwork into Altair unless the
+resulting CC BY-SA obligations are accepted and documented.
+
 ## Files And Classes To Inspect
 
 Inspect these QGC areas before each porting slice:
@@ -19,6 +34,19 @@ Inspect these QGC areas before each porting slice:
 - QGC map engine sources commonly named around `QGCMapEngine`, `QGCMapUrlEngine`, tile download tasks, cache workers, and offline map providers.
 - QGC settings and provider factories for street, satellite, hybrid, topo, and custom URL sources.
 - Mission, fence, rally, and vehicle model adapters that expose typed QML models without requiring broad app globals.
+
+## Inspected Source Areas
+
+This v1 local XYZ slice did not import QGC implementation code. It records the
+areas to inspect before the next provider/cache slice:
+
+| QGC source area | Purpose to inspect | Animus destination |
+| --- | --- | --- |
+| `src/FlightMap/FlightMap.qml` | Map item layering, follow behavior, and vehicle/home/trail composition. | `tools/animus-qt/qml/Map2DView.qml` |
+| `src/FlightMap/MapScale.qml` | Zoom/scale presentation and QML update cadence. | Future map controls in `tools/animus-qt/qml/Map2DView.qml` |
+| `src/FlightMap/MapItems/` | Vehicle, home, mission, fence, rally, and breadcrumb visual roles. | Future typed overlay QML and Qt models under `tools/animus-qt/src` |
+| QGC map engine/cache sources | Provider URL policy, cache workers, tile IO boundaries, and offline metadata. | `tools/animus-qt/src/maps/*` |
+| QGC settings/provider factories | Operator-facing provider selection and attribution metadata. | `MapSourceRegistry`, `OfflineMapManager`, and `MapPackManager` |
 
 ## Porting Rules
 
@@ -41,6 +69,19 @@ The first Qt scaffold maps the planned architecture this way:
 - `tools/animus-qt/qml/Map2DView.qml`: strict-offline QtQuick map fallback with selected vehicle, home, trail, snap, and attribution.
 - `tools/animus-qt/qml/Terrain3DView.qml` and `tools/animus-qt/web/cesium/`: deterministic terrain preview and future Qt WebEngine/Cesium bridge assets.
 
+## Source-To-Animus Mapping
+
+No QGC-derived files have been imported. Current map work is original Altair
+code:
+
+| Source | Animus file | License handling |
+| --- | --- | --- |
+| Original Altair implementation | `tools/animus-qt/src/maps/MapPackManager.*` | Altair repository license; validates local pack metadata and bounds. |
+| Original Altair implementation | `tools/animus-qt/src/maps/TileImageProvider.*` | Altair repository license; serves validated local PNG XYZ tiles through `image://animusTiles`. |
+| Original Altair implementation | `tools/animus-qt/qml/Map2DView.qml` | Altair repository license; composes local XYZ raster tiles, markers, breadcrumbs, attribution, and fallback UI. |
+
 ## Remaining Audit Work
 
-The repository does not currently include a QGC checkout. Before importing QGC-derived implementation code, check out the exact upstream revision, record commit SHA and license headers here, and add a table mapping each imported or adapted file to its Animus destination.
+Before importing QGC-derived implementation code, check out the pinned upstream
+revision or record a new one, inspect license headers in the exact files used,
+and extend the source-to-Animus mapping table above.

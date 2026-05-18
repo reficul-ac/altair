@@ -8,7 +8,8 @@ set(CMAKE_AUTOUIC ON)
 
 find_package(
     Qt6 6.4 REQUIRED
-    COMPONENTS Core
+    COMPONENTS Concurrent
+               Core
                Gui
                Qml
                Quick
@@ -30,6 +31,7 @@ qt_add_executable(
     src/maps/MapSourceRegistry.cpp
     src/maps/OfflineMapManager.cpp
     src/maps/MapPackManager.cpp
+    src/maps/TileImageProvider.cpp
     src/maps/CesiumBridge.cpp
 )
 
@@ -38,7 +40,8 @@ target_compile_features(animus_qt PRIVATE cxx_std_17)
 
 target_link_libraries(
     animus_qt
-    PRIVATE Qt6::Core
+    PRIVATE Qt6::Concurrent
+            Qt6::Core
             Qt6::Gui
             Qt6::Qml
             Qt6::Quick
@@ -76,6 +79,7 @@ add_executable(
     src/maps/MapSourceRegistry.cpp
     src/maps/OfflineMapManager.cpp
     src/maps/MapPackManager.cpp
+    src/maps/TileImageProvider.cpp
     src/telemetry/BreadcrumbPathModel.cpp
     src/telemetry/MavlinkDecoder.cpp
     src/telemetry/TelemetryService.cpp
@@ -84,7 +88,14 @@ add_executable(
 target_include_directories(animus_qt_unit_tests PRIVATE src)
 target_compile_features(animus_qt_unit_tests PRIVATE cxx_std_17)
 target_link_libraries(
-    animus_qt_unit_tests PRIVATE Qt6::Core Qt6::Network Qt6::Positioning Qt6::Test
+    animus_qt_unit_tests
+    PRIVATE Qt6::Concurrent
+            Qt6::Core
+            Qt6::Gui
+            Qt6::Network
+            Qt6::Positioning
+            Qt6::Quick
+            Qt6::Test
 )
 if(COMMAND altair_enable_warnings)
     altair_enable_warnings(animus_qt_unit_tests)

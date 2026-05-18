@@ -38,7 +38,7 @@ Reusable Bayek framework follow-up is tracked separately in
 
 ## Animus
 
-- [ ] Update stale Animus docs and agent guidance that still reference the
+- [x] Update stale Animus docs and agent guidance that still reference the
   retired TypeScript app, `tools/animus`, npm workflows, browser launch, or
   `capture_animus_sitl.py`; point them to `tools/animus-qt`,
   `build-animus-qt`, and `capture_animus_qt_sitl.py`.
@@ -48,12 +48,12 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Record the exact upstream QGroundControl revision, license headers, and
   source-to-Animus mapping in `docs/animus_qgc_map_audit.md` before importing
   or adapting QGC-derived map/provider code.
-- [ ] Replace the QtQuick placeholder 2D map with a real provider-backed map
-  path: tile source selection, zoom scale, pan/follow behavior, attribution,
-  cache status, and offline failure states.
-- [ ] Implement a local tile/cache service for validated XYZ map packs, then
-  MBTiles before PMTiles support, with worker-thread disk IO, cache metadata,
-  bounds/zoom validation, and operator-visible cache health.
+- [ ] Finish the provider-backed 2D map path after the local XYZ v1: operator
+  tile source selection, pan controls, scale/status UI, and richer offline
+  failure states.
+- [ ] Extend the local tile/cache service beyond validated XYZ PNG packs:
+  MBTiles before PMTiles support, cache metadata, and operator-visible cache
+  health.
 - [ ] Replace the 3D terrain canvas/WebEngine placeholder with bundled Cesium
   assets, Qt WebChannel vehicle updates, quantized-mesh terrain loading, and
   deterministic fallback/error UI.

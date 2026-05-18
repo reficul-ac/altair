@@ -1,6 +1,7 @@
 #include "maps/MapPackManager.h"
 #include "maps/MapSourceRegistry.h"
 #include "maps/OfflineMapManager.h"
+#include "maps/TileImageProvider.h"
 #include "models/VehicleModel.h"
 #include "telemetry/BreadcrumbPathModel.h"
 #include "telemetry/MavlinkDecoder.h"
@@ -8,6 +9,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QImage>
 #include <QTemporaryDir>
 #include <QtTest/QtTest>
 #include <cstring>
@@ -78,6 +80,26 @@ QByteArray mavlinkV1Frame(unsigned char msgId, unsigned char crcExtra, const QBy
     return frame;
 }
 
+bool writeFile(const QString &path, const QByteArray &contents)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly))
+        return false;
+    return file.write(contents) == contents.size();
+}
+
+QByteArray validPackMetadata(QByteArray extra = QByteArray())
+{
+    QByteArray metadata =
+        "{\"schemaVersion\":1,\"name\":\"Stanford\",\"description\":\"SITL range\","
+        "\"minZoom\":12,\"maxZoom\":16,\"license\":\"test-license\","
+        "\"attribution\":\"test data\",\"imagery\":{\"format\":\"xyz\"}";
+    if (!extra.isEmpty())
+        metadata += "," + extra;
+    metadata += "}";
+    return metadata;
+}
+
 } // namespace
 
 class AnimusQtMapModelTests final : public QObject
@@ -125,47 +147,98 @@ class AnimusQtMapModelTests final : public QObject
         QTemporaryDir root;
         QVERIFY(root.isValid());
         QDir rootDir(root.path());
+        QVERIFY(rootDir.mkpath(QStringLiteral("stanford/2d/xyz")));
         QVERIFY(rootDir.mkpath(QStringLiteral("stanford/3d/terrain")));
 
-        QFile metadata(rootDir.filePath(QStringLiteral("stanford/metadata.json")));
-        QVERIFY(metadata.open(QIODevice::WriteOnly));
-        metadata.write("{\"schemaVersion\":1,\"name\":\"Stanford\",\"description\":\"SITL range\","
-                       "\"minZoom\":12,\"maxZoom\":16,\"license\":\"test-license\","
-                       "\"attribution\":\"test data\",\"imagery\":{\"format\":\"xyz\"},"
-                       "\"terrain\":{\"format\":\"quantized-mesh\"}}");
-        metadata.close();
+        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("stanford/metadata.json")),
+                          validPackMetadata("\"terrain\":{\"format\":\"quantized-mesh\"},"
+                                            "\"bounds\":{\"west\":-123,\"south\":36,"
+                                            "\"east\":-121,\"north\":38}")));
 
-        QFile terrain(rootDir.filePath(QStringLiteral("stanford/3d/terrain/layer.json")));
-        QVERIFY(terrain.open(QIODevice::WriteOnly));
-        terrain.write("{}");
-        terrain.close();
+        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("stanford/3d/terrain/layer.json")),
+                          QByteArray("{}")));
 
         animus::MapPackManager manager;
         manager.setRootPath(root.path());
         QVERIFY(manager.reload());
         QCOMPARE(manager.rowCount(), 1);
+        QCOMPARE(manager.activePackId(), QStringLiteral("stanford"));
         manager.setActivePackId(QStringLiteral("stanford"));
         QCOMPARE(manager.activeAttribution(), QStringLiteral("test data"));
+        QVERIFY(manager.activeHasLocalXyzImagery());
+        QCOMPARE(manager.activeMinZoom(), 12);
+        QCOMPARE(manager.activeMaxZoom(), 16);
+        QVERIFY(manager.activeHasBounds());
+        QCOMPARE(manager.activeWestDeg(), -123.0);
     }
 
-    void mapPackRejectsMissingLicenseAndUnsupportedFormats()
+    void mapPackRejectsInvalidXyzPacks()
     {
         QTemporaryDir root;
         QVERIFY(root.isValid());
         QDir rootDir(root.path());
-        QVERIFY(rootDir.mkpath(QStringLiteral("bad")));
+        QVERIFY(rootDir.mkpath(QStringLiteral("aaa-missing-license/2d/xyz")));
+        QVERIFY(rootDir.mkpath(QStringLiteral("unsupported/2d/xyz")));
+        QVERIFY(rootDir.mkpath(QStringLiteral("missing-root")));
+        QVERIFY(rootDir.mkpath(QStringLiteral("bad-zoom/2d/xyz")));
+        QVERIFY(rootDir.mkpath(QStringLiteral("bad-bounds/2d/xyz")));
 
-        QFile metadata(rootDir.filePath(QStringLiteral("bad/metadata.json")));
-        QVERIFY(metadata.open(QIODevice::WriteOnly));
-        metadata.write("{\"schemaVersion\":1,\"name\":\"Bad\",\"attribution\":\"test\","
-                       "\"imagery\":{\"format\":\"pmtiles\"}}");
-        metadata.close();
+        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("aaa-missing-license/metadata.json")),
+                          "{\"schemaVersion\":1,\"name\":\"Bad\",\"attribution\":\"test\","
+                          "\"imagery\":{\"format\":\"xyz\"},\"minZoom\":1,\"maxZoom\":2}"));
+        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("unsupported/metadata.json")),
+                          "{\"schemaVersion\":1,\"name\":\"Bad\",\"license\":\"test\","
+                          "\"attribution\":\"test\",\"imagery\":{\"format\":\"pmtiles\"},"
+                          "\"minZoom\":1,\"maxZoom\":2}"));
+        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("missing-root/metadata.json")),
+                          validPackMetadata()));
+        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("bad-zoom/metadata.json")),
+                          "{\"schemaVersion\":1,\"name\":\"Bad\",\"license\":\"test\","
+                          "\"attribution\":\"test\",\"imagery\":{\"format\":\"xyz\"},"
+                          "\"minZoom\":7,\"maxZoom\":2}"));
+        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("bad-bounds/metadata.json")),
+                          validPackMetadata("\"bounds\":{\"west\":3,\"south\":1,"
+                                            "\"east\":2,\"north\":4}")));
 
         animus::MapPackManager manager;
         manager.setRootPath(root.path());
         QVERIFY(!manager.reload());
         QCOMPARE(manager.rowCount(), 0);
         QVERIFY(manager.validationError().contains(QStringLiteral("license")));
+    }
+
+    void tileProviderLoadsPngAndReturnsEmptyForInvalidRequests()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        QDir rootDir(root.path());
+        QVERIFY(rootDir.mkpath(QStringLiteral("stanford/2d/xyz/12/654")));
+        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("stanford/metadata.json")),
+                          validPackMetadata()));
+
+        QImage tile(4, 4, QImage::Format_RGBA8888);
+        tile.fill(QColor(10, 20, 30, 255));
+        QVERIFY(
+            tile.save(rootDir.filePath(QStringLiteral("stanford/2d/xyz/12/654/1582.png")), "PNG"));
+
+        animus::MapPackManager manager;
+        manager.setRootPath(root.path());
+        QVERIFY(manager.reload());
+
+        animus::TileImageProvider provider(&manager);
+        const QImage loaded =
+            provider.loadTileImage(QStringLiteral("stanford/12/654/1582"), QSize(4, 4));
+        QCOMPARE(loaded.size(), QSize(4, 4));
+        QCOMPARE(loaded.pixelColor(0, 0), QColor(10, 20, 30, 255));
+
+        const QImage missing =
+            provider.loadTileImage(QStringLiteral("stanford/11/654/1582"), QSize(4, 4));
+        QCOMPARE(missing.size(), QSize(4, 4));
+        QCOMPARE(missing.pixelColor(0, 0), QColor(Qt::transparent));
+
+        const QImage traversal =
+            provider.loadTileImage(QStringLiteral("../stanford/12/654/1582"), QSize(4, 4));
+        QCOMPARE(traversal.pixelColor(0, 0), QColor(Qt::transparent));
     }
 
     void mavlinkDecoderCoversCoreTelemetryMessages()
@@ -256,5 +329,5 @@ class AnimusQtMapModelTests final : public QObject
     }
 };
 
-QTEST_MAIN(AnimusQtMapModelTests)
+QTEST_GUILESS_MAIN(AnimusQtMapModelTests)
 #include "test_map_models.moc"
