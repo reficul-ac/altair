@@ -20,6 +20,17 @@ tools/python/run_sitl_session.py
 
 `run_sitl_session.py` starts `mavlink_live_bridge.py`, optional QGroundControl forwarding, and realtime SITL. Animus clients consume decoded state from the bridge WebSocket. `--writable-animus` remains a SITL-only bridge advertisement for guarded write experiments.
 
+To build, open Qt Animus, start UDP telemetry automatically, and run realtime
+SITL into it:
+
+```sh
+tools/python/run_animus_sitl.py
+```
+
+The launcher builds `sitl_runner` and `animus_qt`, opens Animus with
+`--start-udp-telemetry`, then runs `cruise6dof` SITL with MAVLink pointed at the
+same UDP endpoint. Use `--skip-build` when both binaries are already current.
+
 For a Python bridge session:
 
 ```sh
@@ -44,9 +55,20 @@ Flight View parity is future Qt Animus work. The current shell focuses on teleme
 
 ## Map View
 
-- Drag the map to pan.
-- Mouse wheel zooms the map.
-- `Snap` recenters on the selected vehicle and resumes selected-vehicle follow after panning away.
+- Drag the map to pan; panning leaves selected-vehicle follow and keeps a manual
+  center until recentered.
+- Mouse wheel and the `+`/`-` controls zoom the map. Local XYZ packs bound zoom
+  to the active pack's `minZoom`/`maxZoom`; the CI fallback renderer keeps a
+  bounded synthetic zoom range.
+- `Snap` or the center pan-control recenters on the selected vehicle and resumes
+  selected-vehicle follow after panning away.
+- The 2D map overlay exposes map source selection, current offline policy, zoom,
+  source/pack status, and a scale bar. Strict offline and cached/offline modes
+  keep network-required sources disabled; Online mode can select those sources,
+  but the current CI-safe renderer reports the provider renderer as pending
+  instead of downloading network tiles.
+- Directional pan controls on the map provide mouse- and keyboard-friendly small
+  moves without dragging.
 - `Terrain 3D` opens the Cesium/WebEngine terrain preview path when available.
 - Vehicle markers are triangular and point along velocity, with heading as a low-speed fallback. Home/origin markers use an X shape so they are visually distinct from vehicles.
 
@@ -89,6 +111,7 @@ Single vehicle:
 
 ```sh
 tools/python/run_sitl_session.py --duration 30
+tools/python/run_animus_sitl.py --duration 30
 ```
 
 Three vehicles with predictable IDs and source ports:

@@ -387,6 +387,11 @@ if(Python3_Interpreter_FOUND)
                      "${CMAKE_SOURCE_DIR}"
     )
 
+    add_test(NAME integration_run_animus_sitl_launcher
+             COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_run_animus_sitl.py"
+                     "${CMAKE_SOURCE_DIR}"
+    )
+
     add_test(NAME integration_plot_sitl_velocities
              COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_plot_sitl.py"
                      "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/plot_sitl"

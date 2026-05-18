@@ -31,6 +31,7 @@ class OfflineMapManager final : public QObject
     bool networkAllowed() const;
     Q_INVOKABLE bool canUseSource(const QString &sourceId) const;
     Q_INVOKABLE QString modeLabel() const;
+    Q_INVOKABLE QString sourceBlockReason(const QString &sourceId) const;
 
   signals:
     void modeChanged();

@@ -26,8 +26,11 @@ struct CaptureOptions
 {
     QString captureDir;
     QString captureWorkspace;
+    QString udpHost = QStringLiteral("127.0.0.1");
     bool mockTelemetry = false;
+    bool startUdpTelemetry = false;
     int captureDelayMs = 1000;
+    int udpPort = 14551;
     bool quitAfterCapture = false;
     bool requested = false;
 };
@@ -54,6 +57,26 @@ bool parseArgs(const QStringList &args, CaptureOptions *options)
         else if (arg == QStringLiteral("--mock-telemetry"))
         {
             options->mockTelemetry = true;
+        }
+        else if (arg == QStringLiteral("--start-udp-telemetry"))
+        {
+            options->startUdpTelemetry = true;
+        }
+        else if (arg == QStringLiteral("--udp-host"))
+        {
+            if (i + 1 >= args.size())
+                return false;
+            options->udpHost = args.at(++i);
+        }
+        else if (arg == QStringLiteral("--udp-port"))
+        {
+            if (i + 1 >= args.size())
+                return false;
+            bool ok = false;
+            const int port = args.at(++i).toInt(&ok);
+            if (!ok || port <= 0 || port > 65535)
+                return false;
+            options->udpPort = port;
         }
         else if (arg == QStringLiteral("--capture-delay-ms"))
         {
@@ -124,6 +147,19 @@ int main(int argc, char *argv[])
     engine.load(QUrl(QStringLiteral("qrc:/Animus/qml/Main.qml")));
     if (engine.rootObjects().isEmpty())
         return 1;
+
+    if (capture.startUdpTelemetry)
+    {
+        telemetry.setUdpHost(capture.udpHost);
+        telemetry.setUdpPort(static_cast<quint16>(capture.udpPort));
+        QTimer::singleShot(0,
+                           &telemetry,
+                           [&telemetry]()
+                           {
+                               if (!telemetry.startUdpTelemetry())
+                                   qWarning("failed to start Animus UDP telemetry");
+                           });
+    }
 
     if (capture.requested)
     {

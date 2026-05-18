@@ -20,6 +20,8 @@ void OfflineMapManager::setMode(Mode mode)
     if (m_mode == mode)
         return;
     m_mode = mode;
+    if (m_registry && !canUseSource(m_registry->activeSourceId()))
+        m_registry->setActiveSourceId(QStringLiteral("offline-pack"));
     emit modeChanged();
 }
 
@@ -31,6 +33,8 @@ bool OfflineMapManager::networkAllowed() const
 bool OfflineMapManager::canUseSource(const QString &sourceId) const
 {
     if (!m_registry)
+        return false;
+    if (!m_registry->sourceExists(sourceId))
         return false;
     if (m_mode == Online)
         return true;
@@ -49,6 +53,17 @@ QString OfflineMapManager::modeLabel() const
         return QStringLiteral("Strict offline");
     }
     return QStringLiteral("Unknown");
+}
+
+QString OfflineMapManager::sourceBlockReason(const QString &sourceId) const
+{
+    if (!m_registry)
+        return QStringLiteral("Map source registry unavailable");
+    if (!m_registry->sourceExists(sourceId))
+        return QStringLiteral("Unknown map source");
+    if (canUseSource(sourceId))
+        return QString();
+    return QStringLiteral("%1 blocks network map sources").arg(modeLabel());
 }
 
 } // namespace animus

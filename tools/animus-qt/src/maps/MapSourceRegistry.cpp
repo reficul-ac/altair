@@ -69,10 +69,56 @@ void MapSourceRegistry::setActiveSourceId(const QString &activeSourceId)
     emit activeSourceChanged();
 }
 
+QString MapSourceRegistry::activeLabel() const
+{
+    const MapSource *source = findSource(m_activeSourceId);
+    return source ? source->label : QString();
+}
+
+QString MapSourceRegistry::activeProvider() const
+{
+    const MapSource *source = findSource(m_activeSourceId);
+    return source ? source->provider : QString();
+}
+
 QString MapSourceRegistry::activeAttribution() const
 {
     const MapSource *source = findSource(m_activeSourceId);
     return source ? source->attribution : QString();
+}
+
+QString MapSourceRegistry::sourceIdAt(int row) const
+{
+    if (row < 0 || row >= m_sources.size())
+        return QString();
+    return m_sources.at(row).id;
+}
+
+int MapSourceRegistry::sourceIndex(const QString &sourceId) const
+{
+    for (int i = 0; i < m_sources.size(); ++i)
+    {
+        if (m_sources.at(i).id == sourceId)
+            return i;
+    }
+    return -1;
+}
+
+QString MapSourceRegistry::sourceLabel(const QString &sourceId) const
+{
+    const MapSource *source = findSource(sourceId);
+    return source ? source->label : QString();
+}
+
+QString MapSourceRegistry::sourceProvider(const QString &sourceId) const
+{
+    const MapSource *source = findSource(sourceId);
+    return source ? source->provider : QString();
+}
+
+bool MapSourceRegistry::sourceExists(const QString &sourceId) const
+{
+    return findSource(sourceId) != nullptr;
 }
 
 bool MapSourceRegistry::sourceRequiresNetwork(const QString &sourceId) const

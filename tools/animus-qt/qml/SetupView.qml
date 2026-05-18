@@ -10,21 +10,46 @@ ScrollView {
         GroupBox {
             title: "Map Policy"
             Layout.fillWidth: true
-            RowLayout {
-                RadioButton {
-                    text: "Strict offline"
-                    checked: offlineMaps.mode === 2
-                    onClicked: offlineMaps.mode = 2
+            ColumnLayout {
+                RowLayout {
+                    RadioButton {
+                        text: "Strict offline"
+                        checked: offlineMaps.mode === 2
+                        onClicked: offlineMaps.mode = 2
+                    }
+                    RadioButton {
+                        text: "Cached/offline"
+                        checked: offlineMaps.mode === 1
+                        onClicked: offlineMaps.mode = 1
+                    }
+                    RadioButton {
+                        text: "Online"
+                        checked: offlineMaps.mode === 0
+                        onClicked: offlineMaps.mode = 0
+                    }
                 }
-                RadioButton {
-                    text: "Cached/offline"
-                    checked: offlineMaps.mode === 1
-                    onClicked: offlineMaps.mode = 1
+                Label {
+                    text: offlineMaps.sourceBlockReason(mapSources.activeSourceId) ||
+                          "Active source allowed by current policy"
+                    color: offlineMaps.canUseSource(mapSources.activeSourceId) ? "#4b5563" : "#7a4b00"
                 }
-                RadioButton {
-                    text: "Online"
-                    checked: offlineMaps.mode === 0
-                    onClicked: offlineMaps.mode = 0
+            }
+        }
+
+        GroupBox {
+            title: "Map Sources"
+            Layout.fillWidth: true
+            ColumnLayout {
+                Repeater {
+                    model: mapSources
+                    RadioDelegate {
+                        Layout.fillWidth: true
+                        text: label + " [" + provider + "]" +
+                              (networkRequired ? " - network" : " - local")
+                        checked: mapSources.activeSourceId === sourceId
+                        enabled: offlineMaps.canUseSource(sourceId)
+                        onClicked: mapSources.activeSourceId = sourceId
+                    }
                 }
             }
         }

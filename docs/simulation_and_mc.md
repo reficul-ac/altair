@@ -104,6 +104,16 @@ tools/python/run_sitl_session.py
 
 The launcher starts `mavlink_live_bridge.py`, forwards raw packets to QGroundControl at `127.0.0.1:14550`, publishes decoded state on `ws://127.0.0.1:8765` for Animus clients, and runs realtime `cruise6dof` SITL pointed at bridge UDP port `14551`. Use `--no-qgc` to disable QGroundControl forwarding.
 
+For the direct Qt Animus workflow, use:
+
+```sh
+tools/python/run_animus_sitl.py
+```
+
+That launcher builds `sitl_runner` and `animus_qt`, opens Animus already
+listening on UDP `127.0.0.1:14551`, and runs realtime `cruise6dof` SITL pointed
+at that endpoint. Pass `--skip-build` to reuse existing binaries.
+
 To capture required Qt Animus UI verification screenshots, run:
 
 ```sh
@@ -158,6 +168,7 @@ For a live bridge session with QGroundControl forwarding:
 tools/python/run_sitl_session.py
 tools/python/run_sitl_session.py --profile turn --duration 30
 tools/python/run_sitl_session.py --no-qgc
+tools/python/run_animus_sitl.py --profile turn --duration 30
 ```
 
 Case files are an Altair one-time setup layer for initial conditions, run configuration,

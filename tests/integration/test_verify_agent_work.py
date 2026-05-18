@@ -40,6 +40,7 @@ def main():
         (["tests/integration/cruise6dof_case_initial.ini"], ["cmake", "sitl_plots"]),
         (["vehicle/mc_runner.c"], ["format", "cmake", "release", "mc"]),
         (["tools/animus-qt/qml/Main.qml"], ["animus_qt"]),
+        (["tools/python/run_animus_sitl.py"], ["format", "cmake", "sitl_plots", "animus_qt"]),
         (["docs/testing.md"], ["format"]),
         (
             ["docs/testing.md", "tools/animus-qt/src/main.cpp", "mixer/altair_mixer.c"],

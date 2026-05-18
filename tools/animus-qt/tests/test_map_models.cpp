@@ -116,6 +116,40 @@ class AnimusQtMapModelTests final : public QObject
 
         QVERIFY(manager.canUseSource(QStringLiteral("offline-pack")));
         QVERIFY(!manager.canUseSource(QStringLiteral("osm")));
+        QVERIFY(!manager.canUseSource(QStringLiteral("missing-source")));
+        QCOMPARE(manager.sourceBlockReason(QStringLiteral("osm")),
+                 QStringLiteral("Strict offline blocks network map sources"));
+        QCOMPARE(manager.sourceBlockReason(QStringLiteral("missing-source")),
+                 QStringLiteral("Unknown map source"));
+    }
+
+    void mapSourceRegistryExposesActiveDisplayMetadata()
+    {
+        animus::MapSourceRegistry registry;
+
+        QCOMPARE(registry.activeSourceId(), QStringLiteral("offline-pack"));
+        QCOMPARE(registry.activeLabel(), QStringLiteral("Offline Map Pack"));
+        QCOMPARE(registry.activeProvider(), QStringLiteral("animus-pack"));
+        QCOMPARE(registry.sourceIndex(QStringLiteral("osm")), 1);
+        QCOMPARE(registry.sourceIdAt(2), QStringLiteral("satellite"));
+        QCOMPARE(registry.sourceLabel(QStringLiteral("satellite")),
+                 QStringLiteral("Licensed Satellite"));
+        QVERIFY(registry.sourceExists(QStringLiteral("offline-pack")));
+        QVERIFY(!registry.sourceExists(QStringLiteral("missing-source")));
+    }
+
+    void offlinePolicyReturnsBlockedActiveSourceToLocalPack()
+    {
+        animus::MapSourceRegistry registry;
+        animus::OfflineMapManager manager(&registry);
+
+        manager.setMode(animus::OfflineMapManager::Online);
+        registry.setActiveSourceId(QStringLiteral("osm"));
+        QCOMPARE(registry.activeSourceId(), QStringLiteral("osm"));
+
+        manager.setMode(animus::OfflineMapManager::CachedOffline);
+        QCOMPARE(registry.activeSourceId(), QStringLiteral("offline-pack"));
+        QVERIFY(manager.canUseSource(registry.activeSourceId()));
     }
 
     void breadcrumbModelBoundsGrowth()

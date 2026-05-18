@@ -69,6 +69,7 @@ def is_animus_qt_path(path):
     return (
         path.startswith("tools/animus-qt/")
         or path == "tools/python/capture_animus_qt_sitl.py"
+        or path == "tools/python/run_animus_sitl.py"
         or path == "docs/animus_qt_architecture.md"
         or path == "docs/animus_qgc_map_audit.md"
         or path == "docs/animus_operator_controls.md"

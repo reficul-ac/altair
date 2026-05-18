@@ -48,9 +48,9 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Record the exact upstream QGroundControl revision, license headers, and
   source-to-Animus mapping in `docs/animus_qgc_map_audit.md` before importing
   or adapting QGC-derived map/provider code.
-- [ ] Finish the provider-backed 2D map path after the local XYZ v1: operator
+- [x] Finish the local-pack 2D map controls after the local XYZ v1: operator
   tile source selection, pan controls, scale/status UI, and richer offline
-  failure states.
+  failure states. Provider/cache workers remain tracked separately above.
 - [ ] Extend the local tile/cache service beyond validated XYZ PNG packs:
   MBTiles before PMTiles support, cache metadata, and operator-visible cache
   health.
@@ -81,6 +81,8 @@ Reusable Bayek framework follow-up is tracked separately in
   tests and capture coverage.
 - [x] Extend Animus Qt screenshot analysis beyond nonblank PNG checks to catch
   obvious overlap, clipping, and workspace selection regressions.
+- [ ] Make `capture_animus_qt_sitl.py` fall back to managed Xvfb/offscreen when
+  an existing `DISPLAY` cannot initialize Qt.
 - [x] Retire the obsolete TypeScript Animus app, generated dependency tree,
   interaction harnesses, and old CI lane now that Qt Animus is canonical.
 

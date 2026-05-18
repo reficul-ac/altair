@@ -44,7 +44,14 @@ class MapSourceRegistry final : public QAbstractListModel
     QString activeSourceId() const;
     void setActiveSourceId(const QString &activeSourceId);
 
+    Q_INVOKABLE QString activeLabel() const;
+    Q_INVOKABLE QString activeProvider() const;
     Q_INVOKABLE QString activeAttribution() const;
+    Q_INVOKABLE QString sourceIdAt(int row) const;
+    Q_INVOKABLE int sourceIndex(const QString &sourceId) const;
+    Q_INVOKABLE QString sourceLabel(const QString &sourceId) const;
+    Q_INVOKABLE QString sourceProvider(const QString &sourceId) const;
+    Q_INVOKABLE bool sourceExists(const QString &sourceId) const;
     Q_INVOKABLE bool sourceRequiresNetwork(const QString &sourceId) const;
 
   signals:

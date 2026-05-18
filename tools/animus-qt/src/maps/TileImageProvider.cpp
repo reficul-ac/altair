@@ -120,11 +120,8 @@ QString resolveTilePath(const LocalXyzPack &pack, int zoom, int x, int y)
     return absolutePath;
 }
 
-QImage loadTileImageFromPack(const LocalXyzPack &pack,
-                             int zoom,
-                             int x,
-                             int y,
-                             const QSize &requestedSize)
+QImage
+loadTileImageFromPack(const LocalXyzPack &pack, int zoom, int x, int y, const QSize &requestedSize)
 {
     const QString path = resolveTilePath(pack, zoom, x, y);
     if (path.isEmpty())
@@ -140,10 +137,12 @@ QImage loadTileImageFromPack(const LocalXyzPack &pack,
 
 } // namespace
 
-TileImageProvider::TileImageProvider(const MapPackManager *mapPacks) : m_mapPacks(mapPacks) {}
+TileImageProvider::TileImageProvider(const MapPackManager *mapPacks) : m_mapPacks(mapPacks)
+{
+}
 
 QQuickImageResponse *TileImageProvider::requestImageResponse(const QString &id,
-                                                            const QSize &requestedSize)
+                                                             const QSize &requestedSize)
 {
     QString packId;
     int zoom = 0;
@@ -153,10 +152,9 @@ QQuickImageResponse *TileImageProvider::requestImageResponse(const QString &id,
     if (m_mapPacks && parseTileId(id, &packId, &zoom, &x, &y))
         pack = m_mapPacks->localXyzPackInfo(packId);
 
-    return new TileImageResponse(
-        [pack, zoom, x, y, requestedSize]()
-        { return loadTileImageFromPack(pack, zoom, x, y, requestedSize); },
-        requestedSize);
+    return new TileImageResponse([pack, zoom, x, y, requestedSize]()
+                                 { return loadTileImageFromPack(pack, zoom, x, y, requestedSize); },
+                                 requestedSize);
 }
 
 QImage TileImageProvider::loadTileImage(const QString &id, const QSize &requestedSize) const
