@@ -67,8 +67,9 @@ Reusable Bayek framework follow-up is tracked separately in
   the retired UI, with capture/test coverage for each workspace.
 - [ ] Add operator-grade telemetry/link diagnostics: packet counters, decode
   errors, link freshness, MAVLink system/component identity, firmware/mode
-  labels, GPS/battery/readiness summaries, and explicit unsupported/unknown
-  states.
+  labels, GPS/battery/readiness summaries, packet age by message family,
+  update rates, jitter, dropped/decoded counts, clock/source timestamps where
+  available, and per-field stale/unsupported/unknown states.
 - [ ] Move UDP receive/decode, map/tile IO, and terrain/cache work behind
   explicit worker boundaries so rendering and map loading cannot contend with
   telemetry ingestion.
@@ -83,14 +84,51 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Add a compact top-right flight telemetry strip for both 2D and 3D views
   with attitude, altitude, latitude/longitude, velocity, and link/state
   freshness.
+- [ ] Add an energy-state and fixed-wing flight-envelope monitor for Flight,
+  2D, and 3D views: airspeed, groundspeed, altitude AGL/MSL, vertical speed,
+  attitude/load limits, stall/overspeed margins, climb/sink trend, and explicit
+  unknown states when required telemetry is absent.
+- [ ] Add navigation-quality and estimator-health panels for Setup and Flight
+  views: GPS fix type, satellite count, HDOP/VDOP or covariance where
+  available, EKF/estimator flags, position/velocity innovations, compass/IMU
+  health, and degraded navigation warnings.
+- [ ] Add route-progress and mission-execution awareness: active waypoint,
+  cross-track error, distance/time to next waypoint, distance/time to home,
+  mission completion estimate, loiter/hold state, and clear no-mission or
+  unsupported-mission states.
+- [ ] Add terrain and clearance awareness beyond the current terrain
+  placeholder: AGL estimate, terrain report age, home-relative altitude,
+  projected clearance along recent or active path, terrain-data availability,
+  and caution states when terrain and altitude references disagree.
+- [ ] Add wind and environment awareness for GNC debugging: estimated wind
+  vector, headwind/crosswind components relative to track or mission leg,
+  airspeed-vs-groundspeed consistency, and SITL weather/noise provenance during
+  simulated sessions.
+- [ ] Add control-authority and actuator-margin diagnostics: normalized
+  roll/pitch/yaw/throttle demand, servo or actuator outputs, saturation flags,
+  trim bias, RC override/manual input visibility, and failsafe/disarmed output
+  state.
+- [ ] Add an operator event timeline shared by live and replay views: mode
+  changes, arming state, failsafe transitions, GPS/estimator degradation,
+  command attempts, mission item changes, telemetry dropouts, and user-added
+  markers.
+- [ ] Add field-flight readiness profiles for Setup: preflight, launch,
+  mission, recovery, and postflight check groups that summarize link, GPS,
+  estimator, battery, mission, terrain, parameters, and log-recording readiness
+  without enabling live writes by default.
 - [ ] Audit available Altair/Bayek/MAVLink telemetry for fields that should be
   first-class 2D/3D overlays versus fields better exposed through custom
-  operator widgets.
+  operator widgets. Include passive fields from `SYS_STATUS`, `BATTERY_STATUS`,
+  `POWER_STATUS`, `VFR_HUD`, `WIND_COV`, `NAV_CONTROLLER_OUTPUT`,
+  `LOCAL_POSITION_NED`, `SERVO_OUTPUT_RAW`, `RC_CHANNELS`, `ESTIMATOR_STATUS`,
+  `EKF_STATUS_REPORT`, and `STATUSTEXT`, and keep GNC-derived calculations
+  centralized in Qt C++ model/helper code.
 - [ ] Add operator-built custom telemetry widgets that can subscribe to selected
   MAVLink messages/fields and define simple math/comparison-driven status
   displays.
-- [ ] Automatically fetch and display the active mission plan/waypoints when
-  Altair/Bayek or the connected vehicle exposes mission data.
+- [ ] Automatically fetch and display active mission plan/waypoint data needed
+  by route-progress views when Altair/Bayek or the connected vehicle exposes
+  mission data.
 - [ ] Add UI to view and upload current flight parameters for the connected
   vehicle, using the existing Altair/Bayek parameter workflow where applicable.
 - [ ] Automatically record received telemetry to a `.tlog` during each Animus
