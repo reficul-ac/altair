@@ -1,6 +1,7 @@
 build/
 build-*/
 artifacts/
+map_cache/
 plots/
 /*.csv
 /sitl_3d.html

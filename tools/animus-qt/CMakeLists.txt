@@ -31,9 +31,7 @@ qt_add_executable(
     src/telemetry/TelemetryService.cpp
     src/maps/MapSourceRegistry.cpp
     src/maps/OfflineMapManager.cpp
-    src/maps/MapPackManager.cpp
-    src/maps/TileSource.cpp
-    src/maps/TileImageProvider.cpp
+    src/maps/qgc/AnimusMapCacheManager.cpp
     src/maps/CesiumBridge.cpp
 )
 
@@ -81,9 +79,7 @@ add_executable(
     tests/test_map_models.cpp
     src/maps/MapSourceRegistry.cpp
     src/maps/OfflineMapManager.cpp
-    src/maps/MapPackManager.cpp
-    src/maps/TileSource.cpp
-    src/maps/TileImageProvider.cpp
+    src/maps/qgc/AnimusMapCacheManager.cpp
     src/telemetry/BreadcrumbPathModel.cpp
     src/telemetry/MavlinkDecoder.cpp
     src/telemetry/TelemetryService.cpp
@@ -110,3 +106,4 @@ if(COMMAND altair_enable_warnings)
     altair_enable_warnings(animus_qt_unit_tests)
 endif()
 add_test(NAME animus_qt_map_models COMMAND animus_qt_unit_tests)
+set_tests_properties(animus_qt_map_models PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

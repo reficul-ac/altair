@@ -42,10 +42,10 @@ Reusable Bayek framework follow-up is tracked separately in
   retired TypeScript app, `tools/animus`, npm workflows, browser launch, or
   `capture_animus_sitl.py`; point them to `tools/animus-qt`,
   `build-animus-qt`, and `capture_animus_qt_sitl.py`.
-- [ ] Complete the remaining Animus Qt migration work: QGC-derived 2D
-  provider/cache workers, offline PMTiles serving, Cesium terrain,
+- [ ] Complete the remaining Animus Qt migration work: real asynchronous 2D
+  provider download workers, offline PMTiles serving, Cesium terrain,
   mission/fence/rally overlays, and broader Qt parity.
-- [ ] Record the exact upstream QGroundControl revision, license headers, and
+- [x] Record the exact upstream QGroundControl revision, license headers, and
   source-to-Animus mapping in `docs/animus_qgc_map_audit.md` before importing
   or adapting QGC-derived map/provider code.
 - [x] Finish the local-pack 2D map controls after the initial local-pack v1:
@@ -56,13 +56,18 @@ Reusable Bayek framework follow-up is tracked separately in
   Provider/cache workers remain tracked separately above.
 - [x] Migrate Animus Qt offline map packs from validated XYZ PNG directories
   to MBTiles-only raster packs.
-- [ ] Extend the local tile/cache service beyond MBTiles-only raster packs:
-  PMTiles support, cache metadata, provider workers, and operator-visible
-  cache health.
-- [ ] Replace generated raster-pyramid map packs with a QGC-style offline tile
-  cache workflow: operator-selected bounds/zoom levels, provider tile download,
-  import/export, cache metadata, and runtime loading from the cached tile DB
-  instead of regenerating full MBTiles pyramids from source rasters.
+- [ ] Extend the local tile/cache service beyond the initial QGC-style cache
+  metadata path: PMTiles support, real provider workers, and operator-visible
+  cache health backed by tile IO results.
+- [x] Replace generated raster-pyramid map packs as the primary 2D runtime with
+  a QGC-style offline tile cache workflow: operator-selected bounds/zoom
+  levels, provider selection, create/download/import/export/delete actions,
+  cache metadata, and QGC-style cache/provider runtime state instead of
+  `image://animusTiles` MBTiles rendering.
+- [ ] Add a real Altair-local QtLocation `QGroundControl` provider plugin and
+  asynchronous tile downloader/cache workers after Qt 6 Location is available
+  in the target environment; the first cache slice records tile-set state but
+  does not fetch provider tiles.
 - [ ] Run the documented local generator for the full `default-sitl-stanford`
   MBTiles offline map pack after operator-approved NAIP/3DEP source rasters are
   available; generated MBTiles artifacts are installed out of band.
@@ -88,13 +93,14 @@ Reusable Bayek framework follow-up is tracked separately in
   labels, battery/readiness summaries, packet age by message family, update
   rates, jitter, dropped/decoded counts, clock/source timestamps where
   available, and per-field stale/unsupported/unknown states.
-- [ ] Move UDP receive/decode, MBTiles/map tile IO, and terrain/cache work
-  behind explicit worker boundaries so rendering, synchronous MBTiles reads,
+- [ ] Move UDP receive/decode, map tile IO, and terrain/cache work
+  behind explicit worker boundaries so rendering, synchronous tile reads,
   and map loading cannot contend with telemetry ingestion.
 - [x] Replace Animus Qt capture readiness artifacts with real map-2d,
   terrain-3d, and setup screenshots plus nonblank scene checks.
 - [ ] Add QtLocation-backed Animus Qt map rendering once CI and operator
-  installs have a portable runtime package strategy.
+  installs have a portable runtime package strategy; Ubuntu 24.04 repositories
+  available on this host do not provide Qt 6 Location.
 - [x] Fix the default 2D Animus map startup so a usable map source loads, or an
   explicit operator-facing offline/cache state is shown when it cannot.
 - [x] Keep 2D vehicle snap/follow mode active across zoom changes; only unsnap

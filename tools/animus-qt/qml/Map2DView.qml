@@ -10,93 +10,18 @@ Item {
     property bool mapWarningDismissed: false
     property double manualCenterLatitudeDeg: vehicleModel.latitudeDeg
     property double manualCenterLongitudeDeg: vehicleModel.longitudeDeg
-    property int zoomLevel: defaultZoom()
+    property int zoomLevel: 15
 
-    readonly property bool sourceAllowed: offlineMaps.canUseSource(mapSources.activeSourceId)
-    readonly property bool sourceIsOfflinePack: mapSources.activeSourceId === "offline-pack"
-    readonly property bool hasRasterTiles: sourceIsOfflinePack && sourceAllowed &&
-                                           mapPacks.activeHasMbtilesImagery
+    readonly property bool providerAllowed:
+        mapCache.providerBlockReason(mapCache.activeProviderId, offlineMaps.networkAllowed) === ""
     readonly property double centerLatitudeDeg: following ? vehicleModel.latitudeDeg
                                                           : manualCenterLatitudeDeg
     readonly property double centerLongitudeDeg: following ? vehicleModel.longitudeDeg
                                                            : manualCenterLongitudeDeg
-    readonly property int tileSize: 256
-    readonly property double degreesPerPixel: hasRasterTiles
-                                             ? 360.0 / (tileSize * Math.pow(2, zoomLevel))
-                                             : 0.000014 * Math.pow(2, 15 - zoomLevel)
-    readonly property int tileSpan: Math.pow(2, zoomLevel)
-    readonly property double centerPixelX: lonToPixelX(centerLongitudeDeg, zoomLevel)
-    readonly property double centerPixelY: latToPixelY(centerLatitudeDeg, zoomLevel)
-    readonly property int firstTileX: Math.floor((centerPixelX - width / 2) / tileSize)
-    readonly property int firstTileY: Math.floor((centerPixelY - height / 2) / tileSize)
-    readonly property int tileColumns: hasRasterTiles ? Math.ceil(width / tileSize) + 2 : 0
-    readonly property int tileRows: hasRasterTiles ? Math.ceil(height / tileSize) + 2 : 0
-
-    Connections {
-        target: mapPacks
-        function onActivePackChanged() {
-            root.zoomLevel = root.defaultZoom()
-            root.resetMapWarning()
-        }
-    }
-
-    Connections {
-        target: offlineMaps
-        function onModeChanged() {
-            if (!offlineMaps.canUseSource(mapSources.activeSourceId))
-                mapSources.activeSourceId = "offline-pack"
-            root.resetMapWarning()
-        }
-    }
-
-    Connections {
-        target: mapSources
-        function onActiveSourceChanged() {
-            root.resetMapWarning()
-        }
-    }
-
-    Connections {
-        target: vehicleModel
-        function onPositionChanged() {
-            if (root.following)
-                root.syncManualCenterToVehicle()
-        }
-    }
-
-    function defaultZoom() {
-        if (mapPacks.activeHasMbtilesImagery)
-            return Math.max(mapPacks.activeMinZoom, Math.min(mapPacks.activeMaxZoom, 15))
-        return 15
-    }
+    readonly property double degreesPerPixel: 0.000014 * Math.pow(2, 15 - zoomLevel)
 
     function clampLatitude(latitudeDeg) {
         return Math.max(-85.05112878, Math.min(85.05112878, latitudeDeg))
-    }
-
-    function clampZoom(zoom) {
-        if (mapPacks.activeHasMbtilesImagery)
-            return Math.max(mapPacks.activeMinZoom, Math.min(mapPacks.activeMaxZoom, zoom))
-        return Math.max(3, Math.min(20, zoom))
-    }
-
-    function lonToPixelX(longitudeDeg, zoom) {
-        return (longitudeDeg + 180.0) / 360.0 * tileSize * Math.pow(2, zoom)
-    }
-
-    function latToPixelY(latitudeDeg, zoom) {
-        var latRad = clampLatitude(latitudeDeg) * Math.PI / 180.0
-        return (1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) /
-                2.0 * tileSize * Math.pow(2, zoom)
-    }
-
-    function pixelXToLon(pixelX, zoom) {
-        return pixelX / (tileSize * Math.pow(2, zoom)) * 360.0 - 180.0
-    }
-
-    function pixelYToLat(pixelY, zoom) {
-        var n = Math.PI - 2.0 * Math.PI * pixelY / (tileSize * Math.pow(2, zoom))
-        return 180.0 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)))
     }
 
     function wrappedLongitude(longitudeDeg) {
@@ -104,23 +29,15 @@ Item {
         return wrapped === -180.0 ? 180.0 : wrapped
     }
 
-    function wrappedTileX(tileX) {
-        return ((tileX % tileSpan) + tileSpan) % tileSpan
-    }
-
-    function clampedTileY(tileY) {
-        return Math.max(0, Math.min(tileSpan - 1, tileY))
+    function clampZoom(zoom) {
+        return Math.max(3, Math.min(22, zoom))
     }
 
     function projectX(longitudeDeg) {
-        if (hasRasterTiles)
-            return width / 2 + lonToPixelX(longitudeDeg, zoomLevel) - centerPixelX
         return width / 2 + (longitudeDeg - centerLongitudeDeg) / degreesPerPixel
     }
 
     function projectY(latitudeDeg) {
-        if (hasRasterTiles)
-            return height / 2 + latToPixelY(latitudeDeg, zoomLevel) - centerPixelY
         return height / 2 - (latitudeDeg - centerLatitudeDeg) / degreesPerPixel
     }
 
@@ -136,15 +53,10 @@ Item {
 
     function panByPixels(deltaX, deltaY) {
         following = false
-        if (hasRasterTiles) {
-            manualCenterLongitudeDeg = wrappedLongitude(pixelXToLon(centerPixelX - deltaX, zoomLevel))
-            manualCenterLatitudeDeg = clampLatitude(pixelYToLat(centerPixelY - deltaY, zoomLevel))
-        } else {
-            manualCenterLongitudeDeg = wrappedLongitude(manualCenterLongitudeDeg -
-                                                        deltaX * degreesPerPixel)
-            manualCenterLatitudeDeg = clampLatitude(manualCenterLatitudeDeg +
-                                                    deltaY * degreesPerPixel)
-        }
+        manualCenterLongitudeDeg = wrappedLongitude(manualCenterLongitudeDeg - deltaX *
+                                                    degreesPerPixel)
+        manualCenterLatitudeDeg = clampLatitude(manualCenterLatitudeDeg + deltaY *
+                                                degreesPerPixel)
     }
 
     function zoomBy(delta) {
@@ -167,26 +79,13 @@ Item {
         return meters + " m"
     }
 
-    function imageryStatusLabel() {
-        var sourceStatus = mapPacks.activeImagerySourceStatus || ""
-        if (sourceStatus.indexOf("placeholder") >= 0)
-            return "placeholder imagery"
-        if (sourceStatus.length > 0)
-            return "real offline imagery"
-        return "imagery source unknown"
-    }
-
     function statusText() {
-        if (!sourceAllowed)
-            return offlineMaps.sourceBlockReason(mapSources.activeSourceId)
-        if (!sourceIsOfflinePack)
-            return "Provider renderer pending for " + mapSources.activeLabel()
-        if (!mapPacks.activePackId)
-            return "No offline map pack selected"
-        if (!mapPacks.activeHasMbtilesImagery)
-            return "Active pack has no MBTiles imagery"
-        return mapSources.activeLabel() + ": " + mapPacks.activePackId + " z" + zoomLevel +
-               " | " + imageryStatusLabel()
+        var blockReason = mapCache.providerBlockReason(mapCache.activeProviderId,
+                                                       offlineMaps.networkAllowed)
+        if (blockReason)
+            return blockReason
+        return mapCache.activeProviderId + " / " + mapCache.activeMapTypeId +
+               " | " + mapCache.activeStatus
     }
 
     function resetMapWarning() {
@@ -194,48 +93,27 @@ Item {
         mapWarningExpanded = false
     }
 
-    function fallbackTitle() {
-        if (!sourceAllowed)
-            return "Map source blocked by offline policy"
-        if (!sourceIsOfflinePack)
-            return "Provider renderer unavailable"
-        if (!mapPacks.activePackId)
-            return "Operator-provided map pack required"
-        if (!mapPacks.activeHasMbtilesImagery)
-            return "Active map pack cannot render 2D imagery"
-        return "Local map imagery unavailable"
+    Connections {
+        target: vehicleModel
+        function onPositionChanged() {
+            if (root.following)
+                root.syncManualCenterToVehicle()
+        }
     }
 
-    function fallbackBody() {
-        if (!sourceAllowed)
-            return offlineMaps.sourceBlockReason(mapSources.activeSourceId)
-        if (!sourceIsOfflinePack)
-            return "Network/provider map rendering is not enabled in this QtQuick path."
-        if (!mapPacks.activePackId)
-            return "Install a licensed offline MBTiles map pack under the configured map pack root."
-        if (!mapPacks.activeHasMbtilesImagery)
-            return "The selected pack loaded, but it does not expose MBTiles raster imagery."
-        return "The fallback grid is active; vehicle, home, trail, pan, zoom, and snap controls remain usable."
+    Connections {
+        target: mapCache
+        function onActiveProviderChanged() { root.resetMapWarning() }
+        function onStatusChanged() { root.resetMapWarning() }
     }
 
-    function fallbackRows() {
-        var rows = [
-            "Active source: " + mapSources.activeLabel() + " (" + mapSources.activeSourceId + ")",
-            "Offline policy: " + offlineMaps.modeLabel(),
-            "Map pack root: " + (mapPacks.rootPath || "map_packs"),
-            "Active pack: " + (mapPacks.activePackId || "none"),
-            "Imagery status: " + root.imageryStatusLabel(),
-            "MBTiles database: " + (mapPacks.activeTileDatabasePath || "none")
-        ]
-        var validationError = mapPacks.validationError()
-        if (validationError)
-            rows.push("Validation error: " + validationError)
-        return rows
+    Connections {
+        target: offlineMaps
+        function onModeChanged() { root.resetMapWarning() }
     }
 
     Rectangle {
         anchors.fill: parent
-        visible: !root.hasRasterTiles
         color: "#dfe7de"
 
         Repeater {
@@ -281,36 +159,6 @@ Item {
         }
     }
 
-    Item {
-        anchors.fill: parent
-        visible: root.hasRasterTiles
-        clip: true
-
-        Repeater {
-            model: root.tileColumns * root.tileRows
-            delegate: Image {
-                readonly property int column: index % root.tileColumns
-                readonly property int row: Math.floor(index / root.tileColumns)
-                readonly property int tileX: root.firstTileX + column
-                readonly property int tileY: root.firstTileY + row
-                readonly property int sourceX: root.wrappedTileX(tileX)
-                readonly property int sourceY: root.clampedTileY(tileY)
-
-                x: tileX * root.tileSize - (root.centerPixelX - root.width / 2)
-                y: tileY * root.tileSize - (root.centerPixelY - root.height / 2)
-                width: root.tileSize
-                height: root.tileSize
-                sourceSize.width: root.tileSize
-                sourceSize.height: root.tileSize
-                fillMode: Image.Stretch
-                asynchronous: true
-                cache: true
-                source: "image://animusTiles/" + encodeURIComponent(mapPacks.activePackId) +
-                        "/" + root.zoomLevel + "/" + sourceX + "/" + sourceY
-            }
-        }
-    }
-
     Repeater {
         model: breadcrumbModel
         delegate: Rectangle {
@@ -325,7 +173,6 @@ Item {
     }
 
     Rectangle {
-        id: homeMarker
         width: 24
         height: 24
         radius: 12
@@ -344,7 +191,6 @@ Item {
     }
 
     Item {
-        id: vehicleMarker
         width: 42
         height: 42
         x: root.projectX(vehicleModel.longitudeDeg) - width / 2
@@ -372,7 +218,6 @@ Item {
     }
 
     MouseArea {
-        id: mapMouse
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton
         property real lastX: 0
@@ -399,7 +244,7 @@ Item {
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.margins: 12
-        width: Math.min(parent.width - 24, 620)
+        width: Math.min(parent.width - 24, 660)
         background: Rectangle { color: "#f7f7f3"; border.color: "#c9c9c0"; radius: 6 }
         ColumnLayout {
             anchors.fill: parent
@@ -412,27 +257,29 @@ Item {
                     font.bold: true
                 }
                 ComboBox {
-                    id: sourceSelector
-                    Layout.preferredWidth: 210
-                    model: mapSources
+                    id: providerSelector
+                    Layout.preferredWidth: 220
+                    model: mapCache
                     textRole: "label"
-                    currentIndex: mapSources.sourceIndex(mapSources.activeSourceId)
+                    currentIndex: mapCache.providerIndex(mapCache.activeProviderId)
                     delegate: ItemDelegate {
-                        width: sourceSelector.width
-                        enabled: offlineMaps.canUseSource(sourceId)
-                        text: label + (networkRequired ? " (network)" : "")
+                        width: providerSelector.width
+                        enabled: mapCache.providerBlockReason(providerId,
+                                                              offlineMaps.networkAllowed) === ""
+                        text: label + " / " + typeLabel
                     }
                     onActivated: function(index) {
-                        var selectedId = mapSources.sourceIdAt(index)
-                        if (offlineMaps.canUseSource(selectedId))
-                            mapSources.activeSourceId = selectedId
+                        var selectedId = mapCache.providerIdAt(index)
+                        if (mapCache.providerBlockReason(selectedId,
+                                                         offlineMaps.networkAllowed) === "")
+                            mapCache.activeProviderId = selectedId
                     }
                 }
                 Label {
                     Layout.fillWidth: true
                     elide: Text.ElideRight
                     text: root.statusText()
-                    color: root.sourceAllowed && root.sourceIsOfflinePack ? "#4b5563" : "#7a4b00"
+                    color: root.providerAllowed ? "#4b5563" : "#7a4b00"
                 }
             }
 
@@ -487,19 +334,14 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         anchors.topMargin: 88
-        width: Math.min(parent.width - 40, root.mapWarningExpanded ? 560 : 360)
-        height: root.mapWarningExpanded ? 238 : 54
-        visible: !root.hasRasterTiles && !root.mapWarningDismissed
+        width: Math.min(parent.width - 40, root.mapWarningExpanded ? 590 : 390)
+        height: root.mapWarningExpanded ? 190 : 54
+        visible: !root.providerAllowed && !root.mapWarningDismissed
         z: 4
         color: "#fbfbf8"
         border.color: "#d59b28"
         border.width: 1
         radius: 8
-
-        MouseArea {
-            anchors.fill: parent
-            onClicked: root.mapWarningExpanded = !root.mapWarningExpanded
-        }
 
         RowLayout {
             id: warningHeader
@@ -516,7 +358,6 @@ Item {
                 Layout.preferredHeight: 24
                 radius: 12
                 color: "#f3b334"
-
                 Label {
                     anchors.centerIn: parent
                     text: "!"
@@ -528,18 +369,16 @@ Item {
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 1
-
                 Label {
                     Layout.fillWidth: true
-                    text: "1 Warning"
+                    text: "Map Warning"
                     color: "#1f2933"
                     font.bold: true
                     elide: Text.ElideRight
                 }
-
                 Label {
                     Layout.fillWidth: true
-                    text: root.fallbackTitle()
+                    text: root.statusText()
                     color: "#4b5563"
                     elide: Text.ElideRight
                 }
@@ -573,27 +412,17 @@ Item {
 
             Label {
                 Layout.fillWidth: true
-                text: root.fallbackBody()
+                text: mapCache.providerBlockReason(mapCache.activeProviderId,
+                                                   offlineMaps.networkAllowed)
                 color: "#3f4a3d"
                 wrapMode: Text.WordWrap
             }
 
-            Repeater {
-                model: root.fallbackRows()
-                delegate: Label {
-                    Layout.fillWidth: true
-                    text: modelData
-                    color: modelData.indexOf("Validation error:") === 0 ? "#7a4b00" : "#4b5563"
-                    elide: Text.ElideRight
-                }
-            }
-
             Label {
                 Layout.fillWidth: true
-                text: "No bundled tiles or network downloads are used by this fallback."
+                text: "Cache DB: " + (mapCache.cacheDatabasePath || "none")
                 color: "#4b5563"
-                font.italic: true
-                wrapMode: Text.WordWrap
+                elide: Text.ElideRight
             }
         }
     }
@@ -654,11 +483,7 @@ Item {
         anchors.bottom: parent.bottom
         anchors.margins: 10
         width: Math.min(parent.width - 20, implicitWidth)
-        text: (root.sourceIsOfflinePack ? (mapPacks.activeAttribution() ||
-                                           mapSources.activeAttribution())
-                                         : mapSources.activeAttribution()) +
-              (root.hasRasterTiles ? " | MBTiles | " + root.imageryStatusLabel()
-                                   : " | QtQuick fallback")
+        text: mapCache.activeAttribution + " | QGC-style cache | " + mapCache.activeMapTypeId
         color: "#202020"
         padding: 6
         elide: Text.ElideRight

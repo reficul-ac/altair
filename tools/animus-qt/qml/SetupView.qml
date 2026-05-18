@@ -123,52 +123,61 @@ ScrollView {
                     }
                 }
                 Label {
-                    text: offlineMaps.sourceBlockReason(mapSources.activeSourceId) ||
-                          "Active source allowed by current policy"
-                    color: offlineMaps.canUseSource(mapSources.activeSourceId) ? "#4b5563" : "#7a4b00"
+                    text: mapCache.providerBlockReason(mapCache.activeProviderId,
+                                                       offlineMaps.networkAllowed) ||
+                          "Active provider allowed by current policy"
+                    color: mapCache.providerBlockReason(mapCache.activeProviderId,
+                                                        offlineMaps.networkAllowed) === ""
+                           ? "#4b5563"
+                           : "#7a4b00"
                 }
             }
         }
 
         GroupBox {
-            title: "Map Sources"
+            title: "Map Providers"
             Layout.fillWidth: true
             ColumnLayout {
                 Repeater {
-                    model: mapSources
+                    model: mapCache
                     RadioDelegate {
                         Layout.fillWidth: true
-                        text: label + " [" + provider + "]" +
+                        text: label + " / " + typeLabel +
                               (networkRequired ? " - network" : " - local")
-                        checked: mapSources.activeSourceId === sourceId
-                        enabled: offlineMaps.canUseSource(sourceId)
-                        onClicked: mapSources.activeSourceId = sourceId
+                        checked: mapCache.activeProviderId === providerId
+                        enabled: mapCache.providerBlockReason(providerId,
+                                                              offlineMaps.networkAllowed) === ""
+                        onClicked: mapCache.activeProviderId = providerId
                     }
                 }
             }
         }
 
         GroupBox {
-            title: "Map Packs"
+            title: "Offline Tile Cache"
             Layout.fillWidth: true
             ColumnLayout {
                 width: parent.width
-                Label { text: "Root: " + mapPacks.rootPath }
-                Label { text: mapPacks.validationError() }
+                Label { text: "Root: " + mapCache.rootPath }
+                Label { text: "Database: " + mapCache.cacheDatabasePath; elide: Text.ElideRight }
+                Label {
+                    text: mapCache.lastError() || mapCache.activeStatus
+                    color: mapCache.lastError() ? "#7a4b00" : "#4b5563"
+                }
+                ProgressBar {
+                    Layout.fillWidth: true
+                    from: 0
+                    to: 100
+                    value: mapCache.progressPercent
+                }
                 ListView {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 220
-                    model: mapPacks
+                    model: mapCache.tileSets
                     delegate: Rectangle {
                         width: ListView.view.width
                         height: 54
-                        color: mapPacks.activePackId === packId ? "#fbfbf8" : "transparent"
-                        property string imageryStatusText:
-                            imagerySourceStatus.indexOf("placeholder") >= 0
-                            ? "placeholder imagery"
-                            : (imagerySourceStatus.length > 0
-                               ? "real offline imagery"
-                               : "imagery source unknown")
+                        color: "transparent"
 
                         RowLayout {
                             anchors.fill: parent
@@ -176,42 +185,46 @@ ScrollView {
                             anchors.rightMargin: 6
                             spacing: 8
 
-                            RadioButton {
-                                checked: mapPacks.activePackId === packId
-                                onClicked: mapPacks.activePackId = packId
-                            }
-
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 spacing: 1
 
                                 Label {
                                     Layout.fillWidth: true
-                                    text: name + " (" + packId + ")"
+                                    text: modelData.name + " (" + modelData.id + ")"
                                     elide: Text.ElideRight
                                 }
 
                                 Label {
                                     Layout.fillWidth: true
-                                    text: imageryStatusText
-                                    color: imageryStatusText.indexOf("placeholder") >= 0
-                                           ? "#7a4b00"
-                                           : "#0f7b43"
+                                    text: modelData.status + " | z" + modelData.minZoom + "-" +
+                                          modelData.maxZoom + " | " + modelData.tileCount + " tiles"
+                                    color: modelData.status === "queued" ? "#7a4b00" : "#0f7b43"
                                     font.bold: true
                                     elide: Text.ElideRight
                                 }
                             }
-                        }
 
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: mapPacks.activePackId = packId
+                            Button {
+                                text: "Download"
+                                onClicked: mapCache.downloadTileSet(modelData.id)
+                            }
+
+                            Button {
+                                text: "Delete"
+                                onClicked: mapCache.deleteTileSet(modelData.id)
+                            }
                         }
                     }
                 }
                 Button {
-                    text: "Reload Packs"
-                    onClicked: mapPacks.reload()
+                    text: "Create Current Bounds Set"
+                    onClicked: mapCache.createTileSet("Current Stanford View",
+                                                      -122.25, 37.36, -122.05, 37.50, 12, 15)
+                }
+                Button {
+                    text: "Reload Cache"
+                    onClicked: mapCache.reloadTileSets()
                 }
             }
         }

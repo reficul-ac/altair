@@ -1,8 +1,7 @@
 #include "maps/CesiumBridge.h"
-#include "maps/MapPackManager.h"
+#include "maps/qgc/AnimusMapCacheManager.h"
 #include "maps/MapSourceRegistry.h"
 #include "maps/OfflineMapManager.h"
-#include "maps/TileImageProvider.h"
 #include "models/VehicleModel.h"
 #include "telemetry/BreadcrumbPathModel.h"
 #include "telemetry/TelemetryService.h"
@@ -121,20 +120,18 @@ int main(int argc, char *argv[])
     animus::BreadcrumbPathModel trail;
     animus::MapSourceRegistry mapSources;
     animus::OfflineMapManager offlineMaps(&mapSources);
-    animus::MapPackManager mapPacks;
+    animus::AnimusMapCacheManager mapCache;
     animus::TelemetryService telemetry(&vehicle, &trail);
     animus::CesiumBridge cesium(&vehicle);
 
-    mapPacks.reload();
+    mapCache.initializeCache();
 
     QQmlApplicationEngine engine;
-    engine.addImageProvider(QStringLiteral("animusTiles"),
-                            new animus::TileImageProvider(&mapPacks));
     engine.rootContext()->setContextProperty(QStringLiteral("vehicleModel"), &vehicle);
     engine.rootContext()->setContextProperty(QStringLiteral("breadcrumbModel"), &trail);
     engine.rootContext()->setContextProperty(QStringLiteral("mapSources"), &mapSources);
     engine.rootContext()->setContextProperty(QStringLiteral("offlineMaps"), &offlineMaps);
-    engine.rootContext()->setContextProperty(QStringLiteral("mapPacks"), &mapPacks);
+    engine.rootContext()->setContextProperty(QStringLiteral("mapCache"), &mapCache);
     engine.rootContext()->setContextProperty(QStringLiteral("telemetryService"), &telemetry);
     engine.rootContext()->setContextProperty(QStringLiteral("cesiumBridge"), &cesium);
 

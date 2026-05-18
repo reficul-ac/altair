@@ -25,64 +25,40 @@ cmake --build build-animus-qt --parallel
 ctest --test-dir build-animus-qt --output-on-failure -R animus_qt
 ```
 
-Required Qt modules are Qt 6.4 or newer with Core, Gui, Qml, Quick, QuickControls2, Positioning, Network, WebChannel, WebEngineQuick, and Test. Ubuntu 24.04 packages do not provide the QtLocation runtime used by a future provider-backed map, so the current CI-safe 2D map is a strict-offline `QtQuick` renderer with vehicle, home, breadcrumb, provider, attribution, and offline-policy overlays. QtLocation-backed rendering remains a future runtime path, not a startup or screenshot dependency.
+Required Qt modules are Qt 6.4 or newer with Core, Gui, Qml, Quick,
+QuickControls2, Positioning, Network, WebChannel, WebEngineQuick, and Test.
+Ubuntu 24.04 repositories available to this project do not provide Qt 6
+Location, so the buildable 2D map surface remains QtQuick while the runtime
+policy and offline tile-set state use the QGC-style cache manager. The old
+MBTiles image provider is no longer a runtime path.
 
-## Map Packs
+## 2D Map Cache
 
-The initial loader expects this shape:
+The 2D map view uses an Altair QtQuick map surface with Altair-owned overlay
+models for the selected vehicle, home, and breadcrumbs. Altair owns provider
+policy, cache metadata, tile-set actions, and operator UI under
+`tools/animus-qt/src/maps/qgc/`; telemetry and vehicle state remain outside the
+map/cache layer. A real Altair-local QtLocation `QGroundControl` provider plugin
+and asynchronous tile downloader remain follow-up work.
+
+The runtime cache root defaults to:
 
 ```text
-map_packs/
-  <pack_id>/
-    metadata.json
-    attribution.txt
-    2d/
-      imagery.mbtiles
-    3d/
-      terrain_quantized_mesh/
-      hillshade.mbtiles
-      contours/
+map_cache/
+  qgc_tile_cache.sqlite
 ```
 
-Minimal `metadata.json`:
+The cache DB records offline tile-set metadata: provider id, bounds, zoom
+range, estimated tile count, status, and creation time. The initial cache
+workflow exposes create, download-state, import, export, delete, provider
+selection, cache status, and tile-count/size estimates. Provider defaults are
+restricted to OpenStreetMap, the offline cache, and an operator URL configured
+through `ANIMUS_QT_OPERATOR_TILE_URL`; credentialed or ToS-sensitive providers
+are not enabled by default.
 
-```json
-{
-  "schemaVersion": 1,
-  "name": "Stanford Range",
-  "license": "operator-managed",
-  "attribution": "Operator-provided licensed imagery",
-  "minZoom": 12,
-  "maxZoom": 18,
-  "bounds": {
-    "west": -122.25,
-    "south": 37.36,
-    "east": -122.05,
-    "north": 37.50
-  },
-  "imagery": {
-    "format": "mbtiles",
-    "path": "2d/imagery.mbtiles",
-    "extension": "png"
-  },
-  "terrain": { "format": "none" }
-}
-```
-
-`metadata.json` currently requires `schemaVersion: 1`, `name`, `license`,
-`attribution`, `imagery.format: "mbtiles"`, valid `minZoom`/`maxZoom`, and a
-relative local `imagery.path`. The C++ loader opens MBTiles read-only, validates
-the required `tiles` table, and rejects legacy XYZ, PMTiles, and other imagery
-formats. Supported terrain metadata values are
-`none` and `quantized-mesh`, but `has3dTerrain` is true only for
-`terrain.format: "quantized-mesh"` with `3d/terrain/layer.json`; leave
-`terrain.format` as `"none"` for staged DEM/topography packs until the Cesium
-runtime path exists.
-
-Future phases will extend validation for layer metadata, generated-at metadata,
-PMTiles support, and quantized-mesh terrain completeness. See [Animus map
-packs](animus_map_packs.md) for the current Stanford pack workflow and source
-policy.
+Legacy `map_packs/<pack>/2d/imagery.mbtiles` files and the Python generator are
+kept as offline data-preparation utilities only. They are no longer the primary
+Animus Qt runtime map path.
 
 ## Current Scope
 
@@ -91,16 +67,18 @@ Implemented now:
 - Qt/QML application under `tools/animus-qt`.
 - QML workspace shell with 2D map, 3D terrain placeholder, and setup views.
 - Deterministic Qt screenshot capture for `map-2d`, `terrain-3d`, and `setup` with mock telemetry and PNG nonblank checks.
-- Vehicle state, bounded/decimated breadcrumb trail, map source registry, offline policy, map-pack discovery/validation, and Cesium WebChannel bridge.
+- Vehicle state, bounded/decimated breadcrumb trail, map provider registry,
+  offline policy, QGC-style cache metadata manager, and Cesium WebChannel
+  bridge.
 - C++ MAVLink v1/v2 frame decode for heartbeat, attitude, global position, GPS raw, mission current, home position, and terrain report.
 - UDP telemetry ingest with latest-value UI publication throttled to 1-30 Hz.
 - Unit-test target for map policy, map-pack validation, bounded trails, MAVLink decode, and telemetry publication throttling when Qt is available.
 
 Not implemented yet:
 
-- PMTiles tile serving and provider/cache workers.
-- QGC-derived provider/cache workers.
+- Real asynchronous provider tile download workers.
+- Directly vendored QGC provider/cache source; any future import must preserve
+  upstream license headers and extend `docs/animus_qgc_map_audit.md`.
 - Bundled CesiumJS vendor assets and quantized-mesh terrain loading.
 - Mission, geofence, rally, and multi-vehicle model adapters.
-- QtLocation-backed 2D map rendering once a portable install/runtime strategy exists.
 - Broader semantic visual assertions beyond the current screenshot diagnostics.

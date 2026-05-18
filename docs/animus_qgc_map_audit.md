@@ -6,7 +6,8 @@ This audit records the QGroundControl map areas that should be inspected while p
 
 QGroundControl is published under Apache 2.0 or GPLv3-or-later for source code, with artwork and images under CC BY-SA. Animus should prefer Apache 2.0-compatible source paths, keep copyright and license notices with any imported code, and avoid importing artwork unless CC BY-SA obligations are intentionally accepted.
 
-The current implementation adds original Altair scaffolding only. No QGC source or artwork has been vendored.
+The current implementation adds original Altair scaffolding modeled on QGC map
+subsystem responsibilities. No QGC source or artwork has been vendored.
 
 ## Pinned QGC Revision
 
@@ -37,16 +38,16 @@ Inspect these QGC areas before each porting slice:
 
 ## Inspected Source Areas
 
-This v1 local offline-pack slice did not import QGC implementation code. It records the
-areas to inspect before the next provider/cache slice:
+The local QGC-style cache slice did not import QGC implementation code. It
+records the areas to inspect before any direct QtLocation provider/cache port:
 
 | QGC source area | Purpose to inspect | Animus destination |
 | --- | --- | --- |
 | `src/FlightMap/FlightMap.qml` | Map item layering, follow behavior, and vehicle/home/trail composition. | `tools/animus-qt/qml/Map2DView.qml` |
 | `src/FlightMap/MapScale.qml` | Zoom/scale presentation and QML update cadence. | Future map controls in `tools/animus-qt/qml/Map2DView.qml` |
 | `src/FlightMap/MapItems/` | Vehicle, home, mission, fence, rally, and breadcrumb visual roles. | Future typed overlay QML and Qt models under `tools/animus-qt/src` |
-| QGC map engine/cache sources | Provider URL policy, cache workers, tile IO boundaries, and offline metadata. | `tools/animus-qt/src/maps/*` |
-| QGC settings/provider factories | Operator-facing provider selection and attribution metadata. | `MapSourceRegistry`, `OfflineMapManager`, and `MapPackManager` |
+| `src/QtLocationPlugin/*` | Provider URL policy, cache workers, tile IO boundaries, QtLocation plugin registration, and offline metadata. | `tools/animus-qt/src/maps/qgc/AnimusMapCacheManager.*` and future `tools/animus-qt/src/maps/qgc/plugin/*` |
+| `src/QtLocationPlugin/Providers/*` | Licensed provider defaults, attribution, average tile sizing, and custom URL handling. | `AnimusMapCacheManager` provider registry |
 
 ## Porting Rules
 
@@ -63,10 +64,10 @@ The first Qt scaffold maps the planned architecture this way:
 - `tools/animus-qt/src/models/VehicleModel.*`: selected vehicle state exposed to QML and Cesium.
 - `tools/animus-qt/src/telemetry/BreadcrumbPathModel.*`: bounded, decimated trail storage for map overlays.
 - `tools/animus-qt/src/telemetry/TelemetryService.*`: UI-rate-limited mock publisher and future MAVLink service boundary.
-- `tools/animus-qt/src/maps/MapSourceRegistry.*`: centralized source/provider metadata.
+- `tools/animus-qt/src/maps/MapSourceRegistry.*`: compatibility source model retained for offline policy callers.
 - `tools/animus-qt/src/maps/OfflineMapManager.*`: online, cached/offline, and strict-offline policy.
-- `tools/animus-qt/src/maps/MapPackManager.*`: `map_packs/<name>/metadata.json` discovery and validation.
-- `tools/animus-qt/qml/Map2DView.qml`: strict-offline QtQuick map fallback with selected vehicle, home, trail, snap, and attribution.
+- `tools/animus-qt/src/maps/qgc/AnimusMapCacheManager.*`: QGC-style provider registry, cache DB initialization, tile-set metadata, tile-count/size estimates, and create/download/import/export/delete actions.
+- `tools/animus-qt/qml/Map2DView.qml`: QtQuick map surface using the cache manager for QGC-style provider/cache state, with selected vehicle, home, breadcrumb, snap, attribution, and offline/cache warning overlays.
 - `tools/animus-qt/qml/Terrain3DView.qml` and `tools/animus-qt/web/cesium/`: deterministic terrain preview and future Qt WebEngine/Cesium bridge assets.
 
 ## Source-To-Animus Mapping
@@ -76,9 +77,8 @@ code:
 
 | Source | Animus file | License handling |
 | --- | --- | --- |
-| Original Altair implementation | `tools/animus-qt/src/maps/MapPackManager.*` | Altair repository license; validates local pack metadata and bounds. |
-| Original Altair implementation | `tools/animus-qt/src/maps/TileImageProvider.*` and `tools/animus-qt/src/maps/TileSource.*` | Altair repository license; serves validated local MBTiles raster tiles through `image://animusTiles`. |
-| Original Altair implementation | `tools/animus-qt/qml/Map2DView.qml` | Altair repository license; composes local MBTiles raster tiles, markers, breadcrumbs, attribution, and fallback UI. |
+| Original Altair implementation | `tools/animus-qt/src/maps/qgc/AnimusMapCacheManager.*` | Altair repository license; implements provider policy and cache/tile-set metadata without vendored QGC code. |
+| Original Altair implementation | `tools/animus-qt/qml/Map2DView.qml` | Altair repository license; composes the QtQuick map surface, markers, breadcrumbs, attribution, and cache/provider UI. |
 
 ## Remaining Audit Work
 

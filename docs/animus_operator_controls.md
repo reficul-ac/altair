@@ -37,7 +37,7 @@ For a Python bridge session:
 python3 tools/python/mavlink_live_bridge.py
 ```
 
-It requires Qt 6.4 or newer with the Qt modules listed in [Animus Qt Map And Terrain Architecture](animus_qt_architecture.md). The current 2D map capture path uses a strict-offline QtQuick fallback; QtLocation-backed rendering remains future work.
+It requires Qt 6.4 or newer with the Qt modules listed in [Animus Qt Map And Terrain Architecture](animus_qt_architecture.md).
 
 ## Verification Workflows
 
@@ -57,24 +57,26 @@ Flight View parity is future Qt Animus work. The current shell focuses on teleme
 
 - Drag the map to pan; panning leaves selected-vehicle follow and keeps a manual
   center until recentered.
-- Mouse wheel and the `+`/`-` controls zoom the map. Local MBTiles packs bound zoom
-  to the active pack's `minZoom`/`maxZoom`; the CI fallback renderer keeps a
-  bounded synthetic zoom range.
+- Mouse wheel and the `+`/`-` controls zoom the 2D map.
 - `Snap` or the center pan-control recenters on the selected vehicle and resumes
   selected-vehicle follow after panning away.
-- The 2D map overlay exposes map source selection, current offline policy, zoom,
-  source/pack status, and a scale bar. Strict offline and cached/offline modes
-  keep network-required sources disabled; Online mode can select those sources,
-  but the current CI-safe renderer reports the provider renderer as pending
-  instead of downloading network tiles.
+- The 2D map overlay exposes provider/type selection, current offline policy,
+  zoom, cache status, and a scale bar. Strict offline and cached/offline modes
+  keep network-required providers disabled.
 - Directional pan controls on the map provide mouse- and keyboard-friendly small
   moves without dragging.
 - `Terrain 3D` opens the Cesium/WebEngine terrain preview path when available.
 - Vehicle markers are triangular and point along velocity, with heading as a low-speed fallback. Home/origin markers use an X shape so they are visually distinct from vehicles.
 
-Animus expects operator-provided, licensed MBTiles map packs. Repository artifacts do not ship generated topo or PMTiles fallbacks.
+Animus expects licensed QGC-style providers and operator-managed offline tile
+caches. Repository artifacts do not ship generated topo, PMTiles, or broad
+offline raster caches.
 
-Animus does not download map tiles in the QtQuick offline-pack path. It does not scrape Google, Mapbox, Esri, or other tile services outside their permitted offline or on-prem products. DEM cache setup supports MapLibre-compatible RGB DEM encodings: `terrarium` and `mapbox`. If no active cache exists, or the current view requests missing tiles, Animus shows an explicit offline cache status while keeping vehicle overlays usable.
+Animus does not scrape Google, Mapbox, Esri, or other tile services outside
+their permitted offline or on-prem products. Operator-configured raster URLs are
+disabled until `ANIMUS_QT_OPERATOR_TILE_URL` is set. If no active cache exists,
+Animus shows an explicit offline/cache status while keeping vehicle overlays
+usable.
 
 Vehicle telemetry is used only for overlays: selected and fleet trails, event markers, an origin/home marker when available, mission waypoint paths, geofence polygons/circles, and rally points when decoded records are present. Terrain check requests are protocol-backed and appear in the operation history. Creating or editing geofences, rally points, or terrain tiles remains out of scope unless a decoded MAVLink path is added for that operation.
 

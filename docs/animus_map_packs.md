@@ -1,10 +1,13 @@
 # Animus Map Packs
 
-Animus Qt uses operator-managed offline map packs under `map_packs/`. The
-current runtime path is intentionally narrow: it discovers immediate child
-directories, reads `metadata.json`, and renders local MBTiles raster imagery through
-`image://animusTiles/<pack>/<z>/<x>/<y>`. Runtime map display must not download
-tiles, process rasters, generate terrain, or block telemetry and SITL paths.
+Animus Qt no longer uses `map_packs/<pack>/2d/imagery.mbtiles` as its primary
+runtime 2D map path. Runtime 2D policy and offline tile-set state now go
+through the QGroundControl-style cache manager documented in
+[Animus Qt Map And Terrain Architecture](animus_qt_architecture.md).
+
+This page is retained for legacy/offline data preparation workflows that still
+produce local MBTiles artifacts from operator-approved source rasters. Keep
+generated raster databases out of Git.
 
 ## Default SITL Stanford Pack
 
@@ -22,7 +25,7 @@ not a full NAIP imagery bundle, and its metadata declares
 `imagery.sourceStatus: "placeholder-center-tiles"`. Generate a full operational
 pack from local source rasters with `tools/python/generate_animus_map_pack.py`.
 
-## Current Runtime Layout
+## Legacy MBTiles Layout
 
 Use this layout for the current Qt app:
 
@@ -132,7 +135,7 @@ python3 tools/python/validate_animus_map_pack.py \
 Use `--require-3d` only for future packs that are expected to include staged
 DEM-derived topography.
 
-## Future Runtime Work
+## Related Runtime Work
 
 Cesium terrain loading should use local HTTP URLs because Cesium terrain
 providers expect URL-addressable `layer.json` and terrain tile resources. A
