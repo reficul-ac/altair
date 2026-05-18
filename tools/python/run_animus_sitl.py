@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import os
 import pathlib
 import shlex
@@ -11,6 +12,18 @@ import signal
 import subprocess
 import sys
 import time
+
+
+@dataclass
+class ManagedProcess:
+    label: str
+    process: subprocess.Popen
+
+
+class ShutdownRequested(Exception):
+    def __init__(self, returncode: int):
+        super().__init__(returncode)
+        self.returncode = returncode
 
 
 def repo_root() -> pathlib.Path:
@@ -166,21 +179,134 @@ def start_process(command: list[str]) -> subprocess.Popen:
     return subprocess.Popen(command, cwd=repo_root(), text=True, start_new_session=True)
 
 
-def terminate(process: subprocess.Popen | None) -> None:
-    if process is None or process.poll() is not None:
-        return
+def process_state(pid: int) -> str | None:
     try:
-        os.killpg(process.pid, signal.SIGTERM)
+        text = pathlib.Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        after_name = text.rsplit(") ", 1)[1]
+    except IndexError:
+        return None
+    fields = after_name.split()
+    return fields[0] if fields else None
+
+
+def process_is_alive(pid: int) -> bool:
+    if process_state(pid) == "Z":
+        return False
+    try:
+        os.kill(pid, 0)
     except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def process_ppid(pid: int) -> int | None:
+    try:
+        text = pathlib.Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        after_name = text.rsplit(") ", 1)[1]
+    except IndexError:
+        return None
+    fields = after_name.split()
+    if len(fields) < 2:
+        return None
+    try:
+        return int(fields[1])
+    except ValueError:
+        return None
+
+
+def child_pids(parent_pid: int) -> list[int]:
+    children: list[int] = []
+    proc_root = pathlib.Path("/proc")
+    try:
+        proc_entries = list(proc_root.iterdir())
+    except OSError:
+        return children
+    for entry in proc_entries:
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if process_ppid(pid) == parent_pid:
+            children.append(pid)
+    return children
+
+
+def descendant_pids(parent_pid: int) -> list[int]:
+    descendants: list[int] = []
+    queue = child_pids(parent_pid)
+    while queue:
+        pid = queue.pop(0)
+        descendants.append(pid)
+        queue.extend(child_pids(pid))
+    return descendants
+
+
+def snapshot_process_tree(processes: list[ManagedProcess]) -> list[int]:
+    pids: list[int] = []
+    seen: set[int] = set()
+    for managed in reversed(processes):
+        root_pid = managed.process.pid
+        for pid in [root_pid, *descendant_pids(root_pid)]:
+            if pid not in seen:
+                seen.add(pid)
+                pids.append(pid)
+    return pids
+
+
+def signal_pid(pid: int, sig: signal.Signals) -> None:
+    if pid == os.getpid() or not process_is_alive(pid):
         return
     try:
-        process.wait(timeout=5.0)
-    except subprocess.TimeoutExpired:
+        os.kill(pid, sig)
+    except ProcessLookupError:
+        pass
+
+
+def wait_for_pids(pids: list[int], deadline: float) -> None:
+    while time.monotonic() < deadline:
+        if not any(process_is_alive(pid) for pid in pids):
+            return
+        time.sleep(0.05)
+
+
+def terminate(processes: list[ManagedProcess]) -> None:
+    pids = snapshot_process_tree(processes)
+    for managed in reversed(processes):
+        process = managed.process
+        if process.poll() is not None:
+            continue
         try:
-            os.killpg(process.pid, signal.SIGKILL)
+            os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
             pass
-        process.wait()
+    for pid in pids:
+        signal_pid(pid, signal.SIGTERM)
+
+    deadline = time.monotonic() + 5.0
+    for managed in reversed(processes):
+        process = managed.process
+        if process.poll() is not None:
+            continue
+        remaining = max(0.0, deadline - time.monotonic())
+        try:
+            process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+    wait_for_pids(pids, deadline)
+    for pid in pids:
+        signal_pid(pid, signal.SIGKILL)
+    wait_for_pids(pids, time.monotonic() + 2.0)
 
 
 def print_dry_run(args: argparse.Namespace) -> None:
@@ -196,6 +322,18 @@ def run(args: argparse.Namespace) -> int:
         print_dry_run(args)
         return 0
 
+    processes: list[ManagedProcess] = []
+    previous_handlers = {
+        sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    }
+
+    def stop(signum, _frame) -> None:
+        if signum == signal.SIGINT:
+            raise ShutdownRequested(130)
+        raise ShutdownRequested(128 + int(signum))
+
+    for sig in previous_handlers:
+        signal.signal(sig, stop)
     try:
         if not args.skip_build:
             for command in build_commands(args):
@@ -209,21 +347,26 @@ def run(args: argparse.Namespace) -> int:
         print(f"animus_udp=udp://{args.udp_host}:{args.udp_port}", flush=True)
         print(f"\n== Start Animus ==\n{quote_command(animus_command(args))}", flush=True)
         animus = start_process(animus_command(args))
+        processes.append(ManagedProcess("animus", animus))
         time.sleep(args.animus_start_delay)
         if animus.poll() is not None:
             return animus.returncode or 1
 
         print(f"\n== Run SITL ==\n{quote_command(sitl_command(args))}", flush=True)
         sitl = start_process(sitl_command(args))
+        processes.append(ManagedProcess("sitl", sitl))
         return sitl.wait()
+    except ShutdownRequested as exc:
+        return exc.returncode
     except KeyboardInterrupt:
         return 130
     except (OSError, subprocess.CalledProcessError) as exc:
         print(f"run_animus_sitl.py: {exc}", file=sys.stderr)
         return 1
     finally:
-        terminate(locals().get("sitl"))
-        terminate(locals().get("animus"))
+        terminate(processes)
+        for sig, handler in previous_handlers.items():
+            signal.signal(sig, handler)
 
 
 def main(argv: list[str] | None = None) -> int:
