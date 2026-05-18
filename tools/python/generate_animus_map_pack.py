@@ -8,7 +8,6 @@ import json
 import shutil
 import sqlite3
 import subprocess
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
@@ -40,7 +39,17 @@ def _safe_relative(value: str) -> bool:
     return value != "" and not path.is_absolute() and ".." not in path.parts
 
 
-def _metadata(args: argparse.Namespace) -> dict[str, object]:
+def _source_manifest(paths: Sequence[Path]) -> list[str]:
+    return [str(path) for path in paths]
+
+
+def _empty_tile_coverage() -> dict[str, object]:
+    return {"scheme": "xyz", "zooms": {}}
+
+
+def _metadata(
+    args: argparse.Namespace, *, imagery_tile_coverage: dict[str, object] | None = None
+) -> dict[str, object]:
     west, south, east, north = args.bbox
     return {
         "schemaVersion": 1,
@@ -56,25 +65,43 @@ def _metadata(args: argparse.Namespace) -> dict[str, object]:
             "format": "mbtiles",
             "path": "2d/imagery.mbtiles",
             "extension": "png",
+            "sourceStatus": "real-offline-imagery",
+            "sourceType": "operator-provided-local-raster",
+            "sources": _source_manifest(args.imagery),
+            "tileCoverage": imagery_tile_coverage or _empty_tile_coverage(),
         },
         "terrain": {
             "format": "none",
             "status": "staged",
             "preferredFormat": "quantized-mesh",
             "path": "3d/terrain_quantized_mesh",
+            "source": str(args.dem) if args.dem is not None else "",
         },
         "topography": {
             "hillshade": "3d/hillshade.mbtiles",
             "contours": "3d/contours/contours.geojson",
         },
+        "generation": {
+            "inputBounds": {"west": west, "south": south, "east": east, "north": north},
+            "minZoom": args.min_zoom,
+            "maxZoom": args.max_zoom,
+            "processes": args.processes,
+            "contourIntervalM": args.contour_interval_m,
+        },
         "version": args.version,
         "createdBy": "Altair Animus map-pack generator",
-        "createdAt": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "createdAt": args.created_at,
     }
 
 
-def _write_metadata(pack_dir: Path, args: argparse.Namespace, dry_run: bool) -> None:
-    metadata = _metadata(args)
+def _write_metadata(
+    pack_dir: Path,
+    args: argparse.Namespace,
+    dry_run: bool,
+    *,
+    imagery_tile_coverage: dict[str, object] | None = None,
+) -> None:
+    metadata = _metadata(args, imagery_tile_coverage=imagery_tile_coverage)
     if dry_run:
         print(f"would write {pack_dir / 'metadata.json'}")
         print(f"would write {pack_dir / 'attribution.txt'}")
@@ -110,15 +137,16 @@ def _pack_xyz_to_mbtiles(
     mbtiles_path: Path,
     metadata: dict[str, str],
     dry_run: bool,
-) -> None:
+) -> dict[str, object]:
     print(f"pack {xyz_root} -> {mbtiles_path}")
     if dry_run:
-        return
+        return _empty_tile_coverage()
 
     mbtiles_path.parent.mkdir(parents=True, exist_ok=True)
     if mbtiles_path.exists():
         mbtiles_path.unlink()
 
+    coverage: dict[int, dict[str, int]] = {}
     connection = sqlite3.connect(mbtiles_path)
     try:
         connection.execute("CREATE TABLE metadata (name TEXT, value TEXT)")
@@ -138,6 +166,21 @@ def _pack_xyz_to_mbtiles(
                 row = int(tile_path.stem)
             except ValueError:
                 continue
+            entry = coverage.setdefault(
+                zoom,
+                {
+                    "minX": column,
+                    "maxX": column,
+                    "minY": row,
+                    "maxY": row,
+                    "tileCount": 0,
+                },
+            )
+            entry["minX"] = min(entry["minX"], column)
+            entry["maxX"] = max(entry["maxX"], column)
+            entry["minY"] = min(entry["minY"], row)
+            entry["maxY"] = max(entry["maxY"], row)
+            entry["tileCount"] += 1
             tms_row = (1 << zoom) - 1 - row
             connection.execute(
                 "INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) "
@@ -147,6 +190,10 @@ def _pack_xyz_to_mbtiles(
         connection.commit()
     finally:
         connection.close()
+    return {
+        "scheme": "xyz",
+        "zooms": {str(zoom): coverage[zoom] for zoom in sorted(coverage)},
+    }
 
 
 def generate(args: argparse.Namespace) -> None:
@@ -180,8 +227,6 @@ def generate(args: argparse.Namespace) -> None:
     zoom_range = f"{args.min_zoom}-{args.max_zoom}"
     processes = str(args.processes)
 
-    _write_metadata(pack_dir, args, args.dry_run)
-
     _run(
         [
             "gdalwarp",
@@ -214,7 +259,7 @@ def generate(args: argparse.Namespace) -> None:
         ],
         args.dry_run,
     )
-    _pack_xyz_to_mbtiles(
+    imagery_tile_coverage = _pack_xyz_to_mbtiles(
         imagery_xyz,
         pack_dir / "2d" / "imagery.mbtiles",
         {
@@ -225,6 +270,12 @@ def generate(args: argparse.Namespace) -> None:
             "version": str(args.version),
         },
         args.dry_run,
+    )
+    _write_metadata(
+        pack_dir,
+        args,
+        args.dry_run,
+        imagery_tile_coverage=imagery_tile_coverage,
     )
 
     if args.dem is None:
@@ -330,6 +381,7 @@ def main() -> int:
         default=[DEFAULT_CENTER["latitude"], DEFAULT_CENTER["longitude"]],
     )
     parser.add_argument("--version", type=int, default=1)
+    parser.add_argument("--created-at", default="1970-01-01T00:00:00Z")
     args = parser.parse_args()
     generate(args)
     return 0

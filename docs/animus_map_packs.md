@@ -18,8 +18,9 @@ zoom = 12-18
 
 The checked-in `map_packs/default-sitl-stanford` pack is a lightweight
 runtime-compatible seed for discovery, validation, and local UI checks. It is
-not a full NAIP imagery bundle. Generate a full operational pack from local
-source rasters with `tools/python/generate_animus_map_pack.py`.
+not a full NAIP imagery bundle, and its metadata declares
+`imagery.sourceStatus: "placeholder-center-tiles"`. Generate a full operational
+pack from local source rasters with `tools/python/generate_animus_map_pack.py`.
 
 ## Current Runtime Layout
 
@@ -36,9 +37,11 @@ map_packs/
 
 `metadata.json` must use schema version 1, `imagery.format: "mbtiles"`, a
 relative `imagery.path` that defaults to `2d/imagery.mbtiles`, valid Web
-Mercator bounds, and a deterministic zoom range. The MBTiles database must have
-a `tiles` table with raster `tile_data`; if an internal `metadata` table is
-present, `name` and `attribution` must agree with `metadata.json`.
+Mercator bounds, a deterministic zoom range, and `imagery.sourceStatus`.
+Generated operational packs use `real-offline-imagery`; checked-in placeholder
+seeds use `placeholder-center-tiles`. The MBTiles database must have a `tiles`
+table with raster `tile_data`; if an internal `metadata` table is present,
+`name` and `attribution` must agree with `metadata.json`.
 `terrain.format` should remain `"none"` until a real Cesium/WebEngine terrain
 runtime exists.
 
@@ -96,6 +99,7 @@ python3 tools/python/generate_animus_map_pack.py \
   --max-zoom 18 \
   --imagery /path/to/naip_1.tif /path/to/naip_2.jp2 \
   --dem /path/to/usgs_3dep_dem.tif \
+  --created-at 2026-05-18T00:00:00Z \
   --output-root map_packs
 ```
 
@@ -106,10 +110,23 @@ the cropped DEM under `3d/terrain_dem/`, emits `3d/hillshade.mbtiles`, and
 writes contour GeoJSON. The staged 3D files are developer artifacts for a future
 Cesium path; the current runtime ignores them.
 
-Validate a pack before using it:
+This command installs over the local `map_packs/default-sitl-stanford`
+directory in your checkout. The generated `2d/imagery.mbtiles` file is a local
+operator artifact and remains out of band; do not commit the full generated
+MBTiles database to Git.
+
+Validate a placeholder-compatible pack before using it:
 
 ```sh
 python3 tools/python/validate_animus_map_pack.py map_packs/default-sitl-stanford
+```
+
+Validate a generated operational pack before field or demo use:
+
+```sh
+python3 tools/python/validate_animus_map_pack.py \
+  --require-real-imagery \
+  map_packs/default-sitl-stanford
 ```
 
 Use `--require-3d` only for future packs that are expected to include staged

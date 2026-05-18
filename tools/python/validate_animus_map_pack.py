@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sqlite3
 import sys
 from pathlib import Path
 from typing import Any
 
 WEB_MERCATOR_LAT_LIMIT = 85.05112878
+REAL_IMAGERY_COVERAGE_RATIO = 0.95
 
 
 def _error(errors: list[str], message: str) -> None:
@@ -41,6 +43,82 @@ def _read_mbtiles_metadata(connection: sqlite3.Connection) -> dict[str, str]:
     return {str(name): str(value) for name, value in rows}
 
 
+def _lon_to_tile_x(longitude_deg: float, zoom: int) -> int:
+    tile_span = 1 << zoom
+    x = math.floor((longitude_deg + 180.0) / 360.0 * tile_span)
+    return max(0, min(tile_span - 1, x))
+
+
+def _lat_to_tile_y(latitude_deg: float, zoom: int) -> int:
+    latitude_rad = math.radians(
+        max(-WEB_MERCATOR_LAT_LIMIT, min(WEB_MERCATOR_LAT_LIMIT, latitude_deg))
+    )
+    tile_span = 1 << zoom
+    y = math.floor(
+        (1.0 - math.log(math.tan(latitude_rad) + 1.0 / math.cos(latitude_rad)) / math.pi)
+        / 2.0
+        * tile_span
+    )
+    return max(0, min(tile_span - 1, y))
+
+
+def _expected_tile_range(bounds: dict[str, float], zoom: int) -> dict[str, int]:
+    min_x = _lon_to_tile_x(bounds["west"], zoom)
+    max_x = _lon_to_tile_x(bounds["east"], zoom)
+    min_y = _lat_to_tile_y(bounds["north"], zoom)
+    max_y = _lat_to_tile_y(bounds["south"], zoom)
+    return {"minX": min_x, "maxX": max_x, "minY": min_y, "maxY": max_y}
+
+
+def _range_count(tile_range: dict[str, int]) -> int:
+    return (tile_range["maxX"] - tile_range["minX"] + 1) * (
+        tile_range["maxY"] - tile_range["minY"] + 1
+    )
+
+
+def _validate_real_imagery_coverage(
+    connection: sqlite3.Connection,
+    bounds: dict[str, float],
+    min_zoom: int,
+    max_zoom: int,
+    errors: list[str],
+) -> None:
+    for zoom in range(min_zoom, max_zoom + 1):
+        expected = _expected_tile_range(bounds, zoom)
+        expected_count = _range_count(expected)
+        row = connection.execute(
+            "SELECT count(*), min(tile_column), max(tile_column), min(tile_row), max(tile_row) "
+            "FROM tiles WHERE zoom_level = ?",
+            (zoom,),
+        ).fetchone()
+        actual_count = int(row[0] or 0)
+        if actual_count <= 0:
+            _error(errors, f"MBTiles zoom {zoom} has no tiles")
+            continue
+
+        min_column = int(row[1])
+        max_column = int(row[2])
+        min_tms_row = int(row[3])
+        max_tms_row = int(row[4])
+        tile_span = 1 << zoom
+        min_y = tile_span - 1 - max_tms_row
+        max_y = tile_span - 1 - min_tms_row
+        required_count = math.ceil(expected_count * REAL_IMAGERY_COVERAGE_RATIO)
+
+        if (
+            actual_count < required_count
+            or min_column > expected["minX"]
+            or max_column < expected["maxX"]
+            or min_y > expected["minY"]
+            or max_y < expected["maxY"]
+        ):
+            _error(
+                errors,
+                f"MBTiles zoom {zoom} covers {actual_count}/{expected_count} expected "
+                "tiles for metadata bounds",
+            )
+
+
 def _validate_mbtiles(
     path: Path,
     metadata: dict[str, Any],
@@ -48,6 +126,8 @@ def _validate_mbtiles(
     max_zoom: int | None,
     errors: list[str],
     warnings: list[str],
+    require_real_imagery: bool,
+    bounds: dict[str, float] | None,
 ) -> None:
     if not path.is_file():
         _error(errors, f"MBTiles database is missing: {path}")
@@ -89,6 +169,14 @@ def _validate_mbtiles(
                 if int(count) <= 0:
                     _error(errors, f"MBTiles zoom {zoom} has no tiles")
 
+        if (
+            require_real_imagery
+            and bounds is not None
+            and isinstance(min_zoom, int)
+            and isinstance(max_zoom, int)
+        ):
+            _validate_real_imagery_coverage(connection, bounds, min_zoom, max_zoom, errors)
+
         mbtiles_metadata = _read_mbtiles_metadata(connection)
         fmt = mbtiles_metadata.get("format", "").strip().lower()
         if fmt and fmt not in {"png", "jpg", "jpeg", "webp"}:
@@ -106,7 +194,18 @@ def _validate_mbtiles(
         connection.close()
 
 
-def validate_pack(pack_dir: Path, require_3d: bool) -> tuple[list[str], list[str]]:
+def _source_status_is_placeholder(value: Any) -> bool:
+    if not isinstance(value, str):
+        return True
+    normalized = value.strip().lower()
+    return (
+        not normalized or "placeholder" in normalized or normalized in {"unknown", "demo", "seed"}
+    )
+
+
+def validate_pack(
+    pack_dir: Path, require_3d: bool, require_real_imagery: bool = False
+) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -133,6 +232,8 @@ def validate_pack(pack_dir: Path, require_3d: bool) -> tuple[list[str], list[str
     imagery = _object(metadata.get("imagery"), "imagery", errors)
     if imagery.get("format") != "mbtiles":
         _error(errors, 'imagery.format must be "mbtiles"')
+    if require_real_imagery and _source_status_is_placeholder(imagery.get("sourceStatus")):
+        _error(errors, "imagery.sourceStatus must identify real offline imagery")
     imagery_path_value = imagery.get("path", "2d/imagery.mbtiles")
     if not isinstance(imagery_path_value, str) or not _is_relative_safe(imagery_path_value):
         _error(errors, "imagery.path must be a relative path without '..'")
@@ -147,6 +248,7 @@ def validate_pack(pack_dir: Path, require_3d: bool) -> tuple[list[str], list[str
         _error(errors, "minZoom and maxZoom must be a valid 0..30 range")
 
     bounds = _object(metadata.get("bounds"), "bounds", errors)
+    parsed_bounds: dict[str, float] | None = None
     try:
         west = float(bounds["west"])
         south = float(bounds["south"])
@@ -159,12 +261,22 @@ def validate_pack(pack_dir: Path, require_3d: bool) -> tuple[list[str], list[str
             _error(errors, "bounds west/east are outside valid longitude order/range")
         if not (-WEB_MERCATOR_LAT_LIMIT <= south < north <= WEB_MERCATOR_LAT_LIMIT):
             _error(errors, "bounds south/north are outside Web Mercator latitude range")
+        parsed_bounds = {"west": west, "south": south, "east": east, "north": north}
 
     attribution_path = pack_dir / "attribution.txt"
     if not attribution_path.is_file():
         _error(errors, "attribution.txt is missing")
 
-    _validate_mbtiles(pack_dir / imagery_path_value, metadata, min_zoom, max_zoom, errors, warnings)
+    _validate_mbtiles(
+        pack_dir / imagery_path_value,
+        metadata,
+        min_zoom,
+        max_zoom,
+        errors,
+        warnings,
+        require_real_imagery,
+        parsed_bounds,
+    )
 
     terrain = metadata.get("terrain", {})
     terrain = terrain if isinstance(terrain, dict) else {}
@@ -200,9 +312,14 @@ def main() -> int:
         action="store_true",
         help="fail when staged terrain/topography paths in metadata are missing",
     )
+    parser.add_argument(
+        "--require-real-imagery",
+        action="store_true",
+        help="fail unless imagery.sourceStatus and tile coverage look operational",
+    )
     args = parser.parse_args()
 
-    errors, warnings = validate_pack(args.pack_dir, args.require_3d)
+    errors, warnings = validate_pack(args.pack_dir, args.require_3d, args.require_real_imagery)
     for warning in warnings:
         print(warning, file=sys.stderr)
     for error in errors:

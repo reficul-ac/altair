@@ -22,6 +22,7 @@ struct MapPack
     QString license;
     QString attribution;
     QString imageryFormat;
+    QString imagerySourceStatus;
     QString terrainFormat;
     QString tileDatabasePath;
     int minZoom;
@@ -46,6 +47,8 @@ class MapPackManager final : public QAbstractListModel
     Q_PROPERTY(int activeMinZoom READ activeMinZoom NOTIFY activePackChanged)
     Q_PROPERTY(int activeMaxZoom READ activeMaxZoom NOTIFY activePackChanged)
     Q_PROPERTY(bool activeHasMbtilesImagery READ activeHasMbtilesImagery NOTIFY activePackChanged)
+    Q_PROPERTY(
+        QString activeImagerySourceStatus READ activeImagerySourceStatus NOTIFY activePackChanged)
     Q_PROPERTY(bool activeHasBounds READ activeHasBounds NOTIFY activePackChanged)
     Q_PROPERTY(double activeWestDeg READ activeWestDeg NOTIFY activePackChanged)
     Q_PROPERTY(double activeSouthDeg READ activeSouthDeg NOTIFY activePackChanged)
@@ -62,6 +65,7 @@ class MapPackManager final : public QAbstractListModel
         LicenseRole,
         AttributionRole,
         ImageryFormatRole,
+        ImagerySourceStatusRole,
         TerrainFormatRole,
         TileDatabasePathRole,
         MinZoomRole,
@@ -92,6 +96,7 @@ class MapPackManager final : public QAbstractListModel
     int activeMinZoom() const;
     int activeMaxZoom() const;
     bool activeHasMbtilesImagery() const;
+    QString activeImagerySourceStatus() const;
     bool activeHasBounds() const;
     double activeWestDeg() const;
     double activeSouthDeg() const;
@@ -108,6 +113,8 @@ class MapPackManager final : public QAbstractListModel
     void activePackChanged();
 
   private:
+    static constexpr const char *DefaultPackId = "default-sitl-stanford";
+
     bool loadPack(const QDir &packDir, MapPack *pack, QString *error) const;
     const MapPack *findPack(const QString &packId) const;
     static bool parseBounds(const QJsonObject &object, MapPack *pack, QString *error);

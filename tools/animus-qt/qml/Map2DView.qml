@@ -167,6 +167,15 @@ Item {
         return meters + " m"
     }
 
+    function imageryStatusLabel() {
+        var sourceStatus = mapPacks.activeImagerySourceStatus || ""
+        if (sourceStatus.indexOf("placeholder") >= 0)
+            return "placeholder imagery"
+        if (sourceStatus.length > 0)
+            return "real offline imagery"
+        return "imagery source unknown"
+    }
+
     function statusText() {
         if (!sourceAllowed)
             return offlineMaps.sourceBlockReason(mapSources.activeSourceId)
@@ -176,7 +185,8 @@ Item {
             return "No offline map pack selected"
         if (!mapPacks.activeHasMbtilesImagery)
             return "Active pack has no MBTiles imagery"
-        return mapSources.activeLabel() + ": " + mapPacks.activePackId + " z" + zoomLevel
+        return mapSources.activeLabel() + ": " + mapPacks.activePackId + " z" + zoomLevel +
+               " | " + imageryStatusLabel()
     }
 
     function resetMapWarning() {
@@ -214,6 +224,7 @@ Item {
             "Offline policy: " + offlineMaps.modeLabel(),
             "Map pack root: " + (mapPacks.rootPath || "map_packs"),
             "Active pack: " + (mapPacks.activePackId || "none"),
+            "Imagery status: " + root.imageryStatusLabel(),
             "MBTiles database: " + (mapPacks.activeTileDatabasePath || "none")
         ]
         var validationError = mapPacks.validationError()
@@ -646,7 +657,8 @@ Item {
         text: (root.sourceIsOfflinePack ? (mapPacks.activeAttribution() ||
                                            mapSources.activeAttribution())
                                          : mapSources.activeAttribution()) +
-              (root.hasRasterTiles ? " | MBTiles" : " | QtQuick fallback")
+              (root.hasRasterTiles ? " | MBTiles | " + root.imageryStatusLabel()
+                                   : " | QtQuick fallback")
         color: "#202020"
         padding: 6
         elide: Text.ElideRight

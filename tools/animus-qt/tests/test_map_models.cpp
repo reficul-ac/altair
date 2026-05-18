@@ -126,7 +126,8 @@ QByteArray validPackMetadata(QByteArray extra = QByteArray())
     QByteArray metadata =
         "{\"schemaVersion\":1,\"name\":\"Stanford\",\"description\":\"SITL range\","
         "\"minZoom\":12,\"maxZoom\":16,\"license\":\"test-license\","
-        "\"attribution\":\"test data\",\"imagery\":{\"format\":\"mbtiles\"}";
+        "\"attribution\":\"test data\",\"imagery\":{\"format\":\"mbtiles\","
+        "\"sourceStatus\":\"real-offline-imagery\"}";
     if (!extra.isEmpty())
         metadata += "," + extra;
     metadata += "}";
@@ -384,11 +385,53 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(manager.activePackId(), QStringLiteral("stanford"));
         manager.setActivePackId(QStringLiteral("stanford"));
         QCOMPARE(manager.activeAttribution(), QStringLiteral("test data"));
+        QCOMPARE(manager.activeImagerySourceStatus(), QStringLiteral("real-offline-imagery"));
         QVERIFY(manager.activeHasMbtilesImagery());
         QCOMPARE(manager.activeMinZoom(), 12);
         QCOMPARE(manager.activeMaxZoom(), 16);
         QVERIFY(manager.activeHasBounds());
         QCOMPARE(manager.activeWestDeg(), -123.0);
+
+        const QModelIndex index = manager.index(0, 0);
+        QCOMPARE(index.data(animus::MapPackManager::ImagerySourceStatusRole).toString(),
+                 QStringLiteral("real-offline-imagery"));
+        QCOMPARE(manager.roleNames().value(animus::MapPackManager::ImagerySourceStatusRole),
+                 QByteArray("imagerySourceStatus"));
+    }
+
+    void mapPackPrefersDefaultStanfordPack()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        QDir rootDir(root.path());
+        QVERIFY(rootDir.mkpath(QStringLiteral("aaa-other/2d")));
+        QVERIFY(rootDir.mkpath(QStringLiteral("default-sitl-stanford/2d")));
+
+        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("aaa-other/metadata.json")),
+                          validPackMetadata()));
+        QVERIFY(createMbtiles(rootDir.filePath(QStringLiteral("aaa-other/2d/imagery.mbtiles")),
+                              QStringLiteral("Stanford"),
+                              QStringLiteral("test data"),
+                              12,
+                              654,
+                              1582,
+                              pngBytes(QColor(10, 20, 30, 255))));
+        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("default-sitl-stanford/metadata.json")),
+                          validPackMetadata()));
+        QVERIFY(createMbtiles(
+            rootDir.filePath(QStringLiteral("default-sitl-stanford/2d/imagery.mbtiles")),
+            QStringLiteral("Stanford"),
+            QStringLiteral("test data"),
+            12,
+            654,
+            1582,
+            pngBytes(QColor(20, 30, 40, 255))));
+
+        animus::MapPackManager manager;
+        manager.setRootPath(root.path());
+        QVERIFY(manager.reload());
+        QCOMPARE(manager.rowCount(), 2);
+        QCOMPARE(manager.activePackId(), QStringLiteral("default-sitl-stanford"));
     }
 
     void mapPackRejectsInvalidMbtilesPacks()

@@ -152,17 +152,61 @@ ScrollView {
             title: "Map Packs"
             Layout.fillWidth: true
             ColumnLayout {
+                width: parent.width
                 Label { text: "Root: " + mapPacks.rootPath }
                 Label { text: mapPacks.validationError() }
                 ListView {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 220
                     model: mapPacks
-                    delegate: RadioDelegate {
+                    delegate: Rectangle {
                         width: ListView.view.width
-                        text: name + " (" + packId + ")"
-                        checked: mapPacks.activePackId === packId
-                        onClicked: mapPacks.activePackId = packId
+                        height: 54
+                        color: mapPacks.activePackId === packId ? "#fbfbf8" : "transparent"
+                        property string imageryStatusText:
+                            imagerySourceStatus.indexOf("placeholder") >= 0
+                            ? "placeholder imagery"
+                            : (imagerySourceStatus.length > 0
+                               ? "real offline imagery"
+                               : "imagery source unknown")
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 6
+                            spacing: 8
+
+                            RadioButton {
+                                checked: mapPacks.activePackId === packId
+                                onClicked: mapPacks.activePackId = packId
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 1
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: name + " (" + packId + ")"
+                                    elide: Text.ElideRight
+                                }
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: imageryStatusText
+                                    color: imageryStatusText.indexOf("placeholder") >= 0
+                                           ? "#7a4b00"
+                                           : "#0f7b43"
+                                    font.bold: true
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: mapPacks.activePackId = packId
+                        }
                     }
                 }
                 Button {

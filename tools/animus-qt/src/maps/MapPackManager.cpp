@@ -48,6 +48,8 @@ QVariant MapPackManager::data(const QModelIndex &index, int role) const
         return pack.attribution;
     case ImageryFormatRole:
         return pack.imageryFormat;
+    case ImagerySourceStatusRole:
+        return pack.imagerySourceStatus;
     case TerrainFormatRole:
         return pack.terrainFormat;
     case TileDatabasePathRole:
@@ -85,6 +87,7 @@ QHash<int, QByteArray> MapPackManager::roleNames() const
     roles[LicenseRole] = "license";
     roles[AttributionRole] = "attribution";
     roles[ImageryFormatRole] = "imageryFormat";
+    roles[ImagerySourceStatusRole] = "imagerySourceStatus";
     roles[TerrainFormatRole] = "terrainFormat";
     roles[TileDatabasePathRole] = "tileDatabasePath";
     roles[MinZoomRole] = "minZoom";
@@ -159,6 +162,12 @@ bool MapPackManager::activeHasMbtilesImagery() const
            !pack->tileDatabasePath.isEmpty();
 }
 
+QString MapPackManager::activeImagerySourceStatus() const
+{
+    const MapPack *pack = findPack(m_activePackId);
+    return pack ? pack->imagerySourceStatus : QString();
+}
+
 bool MapPackManager::activeHasBounds() const
 {
     const MapPack *pack = findPack(m_activePackId);
@@ -219,8 +228,14 @@ bool MapPackManager::reload()
     m_validationError = firstError;
     if (!m_activePackId.isEmpty() && !findPack(m_activePackId))
         m_activePackId.clear();
-    if (m_activePackId.isEmpty() && !m_packs.isEmpty())
-        m_activePackId = m_packs.constFirst().id;
+    if (m_activePackId.isEmpty())
+    {
+        const QString defaultPackId = QString::fromLatin1(DefaultPackId);
+        if (findPack(defaultPackId))
+            m_activePackId = defaultPackId;
+        else if (!m_packs.isEmpty())
+            m_activePackId = m_packs.constFirst().id;
+    }
     endResetModel();
     emit packsChanged();
     emit activePackChanged();
@@ -281,6 +296,8 @@ bool MapPackManager::loadPack(const QDir &packDir, MapPack *pack, QString *error
     const QJsonObject imagery = object.value(QStringLiteral("imagery")).toObject();
     const QJsonObject terrain = object.value(QStringLiteral("terrain")).toObject();
     const QString imageryFormat = imagery.value(QStringLiteral("format")).toString().trimmed();
+    const QString imagerySourceStatus =
+        imagery.value(QStringLiteral("sourceStatus")).toString().trimmed();
     const QString terrainFormat =
         terrain.value(QStringLiteral("format")).toString(QStringLiteral("none")).trimmed();
     if (imageryFormat != QStringLiteral("mbtiles"))
@@ -343,6 +360,7 @@ bool MapPackManager::loadPack(const QDir &packDir, MapPack *pack, QString *error
     parsed.license = license;
     parsed.attribution = attribution;
     parsed.imageryFormat = imageryFormat;
+    parsed.imagerySourceStatus = imagerySourceStatus;
     parsed.terrainFormat = terrainFormat;
     parsed.tileDatabasePath = tileDatabasePath;
     parsed.minZoom = minZoom;

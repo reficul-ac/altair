@@ -59,14 +59,17 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Extend the local tile/cache service beyond MBTiles-only raster packs:
   PMTiles support, cache metadata, provider workers, and operator-visible
   cache health.
-- [ ] Generate the full `default-sitl-stanford` MBTiles offline map pack from
-  operator-approved NAIP/3DEP source rasters and decide whether the large
-  generated MBTiles artifacts are stored in Git, released as artifacts, or
-  installed out of band.
-- [ ] Add an Animus map-pack acceptance check that distinguishes real offline
+- [ ] Replace generated raster-pyramid map packs with a QGC-style offline tile
+  cache workflow: operator-selected bounds/zoom levels, provider tile download,
+  import/export, cache metadata, and runtime loading from the cached tile DB
+  instead of regenerating full MBTiles pyramids from source rasters.
+- [ ] Run the documented local generator for the full `default-sitl-stanford`
+  MBTiles offline map pack after operator-approved NAIP/3DEP source rasters are
+  available; generated MBTiles artifacts are installed out of band.
+- [x] Add an Animus map-pack acceptance check that distinguishes real offline
   imagery coverage from placeholder-only center tiles, including screenshot or
   manifest status for `imagery.sourceStatus`.
-- [ ] Improve the 2D map UI status when the active pack is placeholder-only or
+- [x] Improve the 2D map UI status when the active pack is placeholder-only or
   has sparse tile coverage so captures cannot be mistaken for a real map.
 - [ ] Replace the 3D terrain canvas/WebEngine placeholder with bundled Cesium
   assets, Qt WebChannel vehicle updates, quantized-mesh terrain loading, and
