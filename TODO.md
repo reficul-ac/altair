@@ -50,13 +50,20 @@ Reusable Bayek framework follow-up is tracked separately in
   or adapting QGC-derived map/provider code.
 - [x] Finish the local-pack 2D map controls after the local XYZ v1: operator
   tile source selection, pan controls, scale/status UI, and richer offline
-  failure states. Provider/cache workers remain tracked separately above.
+  failure states. This covers runtime plumbing only; the checked-in
+  `default-sitl-stanford` pack still contains placeholder center tiles.
+  Provider/cache workers remain tracked separately above.
 - [ ] Extend the local tile/cache service beyond validated XYZ PNG packs:
   MBTiles before PMTiles support, cache metadata, and operator-visible cache
   health.
 - [ ] Generate the full `default-sitl-stanford` offline map payload from
   operator-approved NAIP/3DEP source rasters and decide whether large generated
   tiles are stored in Git, released as artifacts, or installed out of band.
+- [ ] Add an Animus map-pack acceptance check that distinguishes real offline
+  imagery coverage from placeholder-only center tiles, including screenshot or
+  manifest status for `imagery.sourceStatus`.
+- [ ] Improve the 2D map UI status when the active pack is placeholder-only or
+  has sparse tile coverage so captures cannot be mistaken for a real map.
 - [ ] Replace the 3D terrain canvas/WebEngine placeholder with bundled Cesium
   assets, Qt WebChannel vehicle updates, quantized-mesh terrain loading, and
   deterministic fallback/error UI.
