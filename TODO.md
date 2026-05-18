@@ -76,6 +76,37 @@ Reusable Bayek framework follow-up is tracked separately in
   terrain-3d, and setup screenshots plus nonblank scene checks.
 - [ ] Add QtLocation-backed Animus Qt map rendering once CI and operator
   installs have a portable runtime package strategy.
+- [ ] Fix the default 2D Animus map startup so a usable map source loads, or an
+  explicit operator-facing offline/cache state is shown when it cannot.
+- [ ] Keep 2D vehicle snap/follow mode active across zoom changes; only unsnap
+  when the operator explicitly disables follow mode or pans the 2D map.
+- [ ] Add a compact top-right flight telemetry strip for both 2D and 3D views
+  with attitude, altitude, latitude/longitude, velocity, and link/state
+  freshness.
+- [ ] Audit available Altair/Bayek/MAVLink telemetry for fields that should be
+  first-class 2D/3D overlays versus fields better exposed through custom
+  operator widgets.
+- [ ] Add operator-built custom telemetry widgets that can subscribe to selected
+  MAVLink messages/fields and define simple math/comparison-driven status
+  displays.
+- [ ] Automatically fetch and display the active mission plan/waypoints when
+  Altair/Bayek or the connected vehicle exposes mission data.
+- [ ] Add UI to view and upload current flight parameters for the connected
+  vehicle, using the existing Altair/Bayek parameter workflow where applicable.
+- [ ] Automatically record received telemetry to a `.tlog` during each Animus
+  session; persist the operator-selected save path, and default to the current
+  repo when unset. TODO: revisit the default save location before hardware use.
+- [ ] Add Animus dark/light mode switching with persisted operator preference.
+- [ ] Replace the Terrain 3D placeholder with a true x/y/z or
+  latitude/longitude/altitude trajectory view comparable to the Hawkeye 3D
+  trajectory workflow.
+- [ ] Render a generic fixed-wing RC airplane model in 3D views and allow the
+  operator to select a replacement model file, such as `.obj`.
+- [ ] Add a tactical 3D attitude tab focused on aircraft attitude, angular
+  rates, compass heading, and gyro-ring style roll/pitch/yaw visualization
+  without trajectory clutter.
+- [ ] Add an FPV tab that renders the flight from the vehicle nose/seeker
+  perspective.
 - [ ] Port still-desired retired dashboard, inspector, replay import/export,
   flight view, and guarded command workflows into Qt Animus with Qt-native
   tests and capture coverage.
