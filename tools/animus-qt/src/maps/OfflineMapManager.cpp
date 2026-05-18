@@ -21,7 +21,7 @@ void OfflineMapManager::setMode(Mode mode)
         return;
     m_mode = mode;
     if (m_registry && !canUseSource(m_registry->activeSourceId()))
-        m_registry->setActiveSourceId(QStringLiteral("offline-pack"));
+        m_registry->setActiveSourceId(QStringLiteral("offline-cache"));
     emit modeChanged();
 }
 

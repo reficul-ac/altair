@@ -161,6 +161,13 @@ ScrollView {
                 Label { text: "Root: " + mapCache.rootPath }
                 Label { text: "Database: " + mapCache.cacheDatabasePath; elide: Text.ElideRight }
                 Label {
+                    text: "Tiles: " + mapCache.cachedTileCount + "/" + mapCache.totalTileCount +
+                          " cached | " + mapCache.missingTileCount + " missing | " +
+                          mapCache.failedTileCount + " failed | " +
+                          mapCache.inFlightTileCount + " in flight"
+                    color: "#4b5563"
+                }
+                Label {
                     text: mapCache.lastError() || mapCache.activeStatus
                     color: mapCache.lastError() ? "#7a4b00" : "#4b5563"
                 }
@@ -197,9 +204,12 @@ ScrollView {
 
                                 Label {
                                     Layout.fillWidth: true
-                                    text: modelData.status + " | z" + modelData.minZoom + "-" +
-                                          modelData.maxZoom + " | " + modelData.tileCount + " tiles"
-                                    color: modelData.status === "queued" ? "#7a4b00" : "#0f7b43"
+                                    text: modelData.status + " | " + modelData.cachedCount + "/" +
+                                          modelData.tileCount + " cached | " +
+                                          modelData.missingCount + " missing | " +
+                                          modelData.failedCount + " failed | z" +
+                                          modelData.minZoom + "-" + modelData.maxZoom
+                                    color: modelData.status === "complete" ? "#0f7b43" : "#7a4b00"
                                     font.bold: true
                                     elide: Text.ElideRight
                                 }
@@ -207,7 +217,17 @@ ScrollView {
 
                             Button {
                                 text: "Download"
+                                enabled: modelData.status !== "downloading" &&
+                                         offlineMaps.networkAllowed &&
+                                         mapCache.providerBlockReason(modelData.providerId,
+                                                                      true) === ""
                                 onClicked: mapCache.downloadTileSet(modelData.id)
+                            }
+
+                            Button {
+                                text: "Cancel"
+                                enabled: modelData.status === "downloading"
+                                onClicked: mapCache.cancelTileSetDownload(modelData.id)
                             }
 
                             Button {
@@ -218,9 +238,14 @@ ScrollView {
                     }
                 }
                 Button {
-                    text: "Create Current Bounds Set"
-                    onClicked: mapCache.createTileSet("Current Stanford View",
-                                                      -122.25, 37.36, -122.05, 37.50, 12, 15)
+                    text: "Seed Cruise 6DOF 5mi Offline Area"
+                    onClicked: mapCache.ensureDefaultCruise6DofTileSet()
+                }
+                Button {
+                    text: "Create Cruise 6DOF 5mi Bounds Set"
+                    onClicked: mapCache.createTileSet("Cruise 6DOF 5mi Origin",
+                                                      -122.2607248, 37.3552151,
+                                                      -122.0786752, 37.4997849, 12, 15)
                 }
                 Button {
                     text: "Reload Cache"

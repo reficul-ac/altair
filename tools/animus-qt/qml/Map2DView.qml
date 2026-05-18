@@ -19,6 +19,7 @@ Item {
     readonly property double centerLongitudeDeg: following ? vehicleModel.longitudeDeg
                                                            : manualCenterLongitudeDeg
     readonly property double degreesPerPixel: 0.000014 * Math.pow(2, 15 - zoomLevel)
+    readonly property int tileSize: 256
 
     function clampLatitude(latitudeDeg) {
         return Math.max(-85.05112878, Math.min(85.05112878, latitudeDeg))
@@ -34,11 +35,60 @@ Item {
     }
 
     function projectX(longitudeDeg) {
-        return width / 2 + (longitudeDeg - centerLongitudeDeg) / degreesPerPixel
+        return width / 2 + root.longitudeToPixelX(longitudeDeg, zoomLevel) -
+               root.longitudeToPixelX(centerLongitudeDeg, zoomLevel)
     }
 
     function projectY(latitudeDeg) {
-        return height / 2 - (latitudeDeg - centerLatitudeDeg) / degreesPerPixel
+        return height / 2 + root.latitudeToPixelY(latitudeDeg, zoomLevel) -
+               root.latitudeToPixelY(centerLatitudeDeg, zoomLevel)
+    }
+
+    function longitudeToPixelX(longitudeDeg, zoom) {
+        var n = Math.pow(2, zoom)
+        return (wrappedLongitude(longitudeDeg) + 180.0) / 360.0 * n * tileSize
+    }
+
+    function latitudeToPixelY(latitudeDeg, zoom) {
+        var latitudeRad = clampLatitude(latitudeDeg) * Math.PI / 180.0
+        var n = Math.pow(2, zoom)
+        return (1.0 - Math.log(Math.tan(latitudeRad) + 1.0 / Math.cos(latitudeRad)) /
+                Math.PI) / 2.0 * n * tileSize
+    }
+
+    function visibleTileModel() {
+        var tiles = []
+        var n = Math.pow(2, zoomLevel)
+        var centerX = longitudeToPixelX(centerLongitudeDeg, zoomLevel)
+        var centerY = latitudeToPixelY(centerLatitudeDeg, zoomLevel)
+        var firstX = Math.floor((centerX - width / 2) / tileSize)
+        var lastX = Math.floor((centerX + width / 2) / tileSize)
+        var firstY = Math.max(0, Math.floor((centerY - height / 2) / tileSize))
+        var lastY = Math.min(n - 1, Math.floor((centerY + height / 2) / tileSize))
+        for (var tileX = firstX; tileX <= lastX; ++tileX) {
+            var wrappedX = ((tileX % n) + n) % n
+            for (var tileY = firstY; tileY <= lastY; ++tileY) {
+                var url = mapCache.tileUrlFor(mapCache.activeProviderId, zoomLevel, wrappedX,
+                                              tileY, offlineMaps.networkAllowed)
+                tiles.push({
+                               "x": tileX * tileSize - (centerX - width / 2),
+                               "y": tileY * tileSize - (centerY - height / 2),
+                               "url": url
+                           })
+            }
+        }
+        return tiles
+    }
+
+    function defaultTileSetStatus() {
+        for (var i = 0; i < mapCache.tileSets.length; ++i) {
+            if (mapCache.tileSets[i].id === "cruise6dof-5mi-origin")
+                return mapCache.tileSets[i].status + " cache | " +
+                       mapCache.tileSets[i].cachedCount + "/" +
+                       mapCache.tileSets[i].tileCount + " cached | z" +
+                       mapCache.tileSets[i].minZoom + "-" + mapCache.tileSets[i].maxZoom
+        }
+        return "default offline area not initialized"
     }
 
     function syncManualCenterToVehicle() {
@@ -85,7 +135,11 @@ Item {
         if (blockReason)
             return blockReason
         return mapCache.activeProviderId + " / " + mapCache.activeMapTypeId +
-               " | " + mapCache.activeStatus
+               " | " + root.defaultTileSetStatus()
+    }
+
+    function attributionText() {
+        return mapCache.activeAttribution + " | QGC-style cache | " + mapCache.activeMapTypeId
     }
 
     function resetMapWarning() {
@@ -156,6 +210,21 @@ Item {
             rotation: 31
             color: "#ccd7cb"
             opacity: 0.8
+        }
+    }
+
+    Repeater {
+        model: root.visibleTileModel()
+        delegate: Image {
+            x: modelData.x
+            y: modelData.y
+            width: root.tileSize
+            height: root.tileSize
+            source: modelData.url
+            visible: modelData.url !== ""
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            cache: true
         }
     }
 
@@ -483,7 +552,7 @@ Item {
         anchors.bottom: parent.bottom
         anchors.margins: 10
         width: Math.min(parent.width - 20, implicitWidth)
-        text: mapCache.activeAttribution + " | QGC-style cache | " + mapCache.activeMapTypeId
+        text: root.attributionText()
         color: "#202020"
         padding: 6
         elide: Text.ElideRight

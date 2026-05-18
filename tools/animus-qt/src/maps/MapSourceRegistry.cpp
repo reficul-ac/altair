@@ -5,15 +5,18 @@ namespace animus
 
 MapSourceRegistry::MapSourceRegistry(QObject *parent) : QAbstractListModel(parent)
 {
-    m_sources.push_back(
-        {"offline-pack", "Offline Map Pack", "animus-pack", "Active map pack attribution", false});
+    m_sources.push_back({"offline-cache",
+                         "Offline Tile Cache",
+                         "qgc-cache",
+                         "Operator-managed offline tile cache",
+                         false});
     m_sources.push_back({"osm", "OpenStreetMap", "osm", "OpenStreetMap contributors", true});
     m_sources.push_back({"satellite",
                          "Licensed Satellite",
                          "raster-provider",
                          "Operator-provided licensed imagery",
                          true});
-    m_activeSourceId = QStringLiteral("offline-pack");
+    m_activeSourceId = QStringLiteral("offline-cache");
 }
 
 int MapSourceRegistry::rowCount(const QModelIndex &parent) const

@@ -37,6 +37,7 @@ qt_add_executable(
 
 target_include_directories(animus_qt PRIVATE src)
 target_compile_features(animus_qt PRIVATE cxx_std_17)
+target_compile_definitions(animus_qt PRIVATE ANIMUS_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 
 target_link_libraries(
     animus_qt
@@ -89,6 +90,7 @@ target_include_directories(animus_qt_unit_tests PRIVATE src)
 target_compile_features(animus_qt_unit_tests PRIVATE cxx_std_17)
 target_compile_definitions(
     animus_qt_unit_tests PRIVATE ANIMUS_QT_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+                                 ANIMUS_REPO_ROOT="${CMAKE_SOURCE_DIR}"
 )
 target_link_libraries(
     animus_qt_unit_tests

@@ -6,12 +6,17 @@
 #include "telemetry/TelemetryService.h"
 
 #include <QFile>
+#include <QDir>
 #include <QGuiApplication>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
+#include <QHostAddress>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QUrl>
 #include <QtTest/QtTest>
@@ -47,6 +52,44 @@ std::unique_ptr<QObject> createMap2DView(animus::VehicleModel *vehicle,
     return object;
 }
 
+QByteArray pngTile()
+{
+    return QByteArray::fromHex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+                               "1f15c4890000000d49444154789c6360f8ffff3f0005fe02fea73581"
+                               "840000000049454e44ae426082");
+}
+
+class TileHttpServer final : public QTcpServer
+{
+    Q_OBJECT
+
+  public:
+    explicit TileHttpServer(QObject *parent = nullptr) : QTcpServer(parent)
+    {
+        connect(this,
+                &QTcpServer::newConnection,
+                this,
+                [this]()
+                {
+                    QTcpSocket *socket = nextPendingConnection();
+                    connect(socket,
+                            &QTcpSocket::readyRead,
+                            socket,
+                            [socket]()
+                            {
+                                socket->readAll();
+                                const QByteArray body = pngTile();
+                                socket->write("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\n"
+                                              "Content-Length: " +
+                                              QByteArray::number(body.size()) +
+                                              "\r\nConnection: close\r\n\r\n" + body);
+                                socket->disconnectFromHost();
+                            });
+                    connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+                });
+    }
+};
+
 } // namespace
 
 class AnimusQtMapModelTests final : public QObject
@@ -61,7 +104,7 @@ class AnimusQtMapModelTests final : public QObject
 
         manager.setMode(animus::OfflineMapManager::StrictOffline);
 
-        QVERIFY(manager.canUseSource(QStringLiteral("offline-pack")));
+        QVERIFY(manager.canUseSource(QStringLiteral("offline-cache")));
         QVERIFY(!manager.canUseSource(QStringLiteral("osm")));
         QVERIFY(!manager.canUseSource(QStringLiteral("missing-source")));
         QCOMPARE(manager.sourceBlockReason(QStringLiteral("osm")),
@@ -105,6 +148,66 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(manager.estimateSizeMb(tiles) > 0.0);
     }
 
+    void defaultCruise6DofTileSetSeedsExpectedBounds()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+
+        animus::AnimusMapCacheManager manager;
+        manager.setRootPath(root.path());
+        QVERIFY(manager.ensureDefaultCruise6DofTileSet());
+        QCOMPARE(manager.tileSets().size(), 1);
+
+        const QVariantMap tileSet = manager.tileSets().constFirst().toMap();
+        QCOMPARE(tileSet.value(QStringLiteral("id")).toString(),
+                 QStringLiteral("cruise6dof-5mi-origin"));
+        QCOMPARE(tileSet.value(QStringLiteral("name")).toString(),
+                 QStringLiteral("Cruise 6DOF 5mi Origin"));
+        QCOMPARE(tileSet.value(QStringLiteral("providerId")).toString(),
+                 QStringLiteral("osm-street"));
+        QCOMPARE(tileSet.value(QStringLiteral("minZoom")).toInt(), 12);
+        QCOMPARE(tileSet.value(QStringLiteral("maxZoom")).toInt(), 15);
+        QCOMPARE(tileSet.value(QStringLiteral("tileCount")).toInt(), 438);
+        QCOMPARE(tileSet.value(QStringLiteral("status")).toString(), QStringLiteral("empty"));
+        QCOMPARE(tileSet.value(QStringLiteral("cachedCount")).toInt(), 0);
+        QCOMPARE(tileSet.value(QStringLiteral("missingCount")).toInt(), 438);
+        QCOMPARE(tileSet.value(QStringLiteral("west")).toDouble(), -122.2607248);
+        QCOMPARE(tileSet.value(QStringLiteral("south")).toDouble(), 37.3552151);
+        QCOMPARE(tileSet.value(QStringLiteral("east")).toDouble(), -122.0786752);
+        QCOMPARE(tileSet.value(QStringLiteral("north")).toDouble(), 37.4997849);
+    }
+
+    void tileUrlPrefersCachedFilesAndHonorsOfflinePolicy()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+
+        animus::AnimusMapCacheManager manager;
+        manager.setRootPath(root.path());
+        QVERIFY(manager.ensureDefaultCruise6DofTileSet());
+
+        const int zoom = 12;
+        const int x = 657;
+        const int y = 1588;
+        const QString cachedPath =
+            manager.cachedTilePathFor(QStringLiteral("osm-street"), zoom, x, y);
+        QVERIFY(QDir().mkpath(QFileInfo(cachedPath).absolutePath()));
+        QFile tile(cachedPath);
+        QVERIFY(tile.open(QIODevice::WriteOnly));
+        QVERIFY(tile.write("cached") > 0);
+        tile.close();
+
+        QVERIFY(manager.tileUrlFor(QStringLiteral("osm-street"), zoom, x, y, false)
+                    .startsWith(QStringLiteral("file:")));
+        QVERIFY(manager.tileUrlFor(QStringLiteral("offline-cache"), zoom, x, y, false)
+                    .startsWith(QStringLiteral("file:")));
+        QCOMPARE(manager.tileUrlFor(QStringLiteral("osm-street"), zoom, x + 1, y, false),
+                 QString());
+        QCOMPARE(manager.tileUrlFor(QStringLiteral("offline-cache"), zoom, x + 1, y, true),
+                 QString());
+        QCOMPARE(manager.tileUrlFor(QStringLiteral("osm-street"), zoom, x + 1, y, true), QString());
+    }
+
     void cacheDbInitializesAndTracksTileSets()
     {
         QTemporaryDir root;
@@ -121,13 +224,11 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(manager.tileSets().size(), 1);
         const QVariantMap tileSet = manager.tileSets().constFirst().toMap();
         QCOMPARE(tileSet.value(QStringLiteral("name")).toString(), QStringLiteral("Stanford"));
-        QCOMPARE(tileSet.value(QStringLiteral("status")).toString(), QStringLiteral("queued"));
+        QCOMPARE(tileSet.value(QStringLiteral("status")).toString(), QStringLiteral("empty"));
         QVERIFY(tileSet.value(QStringLiteral("tileCount")).toInt() > 0);
 
         QVERIFY(manager.downloadTileSet(tileSet.value(QStringLiteral("id")).toString()));
-        QCOMPARE(manager.tileSets().constFirst().toMap().value(QStringLiteral("status")).toString(),
-                 QStringLiteral("complete"));
-        QCOMPARE(manager.progressPercent(), 100);
+        QVERIFY(manager.cancelTileSetDownload(tileSet.value(QStringLiteral("id")).toString()));
 
         QVERIFY(manager.deleteTileSet(tileSet.value(QStringLiteral("id")).toString()));
         QCOMPARE(manager.tileSets().size(), 0);
@@ -140,11 +241,22 @@ class AnimusQtMapModelTests final : public QObject
 
         animus::AnimusMapCacheManager manager;
         manager.setRootPath(root.path());
+        const int zoom = 12;
+        const int x = 657;
+        const int y = 1588;
+        const QString cachedPath =
+            manager.cachedTilePathFor(QStringLiteral("osm-street"), zoom, x, y);
+        QVERIFY(QDir().mkpath(QFileInfo(cachedPath).absolutePath()));
+        QFile tile(cachedPath);
+        QVERIFY(tile.open(QIODevice::WriteOnly));
+        QVERIFY(tile.write(pngTile()) > 0);
+        tile.close();
         QVERIFY(manager.createTileSet(
             QStringLiteral("Exported Stanford"), -122.25, 37.36, -122.05, 37.50, 12, 12));
         const QString id =
             manager.tileSets().constFirst().toMap().value(QStringLiteral("id")).toString();
-        const QString exportPath = root.filePath(QStringLiteral("tile-set.json"));
+
+        const QString exportPath = root.filePath(QStringLiteral("tile-set-export"));
         QVERIFY(manager.exportTileSet(id, exportPath));
 
         animus::AnimusMapCacheManager imported;
@@ -153,6 +265,32 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(imported.tileSets().size(), 1);
         QCOMPARE(imported.tileSets().constFirst().toMap().value(QStringLiteral("name")).toString(),
                  QStringLiteral("Exported Stanford"));
+    }
+
+    void asyncDownloaderFetchesTilesFromLocalServer()
+    {
+        TileHttpServer server;
+        if (!server.listen(QHostAddress(QHostAddress::LocalHost), 0))
+            QSKIP("Sandbox does not permit local TCP listen sockets");
+        const QByteArray url =
+            QStringLiteral("http://127.0.0.1:%1/{z}/{x}/{y}.png").arg(server.serverPort()).toUtf8();
+        qputenv("ANIMUS_QT_OPERATOR_TILE_URL", url);
+
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        animus::AnimusMapCacheManager manager;
+        manager.setRootPath(root.path());
+        manager.setActiveProviderId(QStringLiteral("operator-raster"));
+        QVERIFY(
+            manager.createTileSet(QStringLiteral("Local tile"), -180.0, -80.0, 180.0, 80.0, 0, 0));
+        const QString id =
+            manager.tileSets().constFirst().toMap().value(QStringLiteral("id")).toString();
+        QVERIFY(manager.downloadTileSet(id));
+        QTRY_COMPARE(manager.cachedTileCount(), 1);
+        QCOMPARE(manager.failedTileCount(), 0);
+        QVERIFY(manager.tileUrlFor(QStringLiteral("operator-raster"), 0, 0, 0, false)
+                    .startsWith(QStringLiteral("file:")));
+        qunsetenv("ANIMUS_QT_OPERATOR_TILE_URL");
     }
 
     void map2dQmlLoadsWithCacheContext()

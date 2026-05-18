@@ -52,10 +52,10 @@ records the areas to inspect before any direct QtLocation provider/cache port:
 ## Porting Rules
 
 - Do not vendor all of QGC.
-- Keep Animus model ownership in Altair: telemetry, mission, fence, rally, map-pack policy, and SITL workflow state remain under `tools/animus-qt/src`.
+- Keep Animus model ownership in Altair: telemetry, mission, fence, rally, map-cache policy, and SITL workflow state remain under `tools/animus-qt/src`.
 - Port only map-facing provider/cache/offline behavior and QML item patterns needed for QGC-like operator behavior.
 - Keep tile loading, disk IO, network requests, and terrain work outside the MAVLink receive/decode path.
-- Preserve attribution and license metadata for every provider or offline pack.
+- Preserve attribution and license metadata for every provider or offline cache bundle.
 
 ## Initial Animus Mapping
 

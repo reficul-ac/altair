@@ -124,7 +124,7 @@ int main(int argc, char *argv[])
     animus::TelemetryService telemetry(&vehicle, &trail);
     animus::CesiumBridge cesium(&vehicle);
 
-    mapCache.initializeCache();
+    mapCache.ensureDefaultCruise6DofTileSet();
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("vehicleModel"), &vehicle);

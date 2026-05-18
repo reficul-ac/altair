@@ -29,8 +29,7 @@ Required Qt modules are Qt 6.4 or newer with Core, Gui, Qml, Quick,
 QuickControls2, Positioning, Network, WebChannel, WebEngineQuick, and Test.
 Ubuntu 24.04 repositories available to this project do not provide Qt 6
 Location, so the buildable 2D map surface remains QtQuick while the runtime
-policy and offline tile-set state use the QGC-style cache manager. The old
-MBTiles image provider is no longer a runtime path.
+policy and offline tile-set state use the QGC-style cache manager.
 
 ## 2D Map Cache
 
@@ -39,26 +38,31 @@ models for the selected vehicle, home, and breadcrumbs. Altair owns provider
 policy, cache metadata, tile-set actions, and operator UI under
 `tools/animus-qt/src/maps/qgc/`; telemetry and vehicle state remain outside the
 map/cache layer. A real Altair-local QtLocation `QGroundControl` provider plugin
-and asynchronous tile downloader remain follow-up work.
+remains follow-up work.
 
 The runtime cache root defaults to:
 
 ```text
 map_cache/
   qgc_tile_cache.sqlite
+  tiles/<provider>/<z>/<x>/<y>.png
 ```
 
 The cache DB records offline tile-set metadata: provider id, bounds, zoom
-range, estimated tile count, status, and creation time. The initial cache
-workflow exposes create, download-state, import, export, delete, provider
-selection, cache status, and tile-count/size estimates. Provider defaults are
-restricted to OpenStreetMap, the offline cache, and an operator URL configured
-through `ANIMUS_QT_OPERATOR_TILE_URL`; credentialed or ToS-sensitive providers
-are not enabled by default.
+range, estimated tile count, status, creation/update time, and last error. It
+also records each expected tile state: queued, downloading, available, missing,
+failed, retry count, last error, and update time. Startup seeds the default
+cruise6dof five-mile offline area around the Stanford origin as metadata only;
+fresh checkouts therefore show the schematic fallback with an empty-cache
+status until the operator downloads or imports tiles.
 
-Legacy `map_packs/<pack>/2d/imagery.mbtiles` files and the Python generator are
-kept as offline data-preparation utilities only. They are no longer the primary
-Animus Qt runtime map path.
+The cache workflow exposes create, download, cancel, import, export, delete,
+provider selection, cache status, and tile-count/size estimates. Provider
+defaults are restricted to OpenStreetMap, the offline cache, and an operator URL
+configured through `ANIMUS_QT_OPERATOR_TILE_URL`; credentialed or
+ToS-sensitive providers are not enabled by default. Rendering uses local file
+URLs only. Online map policy permits provider downloads into the cache, while
+strict offline and cached/offline policies render only existing local tiles.
 
 ## Current Scope
 
@@ -68,15 +72,14 @@ Implemented now:
 - QML workspace shell with 2D map, 3D terrain placeholder, and setup views.
 - Deterministic Qt screenshot capture for `map-2d`, `terrain-3d`, and `setup` with mock telemetry and PNG nonblank checks.
 - Vehicle state, bounded/decimated breadcrumb trail, map provider registry,
-  offline policy, QGC-style cache metadata manager, and Cesium WebChannel
-  bridge.
+  offline policy, QGC-style cache metadata/download manager, and Cesium
+  WebChannel bridge.
 - C++ MAVLink v1/v2 frame decode for heartbeat, attitude, global position, GPS raw, mission current, home position, and terrain report.
 - UDP telemetry ingest with latest-value UI publication throttled to 1-30 Hz.
-- Unit-test target for map policy, map-pack validation, bounded trails, MAVLink decode, and telemetry publication throttling when Qt is available.
+- Unit-test target for map policy, cache behavior, bounded trails, MAVLink decode, and telemetry publication throttling when Qt is available.
 
 Not implemented yet:
 
-- Real asynchronous provider tile download workers.
 - Directly vendored QGC provider/cache source; any future import must preserve
   upstream license headers and extend `docs/animus_qgc_map_audit.md`.
 - Bundled CesiumJS vendor assets and quantized-mesh terrain loading.
