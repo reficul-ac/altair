@@ -6,6 +6,8 @@ Item {
     id: root
 
     property bool following: true
+    property bool mapWarningExpanded: false
+    property bool mapWarningDismissed: false
     property double manualCenterLatitudeDeg: vehicleModel.latitudeDeg
     property double manualCenterLongitudeDeg: vehicleModel.longitudeDeg
     property int zoomLevel: defaultZoom()
@@ -34,6 +36,7 @@ Item {
         target: mapPacks
         function onActivePackChanged() {
             root.zoomLevel = root.defaultZoom()
+            root.resetMapWarning()
         }
     }
 
@@ -42,6 +45,14 @@ Item {
         function onModeChanged() {
             if (!offlineMaps.canUseSource(mapSources.activeSourceId))
                 mapSources.activeSourceId = "offline-pack"
+            root.resetMapWarning()
+        }
+    }
+
+    Connections {
+        target: mapSources
+        function onActiveSourceChanged() {
+            root.resetMapWarning()
         }
     }
 
@@ -173,6 +184,49 @@ Item {
         if (!mapPacks.activeHasLocalXyzImagery)
             return "Active pack has no local XYZ imagery"
         return mapSources.activeLabel() + ": " + mapPacks.activePackId + " z" + zoomLevel
+    }
+
+    function resetMapWarning() {
+        mapWarningDismissed = false
+        mapWarningExpanded = false
+    }
+
+    function fallbackTitle() {
+        if (!sourceAllowed)
+            return "Map source blocked by offline policy"
+        if (!sourceIsOfflinePack)
+            return "Provider renderer unavailable"
+        if (!mapPacks.activePackId)
+            return "Operator-provided map pack required"
+        if (!mapPacks.activeHasLocalXyzImagery)
+            return "Active map pack cannot render 2D imagery"
+        return "Local map imagery unavailable"
+    }
+
+    function fallbackBody() {
+        if (!sourceAllowed)
+            return offlineMaps.sourceBlockReason(mapSources.activeSourceId)
+        if (!sourceIsOfflinePack)
+            return "Network/provider map rendering is not enabled in this QtQuick path."
+        if (!mapPacks.activePackId)
+            return "Install a licensed offline XYZ map pack under the configured map pack root."
+        if (!mapPacks.activeHasLocalXyzImagery)
+            return "The selected pack loaded, but it does not expose local XYZ raster tiles."
+        return "The fallback grid is active; vehicle, home, trail, pan, zoom, and snap controls remain usable."
+    }
+
+    function fallbackRows() {
+        var rows = [
+            "Active source: " + mapSources.activeLabel() + " (" + mapSources.activeSourceId + ")",
+            "Offline policy: " + offlineMaps.modeLabel(),
+            "Map pack root: " + (mapPacks.rootPath || "map_packs"),
+            "Active pack: " + (mapPacks.activePackId || "none"),
+            "Tile root: " + (mapPacks.activeTileRootPath || "none")
+        ]
+        var validationError = mapPacks.validationError()
+        if (validationError)
+            rows.push("Validation error: " + validationError)
+        return rows
     }
 
     Rectangle {
@@ -423,6 +477,122 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 12
+    }
+
+    Rectangle {
+        id: mapWarning
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: 88
+        width: Math.min(parent.width - 40, root.mapWarningExpanded ? 560 : 360)
+        height: root.mapWarningExpanded ? 238 : 54
+        visible: !root.hasRasterTiles && !root.mapWarningDismissed
+        z: 4
+        color: "#fbfbf8"
+        border.color: "#d59b28"
+        border.width: 1
+        radius: 8
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: root.mapWarningExpanded = !root.mapWarningExpanded
+        }
+
+        RowLayout {
+            id: warningHeader
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 10
+            height: 34
+            spacing: 8
+            z: 1
+
+            Rectangle {
+                Layout.preferredWidth: 24
+                Layout.preferredHeight: 24
+                radius: 12
+                color: "#f3b334"
+
+                Label {
+                    anchors.centerIn: parent
+                    text: "!"
+                    color: "#1f2933"
+                    font.bold: true
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 1
+
+                Label {
+                    Layout.fillWidth: true
+                    text: "1 Warning"
+                    color: "#1f2933"
+                    font.bold: true
+                    elide: Text.ElideRight
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    text: root.fallbackTitle()
+                    color: "#4b5563"
+                    elide: Text.ElideRight
+                }
+            }
+
+            Button {
+                text: root.mapWarningExpanded ? "^" : "v"
+                Layout.preferredWidth: 30
+                Layout.preferredHeight: 28
+                onClicked: root.mapWarningExpanded = !root.mapWarningExpanded
+            }
+
+            Button {
+                text: "x"
+                Layout.preferredWidth: 30
+                Layout.preferredHeight: 28
+                onClicked: root.mapWarningDismissed = true
+            }
+        }
+
+        ColumnLayout {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: warningHeader.bottom
+            anchors.leftMargin: 42
+            anchors.rightMargin: 14
+            anchors.topMargin: 8
+            spacing: 7
+            visible: root.mapWarningExpanded
+            z: 1
+
+            Label {
+                Layout.fillWidth: true
+                text: root.fallbackBody()
+                color: "#3f4a3d"
+                wrapMode: Text.WordWrap
+            }
+
+            Repeater {
+                model: root.fallbackRows()
+                delegate: Label {
+                    Layout.fillWidth: true
+                    text: modelData
+                    color: modelData.indexOf("Validation error:") === 0 ? "#7a4b00" : "#4b5563"
+                    elide: Text.ElideRight
+                }
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: "No bundled tiles or network downloads are used by this fallback."
+                color: "#4b5563"
+                font.italic: true
+                wrapMode: Text.WordWrap
+            }
+        }
     }
 
     Frame {

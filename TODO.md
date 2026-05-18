@@ -78,7 +78,7 @@ Reusable Bayek framework follow-up is tracked separately in
   terrain-3d, and setup screenshots plus nonblank scene checks.
 - [ ] Add QtLocation-backed Animus Qt map rendering once CI and operator
   installs have a portable runtime package strategy.
-- [ ] Fix the default 2D Animus map startup so a usable map source loads, or an
+- [x] Fix the default 2D Animus map startup so a usable map source loads, or an
   explicit operator-facing offline/cache state is shown when it cannot.
 - [ ] Keep 2D vehicle snap/follow mode active across zoom changes; only unsnap
   when the operator explicitly disables follow mode or pans the 2D map.

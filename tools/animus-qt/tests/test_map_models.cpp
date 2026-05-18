@@ -153,6 +153,22 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(manager.canUseSource(registry.activeSourceId()));
     }
 
+    void mapPackEmptyRootHasExplicitNoPackState()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+
+        animus::MapPackManager manager;
+        manager.setRootPath(root.path());
+        QVERIFY(manager.reload());
+        QCOMPARE(manager.rowCount(), 0);
+        QCOMPARE(manager.activePackId(), QString());
+        QCOMPARE(manager.activePackPath(), QString());
+        QCOMPARE(manager.activeTileRootPath(), QString());
+        QVERIFY(!manager.activeHasLocalXyzImagery());
+        QCOMPARE(manager.validationError(), QString());
+    }
+
     void breadcrumbModelBoundsGrowth()
     {
         animus::BreadcrumbPathModel model;
