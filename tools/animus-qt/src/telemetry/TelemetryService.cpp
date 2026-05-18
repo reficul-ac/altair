@@ -16,8 +16,11 @@ TelemetryService::TelemetryService(VehicleModel *vehicle,
                                    BreadcrumbPathModel *trail,
                                    QObject *parent)
     : QObject(parent), m_vehicle(vehicle), m_trail(trail), m_socket(nullptr), m_running(false),
-      m_mockRunning(false), m_hasPendingSample(false), m_uiRateHz(20), m_udpPort(14551),
-      m_udpHost(QStringLiteral("127.0.0.1")), m_elapsedS(0.0)
+      m_mockRunning(false), m_hasPendingSample(false), m_hasDatagramTime(false),
+      m_hasDecodedTime(false), m_linkFresh(false), m_uiRateHz(20), m_datagramCount(0),
+      m_decodedSampleCount(0), m_decodeErrorCount(0), m_udpPort(14551),
+      m_udpHost(QStringLiteral("127.0.0.1")), m_elapsedS(0.0), m_lastDatagramMs(0),
+      m_lastDecodedMs(0), m_freshnessTimeoutMs(2500)
 {
     connect(&m_timer, &QTimer::timeout, this, &TelemetryService::publishMockSample);
     connect(&m_publishTimer, &QTimer::timeout, this, &TelemetryService::publishPendingSample);
@@ -72,13 +75,56 @@ void TelemetryService::setUdpHost(const QString &udpHost)
     emit udpEndpointChanged();
 }
 
+int TelemetryService::datagramCount() const
+{
+    return m_datagramCount;
+}
+
+int TelemetryService::decodedSampleCount() const
+{
+    return m_decodedSampleCount;
+}
+
+int TelemetryService::decodeErrorCount() const
+{
+    return m_decodeErrorCount;
+}
+
+double TelemetryService::lastDatagramAgeS() const
+{
+    if (!m_hasDatagramTime || !m_clock.isValid())
+        return -1.0;
+    return static_cast<double>(m_clock.elapsed() - m_lastDatagramMs) / 1000.0;
+}
+
+double TelemetryService::lastDecodedAgeS() const
+{
+    if (!m_hasDecodedTime || !m_clock.isValid())
+        return -1.0;
+    return static_cast<double>(m_clock.elapsed() - m_lastDecodedMs) / 1000.0;
+}
+
+bool TelemetryService::linkFresh() const
+{
+    return m_linkFresh;
+}
+
 void TelemetryService::startMockTelemetry()
 {
     if (m_running)
         return;
     m_mockRunning = true;
+    ensureClockStarted();
     setRunning(true);
     m_vehicle->setConnected(true);
+    m_vehicle->setAttitudeValid(true);
+    m_vehicle->setPositionValid(true);
+    m_vehicle->setVelocityValid(true);
+    if (!m_linkFresh)
+    {
+        m_linkFresh = true;
+        emit freshnessChanged();
+    }
     m_timer.start(1000 / m_uiRateHz);
 }
 
@@ -120,17 +166,30 @@ void TelemetryService::stop()
     m_mockRunning = false;
     m_hasPendingSample = false;
     setRunning(false);
+    if (m_linkFresh)
+    {
+        m_linkFresh = false;
+        emit freshnessChanged();
+    }
 }
 
 bool TelemetryService::ingestDatagram(const QByteArray &datagram)
 {
     bool decoded = false;
+    markDatagramReceived();
     const QVector<MavlinkTelemetrySample> samples = m_decoder.decodeDatagram(datagram);
     for (const MavlinkTelemetrySample &sample : samples)
     {
-        m_pendingSample = sample;
+        mergePendingSample(sample);
         m_hasPendingSample = true;
         decoded = true;
+        markDecodedSample();
+    }
+    if (!decoded)
+    {
+        ++m_decodeErrorCount;
+        emit countersChanged();
+        updateFreshness(elapsedMs());
     }
     return decoded;
 }
@@ -150,6 +209,10 @@ void TelemetryService::publishMockSample()
     m_vehicle->setHeadingDeg(std::fmod(heading + 360.0, 360.0));
     m_vehicle->setYawRad(angle);
     m_vehicle->setGroundspeedMps(18.0);
+    m_vehicle->setAttitudeValid(true);
+    m_vehicle->setPositionValid(true);
+    m_vehicle->setVelocityValid(true);
+    updateFreshness(elapsedMs());
     m_trail->append(lat, lon, m_vehicle->altitudeM(), m_elapsedS);
 }
 
@@ -168,6 +231,7 @@ void TelemetryService::readPendingDatagrams()
 
 void TelemetryService::publishPendingSample()
 {
+    updateFreshness(elapsedMs());
     if (!m_hasPendingSample)
         return;
     applySample(m_pendingSample);
@@ -187,18 +251,21 @@ void TelemetryService::applySample(const MavlinkTelemetrySample &sample)
         m_vehicle->setBaseMode(sample.baseMode);
         m_vehicle->setSystemStatus(sample.systemStatus);
         m_vehicle->setArmed(sample.armed);
+        m_vehicle->setHeartbeatValid(true);
     }
     if (sample.hasAttitude)
     {
         m_vehicle->setRollRad(sample.rollRad);
         m_vehicle->setPitchRad(sample.pitchRad);
         m_vehicle->setYawRad(sample.yawRad);
+        m_vehicle->setAttitudeValid(true);
     }
     if (sample.hasGlobalPosition || sample.hasGpsRaw)
     {
         m_vehicle->setLatitudeDeg(sample.latitudeDeg);
         m_vehicle->setLongitudeDeg(sample.longitudeDeg);
         m_vehicle->setAltitudeM(sample.altitudeM);
+        m_vehicle->setPositionValid(true);
         m_trail->append(sample.latitudeDeg, sample.longitudeDeg, sample.altitudeM, m_elapsedS);
     }
     if (sample.hasGlobalPosition)
@@ -208,19 +275,25 @@ void TelemetryService::applySample(const MavlinkTelemetrySample &sample)
         m_vehicle->setVyEastMps(sample.vyEastMps);
         m_vehicle->setVzDownMps(sample.vzDownMps);
         m_vehicle->setGroundspeedMps(std::hypot(sample.vxNorthMps, sample.vyEastMps));
+        m_vehicle->setVelocityValid(true);
     }
     if (sample.hasGpsRaw)
     {
         m_vehicle->setGpsFixType(sample.gpsFixType);
         m_vehicle->setSatellitesVisible(sample.satellitesVisible);
+        m_vehicle->setGpsValid(true);
     }
     if (sample.hasMissionCurrent)
+    {
         m_vehicle->setMissionSeq(sample.missionSeq);
+        m_vehicle->setMissionValid(true);
+    }
     if (sample.hasHomePosition)
     {
         m_vehicle->setHomeLatitudeDeg(sample.homeLatitudeDeg);
         m_vehicle->setHomeLongitudeDeg(sample.homeLongitudeDeg);
         m_vehicle->setHomeAltitudeM(sample.homeAltitudeM);
+        m_vehicle->setHomeValid(true);
     }
     if (sample.hasTerrainReport)
     {
@@ -230,7 +303,129 @@ void TelemetryService::applySample(const MavlinkTelemetrySample &sample)
         m_vehicle->setTerrainCurrentHeightM(sample.terrainCurrentHeightM);
         m_vehicle->setTerrainPending(sample.terrainPending);
         m_vehicle->setTerrainLoaded(sample.terrainLoaded);
+        m_vehicle->setTerrainValid(true);
     }
+    updateFreshness(elapsedMs());
+}
+
+void TelemetryService::mergePendingSample(const MavlinkTelemetrySample &sample)
+{
+    if (!m_hasPendingSample)
+    {
+        m_pendingSample = sample;
+        return;
+    }
+
+    m_pendingSample.systemId = sample.systemId;
+    m_pendingSample.componentId = sample.componentId;
+    if (sample.hasHeartbeat)
+    {
+        m_pendingSample.hasHeartbeat = true;
+        m_pendingSample.vehicleType = sample.vehicleType;
+        m_pendingSample.autopilot = sample.autopilot;
+        m_pendingSample.baseMode = sample.baseMode;
+        m_pendingSample.systemStatus = sample.systemStatus;
+        m_pendingSample.armed = sample.armed;
+    }
+    if (sample.hasAttitude)
+    {
+        m_pendingSample.hasAttitude = true;
+        m_pendingSample.rollRad = sample.rollRad;
+        m_pendingSample.pitchRad = sample.pitchRad;
+        m_pendingSample.yawRad = sample.yawRad;
+    }
+    if (sample.hasGlobalPosition)
+    {
+        m_pendingSample.hasGlobalPosition = true;
+        m_pendingSample.latitudeDeg = sample.latitudeDeg;
+        m_pendingSample.longitudeDeg = sample.longitudeDeg;
+        m_pendingSample.altitudeM = sample.altitudeM;
+        m_pendingSample.relativeAltitudeM = sample.relativeAltitudeM;
+        m_pendingSample.vxNorthMps = sample.vxNorthMps;
+        m_pendingSample.vyEastMps = sample.vyEastMps;
+        m_pendingSample.vzDownMps = sample.vzDownMps;
+        m_pendingSample.headingDeg = sample.headingDeg;
+    }
+    if (sample.hasGpsRaw)
+    {
+        m_pendingSample.hasGpsRaw = true;
+        m_pendingSample.latitudeDeg = sample.latitudeDeg;
+        m_pendingSample.longitudeDeg = sample.longitudeDeg;
+        m_pendingSample.altitudeM = sample.altitudeM;
+        m_pendingSample.gpsFixType = sample.gpsFixType;
+        m_pendingSample.satellitesVisible = sample.satellitesVisible;
+    }
+    if (sample.hasMissionCurrent)
+    {
+        m_pendingSample.hasMissionCurrent = true;
+        m_pendingSample.missionSeq = sample.missionSeq;
+    }
+    if (sample.hasHomePosition)
+    {
+        m_pendingSample.hasHomePosition = true;
+        m_pendingSample.homeLatitudeDeg = sample.homeLatitudeDeg;
+        m_pendingSample.homeLongitudeDeg = sample.homeLongitudeDeg;
+        m_pendingSample.homeAltitudeM = sample.homeAltitudeM;
+    }
+    if (sample.hasTerrainReport)
+    {
+        m_pendingSample.hasTerrainReport = true;
+        m_pendingSample.terrainLatitudeDeg = sample.terrainLatitudeDeg;
+        m_pendingSample.terrainLongitudeDeg = sample.terrainLongitudeDeg;
+        m_pendingSample.terrainHeightM = sample.terrainHeightM;
+        m_pendingSample.terrainCurrentHeightM = sample.terrainCurrentHeightM;
+        m_pendingSample.terrainPending = sample.terrainPending;
+        m_pendingSample.terrainLoaded = sample.terrainLoaded;
+    }
+}
+
+qint64 TelemetryService::elapsedMs() const
+{
+    return m_clock.isValid() ? m_clock.elapsed() : 0;
+}
+
+void TelemetryService::ensureClockStarted()
+{
+    if (!m_clock.isValid())
+        m_clock.start();
+}
+
+void TelemetryService::markDatagramReceived()
+{
+    ensureClockStarted();
+    m_lastDatagramMs = m_clock.elapsed();
+    m_hasDatagramTime = true;
+    ++m_datagramCount;
+    emit countersChanged();
+    emit freshnessChanged();
+}
+
+void TelemetryService::markDecodedSample()
+{
+    ensureClockStarted();
+    m_lastDecodedMs = m_clock.elapsed();
+    m_hasDecodedTime = true;
+    ++m_decodedSampleCount;
+    emit countersChanged();
+    updateFreshness(m_lastDecodedMs);
+}
+
+void TelemetryService::updateFreshnessForElapsedMs(qint64 elapsedMs)
+{
+    updateFreshness(elapsedMs);
+}
+
+void TelemetryService::updateFreshness(qint64 nowMs)
+{
+    const bool fresh =
+        m_mockRunning || (m_hasDecodedTime && nowMs - m_lastDecodedMs <= m_freshnessTimeoutMs);
+    if (m_linkFresh == fresh)
+    {
+        emit freshnessChanged();
+        return;
+    }
+    m_linkFresh = fresh;
+    emit freshnessChanged();
 }
 
 void TelemetryService::setRunning(bool running)

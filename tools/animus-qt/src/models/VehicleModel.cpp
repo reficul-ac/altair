@@ -14,7 +14,9 @@ VehicleModel::VehicleModel(QObject *parent)
       m_satellitesVisible(-1), m_missionSeq(-1), m_homeLatitudeDeg(37.4275),
       m_homeLongitudeDeg(-122.1697), m_homeAltitudeM(0.0), m_terrainLatitudeDeg(0.0),
       m_terrainLongitudeDeg(0.0), m_terrainHeightM(0.0), m_terrainCurrentHeightM(0.0),
-      m_terrainPending(0), m_terrainLoaded(0)
+      m_terrainPending(0), m_terrainLoaded(0), m_heartbeatValid(false), m_attitudeValid(false),
+      m_positionValid(false), m_velocityValid(false), m_gpsValid(false), m_missionValid(false),
+      m_homeValid(false), m_terrainValid(false)
 {
 }
 
@@ -431,6 +433,110 @@ void VehicleModel::setTerrainLoaded(int terrainLoaded)
     if (m_terrainLoaded == terrainLoaded)
         return;
     m_terrainLoaded = terrainLoaded;
+    emit terrainChanged();
+}
+
+bool VehicleModel::heartbeatValid() const
+{
+    return m_heartbeatValid;
+}
+
+void VehicleModel::setHeartbeatValid(bool heartbeatValid)
+{
+    if (m_heartbeatValid == heartbeatValid)
+        return;
+    m_heartbeatValid = heartbeatValid;
+    emit statusChanged();
+}
+
+bool VehicleModel::attitudeValid() const
+{
+    return m_attitudeValid;
+}
+
+void VehicleModel::setAttitudeValid(bool attitudeValid)
+{
+    if (m_attitudeValid == attitudeValid)
+        return;
+    m_attitudeValid = attitudeValid;
+    emit attitudeChanged();
+}
+
+bool VehicleModel::positionValid() const
+{
+    return m_positionValid;
+}
+
+void VehicleModel::setPositionValid(bool positionValid)
+{
+    if (m_positionValid == positionValid)
+        return;
+    m_positionValid = positionValid;
+    emit positionChanged();
+}
+
+bool VehicleModel::velocityValid() const
+{
+    return m_velocityValid;
+}
+
+void VehicleModel::setVelocityValid(bool velocityValid)
+{
+    if (m_velocityValid == velocityValid)
+        return;
+    m_velocityValid = velocityValid;
+    emit velocityChanged();
+}
+
+bool VehicleModel::gpsValid() const
+{
+    return m_gpsValid;
+}
+
+void VehicleModel::setGpsValid(bool gpsValid)
+{
+    if (m_gpsValid == gpsValid)
+        return;
+    m_gpsValid = gpsValid;
+    emit gpsChanged();
+}
+
+bool VehicleModel::missionValid() const
+{
+    return m_missionValid;
+}
+
+void VehicleModel::setMissionValid(bool missionValid)
+{
+    if (m_missionValid == missionValid)
+        return;
+    m_missionValid = missionValid;
+    emit missionChanged();
+}
+
+bool VehicleModel::homeValid() const
+{
+    return m_homeValid;
+}
+
+void VehicleModel::setHomeValid(bool homeValid)
+{
+    if (m_homeValid == homeValid)
+        return;
+    m_homeValid = homeValid;
+    emit homeChanged();
+}
+
+bool VehicleModel::terrainValid() const
+{
+    return m_terrainValid;
+}
+
+void VehicleModel::setTerrainValid(bool terrainValid)
+{
+    if (m_terrainValid == terrainValid)
+        return;
+    m_terrainValid = terrainValid;
     emit terrainChanged();
 }
 

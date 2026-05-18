@@ -65,10 +65,11 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Build Qt-native Flight, Dashboard, Inspector, Replay, Plan, Setup
   readiness, and guarded-command workflows only for features still wanted from
   the retired UI, with capture/test coverage for each workspace.
-- [ ] Add operator-grade telemetry/link diagnostics: packet counters, decode
-  errors, link freshness, MAVLink system/component identity, firmware/mode
-  labels, GPS/battery/readiness summaries, packet age by message family,
-  update rates, jitter, dropped/decoded counts, clock/source timestamps where
+- [ ] Extend the first-pass Animus telemetry/link diagnostics beyond packet
+  counters, decode errors, link freshness, MAVLink system/component identity,
+  armed state, GPS, mission, home, and terrain summaries: add firmware/mode
+  labels, battery/readiness summaries, packet age by message family, update
+  rates, jitter, dropped/decoded counts, clock/source timestamps where
   available, and per-field stale/unsupported/unknown states.
 - [ ] Move UDP receive/decode, map/tile IO, and terrain/cache work behind
   explicit worker boundaries so rendering and map loading cannot contend with
@@ -81,7 +82,7 @@ Reusable Bayek framework follow-up is tracked separately in
   explicit operator-facing offline/cache state is shown when it cannot.
 - [ ] Keep 2D vehicle snap/follow mode active across zoom changes; only unsnap
   when the operator explicitly disables follow mode or pans the 2D map.
-- [ ] Add a compact top-right flight telemetry strip for both 2D and 3D views
+- [x] Add a compact top-right flight telemetry strip for both 2D and 3D views
   with attitude, altitude, latitude/longitude, velocity, and link/state
   freshness.
 - [ ] Add an energy-state and fixed-wing flight-envelope monitor for Flight,

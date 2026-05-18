@@ -49,6 +49,14 @@ class VehicleModel final : public QObject
                    setTerrainCurrentHeightM NOTIFY terrainChanged)
     Q_PROPERTY(int terrainPending READ terrainPending WRITE setTerrainPending NOTIFY terrainChanged)
     Q_PROPERTY(int terrainLoaded READ terrainLoaded WRITE setTerrainLoaded NOTIFY terrainChanged)
+    Q_PROPERTY(bool heartbeatValid READ heartbeatValid WRITE setHeartbeatValid NOTIFY statusChanged)
+    Q_PROPERTY(bool attitudeValid READ attitudeValid WRITE setAttitudeValid NOTIFY attitudeChanged)
+    Q_PROPERTY(bool positionValid READ positionValid WRITE setPositionValid NOTIFY positionChanged)
+    Q_PROPERTY(bool velocityValid READ velocityValid WRITE setVelocityValid NOTIFY velocityChanged)
+    Q_PROPERTY(bool gpsValid READ gpsValid WRITE setGpsValid NOTIFY gpsChanged)
+    Q_PROPERTY(bool missionValid READ missionValid WRITE setMissionValid NOTIFY missionChanged)
+    Q_PROPERTY(bool homeValid READ homeValid WRITE setHomeValid NOTIFY homeChanged)
+    Q_PROPERTY(bool terrainValid READ terrainValid WRITE setTerrainValid NOTIFY terrainChanged)
 
   public:
     explicit VehicleModel(QObject *parent = nullptr);
@@ -149,6 +157,30 @@ class VehicleModel final : public QObject
     int terrainLoaded() const;
     void setTerrainLoaded(int terrainLoaded);
 
+    bool heartbeatValid() const;
+    void setHeartbeatValid(bool heartbeatValid);
+
+    bool attitudeValid() const;
+    void setAttitudeValid(bool attitudeValid);
+
+    bool positionValid() const;
+    void setPositionValid(bool positionValid);
+
+    bool velocityValid() const;
+    void setVelocityValid(bool velocityValid);
+
+    bool gpsValid() const;
+    void setGpsValid(bool gpsValid);
+
+    bool missionValid() const;
+    void setMissionValid(bool missionValid);
+
+    bool homeValid() const;
+    void setHomeValid(bool homeValid);
+
+    bool terrainValid() const;
+    void setTerrainValid(bool terrainValid);
+
   signals:
     void vehicleChanged();
     void positionChanged();
@@ -193,6 +225,14 @@ class VehicleModel final : public QObject
     double m_terrainCurrentHeightM;
     int m_terrainPending;
     int m_terrainLoaded;
+    bool m_heartbeatValid;
+    bool m_attitudeValid;
+    bool m_positionValid;
+    bool m_velocityValid;
+    bool m_gpsValid;
+    bool m_missionValid;
+    bool m_homeValid;
+    bool m_terrainValid;
 };
 
 } // namespace animus

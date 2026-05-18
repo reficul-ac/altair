@@ -3,9 +3,103 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 ScrollView {
+    id: root
+
+    function ageText(ageS) {
+        return ageS < 0 ? "UNK" : ageS.toFixed(ageS >= 10 ? 0 : 1) + " s"
+    }
+
+    function boolState(valid, value, trueText, falseText) {
+        return valid ? (value ? trueText : falseText) : "UNK"
+    }
+
+    function gpsState() {
+        if (!vehicleModel.gpsValid)
+            return "UNK"
+        if (vehicleModel.gpsFixType < 3)
+            return "NO FIX"
+        return "FIX " + vehicleModel.gpsFixType + " / " +
+               vehicleModel.satellitesVisible + " sats"
+    }
+
     ColumnLayout {
         width: parent.width
         spacing: 12
+
+        GroupBox {
+            title: "Telemetry Link"
+            Layout.fillWidth: true
+            GridLayout {
+                columns: 4
+                rowSpacing: 6
+                columnSpacing: 16
+
+                Label { text: "Endpoint"; color: "#4b5563"; font.bold: true }
+                Label {
+                    text: telemetryService.udpHost + ":" + telemetryService.udpPort
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+                Label { text: "State"; color: "#4b5563"; font.bold: true }
+                Label {
+                    text: (telemetryService.running ? "RUNNING" : "STOPPED") + " / " +
+                          (telemetryService.linkFresh ? "FRESH" : "STALE")
+                    color: telemetryService.linkFresh ? "#0f7b43" : "#7a4b00"
+                    font.bold: true
+                }
+
+                Label { text: "Datagrams"; color: "#4b5563"; font.bold: true }
+                Label { text: telemetryService.datagramCount }
+                Label { text: "Decoded"; color: "#4b5563"; font.bold: true }
+                Label { text: telemetryService.decodedSampleCount }
+
+                Label { text: "Decode errors"; color: "#4b5563"; font.bold: true }
+                Label {
+                    text: telemetryService.decodeErrorCount
+                    color: telemetryService.decodeErrorCount > 0 ? "#7a4b00" : "#202020"
+                }
+                Label { text: "Ages"; color: "#4b5563"; font.bold: true }
+                Label {
+                    text: "RX " + root.ageText(telemetryService.lastDatagramAgeS) +
+                          " / decoded " + root.ageText(telemetryService.lastDecodedAgeS)
+                }
+
+                Label { text: "MAVLink ID"; color: "#4b5563"; font.bold: true }
+                Label {
+                    text: vehicleModel.heartbeatValid || telemetryService.decodedSampleCount > 0
+                          ? vehicleModel.systemId + "." + vehicleModel.componentId
+                          : "UNK"
+                }
+                Label { text: "Armed"; color: "#4b5563"; font.bold: true }
+                Label {
+                    text: root.boolState(vehicleModel.heartbeatValid, vehicleModel.armed,
+                                         "ARMED", "DISARMED")
+                    color: vehicleModel.heartbeatValid && vehicleModel.armed ? "#7a2f00" : "#202020"
+                }
+
+                Label { text: "GPS"; color: "#4b5563"; font.bold: true }
+                Label { text: root.gpsState() }
+                Label { text: "Mission"; color: "#4b5563"; font.bold: true }
+                Label { text: vehicleModel.missionValid ? "SEQ " + vehicleModel.missionSeq : "UNK" }
+
+                Label { text: "Home"; color: "#4b5563"; font.bold: true }
+                Label {
+                    text: vehicleModel.homeValid
+                          ? vehicleModel.homeLatitudeDeg.toFixed(5) + ", " +
+                            vehicleModel.homeLongitudeDeg.toFixed(5)
+                          : "UNK"
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+                Label { text: "Terrain"; color: "#4b5563"; font.bold: true }
+                Label {
+                    text: vehicleModel.terrainValid
+                          ? vehicleModel.terrainCurrentHeightM.toFixed(1) + " m AGL / " +
+                            vehicleModel.terrainLoaded + " loaded"
+                          : "UNK"
+                }
+            }
+        }
 
         GroupBox {
             title: "Map Policy"

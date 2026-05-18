@@ -77,8 +77,17 @@ Item {
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.margins: 12
-        text: "Offline terrain preview: " + vehicleModel.latitudeDeg.toFixed(5) + ", " + vehicleModel.longitudeDeg.toFixed(5)
+        text: "Offline terrain preview: " +
+              (vehicleModel.positionValid
+               ? vehicleModel.latitudeDeg.toFixed(5) + ", " + vehicleModel.longitudeDeg.toFixed(5)
+               : "UNK")
         padding: 8
         background: Rectangle { color: "#f7f7f3"; border.color: "#c9c9c0"; radius: 6 }
+    }
+
+    TelemetryStrip {
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 12
     }
 }

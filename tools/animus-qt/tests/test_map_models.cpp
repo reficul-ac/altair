@@ -12,6 +12,7 @@
 #include <QImage>
 #include <QTemporaryDir>
 #include <QtTest/QtTest>
+#include <cmath>
 #include <cstring>
 
 namespace
@@ -360,6 +361,86 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(vehicle.longitudeDeg(), -122.1797);
         QCOMPARE(vehicle.altitudeM(), 47.0);
         QCOMPARE(trail.rowCount(), 1);
+    }
+
+    void telemetryServiceTracksCountersValidityAndFreshness()
+    {
+        animus::VehicleModel vehicle;
+        animus::BreadcrumbPathModel trail;
+        animus::TelemetryService service(&vehicle, &trail);
+
+        QByteArray heartbeat(9, '\0');
+        heartbeat[4] = 1;
+        heartbeat[5] = 12;
+        heartbeat[6] = static_cast<char>(0x80U);
+        heartbeat[7] = 4;
+
+        QByteArray attitude(28, '\0');
+        putFloat(&attitude, 4, 0.25F);
+        putFloat(&attitude, 8, -0.1F);
+        putFloat(&attitude, 12, 1.0F);
+
+        QByteArray globalPosition(28, '\0');
+        putI32(&globalPosition, 4, 374275000);
+        putI32(&globalPosition, 8, -1221697000);
+        putI32(&globalPosition, 12, 45000);
+        putI16(&globalPosition, 20, 1200);
+        putI16(&globalPosition, 22, 500);
+        putI16(&globalPosition, 24, -150);
+        putU16(&globalPosition, 26, 9200);
+
+        const QByteArray datagram = mavlinkV1Frame(0, 50, heartbeat) +
+                                    mavlinkV1Frame(30, 39, attitude) +
+                                    mavlinkV1Frame(33, 104, globalPosition);
+        QVERIFY(service.ingestDatagram(datagram));
+        QCOMPARE(service.datagramCount(), 1);
+        QCOMPARE(service.decodedSampleCount(), 3);
+        QCOMPARE(service.decodeErrorCount(), 0);
+        QVERIFY(service.linkFresh());
+        QVERIFY(service.lastDatagramAgeS() >= 0.0);
+        QVERIFY(service.lastDecodedAgeS() >= 0.0);
+
+        QVERIFY(QMetaObject::invokeMethod(&service, "publishPendingSample", Qt::DirectConnection));
+        QVERIFY(vehicle.heartbeatValid());
+        QVERIFY(vehicle.attitudeValid());
+        QVERIFY(vehicle.positionValid());
+        QVERIFY(vehicle.velocityValid());
+        QVERIFY(!vehicle.gpsValid());
+        QVERIFY(!vehicle.missionValid());
+        QVERIFY(!vehicle.homeValid());
+        QVERIFY(!vehicle.terrainValid());
+        QVERIFY(vehicle.armed());
+        QCOMPARE(vehicle.latitudeDeg(), 37.4275);
+        QCOMPARE(vehicle.groundspeedMps(), std::hypot(12.0, 5.0));
+        QCOMPARE(vehicle.vzDownMps(), -1.5);
+
+        QVERIFY(!service.ingestDatagram(QByteArray("not mavlink")));
+        QCOMPARE(service.datagramCount(), 2);
+        QCOMPARE(service.decodedSampleCount(), 3);
+        QCOMPARE(service.decodeErrorCount(), 1);
+
+        service.updateFreshnessForElapsedMs(1000);
+        QVERIFY(service.linkFresh());
+        service.updateFreshnessForElapsedMs(3000);
+        QVERIFY(!service.linkFresh());
+    }
+
+    void mockTelemetryMarksPublishedDomainsFresh()
+    {
+        animus::VehicleModel vehicle;
+        animus::BreadcrumbPathModel trail;
+        animus::TelemetryService service(&vehicle, &trail);
+
+        service.startMockTelemetry();
+        QVERIFY(service.running());
+        QVERIFY(service.linkFresh());
+        QVERIFY(vehicle.connected());
+        QVERIFY(vehicle.attitudeValid());
+        QVERIFY(vehicle.positionValid());
+        QVERIFY(vehicle.velocityValid());
+        QVERIFY(!vehicle.gpsValid());
+        service.stop();
+        QVERIFY(!service.linkFresh());
     }
 };
 

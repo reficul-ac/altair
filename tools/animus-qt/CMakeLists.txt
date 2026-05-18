@@ -62,6 +62,7 @@ qt_add_qml_module(
     qml/Main.qml
     qml/WorkspaceShell.qml
     qml/Map2DView.qml
+    qml/TelemetryStrip.qml
     qml/Terrain3DView.qml
     qml/SetupView.qml
     RESOURCES
