@@ -35,13 +35,19 @@ def main():
         ("cmake -S", "launcher did not configure builds by default"),
         ("--target sitl_runner", "launcher did not build sitl_runner"),
         ("--target animus_qt", "launcher did not build animus_qt"),
-        ("--start-udp-telemetry --udp-host 127.0.0.1 --udp-port 14551", "Animus UDP startup missing"),
+        (
+            "--start-udp-telemetry --udp-host 127.0.0.1 --udp-port 14551",
+            "Animus UDP startup missing",
+        ),
         ("tools/python/run_sitl.py", "launcher did not run the SITL helper"),
         ("--scenario cruise6dof", "launcher did not select cruise6dof"),
         ("--realtime --mavlink", "launcher did not request realtime MAVLink output"),
         ("--mavlink-port 14551", "launcher did not route SITL to Animus UDP"),
         ("--mavlink-source-port 14600", "launcher did not set predictable source port"),
-        ("tests/integration/cruise6dof_initial.ini", "launcher did not use the default initial fixture"),
+        (
+            "tests/integration/cruise6dof_initial.ini",
+            "launcher did not use the default initial fixture",
+        ),
     )
     for needle, message in checks:
         if needle not in result.stdout:

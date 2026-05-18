@@ -151,14 +151,7 @@ Item {
         var nextZoom = clampZoom(zoomLevel + delta)
         if (nextZoom === zoomLevel)
             return
-        syncManualCenterToCurrentView()
         zoomLevel = nextZoom
-    }
-
-    function syncManualCenterToCurrentView() {
-        manualCenterLatitudeDeg = centerLatitudeDeg
-        manualCenterLongitudeDeg = centerLongitudeDeg
-        following = false
     }
 
     function scaleMeters() {
@@ -377,7 +370,6 @@ Item {
         onPressed: function(mouse) {
             lastX = mouse.x
             lastY = mouse.y
-            root.syncManualCenterToCurrentView()
         }
         onPositionChanged: function(mouse) {
             if ((pressedButtons & Qt.LeftButton) === 0)

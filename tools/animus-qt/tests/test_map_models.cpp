@@ -9,11 +9,17 @@
 
 #include <QDir>
 #include <QFile>
+#include <QGuiApplication>
 #include <QImage>
+#include <QQmlComponent>
+#include <QQmlContext>
+#include <QQmlEngine>
 #include <QTemporaryDir>
+#include <QUrl>
 #include <QtTest/QtTest>
 #include <cmath>
 #include <cstring>
+#include <memory>
 
 namespace
 {
@@ -87,6 +93,30 @@ bool writeFile(const QString &path, const QByteArray &contents)
     if (!file.open(QIODevice::WriteOnly))
         return false;
     return file.write(contents) == contents.size();
+}
+
+std::unique_ptr<QObject> createMap2DView(animus::VehicleModel *vehicle,
+                                         animus::BreadcrumbPathModel *breadcrumbs,
+                                         animus::MapSourceRegistry *mapSources,
+                                         animus::OfflineMapManager *offlineMaps,
+                                         animus::MapPackManager *mapPacks,
+                                         QQmlEngine *engine)
+{
+    engine->rootContext()->setContextProperty(QStringLiteral("vehicleModel"), vehicle);
+    engine->rootContext()->setContextProperty(QStringLiteral("breadcrumbModel"), breadcrumbs);
+    engine->rootContext()->setContextProperty(QStringLiteral("mapSources"), mapSources);
+    engine->rootContext()->setContextProperty(QStringLiteral("offlineMaps"), offlineMaps);
+    engine->rootContext()->setContextProperty(QStringLiteral("mapPacks"), mapPacks);
+
+    const QUrl url =
+        QUrl::fromLocalFile(QStringLiteral(ANIMUS_QT_QML_DIR) + QStringLiteral("/Map2DView.qml"));
+    QQmlComponent component(engine, url, QQmlComponent::PreferSynchronous);
+    if (component.isError())
+        qWarning().noquote() << component.errors();
+    std::unique_ptr<QObject> object(component.create());
+    if (!object)
+        qWarning().noquote() << component.errors();
+    return object;
 }
 
 QByteArray validPackMetadata(QByteArray extra = QByteArray())
@@ -191,6 +221,40 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(model.append(37.0, -122.0, 10.0, 1.0));
         QVERIFY(!model.append(37.0001, -122.0, 10.0, 2.0));
         QCOMPARE(model.rowCount(), 1);
+    }
+
+    void map2dZoomPreservesVehicleFollowMode()
+    {
+        animus::VehicleModel vehicle;
+        vehicle.setLatitudeDeg(37.4275);
+        vehicle.setLongitudeDeg(-122.1697);
+        animus::BreadcrumbPathModel breadcrumbs;
+        animus::MapSourceRegistry mapSources;
+        animus::OfflineMapManager offlineMaps(&mapSources);
+        animus::MapPackManager mapPacks;
+        QQmlEngine engine;
+
+        std::unique_ptr<QObject> map =
+            createMap2DView(&vehicle, &breadcrumbs, &mapSources, &offlineMaps, &mapPacks, &engine);
+        QVERIFY(map);
+        map->setProperty("width", 800);
+        map->setProperty("height", 600);
+
+        QCOMPARE(map->property("following").toBool(), true);
+        const int defaultZoom = map->property("zoomLevel").toInt();
+        QVERIFY(QMetaObject::invokeMethod(map.get(), "zoomBy", Q_ARG(QVariant, 1)));
+        QCOMPARE(map->property("following").toBool(), true);
+        QCOMPARE(map->property("zoomLevel").toInt(), defaultZoom + 1);
+
+        QVERIFY(QMetaObject::invokeMethod(
+            map.get(), "panByPixels", Q_ARG(QVariant, 32), Q_ARG(QVariant, 0)));
+        QCOMPARE(map->property("following").toBool(), false);
+
+        QVERIFY(QMetaObject::invokeMethod(map.get(), "recenterOnVehicle"));
+        QCOMPARE(map->property("following").toBool(), true);
+        QVERIFY(QMetaObject::invokeMethod(map.get(), "zoomBy", Q_ARG(QVariant, -1)));
+        QCOMPARE(map->property("following").toBool(), true);
+        QCOMPARE(map->property("zoomLevel").toInt(), defaultZoom);
     }
 
     void mapPackLoadsValidMetadata()
@@ -460,5 +524,13 @@ class AnimusQtMapModelTests final : public QObject
     }
 };
 
-QTEST_GUILESS_MAIN(AnimusQtMapModelTests)
+int main(int argc, char **argv)
+{
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
+        qputenv("QT_QPA_PLATFORM", "offscreen");
+    QGuiApplication app(argc, argv);
+    AnimusQtMapModelTests tests;
+    return QTest::qExec(&tests, argc, argv);
+}
+
 #include "test_map_models.moc"

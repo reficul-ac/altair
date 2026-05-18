@@ -80,7 +80,7 @@ Reusable Bayek framework follow-up is tracked separately in
   installs have a portable runtime package strategy.
 - [x] Fix the default 2D Animus map startup so a usable map source loads, or an
   explicit operator-facing offline/cache state is shown when it cannot.
-- [ ] Keep 2D vehicle snap/follow mode active across zoom changes; only unsnap
+- [x] Keep 2D vehicle snap/follow mode active across zoom changes; only unsnap
   when the operator explicitly disables follow mode or pans the 2D map.
 - [x] Add a compact top-right flight telemetry strip for both 2D and 3D views
   with attitude, altitude, latitude/longitude, velocity, and link/state

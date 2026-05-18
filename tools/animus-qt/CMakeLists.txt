@@ -88,6 +88,9 @@ add_executable(
 )
 target_include_directories(animus_qt_unit_tests PRIVATE src)
 target_compile_features(animus_qt_unit_tests PRIVATE cxx_std_17)
+target_compile_definitions(
+    animus_qt_unit_tests PRIVATE ANIMUS_QT_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+)
 target_link_libraries(
     animus_qt_unit_tests
     PRIVATE Qt6::Concurrent
@@ -95,7 +98,9 @@ target_link_libraries(
             Qt6::Gui
             Qt6::Network
             Qt6::Positioning
+            Qt6::Qml
             Qt6::Quick
+            Qt6::QuickControls2
             Qt6::Test
 )
 if(COMMAND altair_enable_warnings)
