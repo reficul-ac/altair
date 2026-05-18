@@ -6,9 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import select
 import shutil
-import signal
 import struct
 import subprocess
 import sys
@@ -389,27 +387,6 @@ def compare_workspace_screenshots(captures: list[dict[str, object]]) -> list[dic
     return comparisons
 
 
-class ManagedXvfb:
-    def __init__(self, executable: str, process: subprocess.Popen[object], display: str) -> None:
-        self.executable = executable
-        self.process = process
-        self.display = display
-
-    def stop(self) -> None:
-        if self.process.poll() is not None:
-            return
-        try:
-            os.killpg(self.process.pid, signal.SIGTERM)
-            self.process.wait(timeout=3.0)
-        except (OSError, subprocess.TimeoutExpired):
-            if self.process.poll() is None:
-                try:
-                    os.killpg(self.process.pid, signal.SIGKILL)
-                except OSError:
-                    pass
-                self.process.wait(timeout=1.0)
-
-
 def summarize_log(path: Path, max_lines: int = 6) -> str:
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -419,59 +396,6 @@ def summarize_log(path: Path, max_lines: int = 6) -> str:
     if not useful:
         return ""
     return " | ".join(useful[:max_lines])
-
-
-def start_managed_xvfb(log_path: Path, timeout_s: float = 5.0) -> ManagedXvfb:
-    xvfb = shutil.which("Xvfb")
-    if xvfb is None:
-        raise RuntimeError("Xvfb executable not found")
-
-    read_fd, write_fd = os.pipe()
-    try:
-        with log_path.open("w", encoding="utf-8") as log:
-            process = subprocess.Popen(
-                [
-                    xvfb,
-                    "-screen",
-                    "0",
-                    XVFB_SCREEN,
-                    "-nolisten",
-                    "tcp",
-                    "-displayfd",
-                    str(write_fd),
-                ],
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                text=True,
-                start_new_session=True,
-                pass_fds=(write_fd,),
-            )
-    finally:
-        os.close(write_fd)
-
-    try:
-        readable, _, _ = select.select([read_fd], [], [], timeout_s)
-        if not readable:
-            raise RuntimeError("timed out waiting for Xvfb display allocation")
-        display_number = os.read(read_fd, 32).decode("utf-8", errors="replace").strip()
-    except Exception:
-        if process.poll() is None:
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except OSError:
-                pass
-            process.wait(timeout=1.0)
-        raise
-    finally:
-        os.close(read_fd)
-
-    if not display_number or process.poll() is not None:
-        details = summarize_log(log_path)
-        message = "Xvfb failed to start"
-        if details:
-            message = f"{message}: {details}"
-        raise RuntimeError(message)
-    return ManagedXvfb(xvfb, process, f":{display_number}")
 
 
 def command_for_workspace(
@@ -560,24 +484,25 @@ def main() -> int:
 
     executable = Path(args.executable)
     env = os.environ.copy()
-    xvfb: ManagedXvfb | None = None
     virtual_display = "existing" if env.get("DISPLAY") else "offscreen"
     xvfb_executable = ""
     display = env.get("DISPLAY", "")
+    command_prefix: list[str] = []
     notes: list[str] = []
 
     if not display:
-        try:
-            xvfb = start_managed_xvfb(logs_dir / "virtual-display.log")
-            virtual_display = "managed-xvfb"
-            xvfb_executable = xvfb.executable
-            display = xvfb.display
-            env["DISPLAY"] = display
-        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        xvfb_run = shutil.which("xvfb-run")
+        if xvfb_run is not None:
+            virtual_display = "xvfb-run"
+            xvfb_executable = xvfb_run
+            env.setdefault("QT_OPENGL", "software")
+            command_prefix = [xvfb_run, "-a"]
+        else:
             virtual_display = "offscreen"
             env.setdefault("QT_QPA_PLATFORM", "offscreen")
             env.setdefault("QT_QUICK_BACKEND", "software")
-            note = f"managed Xvfb startup failed; falling back to Qt offscreen: {exc}"
+            env.setdefault("QT_OPENGL", "software")
+            note = "xvfb-run executable not found; falling back to Qt offscreen"
             notes.append(note)
             with (logs_dir / "virtual-display.log").open("a", encoding="utf-8") as log:
                 log.write(note + "\n")
@@ -590,7 +515,7 @@ def main() -> int:
         "display": display,
         "virtualDisplay": virtual_display,
         "xvfbExecutable": xvfb_executable,
-        "usedXvfb": virtual_display == "managed-xvfb",
+        "usedXvfb": virtual_display in ("managed-xvfb", "xvfb-run"),
         "usedOffscreen": virtual_display == "offscreen",
         "captures": [],
         "screenshots": [],
@@ -599,53 +524,49 @@ def main() -> int:
         "status": "pass",
     }
 
-    try:
-        if args.no_run:
-            manifest["status"] = "ready"
-            manifest["notes"].append("no-run requested; Qt app was not launched")
-        elif not executable.exists():
-            manifest["status"] = "fail"
-            manifest["notes"].append(
-                "animus_qt executable not found; build with -DALTAIR_BUILD_ANIMUS_QT=ON first"
+    if args.no_run:
+        manifest["status"] = "ready"
+        manifest["notes"].append("no-run requested; Qt app was not launched")
+    elif not executable.exists():
+        manifest["status"] = "fail"
+        manifest["notes"].append(
+            "animus_qt executable not found; build with -DALTAIR_BUILD_ANIMUS_QT=ON first"
+        )
+    else:
+        for workspace in WORKSPACES:
+            command = command_for_workspace(
+                executable, screenshot_dir, workspace, args.capture_delay_ms
             )
-        else:
-            for workspace in WORKSPACES:
-                command = command_for_workspace(
-                    executable, screenshot_dir, workspace, args.capture_delay_ms
+            launched_command = command_prefix + command
+            log_path = logs_dir / f"{workspace}.log"
+            with log_path.open("w", encoding="utf-8") as log:
+                completed = subprocess.run(
+                    launched_command,
+                    cwd=REPO_ROOT,
+                    env=env,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    timeout=max(10, args.capture_delay_ms // 1000 + 10),
+                    check=False,
                 )
-                log_path = logs_dir / f"{workspace}.log"
-                with log_path.open("w", encoding="utf-8") as log:
-                    completed = subprocess.run(
-                        command,
-                        cwd=REPO_ROOT,
-                        env=env,
-                        stdout=log,
-                        stderr=subprocess.STDOUT,
-                        timeout=max(10, args.capture_delay_ms // 1000 + 10),
-                        check=False,
-                    )
-                png = inspect_png(screenshot_dir / f"{workspace}.png", workspace)
-                capture = {
-                    "workspace": workspace,
-                    "command": command,
-                    "exitCode": completed.returncode,
-                    "log": str(log_path),
-                    "screenshot": str(screenshot_dir / f"{workspace}.png"),
-                    "png": png,
-                }
-                manifest["captures"].append(capture)
-                if png.get("ok"):
-                    manifest["screenshots"].append(capture["screenshot"])
-                if completed.returncode != 0 or not png.get("ok"):
-                    manifest["status"] = "fail"
-            manifest["workspaceComparisons"] = compare_workspace_screenshots(manifest["captures"])
-            for comparison in manifest["workspaceComparisons"]:
-                if comparison.get("status") == "fail":
-                    manifest["status"] = "fail"
-    finally:
-        if xvfb is not None:
-            xvfb.stop()
-
+            png = inspect_png(screenshot_dir / f"{workspace}.png", workspace)
+            capture = {
+                "workspace": workspace,
+                "command": launched_command,
+                "exitCode": completed.returncode,
+                "log": str(log_path),
+                "screenshot": str(screenshot_dir / f"{workspace}.png"),
+                "png": png,
+            }
+            manifest["captures"].append(capture)
+            if png.get("ok"):
+                manifest["screenshots"].append(capture["screenshot"])
+            if completed.returncode != 0 or not png.get("ok"):
+                manifest["status"] = "fail"
+        manifest["workspaceComparisons"] = compare_workspace_screenshots(manifest["captures"])
+        for comparison in manifest["workspaceComparisons"]:
+            if comparison.get("status") == "fail":
+                manifest["status"] = "fail"
     (run_dir / "run-manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )

@@ -43,22 +43,26 @@ Reusable Bayek framework follow-up is tracked separately in
   `capture_animus_sitl.py`; point them to `tools/animus-qt`,
   `build-animus-qt`, and `capture_animus_qt_sitl.py`.
 - [ ] Complete the remaining Animus Qt migration work: QGC-derived 2D
-  provider/cache workers, offline MBTiles/PMTiles serving, Cesium terrain,
+  provider/cache workers, offline PMTiles serving, Cesium terrain,
   mission/fence/rally overlays, and broader Qt parity.
 - [ ] Record the exact upstream QGroundControl revision, license headers, and
   source-to-Animus mapping in `docs/animus_qgc_map_audit.md` before importing
   or adapting QGC-derived map/provider code.
-- [x] Finish the local-pack 2D map controls after the local XYZ v1: operator
+- [x] Finish the local-pack 2D map controls after the initial local-pack v1:
+  operator
   tile source selection, pan controls, scale/status UI, and richer offline
   failure states. This covers runtime plumbing only; the checked-in
   `default-sitl-stanford` pack still contains placeholder center tiles.
   Provider/cache workers remain tracked separately above.
-- [ ] Extend the local tile/cache service beyond validated XYZ PNG packs:
-  MBTiles before PMTiles support, cache metadata, and operator-visible cache
-  health.
-- [ ] Generate the full `default-sitl-stanford` offline map payload from
-  operator-approved NAIP/3DEP source rasters and decide whether large generated
-  tiles are stored in Git, released as artifacts, or installed out of band.
+- [x] Migrate Animus Qt offline map packs from validated XYZ PNG directories
+  to MBTiles-only raster packs.
+- [ ] Extend the local tile/cache service beyond MBTiles-only raster packs:
+  PMTiles support, cache metadata, provider workers, and operator-visible
+  cache health.
+- [ ] Generate the full `default-sitl-stanford` MBTiles offline map pack from
+  operator-approved NAIP/3DEP source rasters and decide whether the large
+  generated MBTiles artifacts are stored in Git, released as artifacts, or
+  installed out of band.
 - [ ] Add an Animus map-pack acceptance check that distinguishes real offline
   imagery coverage from placeholder-only center tiles, including screenshot or
   manifest status for `imagery.sourceStatus`.
@@ -81,9 +85,9 @@ Reusable Bayek framework follow-up is tracked separately in
   labels, battery/readiness summaries, packet age by message family, update
   rates, jitter, dropped/decoded counts, clock/source timestamps where
   available, and per-field stale/unsupported/unknown states.
-- [ ] Move UDP receive/decode, map/tile IO, and terrain/cache work behind
-  explicit worker boundaries so rendering and map loading cannot contend with
-  telemetry ingestion.
+- [ ] Move UDP receive/decode, MBTiles/map tile IO, and terrain/cache work
+  behind explicit worker boundaries so rendering, synchronous MBTiles reads,
+  and map loading cannot contend with telemetry ingestion.
 - [x] Replace Animus Qt capture readiness artifacts with real map-2d,
   terrain-3d, and setup screenshots plus nonblank scene checks.
 - [ ] Add QtLocation-backed Animus Qt map rendering once CI and operator
@@ -161,7 +165,7 @@ Reusable Bayek framework follow-up is tracked separately in
   tests and capture coverage.
 - [x] Extend Animus Qt screenshot analysis beyond nonblank PNG checks to catch
   obvious overlap, clipping, and workspace selection regressions.
-- [ ] Make `capture_animus_qt_sitl.py` fall back to managed Xvfb/offscreen when
+- [ ] Make `capture_animus_qt_sitl.py` fall back to `xvfb-run`/offscreen when
   an existing `DISPLAY` cannot initialize Qt.
 - [x] Retire the obsolete TypeScript Animus app, generated dependency tree,
   interaction harnesses, and old CI lane now that Qt Animus is canonical.

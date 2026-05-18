@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from pathlib import Path
 from typing import Any
-
 
 WEB_MERCATOR_LAT_LIMIT = 85.05112878
 
@@ -31,6 +31,79 @@ def _object(value: Any, name: str, errors: list[str]) -> dict[str, Any]:
         return value
     _error(errors, f"{name} must be an object")
     return {}
+
+
+def _read_mbtiles_metadata(connection: sqlite3.Connection) -> dict[str, str]:
+    try:
+        rows = connection.execute("SELECT name, value FROM metadata").fetchall()
+    except sqlite3.Error:
+        return {}
+    return {str(name): str(value) for name, value in rows}
+
+
+def _validate_mbtiles(
+    path: Path,
+    metadata: dict[str, Any],
+    min_zoom: int | None,
+    max_zoom: int | None,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    if not path.is_file():
+        _error(errors, f"MBTiles database is missing: {path}")
+        return
+
+    try:
+        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except sqlite3.Error as exc:
+        _error(errors, f"MBTiles database cannot be opened read-only: {exc}")
+        return
+
+    try:
+        table_names = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        if "tiles" not in table_names:
+            _error(errors, "MBTiles tiles table is missing")
+            return
+
+        columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(tiles)").fetchall()}
+        required_columns = {"zoom_level", "tile_column", "tile_row", "tile_data"}
+        missing_columns = sorted(required_columns - columns)
+        if missing_columns:
+            _error(errors, f"MBTiles tiles table is missing columns: {', '.join(missing_columns)}")
+            return
+
+        tile_count = connection.execute("SELECT count(*) FROM tiles").fetchone()[0]
+        if int(tile_count) <= 0:
+            _error(errors, "MBTiles tiles table has no tiles")
+
+        if isinstance(min_zoom, int) and isinstance(max_zoom, int):
+            for zoom in range(min_zoom, max_zoom + 1):
+                count = connection.execute(
+                    "SELECT count(*) FROM tiles WHERE zoom_level = ?", (zoom,)
+                ).fetchone()[0]
+                if int(count) <= 0:
+                    _error(errors, f"MBTiles zoom {zoom} has no tiles")
+
+        mbtiles_metadata = _read_mbtiles_metadata(connection)
+        fmt = mbtiles_metadata.get("format", "").strip().lower()
+        if fmt and fmt not in {"png", "jpg", "jpeg", "webp"}:
+            _error(errors, "MBTiles metadata.format must describe raster tiles")
+        for field in ("name", "attribution"):
+            value = mbtiles_metadata.get(field, "").strip()
+            expected = str(metadata.get(field, "")).strip()
+            if value and expected and value != expected:
+                _error(errors, f"MBTiles metadata.{field} disagrees with metadata.json")
+        if "metadata" not in table_names:
+            _warn(warnings, "MBTiles metadata table is missing")
+    except sqlite3.Error as exc:
+        _error(errors, f"MBTiles database is invalid: {exc}")
+    finally:
+        connection.close()
 
 
 def validate_pack(pack_dir: Path, require_3d: bool) -> tuple[list[str], list[str]]:
@@ -58,12 +131,12 @@ def validate_pack(pack_dir: Path, require_3d: bool) -> tuple[list[str], list[str
             _error(errors, f"{field} is required")
 
     imagery = _object(metadata.get("imagery"), "imagery", errors)
-    if imagery.get("format") != "xyz":
-        _error(errors, 'imagery.format must be "xyz"')
-    tile_root_value = imagery.get("tileRoot", "2d/xyz")
-    if not isinstance(tile_root_value, str) or not _is_relative_safe(tile_root_value):
-        _error(errors, "imagery.tileRoot must be a relative path without '..'")
-        tile_root_value = "2d/xyz"
+    if imagery.get("format") != "mbtiles":
+        _error(errors, 'imagery.format must be "mbtiles"')
+    imagery_path_value = imagery.get("path", "2d/imagery.mbtiles")
+    if not isinstance(imagery_path_value, str) or not _is_relative_safe(imagery_path_value):
+        _error(errors, "imagery.path must be a relative path without '..'")
+        imagery_path_value = "2d/imagery.mbtiles"
 
     min_zoom = metadata.get("minZoom")
     max_zoom = metadata.get("maxZoom")
@@ -91,17 +164,7 @@ def validate_pack(pack_dir: Path, require_3d: bool) -> tuple[list[str], list[str
     if not attribution_path.is_file():
         _error(errors, "attribution.txt is missing")
 
-    tile_root = pack_dir / tile_root_value
-    if not tile_root.is_dir():
-        _error(errors, f"tile root is missing: {tile_root_value}")
-    elif isinstance(min_zoom, int) and isinstance(max_zoom, int):
-        for zoom in range(min_zoom, max_zoom + 1):
-            zoom_dir = tile_root / str(zoom)
-            if not zoom_dir.is_dir():
-                _error(errors, f"zoom directory is missing: {tile_root_value}/{zoom}")
-                continue
-            if not any(zoom_dir.glob("*/*.png")):
-                _error(errors, f"zoom {zoom} has no PNG tiles")
+    _validate_mbtiles(pack_dir / imagery_path_value, metadata, min_zoom, max_zoom, errors, warnings)
 
     terrain = metadata.get("terrain", {})
     terrain = terrain if isinstance(terrain, dict) else {}

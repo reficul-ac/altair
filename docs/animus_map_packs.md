@@ -2,7 +2,7 @@
 
 Animus Qt uses operator-managed offline map packs under `map_packs/`. The
 current runtime path is intentionally narrow: it discovers immediate child
-directories, reads `metadata.json`, and renders local XYZ PNG imagery through
+directories, reads `metadata.json`, and renders local MBTiles raster imagery through
 `image://animusTiles/<pack>/<z>/<x>/<y>`. Runtime map display must not download
 tiles, process rasters, generate terrain, or block telemetry and SITL paths.
 
@@ -31,19 +31,20 @@ map_packs/
     metadata.json
     attribution.txt
     2d/
-      xyz/
-        <z>/<x>/<y>.png
+      imagery.mbtiles
 ```
 
-`metadata.json` must use schema version 1, `imagery.format: "xyz"`, a relative
-`imagery.tileRoot`, valid Web Mercator bounds, and a deterministic zoom range.
+`metadata.json` must use schema version 1, `imagery.format: "mbtiles"`, a
+relative `imagery.path` that defaults to `2d/imagery.mbtiles`, valid Web
+Mercator bounds, and a deterministic zoom range. The MBTiles database must have
+a `tiles` table with raster `tile_data`; if an internal `metadata` table is
+present, `name` and `attribution` must agree with `metadata.json`.
 `terrain.format` should remain `"none"` until a real Cesium/WebEngine terrain
 runtime exists.
 
-MBTiles and PMTiles are future storage formats. Do not advertise them in
-metadata until Animus has worker-backed SQLite or local-server tile reads for
-that format. Existing PMTiles artifacts under `artifacts/` are not currently
-discoverable by the runtime.
+Legacy local XYZ directory packs are rejected by the runtime and validator.
+PMTiles remains a future storage format. Existing PMTiles artifacts under
+`artifacts/` are not currently discoverable by the runtime.
 
 ## Source Ranking
 
@@ -63,7 +64,7 @@ Useful source references:
 - USGS 3DEP 1/3 arc-second DEM: <https://data.usgs.gov/datacatalog/data/USGS%3A3a81321b-c153-416f-98b7-cc8e5f0e17c3>
 - USGS NAIP ImageServer: <https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer>
 - Geofabrik downloads and ODbL notes: <https://www.geofabrik.de/data/download.html>
-- GDAL XYZ tile generation: <https://gdal.org/en/stable/programs/gdal2tiles.html>
+- GDAL tile generation: <https://gdal.org/en/stable/programs/gdal2tiles.html>
 - Google Map Tiles policy: <https://developers.google.com/maps/documentation/tile/policies>
 
 ## Attribution
@@ -98,11 +99,12 @@ python3 tools/python/generate_animus_map_pack.py \
   --output-root map_packs
 ```
 
-The imagery path crops/reprojects to EPSG:3857 with `gdalwarp`, then emits
-north-origin XYZ tiles with `gdal2tiles.py --xyz`. If a DEM is supplied, the
-tool stages the cropped DEM under `3d/terrain_dem/`, emits hillshade XYZ tiles,
-and writes contour GeoJSON. The staged 3D files are developer artifacts for a
-future Cesium path; the current runtime ignores them.
+The imagery path crops/reprojects to EPSG:3857 with `gdalwarp`, stages
+north-origin tiles under the build work directory, then packages them into
+`2d/imagery.mbtiles` with TMS tile rows. If a DEM is supplied, the tool stages
+the cropped DEM under `3d/terrain_dem/`, emits `3d/hillshade.mbtiles`, and
+writes contour GeoJSON. The staged 3D files are developer artifacts for a future
+Cesium path; the current runtime ignores them.
 
 Validate a pack before using it:
 
@@ -120,8 +122,8 @@ providers expect URL-addressable `layer.json` and terrain tile resources. A
 future local server should serve:
 
 ```text
-/map_packs/<pack>/2d/xyz/{z}/{x}/{y}.png
-/map_packs/<pack>/3d/hillshade_xyz/{z}/{x}/{y}.png
+/map_packs/<pack>/2d/imagery.mbtiles/{z}/{x}/{y}.png
+/map_packs/<pack>/3d/hillshade.mbtiles/{z}/{x}/{y}.png
 /map_packs/<pack>/3d/terrain_quantized_mesh/layer.json
 /map_packs/<pack>/3d/terrain_quantized_mesh/{z}/{x}/{y}.terrain
 ```

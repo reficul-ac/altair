@@ -57,7 +57,7 @@ Flight View parity is future Qt Animus work. The current shell focuses on teleme
 
 - Drag the map to pan; panning leaves selected-vehicle follow and keeps a manual
   center until recentered.
-- Mouse wheel and the `+`/`-` controls zoom the map. Local XYZ packs bound zoom
+- Mouse wheel and the `+`/`-` controls zoom the map. Local MBTiles packs bound zoom
   to the active pack's `minZoom`/`maxZoom`; the CI fallback renderer keeps a
   bounded synthetic zoom range.
 - `Snap` or the center pan-control recenters on the selected vehicle and resumes
@@ -72,9 +72,9 @@ Flight View parity is future Qt Animus work. The current shell focuses on teleme
 - `Terrain 3D` opens the Cesium/WebEngine terrain preview path when available.
 - Vehicle markers are triangular and point along velocity, with heading as a low-speed fallback. Home/origin markers use an X shape so they are visually distinct from vehicles.
 
-Animus expects operator-provided, licensed map packs. Repository artifacts do not ship generated topo or PMTiles fallbacks.
+Animus expects operator-provided, licensed MBTiles map packs. Repository artifacts do not ship generated topo or PMTiles fallbacks.
 
-Animus downloads only from `http` or `https` XYZ templates that the operator is licensed to cache. It does not scrape Google, Mapbox, Esri, or other tile services outside their permitted offline or on-prem products. DEM cache setup supports MapLibre-compatible RGB DEM encodings: `terrarium` and `mapbox`. If no active cache exists, or the current view requests missing tiles, Animus shows an explicit offline cache status while keeping vehicle overlays usable.
+Animus does not download map tiles in the QtQuick offline-pack path. It does not scrape Google, Mapbox, Esri, or other tile services outside their permitted offline or on-prem products. DEM cache setup supports MapLibre-compatible RGB DEM encodings: `terrarium` and `mapbox`. If no active cache exists, or the current view requests missing tiles, Animus shows an explicit offline cache status while keeping vehicle overlays usable.
 
 Vehicle telemetry is used only for overlays: selected and fleet trails, event markers, an origin/home marker when available, mission waypoint paths, geofence polygons/circles, and rally points when decoded records are present. Terrain check requests are protocol-backed and appear in the operation history. Creating or editing geofences, rally points, or terrain tiles remains out of scope unless a decoded MAVLink path is added for that operation.
 

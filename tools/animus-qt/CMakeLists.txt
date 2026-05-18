@@ -6,10 +6,11 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+find_package(SQLite3 REQUIRED)
+
 find_package(
     Qt6 6.4 REQUIRED
-    COMPONENTS Concurrent
-               Core
+    COMPONENTS Core
                Gui
                Qml
                Quick
@@ -31,6 +32,7 @@ qt_add_executable(
     src/maps/MapSourceRegistry.cpp
     src/maps/OfflineMapManager.cpp
     src/maps/MapPackManager.cpp
+    src/maps/TileSource.cpp
     src/maps/TileImageProvider.cpp
     src/maps/CesiumBridge.cpp
 )
@@ -40,8 +42,7 @@ target_compile_features(animus_qt PRIVATE cxx_std_17)
 
 target_link_libraries(
     animus_qt
-    PRIVATE Qt6::Concurrent
-            Qt6::Core
+    PRIVATE Qt6::Core
             Qt6::Gui
             Qt6::Qml
             Qt6::Quick
@@ -50,6 +51,7 @@ target_link_libraries(
             Qt6::Network
             Qt6::WebChannel
             Qt6::WebEngineQuick
+            SQLite::SQLite3
 )
 
 qt_add_qml_module(
@@ -80,6 +82,7 @@ add_executable(
     src/maps/MapSourceRegistry.cpp
     src/maps/OfflineMapManager.cpp
     src/maps/MapPackManager.cpp
+    src/maps/TileSource.cpp
     src/maps/TileImageProvider.cpp
     src/telemetry/BreadcrumbPathModel.cpp
     src/telemetry/MavlinkDecoder.cpp
@@ -93,8 +96,7 @@ target_compile_definitions(
 )
 target_link_libraries(
     animus_qt_unit_tests
-    PRIVATE Qt6::Concurrent
-            Qt6::Core
+    PRIVATE Qt6::Core
             Qt6::Gui
             Qt6::Network
             Qt6::Positioning
@@ -102,6 +104,7 @@ target_link_libraries(
             Qt6::Quick
             Qt6::QuickControls2
             Qt6::Test
+            SQLite::SQLite3
 )
 if(COMMAND altair_enable_warnings)
     altair_enable_warnings(animus_qt_unit_tests)

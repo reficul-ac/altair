@@ -15,7 +15,7 @@ Item {
     readonly property bool sourceAllowed: offlineMaps.canUseSource(mapSources.activeSourceId)
     readonly property bool sourceIsOfflinePack: mapSources.activeSourceId === "offline-pack"
     readonly property bool hasRasterTiles: sourceIsOfflinePack && sourceAllowed &&
-                                           mapPacks.activeHasLocalXyzImagery
+                                           mapPacks.activeHasMbtilesImagery
     readonly property double centerLatitudeDeg: following ? vehicleModel.latitudeDeg
                                                           : manualCenterLatitudeDeg
     readonly property double centerLongitudeDeg: following ? vehicleModel.longitudeDeg
@@ -65,7 +65,7 @@ Item {
     }
 
     function defaultZoom() {
-        if (mapPacks.activeHasLocalXyzImagery)
+        if (mapPacks.activeHasMbtilesImagery)
             return Math.max(mapPacks.activeMinZoom, Math.min(mapPacks.activeMaxZoom, 15))
         return 15
     }
@@ -75,7 +75,7 @@ Item {
     }
 
     function clampZoom(zoom) {
-        if (mapPacks.activeHasLocalXyzImagery)
+        if (mapPacks.activeHasMbtilesImagery)
             return Math.max(mapPacks.activeMinZoom, Math.min(mapPacks.activeMaxZoom, zoom))
         return Math.max(3, Math.min(20, zoom))
     }
@@ -174,8 +174,8 @@ Item {
             return "Provider renderer pending for " + mapSources.activeLabel()
         if (!mapPacks.activePackId)
             return "No offline map pack selected"
-        if (!mapPacks.activeHasLocalXyzImagery)
-            return "Active pack has no local XYZ imagery"
+        if (!mapPacks.activeHasMbtilesImagery)
+            return "Active pack has no MBTiles imagery"
         return mapSources.activeLabel() + ": " + mapPacks.activePackId + " z" + zoomLevel
     }
 
@@ -191,7 +191,7 @@ Item {
             return "Provider renderer unavailable"
         if (!mapPacks.activePackId)
             return "Operator-provided map pack required"
-        if (!mapPacks.activeHasLocalXyzImagery)
+        if (!mapPacks.activeHasMbtilesImagery)
             return "Active map pack cannot render 2D imagery"
         return "Local map imagery unavailable"
     }
@@ -202,9 +202,9 @@ Item {
         if (!sourceIsOfflinePack)
             return "Network/provider map rendering is not enabled in this QtQuick path."
         if (!mapPacks.activePackId)
-            return "Install a licensed offline XYZ map pack under the configured map pack root."
-        if (!mapPacks.activeHasLocalXyzImagery)
-            return "The selected pack loaded, but it does not expose local XYZ raster tiles."
+            return "Install a licensed offline MBTiles map pack under the configured map pack root."
+        if (!mapPacks.activeHasMbtilesImagery)
+            return "The selected pack loaded, but it does not expose MBTiles raster imagery."
         return "The fallback grid is active; vehicle, home, trail, pan, zoom, and snap controls remain usable."
     }
 
@@ -214,7 +214,7 @@ Item {
             "Offline policy: " + offlineMaps.modeLabel(),
             "Map pack root: " + (mapPacks.rootPath || "map_packs"),
             "Active pack: " + (mapPacks.activePackId || "none"),
-            "Tile root: " + (mapPacks.activeTileRootPath || "none")
+            "MBTiles database: " + (mapPacks.activeTileDatabasePath || "none")
         ]
         var validationError = mapPacks.validationError()
         if (validationError)
@@ -646,7 +646,7 @@ Item {
         text: (root.sourceIsOfflinePack ? (mapPacks.activeAttribution() ||
                                            mapSources.activeAttribution())
                                          : mapSources.activeAttribution()) +
-              (root.hasRasterTiles ? " | Local XYZ" : " | QtQuick fallback")
+              (root.hasRasterTiles ? " | MBTiles" : " | QtQuick fallback")
         color: "#202020"
         padding: 6
         elide: Text.ElideRight

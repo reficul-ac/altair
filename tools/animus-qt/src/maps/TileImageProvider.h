@@ -10,13 +10,12 @@
 namespace animus
 {
 
-class TileImageProvider final : public QQuickAsyncImageProvider
+class TileImageProvider final : public QQuickImageProvider
 {
   public:
     explicit TileImageProvider(const MapPackManager *mapPacks);
 
-    QQuickImageResponse *requestImageResponse(const QString &id,
-                                              const QSize &requestedSize) override;
+    QImage requestImage(const QString &id, QSize *size, const QSize &requestedSize) override;
     QImage loadTileImage(const QString &id, const QSize &requestedSize) const;
 
   private:

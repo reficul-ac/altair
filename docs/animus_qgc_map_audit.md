@@ -37,7 +37,7 @@ Inspect these QGC areas before each porting slice:
 
 ## Inspected Source Areas
 
-This v1 local XYZ slice did not import QGC implementation code. It records the
+This v1 local offline-pack slice did not import QGC implementation code. It records the
 areas to inspect before the next provider/cache slice:
 
 | QGC source area | Purpose to inspect | Animus destination |
@@ -77,8 +77,8 @@ code:
 | Source | Animus file | License handling |
 | --- | --- | --- |
 | Original Altair implementation | `tools/animus-qt/src/maps/MapPackManager.*` | Altair repository license; validates local pack metadata and bounds. |
-| Original Altair implementation | `tools/animus-qt/src/maps/TileImageProvider.*` | Altair repository license; serves validated local PNG XYZ tiles through `image://animusTiles`. |
-| Original Altair implementation | `tools/animus-qt/qml/Map2DView.qml` | Altair repository license; composes local XYZ raster tiles, markers, breadcrumbs, attribution, and fallback UI. |
+| Original Altair implementation | `tools/animus-qt/src/maps/TileImageProvider.*` and `tools/animus-qt/src/maps/TileSource.*` | Altair repository license; serves validated local MBTiles raster tiles through `image://animusTiles`. |
+| Original Altair implementation | `tools/animus-qt/qml/Map2DView.qml` | Altair repository license; composes local MBTiles raster tiles, markers, breadcrumbs, attribution, and fallback UI. |
 
 ## Remaining Audit Work
 

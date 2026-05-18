@@ -10,7 +10,7 @@ MapSourceRegistry::MapSourceRegistry(QObject *parent) : QAbstractListModel(paren
     m_sources.push_back({"osm", "OpenStreetMap", "osm", "OpenStreetMap contributors", true});
     m_sources.push_back({"satellite",
                          "Licensed Satellite",
-                         "xyz-raster",
+                         "raster-provider",
                          "Operator-provided licensed imagery",
                          true});
     m_activeSourceId = QStringLiteral("offline-pack");

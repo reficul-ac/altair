@@ -37,11 +37,10 @@ map_packs/
     metadata.json
     attribution.txt
     2d/
-      xyz/
-        <z>/<x>/<y>.png
+      imagery.mbtiles
     3d/
       terrain_quantized_mesh/
-      hillshade_xyz/
+      hillshade.mbtiles
       contours/
 ```
 
@@ -62,9 +61,8 @@ Minimal `metadata.json`:
     "north": 37.50
   },
   "imagery": {
-    "format": "xyz",
-    "tileRoot": "2d/xyz",
-    "tileScheme": "xyz",
+    "format": "mbtiles",
+    "path": "2d/imagery.mbtiles",
     "extension": "png"
   },
   "terrain": { "format": "none" }
@@ -72,18 +70,19 @@ Minimal `metadata.json`:
 ```
 
 `metadata.json` currently requires `schemaVersion: 1`, `name`, `license`,
-`attribution`, `imagery.format: "xyz"`, valid `minZoom`/`maxZoom`, and a
-relative local XYZ `imagery.tileRoot`. The current C++ loader rejects MBTiles,
-PMTiles, and other imagery formats. Supported terrain metadata values are
+`attribution`, `imagery.format: "mbtiles"`, valid `minZoom`/`maxZoom`, and a
+relative local `imagery.path`. The C++ loader opens MBTiles read-only, validates
+the required `tiles` table, and rejects legacy XYZ, PMTiles, and other imagery
+formats. Supported terrain metadata values are
 `none` and `quantized-mesh`, but `has3dTerrain` is true only for
 `terrain.format: "quantized-mesh"` with `3d/terrain/layer.json`; leave
 `terrain.format` as `"none"` for staged DEM/topography packs until the Cesium
 runtime path exists.
 
 Future phases will extend validation for layer metadata, generated-at metadata,
-MBTiles schema details, PMTiles support, and quantized-mesh terrain
-completeness. See [Animus map packs](animus_map_packs.md) for the current
-Stanford pack workflow and source policy.
+PMTiles support, and quantized-mesh terrain completeness. See [Animus map
+packs](animus_map_packs.md) for the current Stanford pack workflow and source
+policy.
 
 ## Current Scope
 
@@ -99,7 +98,7 @@ Implemented now:
 
 Not implemented yet:
 
-- MBTiles/PMTiles tile serving.
+- PMTiles tile serving and provider/cache workers.
 - QGC-derived provider/cache workers.
 - Bundled CesiumJS vendor assets and quantized-mesh terrain loading.
 - Mission, geofence, rally, and multi-vehicle model adapters.

@@ -8,6 +8,7 @@
 #include "telemetry/TelemetryService.h"
 
 #include <QDir>
+#include <QBuffer>
 #include <QFile>
 #include <QGuiApplication>
 #include <QImage>
@@ -20,6 +21,7 @@
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <sqlite3.h>
 
 namespace
 {
@@ -124,11 +126,104 @@ QByteArray validPackMetadata(QByteArray extra = QByteArray())
     QByteArray metadata =
         "{\"schemaVersion\":1,\"name\":\"Stanford\",\"description\":\"SITL range\","
         "\"minZoom\":12,\"maxZoom\":16,\"license\":\"test-license\","
-        "\"attribution\":\"test data\",\"imagery\":{\"format\":\"xyz\"}";
+        "\"attribution\":\"test data\",\"imagery\":{\"format\":\"mbtiles\"}";
     if (!extra.isEmpty())
         metadata += "," + extra;
     metadata += "}";
     return metadata;
+}
+
+QByteArray pngBytes(const QColor &color)
+{
+    QImage tile(4, 4, QImage::Format_RGBA8888);
+    tile.fill(color);
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    buffer.open(QIODevice::WriteOnly);
+    tile.save(&buffer, "PNG");
+    return bytes;
+}
+
+bool execSql(sqlite3 *database, const char *sql)
+{
+    char *message = nullptr;
+    const int result = sqlite3_exec(database, sql, nullptr, nullptr, &message);
+    sqlite3_free(message);
+    return result == SQLITE_OK;
+}
+
+bool bindText(sqlite3_stmt *statement, int index, const QByteArray &value)
+{
+    return sqlite3_bind_text(statement, index, value.constData(), value.size(), SQLITE_TRANSIENT) ==
+           SQLITE_OK;
+}
+
+bool createMbtiles(const QString &path,
+                   const QString &name,
+                   const QString &attribution,
+                   int zoom,
+                   int column,
+                   int rendererRow,
+                   const QByteArray &tileData)
+{
+    sqlite3 *database = nullptr;
+    if (sqlite3_open(path.toUtf8().constData(), &database) != SQLITE_OK)
+        return false;
+    const bool schemaOk = execSql(database,
+                                  "CREATE TABLE metadata (name TEXT, value TEXT);"
+                                  "CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, "
+                                  "tile_row INTEGER, tile_data BLOB);");
+    if (!schemaOk)
+    {
+        sqlite3_close(database);
+        return false;
+    }
+
+    sqlite3_stmt *metadata = nullptr;
+    bool ok =
+        sqlite3_prepare_v2(
+            database, "INSERT INTO metadata (name, value) VALUES (?, ?)", -1, &metadata, nullptr) ==
+        SQLITE_OK;
+    const QList<QPair<QByteArray, QByteArray>> rows{
+        {QByteArray("name"), name.toUtf8()},
+        {QByteArray("format"), QByteArray("png")},
+        {QByteArray("attribution"), attribution.toUtf8()},
+    };
+    for (const auto &row : rows)
+    {
+        ok = ok && bindText(metadata, 1, row.first) && bindText(metadata, 2, row.second) &&
+             sqlite3_step(metadata) == SQLITE_DONE;
+        sqlite3_reset(metadata);
+        sqlite3_clear_bindings(metadata);
+    }
+    sqlite3_finalize(metadata);
+
+    sqlite3_stmt *tile = nullptr;
+    ok = ok && sqlite3_prepare_v2(database,
+                                  "INSERT INTO tiles "
+                                  "(zoom_level, tile_column, tile_row, tile_data) "
+                                  "VALUES (?, ?, ?, ?)",
+                                  -1,
+                                  &tile,
+                                  nullptr) == SQLITE_OK;
+    sqlite3_bind_int(tile, 1, zoom);
+    sqlite3_bind_int(tile, 2, column);
+    sqlite3_bind_int(tile, 3, animus::MbtilesTileSource::mbtilesRow(zoom, rendererRow));
+    sqlite3_bind_blob(tile, 4, tileData.constData(), tileData.size(), SQLITE_TRANSIENT);
+    ok = ok && sqlite3_step(tile) == SQLITE_DONE;
+    sqlite3_finalize(tile);
+    sqlite3_close(database);
+    return ok;
+}
+
+bool createSqliteWithoutTiles(const QString &path)
+{
+    sqlite3 *database = nullptr;
+    if (sqlite3_open(path.toUtf8().constData(), &database) != SQLITE_OK)
+        return false;
+    const bool ok = execSql(database, "CREATE TABLE metadata (name TEXT, value TEXT);");
+    sqlite3_close(database);
+    return ok;
 }
 
 } // namespace
@@ -165,6 +260,8 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(registry.sourceIdAt(2), QStringLiteral("satellite"));
         QCOMPARE(registry.sourceLabel(QStringLiteral("satellite")),
                  QStringLiteral("Licensed Satellite"));
+        QCOMPARE(registry.sourceProvider(QStringLiteral("satellite")),
+                 QStringLiteral("raster-provider"));
         QVERIFY(registry.sourceExists(QStringLiteral("offline-pack")));
         QVERIFY(!registry.sourceExists(QStringLiteral("missing-source")));
     }
@@ -194,8 +291,8 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(manager.rowCount(), 0);
         QCOMPARE(manager.activePackId(), QString());
         QCOMPARE(manager.activePackPath(), QString());
-        QCOMPARE(manager.activeTileRootPath(), QString());
-        QVERIFY(!manager.activeHasLocalXyzImagery());
+        QCOMPARE(manager.activeTileDatabasePath(), QString());
+        QVERIFY(!manager.activeHasMbtilesImagery());
         QCOMPARE(manager.validationError(), QString());
     }
 
@@ -262,13 +359,20 @@ class AnimusQtMapModelTests final : public QObject
         QTemporaryDir root;
         QVERIFY(root.isValid());
         QDir rootDir(root.path());
-        QVERIFY(rootDir.mkpath(QStringLiteral("stanford/2d/xyz")));
+        QVERIFY(rootDir.mkpath(QStringLiteral("stanford/2d")));
         QVERIFY(rootDir.mkpath(QStringLiteral("stanford/3d/terrain")));
 
         QVERIFY(writeFile(rootDir.filePath(QStringLiteral("stanford/metadata.json")),
                           validPackMetadata("\"terrain\":{\"format\":\"quantized-mesh\"},"
                                             "\"bounds\":{\"west\":-123,\"south\":36,"
                                             "\"east\":-121,\"north\":38}")));
+        QVERIFY(createMbtiles(rootDir.filePath(QStringLiteral("stanford/2d/imagery.mbtiles")),
+                              QStringLiteral("Stanford"),
+                              QStringLiteral("test data"),
+                              12,
+                              654,
+                              1582,
+                              pngBytes(QColor(10, 20, 30, 255))));
 
         QVERIFY(writeFile(rootDir.filePath(QStringLiteral("stanford/3d/terrain/layer.json")),
                           QByteArray("{}")));
@@ -280,40 +384,51 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(manager.activePackId(), QStringLiteral("stanford"));
         manager.setActivePackId(QStringLiteral("stanford"));
         QCOMPARE(manager.activeAttribution(), QStringLiteral("test data"));
-        QVERIFY(manager.activeHasLocalXyzImagery());
+        QVERIFY(manager.activeHasMbtilesImagery());
         QCOMPARE(manager.activeMinZoom(), 12);
         QCOMPARE(manager.activeMaxZoom(), 16);
         QVERIFY(manager.activeHasBounds());
         QCOMPARE(manager.activeWestDeg(), -123.0);
     }
 
-    void mapPackRejectsInvalidXyzPacks()
+    void mapPackRejectsInvalidMbtilesPacks()
     {
         QTemporaryDir root;
         QVERIFY(root.isValid());
         QDir rootDir(root.path());
-        QVERIFY(rootDir.mkpath(QStringLiteral("aaa-missing-license/2d/xyz")));
-        QVERIFY(rootDir.mkpath(QStringLiteral("unsupported/2d/xyz")));
+        QVERIFY(rootDir.mkpath(QStringLiteral("aaa-missing-license/2d")));
+        QVERIFY(rootDir.mkpath(QStringLiteral("legacy-xyz/2d/xyz")));
         QVERIFY(rootDir.mkpath(QStringLiteral("missing-root")));
-        QVERIFY(rootDir.mkpath(QStringLiteral("bad-zoom/2d/xyz")));
-        QVERIFY(rootDir.mkpath(QStringLiteral("bad-bounds/2d/xyz")));
+        QVERIFY(rootDir.mkpath(QStringLiteral("bad-zoom/2d")));
+        QVERIFY(rootDir.mkpath(QStringLiteral("bad-bounds/2d")));
+        QVERIFY(rootDir.mkpath(QStringLiteral("invalid-sqlite/2d")));
+        QVERIFY(rootDir.mkpath(QStringLiteral("missing-tables/2d")));
 
         QVERIFY(writeFile(rootDir.filePath(QStringLiteral("aaa-missing-license/metadata.json")),
                           "{\"schemaVersion\":1,\"name\":\"Bad\",\"attribution\":\"test\","
-                          "\"imagery\":{\"format\":\"xyz\"},\"minZoom\":1,\"maxZoom\":2}"));
-        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("unsupported/metadata.json")),
+                          "\"imagery\":{\"format\":\"mbtiles\"},\"minZoom\":1,\"maxZoom\":2}"));
+        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("legacy-xyz/metadata.json")),
                           "{\"schemaVersion\":1,\"name\":\"Bad\",\"license\":\"test\","
-                          "\"attribution\":\"test\",\"imagery\":{\"format\":\"pmtiles\"},"
+                          "\"attribution\":\"test\",\"imagery\":{\"format\":\"xyz\","
+                          "\"tileRoot\":\"2d/xyz\"},"
                           "\"minZoom\":1,\"maxZoom\":2}"));
         QVERIFY(writeFile(rootDir.filePath(QStringLiteral("missing-root/metadata.json")),
                           validPackMetadata()));
         QVERIFY(writeFile(rootDir.filePath(QStringLiteral("bad-zoom/metadata.json")),
                           "{\"schemaVersion\":1,\"name\":\"Bad\",\"license\":\"test\","
-                          "\"attribution\":\"test\",\"imagery\":{\"format\":\"xyz\"},"
+                          "\"attribution\":\"test\",\"imagery\":{\"format\":\"mbtiles\"},"
                           "\"minZoom\":7,\"maxZoom\":2}"));
         QVERIFY(writeFile(rootDir.filePath(QStringLiteral("bad-bounds/metadata.json")),
                           validPackMetadata("\"bounds\":{\"west\":3,\"south\":1,"
                                             "\"east\":2,\"north\":4}")));
+        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("invalid-sqlite/metadata.json")),
+                          validPackMetadata()));
+        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("invalid-sqlite/2d/imagery.mbtiles")),
+                          QByteArray("not sqlite")));
+        QVERIFY(writeFile(rootDir.filePath(QStringLiteral("missing-tables/metadata.json")),
+                          validPackMetadata()));
+        QVERIFY(createSqliteWithoutTiles(
+            rootDir.filePath(QStringLiteral("missing-tables/2d/imagery.mbtiles"))));
 
         animus::MapPackManager manager;
         manager.setRootPath(root.path());
@@ -327,14 +442,16 @@ class AnimusQtMapModelTests final : public QObject
         QTemporaryDir root;
         QVERIFY(root.isValid());
         QDir rootDir(root.path());
-        QVERIFY(rootDir.mkpath(QStringLiteral("stanford/2d/xyz/12/654")));
+        QVERIFY(rootDir.mkpath(QStringLiteral("stanford/2d")));
         QVERIFY(writeFile(rootDir.filePath(QStringLiteral("stanford/metadata.json")),
                           validPackMetadata()));
-
-        QImage tile(4, 4, QImage::Format_RGBA8888);
-        tile.fill(QColor(10, 20, 30, 255));
-        QVERIFY(
-            tile.save(rootDir.filePath(QStringLiteral("stanford/2d/xyz/12/654/1582.png")), "PNG"));
+        QVERIFY(createMbtiles(rootDir.filePath(QStringLiteral("stanford/2d/imagery.mbtiles")),
+                              QStringLiteral("Stanford"),
+                              QStringLiteral("test data"),
+                              12,
+                              654,
+                              1582,
+                              pngBytes(QColor(10, 20, 30, 255))));
 
         animus::MapPackManager manager;
         manager.setRootPath(root.path());
@@ -350,6 +467,10 @@ class AnimusQtMapModelTests final : public QObject
             provider.loadTileImage(QStringLiteral("stanford/11/654/1582"), QSize(4, 4));
         QCOMPARE(missing.size(), QSize(4, 4));
         QCOMPARE(missing.pixelColor(0, 0), QColor(Qt::transparent));
+
+        const QImage outOfZoom =
+            provider.loadTileImage(QStringLiteral("stanford/17/654/1582"), QSize(4, 4));
+        QCOMPARE(outOfZoom.pixelColor(0, 0), QColor(Qt::transparent));
 
         const QImage traversal =
             provider.loadTileImage(QStringLiteral("../stanford/12/654/1582"), QSize(4, 4));

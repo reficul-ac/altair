@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Generate an Animus Qt XYZ offline map pack from local rasters."""
+"""Generate an Animus Qt MBTiles offline map pack from local rasters."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import shutil
+import sqlite3
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
-
 
 DEFAULT_NAME = "Default SITL Stanford / Palo Alto"
 DEFAULT_DESCRIPTION = "Offline map pack for Altair Animus SITL/demo use around Stanford/Palo Alto."
@@ -53,9 +53,8 @@ def _metadata(args: argparse.Namespace) -> dict[str, object]:
         "bounds": {"west": west, "south": south, "east": east, "north": north},
         "center": {"latitude": args.center[0], "longitude": args.center[1]},
         "imagery": {
-            "format": "xyz",
-            "tileRoot": "2d/xyz",
-            "tileScheme": "xyz",
+            "format": "mbtiles",
+            "path": "2d/imagery.mbtiles",
             "extension": "png",
         },
         "terrain": {
@@ -65,7 +64,7 @@ def _metadata(args: argparse.Namespace) -> dict[str, object]:
             "path": "3d/terrain_quantized_mesh",
         },
         "topography": {
-            "hillshade": "3d/hillshade_xyz",
+            "hillshade": "3d/hillshade.mbtiles",
             "contours": "3d/contours/contours.geojson",
         },
         "version": args.version,
@@ -106,6 +105,50 @@ def _validate_inputs(args: argparse.Namespace) -> None:
         raise SystemExit("pack id must be a relative directory name without '..'")
 
 
+def _pack_xyz_to_mbtiles(
+    xyz_root: Path,
+    mbtiles_path: Path,
+    metadata: dict[str, str],
+    dry_run: bool,
+) -> None:
+    print(f"pack {xyz_root} -> {mbtiles_path}")
+    if dry_run:
+        return
+
+    mbtiles_path.parent.mkdir(parents=True, exist_ok=True)
+    if mbtiles_path.exists():
+        mbtiles_path.unlink()
+
+    connection = sqlite3.connect(mbtiles_path)
+    try:
+        connection.execute("CREATE TABLE metadata (name TEXT, value TEXT)")
+        connection.execute(
+            "CREATE TABLE tiles ("
+            "zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB)"
+        )
+        connection.execute(
+            "CREATE UNIQUE INDEX tile_index " "ON tiles (zoom_level, tile_column, tile_row)"
+        )
+        connection.executemany("INSERT INTO metadata (name, value) VALUES (?, ?)", metadata.items())
+
+        for tile_path in sorted(xyz_root.glob("*/*/*.png")):
+            try:
+                zoom = int(tile_path.parents[1].name)
+                column = int(tile_path.parent.name)
+                row = int(tile_path.stem)
+            except ValueError:
+                continue
+            tms_row = (1 << zoom) - 1 - row
+            connection.execute(
+                "INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) "
+                "VALUES (?, ?, ?, ?)",
+                (zoom, column, tms_row, tile_path.read_bytes()),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def generate(args: argparse.Namespace) -> None:
     _validate_inputs(args)
 
@@ -124,12 +167,14 @@ def generate(args: argparse.Namespace) -> None:
     imagery_work_dir = work_dir / "imagery"
     terrain_work_dir = work_dir / "terrain"
     imagery_3857 = imagery_work_dir / "imagery_3857.tif"
+    imagery_xyz = imagery_work_dir / "xyz"
     dem_3857 = terrain_work_dir / "dem_3857.tif"
     hillshade_3857 = terrain_work_dir / "hillshade_3857.tif"
+    hillshade_xyz = terrain_work_dir / "hillshade_xyz"
 
     if not args.dry_run:
         imagery_work_dir.mkdir(parents=True, exist_ok=True)
-        (pack_dir / "2d" / "xyz").mkdir(parents=True, exist_ok=True)
+        (pack_dir / "2d").mkdir(parents=True, exist_ok=True)
 
     west, south, east, north = [str(value) for value in args.bbox]
     zoom_range = f"{args.min_zoom}-{args.max_zoom}"
@@ -165,8 +210,20 @@ def generate(args: argparse.Namespace) -> None:
             "--processes",
             processes,
             str(imagery_3857),
-            str(pack_dir / "2d" / "xyz"),
+            str(imagery_xyz),
         ],
+        args.dry_run,
+    )
+    _pack_xyz_to_mbtiles(
+        imagery_xyz,
+        pack_dir / "2d" / "imagery.mbtiles",
+        {
+            "name": args.name,
+            "format": "png",
+            "attribution": args.attribution,
+            "type": "baselayer",
+            "version": str(args.version),
+        },
         args.dry_run,
     )
 
@@ -212,8 +269,20 @@ def generate(args: argparse.Namespace) -> None:
             "--processes",
             processes,
             str(hillshade_3857),
-            str(pack_dir / "3d" / "hillshade_xyz"),
+            str(hillshade_xyz),
         ],
+        args.dry_run,
+    )
+    _pack_xyz_to_mbtiles(
+        hillshade_xyz,
+        pack_dir / "3d" / "hillshade.mbtiles",
+        {
+            "name": f"{args.name} Hillshade",
+            "format": "png",
+            "attribution": args.attribution,
+            "type": "overlay",
+            "version": str(args.version),
+        },
         args.dry_run,
     )
     _run(

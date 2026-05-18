@@ -7,6 +7,8 @@
 #include <QJsonValue>
 #include <QtGlobal>
 
+#include <sqlite3.h>
+
 #include <cmath>
 #include <limits>
 
@@ -48,8 +50,8 @@ QVariant MapPackManager::data(const QModelIndex &index, int role) const
         return pack.imageryFormat;
     case TerrainFormatRole:
         return pack.terrainFormat;
-    case TileRootPathRole:
-        return pack.tileRootPath;
+    case TileDatabasePathRole:
+        return pack.tileDatabasePath;
     case MinZoomRole:
         return pack.minZoom;
     case MaxZoomRole:
@@ -84,7 +86,7 @@ QHash<int, QByteArray> MapPackManager::roleNames() const
     roles[AttributionRole] = "attribution";
     roles[ImageryFormatRole] = "imageryFormat";
     roles[TerrainFormatRole] = "terrainFormat";
-    roles[TileRootPathRole] = "tileRootPath";
+    roles[TileDatabasePathRole] = "tileDatabasePath";
     roles[MinZoomRole] = "minZoom";
     roles[MaxZoomRole] = "maxZoom";
     roles[HasBoundsRole] = "hasBounds";
@@ -132,10 +134,10 @@ QString MapPackManager::activePackPath() const
     return pack ? pack->path : QString();
 }
 
-QString MapPackManager::activeTileRootPath() const
+QString MapPackManager::activeTileDatabasePath() const
 {
     const MapPack *pack = findPack(m_activePackId);
-    return pack ? pack->tileRootPath : QString();
+    return pack ? pack->tileDatabasePath : QString();
 }
 
 int MapPackManager::activeMinZoom() const
@@ -150,11 +152,11 @@ int MapPackManager::activeMaxZoom() const
     return pack ? pack->maxZoom : 0;
 }
 
-bool MapPackManager::activeHasLocalXyzImagery() const
+bool MapPackManager::activeHasMbtilesImagery() const
 {
     const MapPack *pack = findPack(m_activePackId);
-    return pack && pack->has2dImagery && pack->imageryFormat == QStringLiteral("xyz") &&
-           !pack->tileRootPath.isEmpty();
+    return pack && pack->has2dImagery && pack->imageryFormat == QStringLiteral("mbtiles") &&
+           !pack->tileDatabasePath.isEmpty();
 }
 
 bool MapPackManager::activeHasBounds() const
@@ -236,41 +238,13 @@ QString MapPackManager::activeAttribution() const
     return pack ? pack->attribution : QString();
 }
 
-QString MapPackManager::localXyzTilePath(const QString &packId, int zoom, int x, int y) const
-{
-    const LocalXyzPack pack = localXyzPackInfo(packId);
-    if (!pack.valid)
-        return QString();
-    if (zoom < pack.minZoom || zoom > pack.maxZoom || x < 0 || y < 0)
-        return QString();
-
-    if (zoom < 0 || zoom > 30)
-        return QString();
-    const int maxIndex = (1 << zoom) - 1;
-    if (x > maxIndex || y > maxIndex)
-        return QString();
-
-    const QDir tileRoot(pack.tileRootPath);
-    const QString relativePath = QStringLiteral("%1/%2/%3.png").arg(zoom).arg(x).arg(y);
-    const QString absolutePath = QFileInfo(tileRoot.filePath(relativePath)).canonicalFilePath();
-    const QString canonicalRoot = QFileInfo(pack.tileRootPath).canonicalFilePath();
-    if (absolutePath.isEmpty() || canonicalRoot.isEmpty())
-        return QString();
-    if (absolutePath != canonicalRoot &&
-        !absolutePath.startsWith(canonicalRoot + QDir::separator()))
-        return QString();
-    if (!absolutePath.endsWith(QStringLiteral(".png"), Qt::CaseInsensitive))
-        return QString();
-    return absolutePath;
-}
-
-LocalXyzPack MapPackManager::localXyzPackInfo(const QString &packId) const
+MbtilesPack MapPackManager::mbtilesPackInfo(const QString &packId) const
 {
     const MapPack *pack = findPack(packId);
-    if (!pack || !pack->has2dImagery || pack->imageryFormat != QStringLiteral("xyz") ||
-        pack->tileRootPath.isEmpty())
-        return LocalXyzPack{false, QString(), 0, 0};
-    return LocalXyzPack{true, pack->tileRootPath, pack->minZoom, pack->maxZoom};
+    if (!pack || !pack->has2dImagery || pack->imageryFormat != QStringLiteral("mbtiles") ||
+        pack->tileDatabasePath.isEmpty())
+        return MbtilesPack{false, QString(), 0, 0};
+    return MbtilesPack{true, pack->tileDatabasePath, pack->minZoom, pack->maxZoom};
 }
 
 bool MapPackManager::loadPack(const QDir &packDir, MapPack *pack, QString *error) const
@@ -309,10 +283,10 @@ bool MapPackManager::loadPack(const QDir &packDir, MapPack *pack, QString *error
     const QString imageryFormat = imagery.value(QStringLiteral("format")).toString().trimmed();
     const QString terrainFormat =
         terrain.value(QStringLiteral("format")).toString(QStringLiteral("none")).trimmed();
-    if (imageryFormat != QStringLiteral("xyz"))
+    if (imageryFormat != QStringLiteral("mbtiles"))
     {
         if (error)
-            *error = QStringLiteral("%1: imagery.format must be xyz").arg(packDir.dirName());
+            *error = QStringLiteral("%1: imagery.format must be mbtiles").arg(packDir.dirName());
         return false;
     }
     if (terrainFormat != QStringLiteral("none") &&
@@ -334,21 +308,30 @@ bool MapPackManager::loadPack(const QDir &packDir, MapPack *pack, QString *error
         return false;
     }
 
-    const QString tileRoot =
-        imagery.value(QStringLiteral("tileRoot")).toString(QStringLiteral("2d/xyz")).trimmed();
-    if (tileRoot.isEmpty() || QDir::isAbsolutePath(tileRoot) ||
-        tileRoot.contains(QStringLiteral("..")))
+    const QString tilePath = imagery.value(QStringLiteral("path"))
+                                 .toString(QStringLiteral("2d/imagery.mbtiles"))
+                                 .trimmed();
+    if (tilePath.isEmpty() || QDir::isAbsolutePath(tilePath) ||
+        tilePath.contains(QStringLiteral("..")))
     {
         if (error)
-            *error = QStringLiteral("%1: imagery.tileRoot must be a relative path")
-                         .arg(packDir.dirName());
+            *error =
+                QStringLiteral("%1: imagery.path must be a relative path").arg(packDir.dirName());
         return false;
     }
-    const QFileInfo tileRootInfo(packDir.filePath(tileRoot));
-    if (!tileRootInfo.exists() || !tileRootInfo.isDir())
+    const QFileInfo tileDatabaseInfo(packDir.filePath(tilePath));
+    if (!tileDatabaseInfo.exists() || !tileDatabaseInfo.isFile())
     {
         if (error)
-            *error = QStringLiteral("%1: local XYZ tile root is missing").arg(packDir.dirName());
+            *error = QStringLiteral("%1: MBTiles database is missing").arg(packDir.dirName());
+        return false;
+    }
+    const QString tileDatabasePath = tileDatabaseInfo.canonicalFilePath();
+    QString databaseError;
+    if (!validateMbtilesDatabase(tileDatabasePath, name, attribution, &databaseError))
+    {
+        if (error)
+            *error = QStringLiteral("%1: %2").arg(packDir.dirName(), databaseError);
         return false;
     }
 
@@ -361,7 +344,7 @@ bool MapPackManager::loadPack(const QDir &packDir, MapPack *pack, QString *error
     parsed.attribution = attribution;
     parsed.imageryFormat = imageryFormat;
     parsed.terrainFormat = terrainFormat;
-    parsed.tileRootPath = tileRootInfo.canonicalFilePath();
+    parsed.tileDatabasePath = tileDatabasePath;
     parsed.minZoom = minZoom;
     parsed.maxZoom = maxZoom;
     parsed.hasBounds = false;
@@ -380,6 +363,101 @@ bool MapPackManager::loadPack(const QDir &packDir, MapPack *pack, QString *error
         terrainFormat == QStringLiteral("quantized-mesh") &&
         QFileInfo::exists(packDir.filePath(QStringLiteral("3d/terrain/layer.json")));
     *pack = parsed;
+    return true;
+}
+
+bool MapPackManager::validateMbtilesDatabase(const QString &databasePath,
+                                             const QString &expectedName,
+                                             const QString &expectedAttribution,
+                                             QString *error)
+{
+    sqlite3 *database = nullptr;
+    if (sqlite3_open_v2(databasePath.toUtf8().constData(),
+                        &database,
+                        SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX,
+                        nullptr) != SQLITE_OK)
+    {
+        if (error)
+            *error = QStringLiteral("MBTiles database cannot be opened read-only");
+        if (database)
+            sqlite3_close(database);
+        return false;
+    }
+
+    auto closeWithError = [&](const QString &message)
+    {
+        if (error)
+            *error = message;
+        sqlite3_close(database);
+        return false;
+    };
+
+    auto scalarText = [&](const char *sql, QString *value) -> bool
+    {
+        sqlite3_stmt *statement = nullptr;
+        if (sqlite3_prepare_v2(database, sql, -1, &statement, nullptr) != SQLITE_OK)
+            return false;
+        const int result = sqlite3_step(statement);
+        if (result == SQLITE_ROW)
+        {
+            const unsigned char *text = sqlite3_column_text(statement, 0);
+            if (text)
+                *value = QString::fromUtf8(reinterpret_cast<const char *>(text)).trimmed();
+        }
+        sqlite3_finalize(statement);
+        return result == SQLITE_ROW || result == SQLITE_DONE;
+    };
+
+    QString tableCount;
+    if (!scalarText("SELECT count(*) FROM sqlite_master "
+                    "WHERE type = 'table' AND name = 'tiles'",
+                    &tableCount) ||
+        tableCount.toInt() != 1)
+    {
+        return closeWithError(QStringLiteral("MBTiles tiles table is missing"));
+    }
+
+    QString tileCount;
+    if (!scalarText("SELECT count(tile_data) FROM tiles", &tileCount) || tileCount.toInt() <= 0)
+        return closeWithError(QStringLiteral("MBTiles tiles table has no tile_data"));
+
+    QString metadataCount;
+    if (scalarText("SELECT count(*) FROM sqlite_master "
+                   "WHERE type = 'table' AND name = 'metadata'",
+                   &metadataCount) &&
+        metadataCount.toInt() == 1)
+    {
+        QString format;
+        if (scalarText("SELECT value FROM metadata WHERE name = 'format' LIMIT 1", &format) &&
+            !format.isEmpty())
+        {
+            format = format.toLower();
+            if (format != QStringLiteral("png") && format != QStringLiteral("jpg") &&
+                format != QStringLiteral("jpeg") && format != QStringLiteral("webp"))
+            {
+                return closeWithError(QStringLiteral("MBTiles metadata.format must be raster"));
+            }
+        }
+
+        QString name;
+        if (scalarText("SELECT value FROM metadata WHERE name = 'name' LIMIT 1", &name) &&
+            !name.isEmpty() && name != expectedName)
+        {
+            return closeWithError(
+                QStringLiteral("MBTiles metadata.name disagrees with metadata.json"));
+        }
+
+        QString attribution;
+        if (scalarText("SELECT value FROM metadata WHERE name = 'attribution' LIMIT 1",
+                       &attribution) &&
+            !attribution.isEmpty() && attribution != expectedAttribution)
+        {
+            return closeWithError(
+                QStringLiteral("MBTiles metadata.attribution disagrees with metadata.json"));
+        }
+    }
+
+    sqlite3_close(database);
     return true;
 }
 
