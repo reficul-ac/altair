@@ -179,6 +179,20 @@ QString bundledModelProfilesDir()
     return QDir(QStringLiteral(ANIMUS_QT_QML_DIR)).filePath(QStringLiteral("../web/cesium/models"));
 }
 
+void respondToTileRequest(QTcpSocket *socket)
+{
+    if (socket->property("animusTileResponded").toBool() || socket->bytesAvailable() <= 0)
+        return;
+
+    socket->setProperty("animusTileResponded", true);
+    socket->readAll();
+    const QByteArray body = pngTile();
+    socket->write("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\n"
+                  "Content-Length: " +
+                  QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+    socket->disconnectFromHost();
+}
+
 class TileHttpServer final : public QTcpServer
 {
     Q_OBJECT
@@ -195,17 +209,9 @@ class TileHttpServer final : public QTcpServer
                     connect(socket,
                             &QTcpSocket::readyRead,
                             socket,
-                            [socket]()
-                            {
-                                socket->readAll();
-                                const QByteArray body = pngTile();
-                                socket->write("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\n"
-                                              "Content-Length: " +
-                                              QByteArray::number(body.size()) +
-                                              "\r\nConnection: close\r\n\r\n" + body);
-                                socket->disconnectFromHost();
-                            });
+                            [socket]() { respondToTileRequest(socket); });
                     connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+                    respondToTileRequest(socket);
                 });
     }
 };

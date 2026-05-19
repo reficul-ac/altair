@@ -132,10 +132,10 @@ def port_is_free(host, port):
         sock.bind((host, port))
 
 
-def require_lifecycle_prereqs(repo_root):
+def require_lifecycle_prereqs(repo_root, build_dir, animus_build_dir):
     prereqs = (
-        repo_root / "build" / "vehicle" / "sitl_runner",
-        repo_root / "build-animus-qt" / "tools" / "animus-qt" / "animus_qt",
+        build_dir / "vehicle" / "sitl_runner",
+        animus_build_dir / "tools" / "animus-qt" / "animus_qt",
     )
     for prereq in prereqs:
         if not prereq.exists():
@@ -181,8 +181,8 @@ def run_short_rerun(command, repo_root, env):
     return True
 
 
-def run_lifecycle_checks(repo_root):
-    if not require_lifecycle_prereqs(repo_root):
+def run_lifecycle_checks(repo_root, build_dir, animus_build_dir):
+    if not require_lifecycle_prereqs(repo_root, build_dir, animus_build_dir):
         return SKIP
 
     env = os.environ.copy()
@@ -218,10 +218,10 @@ def run_lifecycle_checks(repo_root):
                 str(output_path),
                 str(udp_port),
                 str(source_port),
-                str(repo_root / "build-animus-qt" / "tools" / "animus-qt" / "animus_qt"),
+                str(animus_build_dir / "tools" / "animus-qt" / "animus_qt"),
                 str(repo_root / "tools/python/run_animus_sitl.py"),
                 str(repo_root / "tools/python/run_sitl.py"),
-                str(repo_root / "build" / "vehicle" / "sitl_runner"),
+                str(build_dir / "vehicle" / "sitl_runner"),
             ],
         ):
             return 1
@@ -244,11 +244,20 @@ def run_lifecycle_checks(repo_root):
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("usage: test_run_animus_sitl.py <repo-root>", file=sys.stderr)
+    if len(sys.argv) not in (3, 4):
+        print(
+            "usage: test_run_animus_sitl.py <repo-root> <build-dir> [animus-build-dir]",
+            file=sys.stderr,
+        )
         return 2
 
     repo_root = Path(sys.argv[1])
+    build_dir = Path(sys.argv[2])
+    if not build_dir.is_absolute():
+        build_dir = repo_root / build_dir
+    animus_build_dir = Path(sys.argv[3]) if len(sys.argv) == 4 else repo_root / "build-animus-qt"
+    if not animus_build_dir.is_absolute():
+        animus_build_dir = repo_root / animus_build_dir
     result = run_launcher(repo_root, "--duration", "0.2", "--output", "sitl_animus_test.csv")
     if result.returncode != 0:
         print(result.stdout, end="")
@@ -294,7 +303,7 @@ def main():
         print("--case did not replace the default --initial path", file=sys.stderr)
         return 1
 
-    return run_lifecycle_checks(repo_root)
+    return run_lifecycle_checks(repo_root, build_dir, animus_build_dir)
 
 
 if __name__ == "__main__":

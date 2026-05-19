@@ -146,9 +146,13 @@ def run_pty_interrupt(
             pass
 
 
-def require_lifecycle_prereqs(repo_root):
-    if not (repo_root / "build" / "vehicle" / "sitl_runner").exists():
-        print("skipping lifecycle checks: build/vehicle/sitl_runner is missing", file=sys.stderr)
+def require_lifecycle_prereqs(repo_root, build_dir):
+    sitl_runner = build_dir / "vehicle" / "sitl_runner"
+    if not sitl_runner.exists():
+        print(
+            f"skipping lifecycle checks: {sitl_runner.relative_to(repo_root)} is missing",
+            file=sys.stderr,
+        )
         return False
     return True
 
@@ -188,8 +192,8 @@ def run_short_rerun(command, repo_root):
     return True
 
 
-def run_lifecycle_checks(repo_root):
-    if not require_lifecycle_prereqs(repo_root):
+def run_lifecycle_checks(repo_root, build_dir):
+    if not require_lifecycle_prereqs(repo_root, build_dir):
         return SKIP
 
     with tempfile.TemporaryDirectory(prefix="altair-sitl-ctrlc-") as tmp:
@@ -275,11 +279,14 @@ def run_lifecycle_checks(repo_root):
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("usage: test_sitl_session.py <repo-root>", file=sys.stderr)
+    if len(sys.argv) != 3:
+        print("usage: test_sitl_session.py <repo-root> <build-dir>", file=sys.stderr)
         return 2
 
     repo_root = Path(sys.argv[1])
+    build_dir = Path(sys.argv[2])
+    if not build_dir.is_absolute():
+        build_dir = repo_root / build_dir
     result = run_session(repo_root, "--duration", "0.2", "--output", "sitl_live_test.csv")
     if result.returncode != 0:
         print(result.stdout, end="")
@@ -351,7 +358,7 @@ def main():
         if f"swarm_sys{system_id}.csv" not in result.stdout:
             print(f"swarm did not isolate output for system {system_id}", file=sys.stderr)
             return 1
-    return run_lifecycle_checks(repo_root)
+    return run_lifecycle_checks(repo_root, build_dir)
 
 
 if __name__ == "__main__":
