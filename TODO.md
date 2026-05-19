@@ -214,7 +214,7 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Replace the Terrain 3D placeholder with a true x/y/z or
   latitude/longitude/altitude trajectory view comparable to the Hawkeye 3D
   trajectory workflow.
-- [ ] Replace the current minimal bundled Terrain 3D aircraft GLB with a
+- [x] Replace the current minimal bundled Terrain 3D aircraft GLB with a
   polished generic fixed-wing RC model.
   - Runtime format is GLB/glTF; OBJ is allowed only as an
     authoring/import/export intermediate.

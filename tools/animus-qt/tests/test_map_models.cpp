@@ -861,11 +861,18 @@ class AnimusQtMapModelTests final : public QObject
             QJsonDocument::fromJson(glb.mid(20, static_cast<int>(jsonLength)).trimmed());
         QVERIFY(document.isObject());
         const QJsonObject gltf = document.object();
-        QCOMPARE(gltf.value(QStringLiteral("asset"))
-                     .toObject()
-                     .value(QStringLiteral("version"))
-                     .toString(),
-                 QStringLiteral("2.0"));
+        const QJsonObject asset = gltf.value(QStringLiteral("asset")).toObject();
+        QCOMPARE(asset.value(QStringLiteral("version")).toString(), QStringLiteral("2.0"));
+        QVERIFY(asset.value(QStringLiteral("generator"))
+                    .toString()
+                    .contains(QStringLiteral("Altair Animus procedural RC aircraft generator")));
+        QCOMPARE(asset.value(QStringLiteral("copyright")).toString(),
+                 QStringLiteral("Original procedural Altair asset; no third-party artwork."));
+        const QJsonObject assetExtras = asset.value(QStringLiteral("extras")).toObject();
+        QCOMPARE(assetExtras.value(QStringLiteral("source")).toString(),
+                 QStringLiteral("tools/python/generate_animus_aircraft_model.py"));
+        QCOMPARE(assetExtras.value(QStringLiteral("provenance")).toString(),
+                 QStringLiteral("original deterministic procedural geometry"));
 
         const QJsonArray nodes = gltf.value(QStringLiteral("nodes")).toArray();
         QHash<QString, QJsonObject> nodesByName;
@@ -889,6 +896,60 @@ class AnimusQtMapModelTests final : public QObject
             QVERIFY(childIndex >= 0 && childIndex < nodes.size());
             QVERIFY(nodes.at(childIndex).toObject().value(QStringLiteral("mesh")).isDouble());
         }
+
+        const QJsonObject root =
+            nodesByName.value(QStringLiteral("generic_fixed_wing_smooth_root"));
+        const QJsonArray rootRotation = root.value(QStringLiteral("rotation")).toArray();
+        QCOMPARE(rootRotation.size(), 4);
+        QCOMPARE(rootRotation.at(0).toDouble(), 0.0);
+        QCOMPARE(rootRotation.at(1).toDouble(), 0.0);
+        QVERIFY(qAbs(rootRotation.at(2).toDouble() - 0.7071067811865475) < 1.0e-12);
+        QVERIFY(qAbs(rootRotation.at(3).toDouble() - 0.7071067811865476) < 1.0e-12);
+
+        const QStringList expectedComponentNodes{QStringLiteral("fuselage"),
+                                                 QStringLiteral("main_wing"),
+                                                 QStringLiteral("horizontal_tail"),
+                                                 QStringLiteral("vertical_stabilizer"),
+                                                 QStringLiteral("canopy"),
+                                                 QStringLiteral("propeller"),
+                                                 QStringLiteral("spinner"),
+                                                 QStringLiteral("landing_skid"),
+                                                 QStringLiteral("aileron_left_surface"),
+                                                 QStringLiteral("aileron_right_surface"),
+                                                 QStringLiteral("elevator_surface"),
+                                                 QStringLiteral("rudder_surface")};
+        for (const QString &nodeName : expectedComponentNodes)
+        {
+            QVERIFY2(nodesByName.contains(nodeName), qPrintable(nodeName));
+            QVERIFY2(nodesByName.value(nodeName).value(QStringLiteral("mesh")).isDouble(),
+                     qPrintable(nodeName));
+        }
+
+        const QJsonArray componentNames = gltf.value(QStringLiteral("extras"))
+                                              .toObject()
+                                              .value(QStringLiteral("altairComponentNames"))
+                                              .toArray();
+        for (const QString &nodeName : expectedComponentNodes)
+        {
+            bool listed = false;
+            for (const QJsonValue &componentValue : componentNames)
+            {
+                listed = listed || componentValue.toString() == nodeName;
+            }
+            QVERIFY2(listed, qPrintable(nodeName));
+        }
+
+        const QJsonArray materials = gltf.value(QStringLiteral("materials")).toArray();
+        QStringList materialNames;
+        for (const QJsonValue &materialValue : materials)
+            materialNames.push_back(
+                materialValue.toObject().value(QStringLiteral("name")).toString());
+        QVERIFY(materialNames.contains(QStringLiteral("warm_white_foam_body")));
+        QVERIFY(materialNames.contains(QStringLiteral("matte_charcoal_control_surfaces")));
+        QVERIFY(materialNames.contains(QStringLiteral("clear_blue_canopy")));
+        QVERIFY(materialNames.contains(QStringLiteral("safety_red_trim")));
+        QVERIFY(materialNames.contains(QStringLiteral("dark_propeller_and_skids")));
+        QVERIFY(materialNames.contains(QStringLiteral("brushed_spinner")));
     }
 
     void terrain3dStaticBundleUsesCesiumOnly()
@@ -920,6 +981,9 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(scriptText.contains(QStringLiteral("applyControlSurfaces")));
         QVERIFY(scriptText.contains(QStringLiteral("models/${profile}.json")));
         QVERIFY(scriptText.contains(QStringLiteral("Cesium.Model.fromGltfAsync")));
+        QVERIFY(scriptText.contains(QStringLiteral("upAxis: Cesium.Axis.Z")));
+        QVERIFY(scriptText.contains(QStringLiteral("forwardAxis: Cesium.Axis.X")));
+        QVERIFY(!scriptText.contains(QStringLiteral("colorBlendMode: Cesium.ColorBlendMode.MIX")));
         QVERIFY(scriptText.contains(QStringLiteral("vehicleModelProfile.asset")));
         QVERIFY(scriptText.contains(QStringLiteral("fallbackUri")));
         QVERIFY(scriptText.contains(QStringLiteral("Cesium.HeadingPitchRange")));

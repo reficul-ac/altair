@@ -31,10 +31,10 @@
   let spaceDown = false;
   const lockedCameraOffsets = {
     chase: {
-      defaultHeadingDeg: 180.0,
-      headingDeg: 180.0,
-      pitchDeg: -12.0,
-      rangeM: 260.0,
+      defaultHeadingDeg: 145.0,
+      headingDeg: 145.0,
+      pitchDeg: -68.0,
+      rangeM: 170.0,
       followsVehicleHeading: true,
     },
     orbit: {
@@ -780,13 +780,12 @@
       const primitive = await Cesium.Model.fromGltfAsync({
         url: modelUri,
         modelMatrix: currentVehicleModelMatrix(scale),
-        minimumPixelSize: 150,
+        minimumPixelSize: 320,
         maximumScale: 1200,
-        color: Cesium.Color.fromCssColorString('#1d6fd6'),
-        colorBlendMode: Cesium.ColorBlendMode.MIX,
-        colorBlendAmount: 0.20,
+        upAxis: Cesium.Axis.Z,
+        forwardAxis: Cesium.Axis.X,
         silhouetteColor: Cesium.Color.WHITE,
-        silhouetteSize: 2.0,
+        silhouetteSize: 1.0,
       });
       if (token !== aircraftModelLoadToken) return;
       aircraftModelPrimitive = viewer.scene.primitives.add(primitive);
@@ -942,6 +941,7 @@
     if (!aircraftOutlineCollection) return;
     aircraftOutlineCollection.removeAll();
     if (!vehicle.positionValid || !validPosition(vehicle)) return;
+    if (aircraftModelPrimitive) return;
 
     const headingRad = Cesium.Math.toRadians(vehicleHeadingDeg(vehicle));
     const rollRad = numberOr(vehicle.rollRad, 0);
