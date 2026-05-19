@@ -173,6 +173,8 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Make `capture_animus_qt_sitl.py` retry or fall back to
   `xvfb-run`/offscreen when `xvfb-run` assigns a display that Qt/xcb cannot
   initialize.
+- [ ] Diagnose Terrain 3D trackpad event delivery in Qt WebEngine and add a
+  non-laggy Space+trackpad rotate path without a full-scene QML input overlay.
 - [x] Retire the obsolete TypeScript Animus app, generated dependency tree,
   interaction harnesses, and old CI lane now that Qt Animus is canonical.
 

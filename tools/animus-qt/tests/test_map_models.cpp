@@ -60,6 +60,18 @@ QByteArray pngTile()
                                "840000000049454e44ae426082");
 }
 
+int countOccurrences(const QString &text, const QString &needle)
+{
+    int count = 0;
+    int offset = 0;
+    while ((offset = text.indexOf(needle, offset)) != -1)
+    {
+        ++count;
+        offset += needle.size();
+    }
+    return count;
+}
+
 class TileHttpServer final : public QTcpServer
 {
     Q_OBJECT
@@ -520,6 +532,45 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(QFileInfo::exists(cesiumDir.filePath(QStringLiteral("fixture/tiles/2/3/3.png"))));
         QVERIFY(QFileInfo::exists(
             cesiumDir.filePath(QStringLiteral("fixture/aircraft/generic-fixed-wing.gltf"))));
+    }
+
+    void terrain3dCameraInputKeepsRotateSeparateFromPan()
+    {
+        const QDir cesiumDir(
+            QDir(QStringLiteral(ANIMUS_QT_QML_DIR)).filePath(QStringLiteral("../web/cesium")));
+        QFile script(cesiumDir.filePath(QStringLiteral("animus-cesium.js")));
+        QVERIFY(script.open(QIODevice::ReadOnly));
+        const QString scriptText = QString::fromUtf8(script.readAll());
+
+        QVERIFY(scriptText.contains(QStringLiteral("let cameraDrag = null;")));
+        QVERIFY(scriptText.contains(QStringLiteral("function classifyCameraDrag(event)")));
+        QVERIFY(scriptText.contains(QStringLiteral("const action = classifyCameraDrag(event);")));
+        QVERIFY(scriptText.contains(QStringLiteral("action,")));
+        QVERIFY(
+            scriptText.contains(QStringLiteral("const implicitTrackpadPress = pressLikeEvent")));
+        QVERIFY(scriptText.contains(QStringLiteral("if (cameraDrag.action === 'rotate')")));
+        QVERIFY(scriptText.contains(QStringLiteral("function continueActiveCameraDrag(event)")));
+        QVERIFY(
+            scriptText.contains(QStringLiteral("if (!continueActiveCameraDrag(event)) return;")));
+        QVERIFY(scriptText.contains(QStringLiteral("target.addEventListener('wheel'")));
+        QVERIFY(scriptText.contains(QStringLiteral("if (spaceDown)")));
+        QVERIFY(
+            scriptText.contains(QStringLiteral("rotateCurrentCamera(event.deltaX, event.deltaY)")));
+        QVERIFY(scriptText.contains(QStringLiteral("zoomCurrentCamera(event.deltaY)")));
+        QVERIFY(!scriptText.contains(QStringLiteral(
+            "pointerDrag.action === 'rotate' || (pointerDrag.button === 0 && spaceDown)")));
+
+        QVERIFY(scriptText.contains(QStringLiteral("target.addEventListener('mousedown'")));
+        QVERIFY(scriptText.contains(QStringLiteral("target.addEventListener('mousemove'")));
+        QVERIFY(scriptText.contains(QStringLiteral("target.addEventListener('mouseup'")));
+        QVERIFY(scriptText.contains(QStringLiteral("target.addEventListener('mouseleave'")));
+        QVERIFY(scriptText.contains(
+            QStringLiteral("const buttons = Number.isFinite(Number(event.buttons))")));
+        QVERIFY(scriptText.contains(QStringLiteral("(buttons & 4) !== 0")));
+        QVERIFY(scriptText.contains(QStringLiteral("(buttons & 1) !== 0")));
+        QVERIFY(scriptText.contains(QStringLiteral("if (activePointerInteraction) return;")));
+
+        QCOMPARE(countOccurrences(scriptText, QStringLiteral("switchToFreeFromPan()")), 2);
     }
 };
 

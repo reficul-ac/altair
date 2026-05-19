@@ -19,7 +19,8 @@
   let cameraInitialized = false;
   let cameraMode = 'chase';
   let lastLockPosition = null;
-  let pointerDrag = null;
+  let cameraDrag = null;
+  let activePointerInteraction = false;
   let spaceDown = false;
   const lockedCameraOffsets = {
     chase: {
@@ -370,49 +371,139 @@
     target.addEventListener('contextmenu', function (event) {
       event.preventDefault();
     });
-    target.addEventListener('pointerdown', function (event) {
-      if (event.button !== 0 && event.button !== 1) return;
+
+    function classifyCameraDrag(event) {
+      const buttons = Number.isFinite(Number(event.buttons)) ? Number(event.buttons) : 0;
+      const middleDown = event.button === 1 || (buttons & 4) !== 0;
+      const pressLikeEvent = event.type === 'pointerdown' || event.type === 'mousedown';
+      const implicitTrackpadPress = pressLikeEvent && event.button !== 2 && buttons === 0;
+      const primaryDown = event.button === 0 || (buttons & 1) !== 0 || implicitTrackpadPress;
+      if (middleDown) return 'rotate';
+      if (primaryDown) return spaceDown ? 'rotate' : 'pan';
+      return null;
+    }
+
+    function startCameraDrag(event, source, id) {
+      const action = classifyCameraDrag(event);
+      if (!action) return false;
       target.focus();
-      pointerDrag = {
-        id: event.pointerId,
+      cameraDrag = {
+        id,
+        source,
         x: event.clientX,
         y: event.clientY,
-        action: event.button === 1 || spaceDown ? 'rotate' : 'pan',
-        button: event.button,
+        action,
       };
-      target.setPointerCapture(event.pointerId);
-      event.preventDefault();
-    });
-    target.addEventListener('pointermove', function (event) {
-      if (!pointerDrag || pointerDrag.id !== event.pointerId) return;
-      const deltaX = event.clientX - pointerDrag.x;
-      const deltaY = event.clientY - pointerDrag.y;
-      pointerDrag.x = event.clientX;
-      pointerDrag.y = event.clientY;
-      const rotate = pointerDrag.action === 'rotate' || (pointerDrag.button === 0 && spaceDown);
-      if (rotate) {
+      return true;
+    }
+
+    function continueActiveCameraDrag(event) {
+      if (!cameraDrag) return false;
+      const deltaX = event.clientX - cameraDrag.x;
+      const deltaY = event.clientY - cameraDrag.y;
+      cameraDrag.x = event.clientX;
+      cameraDrag.y = event.clientY;
+      if (cameraDrag.action === 'rotate') {
         rotateCurrentCamera(deltaX, deltaY);
       } else {
         switchToFreeFromPan();
         panFreeCamera(deltaX, deltaY);
       }
       viewer.scene.requestRender();
+      return true;
+    }
+
+    function continueCameraDrag(event, source, id) {
+      if (!cameraDrag || cameraDrag.source !== source || cameraDrag.id !== id) return false;
+      return continueActiveCameraDrag(event);
+    }
+
+    function endCameraDrag(source, id) {
+      if (!cameraDrag || cameraDrag.source !== source || cameraDrag.id !== id) return false;
+      cameraDrag = null;
+      return true;
+    }
+
+    function endActiveCameraDrag() {
+      if (!cameraDrag) return false;
+      cameraDrag = null;
+      return true;
+    }
+
+    target.addEventListener('pointerdown', function (event) {
+      if (!startCameraDrag(event, 'pointer', event.pointerId)) return;
+      activePointerInteraction = true;
+      if (target.setPointerCapture) {
+        target.setPointerCapture(event.pointerId);
+      }
+      event.preventDefault();
+    });
+    target.addEventListener('pointermove', function (event) {
+      if (!continueCameraDrag(event, 'pointer', event.pointerId)) return;
       event.preventDefault();
     });
     target.addEventListener('pointerup', function (event) {
-      if (pointerDrag && pointerDrag.id === event.pointerId) {
-        pointerDrag = null;
-        target.releasePointerCapture(event.pointerId);
+      if (endCameraDrag('pointer', event.pointerId)) {
+        activePointerInteraction = false;
+        if (target.hasPointerCapture && target.hasPointerCapture(event.pointerId)) {
+          target.releasePointerCapture(event.pointerId);
+        }
       }
       event.preventDefault();
     });
     target.addEventListener('pointercancel', function (event) {
-      if (pointerDrag && pointerDrag.id === event.pointerId) {
-        pointerDrag = null;
+      if (endCameraDrag('pointer', event.pointerId)) {
+        activePointerInteraction = false;
+        if (target.hasPointerCapture && target.hasPointerCapture(event.pointerId)) {
+          target.releasePointerCapture(event.pointerId);
+        }
       }
     });
+    target.addEventListener('mousedown', function (event) {
+      if (activePointerInteraction) return;
+      if (!startCameraDrag(event, 'mouse', 'mouse')) return;
+      event.preventDefault();
+    });
+    target.addEventListener('mousemove', function (event) {
+      if (!cameraDrag) return;
+      if (cameraDrag.source !== 'mouse' && cameraDrag.source !== 'pointer') return;
+      if (!continueActiveCameraDrag(event)) return;
+      event.preventDefault();
+    });
+    target.addEventListener('mouseup', function (event) {
+      if (endActiveCameraDrag()) {
+        activePointerInteraction = false;
+        event.preventDefault();
+      }
+    });
+    target.addEventListener('mouseleave', function () {
+      endCameraDrag('mouse', 'mouse');
+    });
+    window.addEventListener('pointerup', function (event) {
+      if (endCameraDrag('pointer', event.pointerId)) {
+        activePointerInteraction = false;
+        if (target.hasPointerCapture && target.hasPointerCapture(event.pointerId)) {
+          target.releasePointerCapture(event.pointerId);
+        }
+      }
+    });
+    window.addEventListener('mouseup', function () {
+      if (endActiveCameraDrag()) {
+        activePointerInteraction = false;
+      }
+    });
+    window.addEventListener('blur', function () {
+      if (cameraDrag && cameraDrag.source === 'pointer') {
+        activePointerInteraction = false;
+      }
+      cameraDrag = null;
+    });
     target.addEventListener('wheel', function (event) {
-      zoomCurrentCamera(event.deltaY);
+      if (spaceDown) {
+        rotateCurrentCamera(event.deltaX, event.deltaY);
+      } else {
+        zoomCurrentCamera(event.deltaY);
+      }
       viewer.scene.requestRender();
       event.preventDefault();
     }, {passive: false});
