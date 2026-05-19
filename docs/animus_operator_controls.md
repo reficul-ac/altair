@@ -47,7 +47,7 @@ The visual verification workflow captures one screenshot per Qt workspace:
 python3 tools/python/capture_animus_qt_sitl.py
 ```
 
-The script captures `map-2d`, `terrain-3d`, and `setup` from the built Qt shell with mock telemetry. It writes PNGs, per-workspace logs, `visual-report.md`, and `run-manifest.json` under `artifacts/animus-qt-screenshots/<timestamp>/`. The report includes deterministic PNG diagnostics for capture size, toolbar/tab visibility, workspace content regions, sampled color diversity, and cross-workspace screenshot differences.
+The script captures `map-2d`, `terrain-3d`, and `setup` from the built Qt shell with mock telemetry. It writes PNGs, per-workspace logs, `visual-report.md`, and `run-manifest.json` under `artifacts/animus-qt-screenshots/<timestamp>/`. The report includes deterministic PNG diagnostics for capture size, toolbar/tab visibility, workspace content regions, sampled color diversity, and cross-workspace screenshot differences. The `terrain-3d` capture uses the bundled Cesium/WebEngine path and saves the native Cesium canvas PNG, with Xvfb WebGL flags supplied by the capture helper when no display is already present.
 
 ## Flight View
 
@@ -65,7 +65,12 @@ Flight View parity is future Qt Animus work. The current shell focuses on teleme
   keep network-required providers disabled.
 - Directional pan controls on the map provide mouse- and keyboard-friendly small
   moves without dragging.
-- `Terrain 3D` opens the Cesium/WebEngine terrain preview path when available.
+- `Terrain 3D` opens the offline Cesium/WebEngine terrain path, using local
+  quantized-mesh terrain when available and the bundled deterministic
+  Stanford/cruise6dof heightmap fixture otherwise.
+- Terrain 3D renders the selected vehicle as a bundled generic fixed-wing glTF
+  model with altitude-aware breadcrumb history and chase, orbit, and free camera
+  modes.
 - Vehicle markers are triangular and point along velocity, with heading as a low-speed fallback. Home/origin markers use an X shape so they are visually distinct from vehicles.
 
 Animus expects licensed QGC-style providers and operator-managed offline tile

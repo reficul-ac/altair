@@ -1,33 +1,70 @@
 #pragma once
 
 #include <QObject>
+#include <QString>
+#include <QVariantList>
 #include <QVariantMap>
 
 namespace animus
 {
 
+class BreadcrumbPathModel;
 class VehicleModel;
 
 class CesiumBridge final : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(QVariantMap latestVehicle READ latestVehicle NOTIFY latestVehicleChanged)
+    Q_PROPERTY(QVariantMap terrainStatus READ terrainStatus NOTIFY terrainStatusChanged)
+    Q_PROPERTY(QVariantMap sceneStatus READ sceneStatus NOTIFY sceneStatusChanged)
+    Q_PROPERTY(QString terrainCachePath READ terrainCachePath WRITE setTerrainCachePath NOTIFY
+                   terrainCachePathChanged)
 
   public:
-    explicit CesiumBridge(VehicleModel *vehicle, QObject *parent = nullptr);
+    explicit CesiumBridge(VehicleModel *vehicle,
+                          BreadcrumbPathModel *trail,
+                          QObject *parent = nullptr);
 
     QVariantMap latestVehicle() const;
+    QVariantMap terrainStatus() const;
+    QVariantMap sceneStatus() const;
+    QString terrainCachePath() const;
+    void setTerrainCachePath(const QString &terrainCachePath);
+
     Q_INVOKABLE QVariantMap snapshot() const;
+    Q_INVOKABLE void setSceneStatus(const QString &status, const QString &error = QString());
 
   signals:
     void latestVehicleChanged(const QVariantMap &vehicle);
+    void trailChanged(const QVariantList &trail);
+    void homeChanged(const QVariantMap &home);
+    void terrainStatusChanged(const QVariantMap &terrain);
+    void sceneStatusChanged(const QVariantMap &scene);
+    void terrainCachePathChanged();
 
   private slots:
     void publishVehicle();
+    void publishHome();
+    void publishTrail();
+    void publishTerrain();
 
   private:
+    QVariantMap vehicleMap() const;
+    QVariantMap homeMap() const;
+    QVariantList trailList() const;
+    QVariantMap terrainMap() const;
+    QVariantMap configMap() const;
+    QVariantMap fixtureMap() const;
+    bool hasQuantizedMeshTerrain() const;
+
     VehicleModel *m_vehicle;
+    BreadcrumbPathModel *m_trail;
     QVariantMap m_latestVehicle;
+    QVariantMap m_latestHome;
+    QVariantList m_latestTrail;
+    QVariantMap m_terrainStatus;
+    QString m_terrainCachePath;
+    QVariantMap m_sceneStatus;
 };
 
 } // namespace animus

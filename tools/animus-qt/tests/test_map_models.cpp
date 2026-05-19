@@ -1,4 +1,5 @@
 #include "maps/MapSourceRegistry.h"
+#include "maps/CesiumBridge.h"
 #include "maps/OfflineMapManager.h"
 #include "maps/qgc/AnimusMapCacheManager.h"
 #include "models/VehicleModel.h"
@@ -320,6 +321,202 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(map->property("following").toBool(), false);
         QVERIFY(QMetaObject::invokeMethod(map.get(), "recenterOnVehicle"));
         QCOMPARE(map->property("following").toBool(), true);
+    }
+
+    void cesiumBridgeSnapshotExportsVehicleTerrainHomeAndTrail()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString terrainPath =
+            root.filePath(QStringLiteral("map_cache/terrain/quantized-mesh"));
+        QVERIFY(QDir().mkpath(terrainPath));
+        QFile layer(QDir(terrainPath).filePath(QStringLiteral("layer.json")));
+        QVERIFY(layer.open(QIODevice::WriteOnly));
+        QVERIFY(layer.write("{}") > 0);
+        layer.close();
+
+        animus::VehicleModel vehicle;
+        vehicle.setVehicleId(QStringLiteral("altair-7"));
+        vehicle.setConnected(true);
+        vehicle.setLatitudeDeg(37.42);
+        vehicle.setLongitudeDeg(-122.17);
+        vehicle.setAltitudeM(48.0);
+        vehicle.setHeadingDeg(91.0);
+        vehicle.setPositionValid(true);
+        vehicle.setAttitudeValid(true);
+        vehicle.setHomeLatitudeDeg(37.41);
+        vehicle.setHomeLongitudeDeg(-122.16);
+        vehicle.setHomeAltitudeM(12.0);
+        vehicle.setHomeValid(true);
+        vehicle.setTerrainLatitudeDeg(37.42);
+        vehicle.setTerrainLongitudeDeg(-122.17);
+        vehicle.setTerrainHeightM(22.5);
+        vehicle.setTerrainCurrentHeightM(25.5);
+        vehicle.setTerrainLoaded(4);
+        vehicle.setTerrainPending(2);
+        vehicle.setTerrainValid(true);
+
+        animus::BreadcrumbPathModel trail;
+        trail.setMinDistanceM(0.0);
+        QVERIFY(trail.append(37.40, -122.18, 20.0, 1.0));
+        QVERIFY(trail.append(37.42, -122.17, 48.0, 2.0));
+
+        animus::CesiumBridge bridge(&vehicle, &trail);
+        bridge.setTerrainCachePath(terrainPath);
+
+        const QVariantMap snapshot = bridge.snapshot();
+        const QVariantMap exportedVehicle = snapshot.value(QStringLiteral("vehicle")).toMap();
+        QCOMPARE(exportedVehicle.value(QStringLiteral("id")).toString(),
+                 QStringLiteral("altair-7"));
+        QCOMPARE(exportedVehicle.value(QStringLiteral("positionValid")).toBool(), true);
+        QCOMPARE(exportedVehicle.value(QStringLiteral("attitudeValid")).toBool(), true);
+
+        const QVariantMap home = snapshot.value(QStringLiteral("home")).toMap();
+        QCOMPARE(home.value(QStringLiteral("valid")).toBool(), true);
+        QCOMPARE(home.value(QStringLiteral("altitudeM")).toDouble(), 12.0);
+
+        const QVariantList exportedTrail = snapshot.value(QStringLiteral("trail")).toList();
+        QCOMPARE(exportedTrail.size(), 2);
+        QCOMPARE(exportedTrail.constLast().toMap().value(QStringLiteral("altitudeM")).toDouble(),
+                 48.0);
+
+        const QVariantMap terrain = snapshot.value(QStringLiteral("terrain")).toMap();
+        QCOMPARE(terrain.value(QStringLiteral("terrainAvailable")).toBool(), true);
+        QCOMPARE(terrain.value(QStringLiteral("quantizedMeshAvailable")).toBool(), true);
+        QCOMPARE(terrain.value(QStringLiteral("provider")).toString(),
+                 QStringLiteral("quantized-mesh"));
+        QVERIFY(terrain.value(QStringLiteral("cacheUrl"))
+                    .toString()
+                    .startsWith(QStringLiteral("file:")));
+        QVERIFY(terrain.value(QStringLiteral("cacheUrl")).toString().endsWith(QStringLiteral("/")));
+        QVERIFY(!terrain.value(QStringLiteral("fixture")).toMap().isEmpty());
+        QCOMPARE(terrain.value(QStringLiteral("loaded")).toInt(), 4);
+        QCOMPARE(terrain.value(QStringLiteral("pending")).toInt(), 2);
+    }
+
+    void cesiumBridgeRequiresQuantizedMeshLayerJson()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString terrainPath =
+            root.filePath(QStringLiteral("map_cache/terrain/quantized-mesh"));
+        QVERIFY(QDir().mkpath(terrainPath));
+        QFile orphanTile(QDir(terrainPath).filePath(QStringLiteral("0.terrain")));
+        QVERIFY(orphanTile.open(QIODevice::WriteOnly));
+        QVERIFY(orphanTile.write("tile") > 0);
+        orphanTile.close();
+
+        animus::VehicleModel vehicle;
+        animus::BreadcrumbPathModel trail;
+        animus::CesiumBridge bridge(&vehicle, &trail);
+        bridge.setTerrainCachePath(terrainPath);
+
+        QVariantMap terrain = bridge.snapshot().value(QStringLiteral("terrain")).toMap();
+        QCOMPARE(terrain.value(QStringLiteral("terrainAvailable")).toBool(), true);
+        QCOMPARE(terrain.value(QStringLiteral("quantizedMeshAvailable")).toBool(), false);
+        QCOMPARE(terrain.value(QStringLiteral("provider")).toString(),
+                 QStringLiteral("heightmap-fixture"));
+
+        QFile layer(QDir(terrainPath).filePath(QStringLiteral("layer.json")));
+        QVERIFY(layer.open(QIODevice::WriteOnly));
+        QVERIFY(layer.write("{}") > 0);
+        layer.close();
+        bridge.setTerrainCachePath(root.filePath(QStringLiteral("map_cache/terrain/other")));
+        bridge.setTerrainCachePath(terrainPath);
+
+        terrain = bridge.snapshot().value(QStringLiteral("terrain")).toMap();
+        QCOMPARE(terrain.value(QStringLiteral("terrainAvailable")).toBool(), true);
+        QCOMPARE(terrain.value(QStringLiteral("quantizedMeshAvailable")).toBool(), true);
+        QCOMPARE(terrain.value(QStringLiteral("provider")).toString(),
+                 QStringLiteral("quantized-mesh"));
+    }
+
+    void cesiumBridgeUsesHeightmapFixtureWhenTerrainCacheMissing()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+
+        animus::VehicleModel vehicle;
+        animus::BreadcrumbPathModel trail;
+        animus::CesiumBridge bridge(&vehicle, &trail);
+        bridge.setTerrainCachePath(root.filePath(QStringLiteral("missing-quantized-mesh-cache")));
+
+        const QVariantMap terrain = bridge.snapshot().value(QStringLiteral("terrain")).toMap();
+        QCOMPARE(terrain.value(QStringLiteral("terrainAvailable")).toBool(), true);
+        QCOMPARE(terrain.value(QStringLiteral("quantizedMeshAvailable")).toBool(), false);
+        QCOMPARE(terrain.value(QStringLiteral("provider")).toString(),
+                 QStringLiteral("heightmap-fixture"));
+        QCOMPARE(terrain.value(QStringLiteral("status")).toString(),
+                 QStringLiteral("fixture terrain available"));
+        const QVariantMap fixture = terrain.value(QStringLiteral("fixture")).toMap();
+        QCOMPARE(fixture.value(QStringLiteral("name")).toString(),
+                 QStringLiteral("cruise6dof-stanford-sim-fixture"));
+        QCOMPARE(fixture.value(QStringLiteral("width")).toInt(), 129);
+        QCOMPARE(fixture.value(QStringLiteral("height")).toInt(), 129);
+        QCOMPARE(fixture.value(QStringLiteral("minHeightM")).toDouble(), 2.0);
+        QCOMPARE(fixture.value(QStringLiteral("maxHeightM")).toDouble(), 58.0);
+        QVERIFY(fixture.value(QStringLiteral("imageryUrlTemplate"))
+                    .toString()
+                    .startsWith(QStringLiteral("qrc:/Animus/web/cesium/fixture/tiles/")));
+        QCOMPARE(fixture.value(QStringLiteral("imageryMaximumLevel")).toInt(), 2);
+        QVERIFY(fixture.value(QStringLiteral("aircraftModelUrl"))
+                    .toString()
+                    .endsWith(QStringLiteral("fixture/aircraft/generic-fixed-wing.gltf")));
+
+        QSignalSpy sceneSpy(&bridge, &animus::CesiumBridge::sceneStatusChanged);
+        bridge.setSceneStatus(QStringLiteral("ellipsoid-fallback"), QStringLiteral("no assets"));
+        QCOMPARE(sceneSpy.count(), 1);
+        const QVariantMap scene = bridge.sceneStatus();
+        QCOMPARE(scene.value(QStringLiteral("status")).toString(),
+                 QStringLiteral("ellipsoid-fallback"));
+        QCOMPARE(scene.value(QStringLiteral("error")).toString(), QStringLiteral("no assets"));
+    }
+
+    void bundledCesiumRuntimeFilesExist()
+    {
+        const QDir vendorDir(QDir(QStringLiteral(ANIMUS_QT_QML_DIR))
+                                 .filePath(QStringLiteral("../web/cesium/vendor/Cesium")));
+        QVERIFY2(QFileInfo::exists(vendorDir.filePath(QStringLiteral("Cesium.js"))),
+                 "Cesium.js must be vendored for offline Terrain 3D rendering");
+        QVERIFY2(QFileInfo::exists(vendorDir.filePath(QStringLiteral("Widgets/widgets.css"))),
+                 "Cesium widgets CSS must be bundled");
+        QVERIFY2(QFileInfo::exists(vendorDir.filePath(QStringLiteral("Workers"))),
+                 "Cesium workers must be bundled");
+        QVERIFY2(QFileInfo::exists(vendorDir.filePath(QStringLiteral("Assets"))),
+                 "Cesium assets must be bundled");
+        QVERIFY2(QFileInfo::exists(vendorDir.filePath(QStringLiteral("ThirdParty"))),
+                 "Cesium third-party metadata must be bundled");
+        QVERIFY2(QFileInfo::exists(vendorDir.filePath(QStringLiteral("LICENSE.md"))),
+                 "Cesium Apache-2.0 license must be bundled");
+    }
+
+    void terrain3dStaticBundleUsesCesiumOnly()
+    {
+        const QDir cesiumDir(
+            QDir(QStringLiteral(ANIMUS_QT_QML_DIR)).filePath(QStringLiteral("../web/cesium")));
+        QFile html(cesiumDir.filePath(QStringLiteral("index.html")));
+        QVERIFY(html.open(QIODevice::ReadOnly));
+        const QString htmlText = QString::fromUtf8(html.readAll());
+        QVERIFY(!htmlText.contains(QStringLiteral("domScene")));
+        QVERIFY(!htmlText.contains(QStringLiteral("domVehicle")));
+        QVERIFY(!htmlText.contains(QStringLiteral("domTrail")));
+
+        QFile script(cesiumDir.filePath(QStringLiteral("animus-cesium.js")));
+        QVERIFY(script.open(QIODevice::ReadOnly));
+        const QString scriptText = QString::fromUtf8(script.readAll());
+        QVERIFY(scriptText.contains(QStringLiteral("window.animusApplySnapshot")));
+        QVERIFY(scriptText.contains(QStringLiteral("window.animusCaptureCesiumPng")));
+        QVERIFY(scriptText.contains(QStringLiteral("window.animusSetCameraMode")));
+        QVERIFY(scriptText.contains(QStringLiteral("CustomHeightmapTerrainProvider")));
+        QVERIFY(scriptText.contains(QStringLiteral("UrlTemplateImageryProvider")));
+        QVERIFY(scriptText.contains(QStringLiteral("aircraftModelUrl")));
+        QVERIFY(scriptText.contains(QStringLiteral("Cesium.HeadingPitchRange")));
+
+        QVERIFY(QFileInfo::exists(cesiumDir.filePath(QStringLiteral("fixture/tiles/0/0/0.png"))));
+        QVERIFY(QFileInfo::exists(cesiumDir.filePath(QStringLiteral("fixture/tiles/1/1/1.png"))));
+        QVERIFY(QFileInfo::exists(cesiumDir.filePath(QStringLiteral("fixture/tiles/2/3/3.png"))));
+        QVERIFY(QFileInfo::exists(
+            cesiumDir.filePath(QStringLiteral("fixture/aircraft/generic-fixed-wing.gltf"))));
     }
 };
 

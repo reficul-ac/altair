@@ -1,0 +1,105 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "Altair deterministic fixture"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0,
+      "scale": [
+        4.0,
+        4.0,
+        4.0
+      ]
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0
+          },
+          "indices": 1,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "fixture-blue-fixed-wing",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.08,
+          0.28,
+          0.62,
+          1.0
+        ],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.55
+      },
+      "doubleSided": true,
+      "extensions": {
+        "KHR_materials_unlit": {}
+      }
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "data:application/octet-stream;base64,AAAAwAAAAAAAAABBAAAAQAAAAAAAAABBAACAP83MTD8AAKDAAAAAwAAAAAAAAABBAACAP83MTD8AAKDAAACAv83MTD8AAKDAAAAAwAAAAAAAAABBAACAv83MTL8AAKDAAACAP83MTL8AAKDAAAAAwAAAAAAAAABBAACAP83MTL8AAKDAAAAAQAAAAAAAAABBAAAAwAAAAAAAAABBAACAv83MTD8AAKDAAACAv83MTL8AAKDAAAAAQAAAAAAAAABBAACAP83MTL8AAKDAAACAP83MTD8AAKDAAACAv83MTD8AAKDAAACAP83MTD8AAKDAAACAP83MTL8AAKDAAACAv83MTD8AAKDAAACAP83MTL8AAKDAAACAv83MTL8AAKDAAABQwc3MTD0AAMA/AABQQc3MTD0AAMA/AAAAQQrXoz3NzMy/AABQwc3MTD0AAMA/AAAAQQrXoz3NzMy/AAAAwQrXoz3NzMy/AABQwc3MTL2amZk/AAAAwQrXo70zM/O/AAAAQQrXo70zM/O/AABQwc3MTL2amZk/AAAAQQrXo70zM/O/AABQQc3MTL2amZk/AACwwJqZGT4AAKDAAACwQJqZGT4AAKDAAABgQJqZGT4AAODAAACwwJqZGT4AAKDAAABgQJqZGT4AAODAAABgwJqZGT4AAODAAAAAAAAAAD+amZnAAAAAAGZmhkAzM9PAAAAAAM3MTD6amenAzcxMv2Zm5r4zMwNBzcxMP2Zm5r4zMwNBAAAAAM3MTL9mZsZAAAABAAIAAwAEAAUABgAHAAgACQAKAAsADAANAA4ADwAQABEAEgATABQAFQAWABcAGAAZABoAGwAcAB0AHgAfACAAIQAiACMAJAAlACYAJwAoACkAKgArACwALQAuAC8A",
+      "byteLength": 672
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 576,
+      "byteLength": 96,
+      "target": 34963
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "byteOffset": 0,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -13.0,
+        -0.8,
+        -7.3
+      ],
+      "max": [
+        13.0,
+        4.2,
+        8.2
+      ]
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 0,
+      "componentType": 5123,
+      "count": 48,
+      "type": "SCALAR"
+    }
+  ],
+  "extensionsUsed": [
+    "KHR_materials_unlit"
+  ]
+}

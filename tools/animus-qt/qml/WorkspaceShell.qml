@@ -17,9 +17,27 @@ Item {
         return true
     }
 
+    StackLayout {
+        id: workspaceStack
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: chrome.bottom
+        anchors.bottom: parent.bottom
+        clip: true
+        currentIndex: tabs.currentIndex
+
+        Map2DView {}
+        Terrain3DView {}
+        SetupView {}
+    }
+
     ColumnLayout {
-        anchors.fill: parent
+        id: chrome
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
         spacing: 0
+        z: 100
 
         ToolBar {
             Layout.fillWidth: true
@@ -56,16 +74,6 @@ Item {
             TabButton { text: "Map 2D" }
             TabButton { text: "Terrain 3D" }
             TabButton { text: "Setup" }
-        }
-
-        StackLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            currentIndex: tabs.currentIndex
-
-            Map2DView {}
-            Terrain3DView {}
-            SetupView {}
         }
     }
 }

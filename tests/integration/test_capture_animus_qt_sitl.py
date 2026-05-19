@@ -84,7 +84,7 @@ def main():
 
         rich = module.inspect_png(rich_path, "terrain-3d", expected_size=(128, 82))
         status |= expect(rich["ok"], f"expected rich fixture to pass, got {rich}")
-        status |= expect(len(rich["diagnostics"]) == 3, "expected toolbar plus terrain diagnostics")
+        status |= expect(len(rich["diagnostics"]) == 2, "expected Cesium terrain diagnostics")
 
         blank = module.inspect_png(blank_path, "map-2d", expected_size=(128, 82))
         status |= expect(not blank["ok"], "expected blank fixture to fail")

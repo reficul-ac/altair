@@ -43,7 +43,7 @@ Reusable Bayek framework follow-up is tracked separately in
   `capture_animus_sitl.py`; point them to `tools/animus-qt`,
   `build-animus-qt`, and `capture_animus_qt_sitl.py`.
 - [ ] Complete the remaining Animus Qt migration work: offline PMTiles serving,
-  Cesium terrain, mission/fence/rally overlays, and broader Qt parity.
+  mission/fence/rally overlays, and broader Qt parity.
 - [x] Record the exact upstream QGroundControl revision, license headers, and
   source-to-Animus mapping in `docs/animus_qgc_map_audit.md` before importing
   or adapting QGC-derived map/provider code.
@@ -58,11 +58,20 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Add a cache-populated Animus Qt capture fixture that verifies real raster
   tile rendering while keeping fresh-checkout captures valid with the schematic
   empty-cache fallback.
-- [ ] Replace the 3D terrain canvas/WebEngine placeholder with bundled Cesium
-  assets, Qt WebChannel vehicle updates, quantized-mesh terrain loading, and
+- [x] Replace the static 3D terrain canvas placeholder with a WebEngine terrain
+  workspace, Qt WebChannel vehicle/home/trail/terrain snapshots, and
   deterministic fallback/error UI.
+- [x] Vendor full CesiumJS assets with license notices and complete
+  quantized-mesh terrain rendering from `map_cache/terrain/quantized-mesh`.
+- [x] Replace the Terrain 3D DOM/canvas terrain stand-in with native Cesium
+  heightmap fixture terrain, offline raster imagery, bundled aircraft model,
+  vehicle/home/trail primitives, and Cesium canvas screenshot capture.
+- [ ] Add richer terrain clearance analysis in Terrain 3D, including vehicle
+  clearance trend/history and operator-visible guardrail thresholds.
 - [ ] Add typed Qt models and QML overlays for mission items, geofences, rally
   points, home/origin, event markers, and breadcrumb/history layers.
+- [ ] Add local aircraft model import for Terrain 3D after the operator file
+  policy, supported formats, and offline asset packaging are defined.
 - [ ] Add multi-vehicle support: per-system vehicle models, fleet
   list/selection, per-vehicle trails/status, and graceful degradation toward
   the documented 12-vehicle analysis target.
@@ -156,8 +165,14 @@ Reusable Bayek framework follow-up is tracked separately in
   tests and capture coverage.
 - [x] Extend Animus Qt screenshot analysis beyond nonblank PNG checks to catch
   obvious overlap, clipping, and workspace selection regressions.
-- [ ] Make `capture_animus_qt_sitl.py` fall back to `xvfb-run`/offscreen when
-  an existing `DISPLAY` cannot initialize Qt.
+- [x] Restore visible Animus Qt workspace tabs/header in live and capture runs;
+  recent screenshots show the 2D/3D/setup selector missing while map content
+  starts at the top of the window.
+- [ ] Tighten Animus Qt screenshot analysis to require actual workspace tab
+  label visibility, not just nonblank top-region pixels.
+- [ ] Make `capture_animus_qt_sitl.py` retry or fall back to
+  `xvfb-run`/offscreen when `xvfb-run` assigns a display that Qt/xcb cannot
+  initialize.
 - [x] Retire the obsolete TypeScript Animus app, generated dependency tree,
   interaction harnesses, and old CI lane now that Qt Animus is canonical.
 

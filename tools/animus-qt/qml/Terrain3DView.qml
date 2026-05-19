@@ -3,20 +3,55 @@ import QtQuick.Controls
 
 Item {
     id: root
+    objectName: "terrain3DView"
+
+    property bool lastCaptureOk: false
+    property string lastCaptureError: ""
+    property string cameraMode: "chase"
+
+    signal captureFinished(bool ok, string error)
+
+    function captureCesiumPng(path) {
+        if (!webLoader.active || webLoader.status !== Loader.Ready || !webLoader.item) {
+            root.lastCaptureOk = false
+            root.lastCaptureError = "Terrain WebEngine view is not ready"
+            root.captureFinished(false, "Terrain WebEngine view is not ready")
+            return
+        }
+        webLoader.item.captureCesiumPng(path)
+    }
+
+    function setCameraMode(mode) {
+        root.cameraMode = mode
+        if (webLoader.active && webLoader.status === Loader.Ready && webLoader.item)
+            webLoader.item.setCameraMode(mode)
+    }
+
+    function statusText() {
+        var terrain = cesiumBridge.terrainStatus.provider === "quantized-mesh"
+                ? "terrain available: " + cesiumBridge.terrainStatus.cachePath
+                : "terrain fixture: " + cesiumBridge.terrainStatus.fixture.name
+        var scene = cesiumBridge.sceneStatus.status || "initializing"
+        if (cesiumBridge.sceneStatus.error)
+            return terrain + " | " + scene + ": " + cesiumBridge.sceneStatus.error
+        return terrain + " | " + scene
+    }
 
     Rectangle {
         anchors.fill: parent
-        color: "#d8e2e0"
+        color: "#d7e3df"
     }
 
     Canvas {
+        id: fallbackCanvas
         anchors.fill: parent
+        visible: !webLoader.active || webLoader.status === Loader.Error
         onPaint: {
             var ctx = getContext("2d")
             ctx.clearRect(0, 0, width, height)
 
             var sky = ctx.createLinearGradient(0, 0, 0, height * 0.58)
-            sky.addColorStop(0, "#9fb8d0")
+            sky.addColorStop(0, "#8fb1ce")
             sky.addColorStop(1, "#e6ece8")
             ctx.fillStyle = sky
             ctx.fillRect(0, 0, width, height)
@@ -59,6 +94,7 @@ Item {
         radius: 23
         x: parent.width * 0.5 - width / 2
         y: parent.height * 0.42 - height / 2
+        visible: fallbackCanvas.visible
         color: "#1d6fd6"
         border.color: "white"
         border.width: 3
@@ -73,21 +109,66 @@ Item {
         }
     }
 
+    Loader {
+        id: webLoader
+        anchors.fill: parent
+        active: webEngineTerrainEnabled
+        source: "Terrain3DWebView.qml"
+    }
+
+    Connections {
+        target: webLoader.item
+        ignoreUnknownSignals: true
+        function onCaptureFinished(ok, error) {
+            root.lastCaptureOk = ok
+            root.lastCaptureError = error
+            root.captureFinished(ok, error)
+        }
+    }
+
     Label {
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.margins: 12
-        text: "Offline terrain preview: " +
-              (vehicleModel.positionValid
-               ? vehicleModel.latitudeDeg.toFixed(5) + ", " + vehicleModel.longitudeDeg.toFixed(5)
-               : "UNK")
+        text: root.statusText()
         padding: 8
-        background: Rectangle { color: "#f7f7f3"; border.color: "#c9c9c0"; radius: 6 }
+        color: "#1f2a2a"
+        background: Rectangle {
+            color: "#f7f7f3"
+            border.color: "#c9c9c0"
+            radius: 6
+        }
     }
 
     TelemetryStrip {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 12
+    }
+
+    Row {
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 12
+        spacing: 4
+
+        Button {
+            text: "Chase"
+            checkable: true
+            checked: root.cameraMode === "chase"
+            onClicked: root.setCameraMode("chase")
+        }
+        Button {
+            text: "Orbit"
+            checkable: true
+            checked: root.cameraMode === "orbit"
+            onClicked: root.setCameraMode("orbit")
+        }
+        Button {
+            text: "Free"
+            checkable: true
+            checked: root.cameraMode === "free"
+            onClicked: root.setCameraMode("free")
+        }
     }
 }

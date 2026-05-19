@@ -52,8 +52,8 @@ WORKSPACE_CONTENT_REGIONS = {
         RegionSpec("vehicle/home overlays", (0.40, 0.34, 0.60, 0.60), 4, 18.0, 0.92),
     ),
     "terrain-3d": (
-        RegionSpec("terrain preview", (0.05, 0.18, 0.95, 0.90), 18, 28.0, 0.90),
-        RegionSpec("vehicle marker", (0.43, 0.38, 0.57, 0.56), 5, 35.0, 0.88),
+        RegionSpec("native Cesium terrain canvas", (0.04, 0.06, 0.96, 0.94), 18, 28.0, 0.90),
+        RegionSpec("vehicle and trail", (0.36, 0.22, 0.66, 0.62), 5, 30.0, 0.90),
     ),
     "setup": (
         RegionSpec("setup controls", (0.02, 0.18, 0.98, 0.68), 3, 18.0, 0.94),
@@ -305,7 +305,7 @@ def inspect_png(
             if len(colors) < minimum:
                 warnings.append(f"low screenshot color diversity: {len(colors)} < {minimum}")
 
-        diagnostics = [inspect_region(image, TOP_REGION)]
+        diagnostics = [] if workspace == "terrain-3d" else [inspect_region(image, TOP_REGION)]
         for spec in WORKSPACE_CONTENT_REGIONS.get(workspace, ()):
             diagnostics.append(inspect_region(image, spec))
         result["diagnostics"] = diagnostics
@@ -495,7 +495,11 @@ def main() -> int:
         if xvfb_run is not None:
             virtual_display = "xvfb-run"
             xvfb_executable = xvfb_run
-            env.setdefault("QT_OPENGL", "software")
+            env.setdefault(
+                "QTWEBENGINE_CHROMIUM_FLAGS",
+                "--ignore-gpu-blocklist --enable-webgl --enable-webgl2 "
+                "--use-gl=egl --disable-gpu-sandbox",
+            )
             command_prefix = [xvfb_run, "-a"]
         else:
             virtual_display = "offscreen"
@@ -549,7 +553,8 @@ def main() -> int:
                     timeout=max(10, args.capture_delay_ms // 1000 + 10),
                     check=False,
                 )
-            png = inspect_png(screenshot_dir / f"{workspace}.png", workspace)
+            expected_size = None if workspace == "terrain-3d" else EXPECTED_CAPTURE_SIZE
+            png = inspect_png(screenshot_dir / f"{workspace}.png", workspace, expected_size)
             capture = {
                 "workspace": workspace,
                 "command": launched_command,

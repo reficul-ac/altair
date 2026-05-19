@@ -8,6 +8,17 @@ set(CMAKE_AUTOUIC ON)
 
 find_package(SQLite3 REQUIRED)
 
+file(
+    GLOB_RECURSE ANIMUS_CESIUM_VENDOR_RESOURCES
+    RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    CONFIGURE_DEPENDS "web/cesium/vendor/Cesium/*"
+)
+file(
+    GLOB_RECURSE ANIMUS_CESIUM_FIXTURE_RESOURCES
+    RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    CONFIGURE_DEPENDS "web/cesium/fixture/*"
+)
+
 find_package(
     Qt6 6.4 REQUIRED
     COMPONENTS Core
@@ -17,7 +28,6 @@ find_package(
                QuickControls2
                Positioning
                Network
-               WebChannel
                WebEngineQuick
                Test
 )
@@ -48,7 +58,6 @@ target_link_libraries(
             Qt6::QuickControls2
             Qt6::Positioning
             Qt6::Network
-            Qt6::WebChannel
             Qt6::WebEngineQuick
             SQLite::SQLite3
 )
@@ -65,10 +74,15 @@ qt_add_qml_module(
     qml/Map2DView.qml
     qml/TelemetryStrip.qml
     qml/Terrain3DView.qml
+    qml/Terrain3DWebView.qml
     qml/SetupView.qml
     RESOURCES
     web/cesium/index.html
     web/cesium/animus-cesium.js
+    web/cesium/vendor/README.md
+    web/cesium/vendor/LICENSES.md
+    ${ANIMUS_CESIUM_FIXTURE_RESOURCES}
+    ${ANIMUS_CESIUM_VENDOR_RESOURCES}
 )
 
 if(COMMAND altair_enable_warnings)
@@ -81,6 +95,7 @@ add_executable(
     src/maps/MapSourceRegistry.cpp
     src/maps/OfflineMapManager.cpp
     src/maps/qgc/AnimusMapCacheManager.cpp
+    src/maps/CesiumBridge.cpp
     src/telemetry/BreadcrumbPathModel.cpp
     src/telemetry/MavlinkDecoder.cpp
     src/telemetry/TelemetryService.cpp

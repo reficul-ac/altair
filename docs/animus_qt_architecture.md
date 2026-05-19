@@ -26,7 +26,7 @@ ctest --test-dir build-animus-qt --output-on-failure -R animus_qt
 ```
 
 Required Qt modules are Qt 6.4 or newer with Core, Gui, Qml, Quick,
-QuickControls2, Positioning, Network, WebChannel, WebEngineQuick, and Test.
+QuickControls2, Positioning, Network, WebEngineQuick, and Test.
 Ubuntu 24.04 repositories available to this project do not provide Qt 6
 Location, so the buildable 2D map surface remains QtQuick while the runtime
 policy and offline tile-set state use the QGC-style cache manager.
@@ -69,11 +69,18 @@ strict offline and cached/offline policies render only existing local tiles.
 Implemented now:
 
 - Qt/QML application under `tools/animus-qt`.
-- QML workspace shell with 2D map, 3D terrain placeholder, and setup views.
+- QML workspace shell with 2D map, WebEngine-backed 3D terrain workspace, and setup views.
 - Deterministic Qt screenshot capture for `map-2d`, `terrain-3d`, and `setup` with mock telemetry and PNG nonblank checks.
 - Vehicle state, bounded/decimated breadcrumb trail, map provider registry,
   offline policy, QGC-style cache metadata/download manager, and Cesium
-  WebChannel bridge.
+  JavaScript bridge with snapshot and incremental terrain-scene updates.
+- Bundled offline CesiumJS runtime assets loaded from Qt resources, with local
+  quantized-mesh terrain selected from `map_cache/terrain/quantized-mesh` when
+  `layer.json` is present and a deterministic Stanford/cruise6dof heightmap
+  plus multi-level raster imagery fixture used as the fresh-checkout fallback.
+- Terrain 3D vehicle rendering uses a bundled generic fixed-wing glTF model,
+  altitude-aware trail segments, home marker primitives, and chase/orbit/free
+  camera modes exposed through QML controls.
 - C++ MAVLink v1/v2 frame decode for heartbeat, attitude, global position, GPS raw, mission current, home position, and terrain report.
 - UDP telemetry ingest with latest-value UI publication throttled to 1-30 Hz.
 - Unit-test target for map policy, cache behavior, bounded trails, MAVLink decode, and telemetry publication throttling when Qt is available.
@@ -82,6 +89,5 @@ Not implemented yet:
 
 - Directly vendored QGC provider/cache source; any future import must preserve
   upstream license headers and extend `docs/animus_qgc_map_audit.md`.
-- Bundled CesiumJS vendor assets and quantized-mesh terrain loading.
 - Mission, geofence, rally, and multi-vehicle model adapters.
 - Broader semantic visual assertions beyond the current screenshot diagnostics.
