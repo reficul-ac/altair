@@ -226,6 +226,87 @@ def main():
             f"terrain command missing control-surface verification: {command}",
         )
 
+        xcb_log = tmp_dir / "xcb-startup.log"
+        xcb_log.write_text(
+            "qt.qpa.xcb: could not connect to display :99\n"
+            'Could not load the Qt platform plugin "xcb" in "" even though it was found.\n'
+            "This application failed to start because no Qt platform plugin could be initialized.\n",
+            encoding="utf-8",
+        )
+        status |= expect(
+            module.xcb_startup_failure(xcb_log),
+            "expected representative Qt/xcb startup failure log to be detected",
+        )
+
+        ordinary_log = tmp_dir / "ordinary-failure.log"
+        ordinary_log.write_text(
+            "capture timed out while waiting for screenshot\n", encoding="utf-8"
+        )
+        status |= expect(
+            not module.xcb_startup_failure(ordinary_log),
+            "expected ordinary capture failure log not to be detected as Qt/xcb startup",
+        )
+
+        base_env = {
+            "PATH": "/usr/bin",
+            "ALT_AIR_TEST": "preserve-me",
+            "QTWEBENGINE_CHROMIUM_FLAGS": "--existing-flag",
+        }
+        offscreen = module.offscreen_env(base_env)
+        status |= expect(
+            offscreen["QT_QPA_PLATFORM"] == "offscreen",
+            f"offscreen env did not set QT_QPA_PLATFORM: {offscreen}",
+        )
+        status |= expect(
+            offscreen["QT_QUICK_BACKEND"] == "software",
+            f"offscreen env did not set software Qt Quick backend: {offscreen}",
+        )
+        status |= expect(
+            offscreen["QT_OPENGL"] == "software",
+            f"offscreen env did not set software OpenGL: {offscreen}",
+        )
+        status |= expect(
+            offscreen["QTWEBENGINE_CHROMIUM_FLAGS"] == "--existing-flag",
+            f"offscreen env should preserve existing Chromium flags: {offscreen}",
+        )
+        status |= expect(
+            offscreen["ALT_AIR_TEST"] == "preserve-me",
+            f"offscreen env did not preserve unrelated base values: {offscreen}",
+        )
+        status |= expect(
+            "QT_QPA_PLATFORM" not in base_env,
+            f"offscreen env should not mutate the base environment: {base_env}",
+        )
+
+        default_offscreen = module.offscreen_env({})
+        status |= expect(
+            "--disable-gpu" in default_offscreen.get("QTWEBENGINE_CHROMIUM_FLAGS", ""),
+            f"offscreen env missing default software Chromium flags: {default_offscreen}",
+        )
+
+        status |= expect(
+            module.should_retry_offscreen("xvfb-run", xcb_log, strategies_len=1, attempt_index=1),
+            "expected final xvfb-run Qt/xcb startup failure to request offscreen retry",
+        )
+        status |= expect(
+            not module.should_retry_offscreen(
+                "xvfb-run", ordinary_log, strategies_len=1, attempt_index=1
+            ),
+            "expected non-xcb failure not to request offscreen retry",
+        )
+        status |= expect(
+            not module.should_retry_offscreen(
+                "offscreen-retry", xcb_log, strategies_len=2, attempt_index=2
+            ),
+            "expected offscreen retry failure not to request another offscreen retry",
+        )
+        status |= expect(
+            not module.should_retry_offscreen(
+                "xvfb-run", xcb_log, strategies_len=2, attempt_index=1
+            ),
+            "expected non-final xvfb-run strategy not to request duplicate offscreen retry",
+        )
+
     return 1 if status else 0
 
 

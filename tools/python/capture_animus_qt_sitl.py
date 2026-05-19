@@ -634,6 +634,14 @@ def xcb_startup_failure(log_path: Path) -> bool:
     return any(marker in text for marker in XCB_FAILURE_MARKERS)
 
 
+def should_retry_offscreen(
+    strategy: str, log_path: Path, strategies_len: int, attempt_index: int
+) -> bool:
+    return (
+        strategy == "xvfb-run" and xcb_startup_failure(log_path) and strategies_len == attempt_index
+    )
+
+
 def write_report(run_dir: Path, manifest: dict[str, object]) -> None:
     lines = [
         "# Animus Qt Visual Report",
@@ -847,11 +855,7 @@ def main() -> int:
                 manifest["captureAttempts"].append(attempt)
                 if completed.returncode == 0:
                     break
-                if (
-                    strategy == "xvfb-run"
-                    and xcb_startup_failure(log_path)
-                    and len(strategies) == attempt_index
-                ):
+                if should_retry_offscreen(strategy, log_path, len(strategies), attempt_index):
                     note = (
                         f"{capture_label}: xvfb-run failed during Qt/xcb startup; "
                         "retrying with Qt offscreen software rendering"
