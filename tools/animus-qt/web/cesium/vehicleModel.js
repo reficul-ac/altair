@@ -167,6 +167,10 @@
         surfaces.push({
           id,
           node: String(surface.node || ''),
+          resolvedPivotNode: resolved ? String(surface.node || '') : '',
+          mappingStatus: resolved ? 'resolved' : 'unresolved',
+          polarity: Number.isFinite(Number(update.polarity)) ? Number(update.polarity) : null,
+          profilePolarity: Number.isFinite(Number(update.profilePolarity)) ? Number(update.profilePolarity) : null,
           resolved,
           deflectionDeg: currentDeflectionDeg,
           deflected,

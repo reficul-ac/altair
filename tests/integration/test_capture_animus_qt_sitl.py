@@ -151,6 +151,15 @@ def main():
         diagnostic_path.write_text(
             """{
   "ok": true,
+  "renderer": "cesium-webengine",
+  "workspaceMode": "terrain-3d",
+  "cameraMode": "chase",
+  "freeRoamAvailable": true,
+  "vehicleLocked": true,
+  "profileId": "generic_fixed_wing_smooth",
+  "profileAssetUri": "models/generic_fixed_wing_smooth.glb",
+  "loadedModelUri": "models/generic_fixed_wing_smooth.glb",
+  "modelMatchesProfileAsset": true,
   "profileLoaded": true,
   "modelLoaded": true,
   "surfaces": [
@@ -164,7 +173,7 @@ def main():
 """,
             encoding="utf-8",
         )
-        diagnostic = module.inspect_control_surface_diagnostic(diagnostic_path)
+        diagnostic = module.inspect_control_surface_diagnostic(diagnostic_path, "terrain-3d")
         status |= expect(
             diagnostic["ok"], f"expected control-surface diagnostic to pass: {diagnostic}"
         )
@@ -172,6 +181,13 @@ def main():
         diagnostic_path.write_text(
             """{
   "ok": false,
+  "renderer": "cesium-webengine",
+  "workspaceMode": "terrain-3d",
+  "cameraMode": "chase",
+  "freeRoamAvailable": true,
+  "vehicleLocked": true,
+  "profileLoaded": true,
+  "modelLoaded": true,
   "surfaces": [
     {"id": "left_aileron", "node": "aileron_left_pivot", "resolved": true, "deflectionDeg": 12.0, "matrixChanged": false},
     {"id": "right_aileron", "node": "aileron_right_pivot", "resolved": false, "deflectionDeg": -12.0, "matrixChanged": false},
@@ -183,13 +199,64 @@ def main():
 """,
             encoding="utf-8",
         )
-        diagnostic = module.inspect_control_surface_diagnostic(diagnostic_path)
+        diagnostic = module.inspect_control_surface_diagnostic(diagnostic_path, "terrain-3d")
         status |= expect(not diagnostic["ok"], "expected unresolved/neutral surfaces to fail")
         status |= expect(
             any(
                 "deflected matrix remained neutral" in failure for failure in diagnostic["failures"]
             ),
             f"missing neutral matrix failure: {diagnostic}",
+        )
+
+        tactical_surface_path = tmp_dir / "tactical-control-surfaces.json"
+        tactical_surface_path.write_text(
+            """{
+  "ok": true,
+  "renderer": "cesium-webengine",
+  "workspaceMode": "tactical",
+  "cameraMode": "tactical",
+  "freeRoamAvailable": false,
+  "vehicleLocked": true,
+  "profileId": "generic_fixed_wing_smooth",
+  "profileAssetUri": "models/generic_fixed_wing_smooth.glb",
+  "loadedModelUri": "models/generic_fixed_wing_smooth.glb",
+  "modelMatchesProfileAsset": true,
+  "profileLoaded": true,
+  "modelLoaded": true,
+  "surfaces": [
+    {"id": "left_aileron", "node": "aileron_left_pivot", "resolved": true, "polarity": 1.0, "deflectionDeg": 12.0, "matrixChanged": true},
+    {"id": "right_aileron", "node": "aileron_right_pivot", "resolved": true, "polarity": -1.0, "deflectionDeg": -12.0, "matrixChanged": true},
+    {"id": "elevator", "node": "elevator_pivot", "resolved": true, "polarity": 1.0, "deflectionDeg": 10.0, "matrixChanged": true},
+    {"id": "rudder", "node": "rudder_pivot", "resolved": true, "polarity": 1.0, "deflectionDeg": 14.0, "matrixChanged": true}
+  ],
+  "failures": []
+}
+""",
+            encoding="utf-8",
+        )
+        tactical_surface = module.inspect_control_surface_diagnostic(
+            tactical_surface_path, "tactical"
+        )
+        status |= expect(
+            tactical_surface["ok"],
+            f"expected native tactical control-surface diagnostic to pass: {tactical_surface}",
+        )
+        tactical_surface_path.write_text(
+            tactical_surface_path.read_text(encoding="utf-8")
+            .replace('"renderer": "cesium-webengine"', '"renderer": "qml-fallback"')
+            .replace('"modelMatchesProfileAsset": true', '"modelMatchesProfileAsset": false'),
+            encoding="utf-8",
+        )
+        tactical_surface = module.inspect_control_surface_diagnostic(
+            tactical_surface_path, "tactical"
+        )
+        status |= expect(
+            not tactical_surface["ok"],
+            "expected tactical fallback diagnostic to fail",
+        )
+        status |= expect(
+            any("native cesium-webengine" in failure for failure in tactical_surface["failures"]),
+            f"missing tactical fallback renderer failure: {tactical_surface}",
         )
 
         chrome_path = tmp_dir / "terrain-3d-chrome.json"
@@ -200,6 +267,7 @@ def main():
   "tabs": [
     {"label": "Map 2D", "semanticallyVisible": true, "enabled": true, "width": 80, "height": 32, "labelItem": {"label": "Map 2D", "semanticallyVisible": true, "width": 45, "height": 18}, "labelTextMatches": true, "labelInsideTab": true},
     {"label": "Terrain 3D", "semanticallyVisible": true, "enabled": true, "width": 100, "height": 32, "labelItem": {"label": "Terrain 3D", "semanticallyVisible": true, "width": 70, "height": 18}, "labelTextMatches": true, "labelInsideTab": true},
+    {"label": "Tactical", "semanticallyVisible": true, "enabled": true, "width": 88, "height": 32, "labelItem": {"label": "Tactical", "semanticallyVisible": true, "width": 58, "height": 18}, "labelTextMatches": true, "labelInsideTab": true},
     {"label": "Setup", "semanticallyVisible": true, "enabled": true, "width": 70, "height": 32, "labelItem": {"label": "Setup", "semanticallyVisible": true, "width": 42, "height": 18}, "labelTextMatches": true, "labelInsideTab": true}
   ]
 }
@@ -225,6 +293,46 @@ def main():
             "--verify-terrain-control-surfaces" in command,
             f"terrain command missing control-surface verification: {command}",
         )
+        tactical_command = module.command_for_workspace(
+            Path("animus_qt"), tmp_dir, "tactical", 1200
+        )
+        status |= expect(
+            "--verify-terrain-control-surfaces" in tactical_command,
+            f"tactical command missing control-surface verification: {tactical_command}",
+        )
+
+        camera_path = tmp_dir / "tactical-camera.json"
+        camera_path.write_text(
+            """{
+  "ok": true,
+  "renderer": "cesium-webengine",
+  "workspaceMode": "tactical",
+  "mode": "tactical",
+  "cameraMode": "tactical",
+  "freeRoamAvailable": false,
+  "vehicleLocked": true
+}
+""",
+            encoding="utf-8",
+        )
+        camera = module.inspect_tactical_camera_diagnostic(camera_path)
+        status |= expect(camera["ok"], f"expected tactical camera diagnostic to pass: {camera}")
+        camera_path.write_text(
+            camera_path.read_text(encoding="utf-8").replace(
+                '"freeRoamAvailable": false', '"freeRoamAvailable": true'
+            ),
+            encoding="utf-8",
+        )
+        camera = module.inspect_tactical_camera_diagnostic(camera_path)
+        status |= expect(not camera["ok"], "expected tactical free-roam diagnostic to fail")
+        camera_path.write_text(
+            camera_path.read_text(encoding="utf-8")
+            .replace('"renderer": "cesium-webengine"', '"renderer": "qml-fallback"')
+            .replace('"freeRoamAvailable": true', '"freeRoamAvailable": false'),
+            encoding="utf-8",
+        )
+        camera = module.inspect_tactical_camera_diagnostic(camera_path)
+        status |= expect(not camera["ok"], "expected tactical fallback camera to fail")
 
         xcb_log = tmp_dir / "xcb-startup.log"
         xcb_log.write_text(

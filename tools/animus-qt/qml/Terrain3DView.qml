@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 
 Item {
     id: root
@@ -10,6 +11,8 @@ Item {
     property bool lastControlSurfaceInspectionOk: false
     property string lastControlSurfaceInspectionError: ""
     property string cameraMode: "chase"
+    property var localSceneStatus: ({ "status": "initializing", "error": "" })
+    property bool workspaceCurrent: StackLayout.isCurrentItem
 
     signal captureFinished(bool ok, string error)
     signal controlSurfaceInspectionFinished(bool ok, string error)
@@ -44,9 +47,9 @@ Item {
         var terrain = cesiumBridge.terrainStatus.provider === "quantized-mesh"
                 ? "terrain available: " + cesiumBridge.terrainStatus.cachePath
                 : "terrain fixture: " + cesiumBridge.terrainStatus.fixture.name
-        var scene = cesiumBridge.sceneStatus.status || "initializing"
-        if (cesiumBridge.sceneStatus.error)
-            return terrain + " | " + scene + ": " + cesiumBridge.sceneStatus.error
+        var scene = root.localSceneStatus.status || "initializing"
+        if (root.localSceneStatus.error)
+            return terrain + " | " + scene + ": " + root.localSceneStatus.error
         return terrain + " | " + scene
     }
 
@@ -66,6 +69,12 @@ Item {
         return "#4b5563"
     }
 
+    function useFallbackScene() {
+        var status = root.localSceneStatus.status || "initializing"
+        return !webLoader.active || webLoader.status === Loader.Error ||
+               status === "initializing" || status.indexOf("error") >= 0
+    }
+
     Rectangle {
         anchors.fill: parent
         color: "#d7e3df"
@@ -74,7 +83,7 @@ Item {
     Canvas {
         id: fallbackCanvas
         anchors.fill: parent
-        visible: !webLoader.active || webLoader.status === Loader.Error
+        visible: root.useFallbackScene()
         onPaint: {
             var ctx = getContext("2d")
             ctx.clearRect(0, 0, width, height)
@@ -141,8 +150,13 @@ Item {
     Loader {
         id: webLoader
         anchors.fill: parent
-        active: webEngineTerrainEnabled
+        active: webEngineTerrainEnabled && root.workspaceCurrent
+        visible: !root.useFallbackScene()
         source: "Terrain3DWebView.qml"
+        onLoaded: {
+            item.workspaceMode = "terrain-3d"
+            item.setCameraMode(root.cameraMode)
+        }
     }
 
     Connections {
@@ -161,6 +175,9 @@ Item {
         function onCameraModeChanged(mode) {
             if (mode === "chase" || mode === "orbit" || mode === "free")
                 root.cameraMode = mode
+        }
+        function onSceneStatusChanged() {
+            root.localSceneStatus = webLoader.item.sceneStatus
         }
     }
 

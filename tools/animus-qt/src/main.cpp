@@ -159,6 +159,7 @@ bool parseArgs(const QStringList &args, CaptureOptions *options)
         return false;
     return options->captureWorkspace == QStringLiteral("map-2d") ||
            options->captureWorkspace == QStringLiteral("terrain-3d") ||
+           options->captureWorkspace == QStringLiteral("tactical") ||
            options->captureWorkspace == QStringLiteral("setup");
 }
 
@@ -177,9 +178,9 @@ int main(int argc, char *argv[])
         return 2;
     }
 
-    const bool webEngineTerrainEnabled = !capture.requested ||
-                                         capture.captureWorkspace == QStringLiteral("terrain-3d") ||
-                                         capture.captureTerrainWebEngine;
+    const bool webEngineTerrainEnabled =
+        !capture.requested || capture.captureWorkspace == QStringLiteral("terrain-3d") ||
+        capture.captureWorkspace == QStringLiteral("tactical") || capture.captureTerrainWebEngine;
     if (webEngineTerrainEnabled)
         QtWebEngineQuick::initialize();
 
@@ -282,45 +283,50 @@ int main(int argc, char *argv[])
 
                 const QString path =
                     dir.filePath(capture.captureWorkspace + QStringLiteral(".png"));
-                if (capture.captureWorkspace == QStringLiteral("terrain-3d"))
+                if (capture.captureWorkspace == QStringLiteral("terrain-3d") ||
+                    capture.captureWorkspace == QStringLiteral("tactical"))
                 {
-                    QObject *terrainView =
-                        root->findChild<QObject *>(QStringLiteral("terrain3DView"));
-                    if (!terrainView)
+                    const bool tactical = capture.captureWorkspace == QStringLiteral("tactical");
+                    QObject *webWorkspace =
+                        root->findChild<QObject *>(tactical ? QStringLiteral("tacticalAttitudeView")
+                                                            : QStringLiteral("terrain3DView"));
+                    if (!webWorkspace)
                     {
-                        qCritical("failed to find terrain 3D view for capture");
+                        qCritical("failed to find WebEngine workspace view for capture");
                         QCoreApplication::exit(6);
                         return;
                     }
                     if (capture.verifyTerrainControlSurfaces)
                     {
                         QEventLoop inspectLoop;
-                        QObject::connect(terrainView,
+                        QObject::connect(webWorkspace,
                                          SIGNAL(controlSurfaceInspectionFinished(bool, QString)),
                                          &inspectLoop,
                                          SLOT(quit()));
-                        terrainView->setProperty("lastControlSurfaceInspectionOk", false);
-                        terrainView->setProperty("lastControlSurfaceInspectionError",
-                                                 QStringLiteral("inspection timed out"));
-                        const QString diagnosticPath =
-                            dir.filePath(QStringLiteral("terrain-3d-control-surfaces.json"));
-                        const bool inspectInvoked = QMetaObject::invokeMethod(
-                            terrainView,
-                            "inspectControlSurfaces",
-                            Q_ARG(QVariant, diagnosticPath),
-                            Q_ARG(QVariant, cesium.controlSurfaceVerificationSnapshot()));
+                        webWorkspace->setProperty("lastControlSurfaceInspectionOk", false);
+                        webWorkspace->setProperty("lastControlSurfaceInspectionError",
+                                                  QStringLiteral("inspection timed out"));
+                        const QString diagnosticPath = dir.filePath(
+                            capture.captureWorkspace + QStringLiteral("-control-surfaces.json"));
+                        const QVariantMap verificationSnapshot =
+                            cesium.controlSurfaceVerificationSnapshot();
+                        const bool inspectInvoked =
+                            QMetaObject::invokeMethod(webWorkspace,
+                                                      "inspectControlSurfaces",
+                                                      Q_ARG(QVariant, diagnosticPath),
+                                                      Q_ARG(QVariant, verificationSnapshot));
                         if (!inspectInvoked)
                         {
                             qCritical("failed to invoke terrain 3D control-surface inspection");
                             QCoreApplication::exit(6);
                             return;
                         }
-                        QTimer::singleShot(5000, &inspectLoop, &QEventLoop::quit);
+                        QTimer::singleShot(20000, &inspectLoop, &QEventLoop::quit);
                         inspectLoop.exec();
                         const bool inspectOk =
-                            terrainView->property("lastControlSurfaceInspectionOk").toBool();
+                            webWorkspace->property("lastControlSurfaceInspectionOk").toBool();
                         const QString inspectError =
-                            terrainView->property("lastControlSurfaceInspectionError").toString();
+                            webWorkspace->property("lastControlSurfaceInspectionError").toString();
                         if (!inspectOk)
                         {
                             qCritical("terrain 3D control-surface inspection failed: %s",
@@ -329,15 +335,46 @@ int main(int argc, char *argv[])
                             return;
                         }
                     }
+                    if (tactical)
+                    {
+                        QEventLoop cameraLoop;
+                        QObject::connect(webWorkspace,
+                                         SIGNAL(controlSurfaceInspectionFinished(bool, QString)),
+                                         &cameraLoop,
+                                         SLOT(quit()));
+                        webWorkspace->setProperty("lastControlSurfaceInspectionOk", false);
+                        webWorkspace->setProperty("lastControlSurfaceInspectionError",
+                                                  QStringLiteral("camera inspection timed out"));
+                        const QString diagnosticPath =
+                            dir.filePath(QStringLiteral("tactical-camera.json"));
+                        const bool cameraInvoked = QMetaObject::invokeMethod(
+                            webWorkspace, "inspectCameraState", Q_ARG(QVariant, diagnosticPath));
+                        if (!cameraInvoked)
+                        {
+                            qCritical("failed to invoke tactical camera inspection");
+                            QCoreApplication::exit(6);
+                            return;
+                        }
+                        QTimer::singleShot(10000, &cameraLoop, &QEventLoop::quit);
+                        cameraLoop.exec();
+                        const bool cameraOk =
+                            webWorkspace->property("lastControlSurfaceInspectionOk").toBool();
+                        if (!cameraOk)
+                        {
+                            qCritical("tactical camera inspection failed");
+                            QCoreApplication::exit(6);
+                            return;
+                        }
+                    }
 
                     QEventLoop loop;
                     QObject::connect(
-                        terrainView, SIGNAL(captureFinished(bool, QString)), &loop, SLOT(quit()));
-                    terrainView->setProperty("lastCaptureOk", false);
-                    terrainView->setProperty("lastCaptureError",
-                                             QStringLiteral("capture timed out"));
+                        webWorkspace, SIGNAL(captureFinished(bool, QString)), &loop, SLOT(quit()));
+                    webWorkspace->setProperty("lastCaptureOk", false);
+                    webWorkspace->setProperty("lastCaptureError",
+                                              QStringLiteral("capture timed out"));
                     const bool invoked = QMetaObject::invokeMethod(
-                        terrainView, "captureCesiumPng", Q_ARG(QVariant, path));
+                        webWorkspace, "captureCesiumPng", Q_ARG(QVariant, path));
                     if (!invoked)
                     {
                         qCritical("failed to invoke terrain 3D capture");
@@ -346,22 +383,33 @@ int main(int argc, char *argv[])
                     }
                     QTimer::singleShot(5000, &loop, &QEventLoop::quit);
                     loop.exec();
-                    const bool captureOk = terrainView->property("lastCaptureOk").toBool();
+                    const bool captureOk = webWorkspace->property("lastCaptureOk").toBool();
                     const QString captureError =
-                        terrainView->property("lastCaptureError").toString();
+                        webWorkspace->property("lastCaptureError").toString();
                     if (!captureOk)
                     {
-                        qCritical("failed to write terrain 3D Cesium capture: %s",
-                                  qPrintable(captureError));
-                        QCoreApplication::exit(6);
-                        return;
+                        if (tactical)
+                        {
+                            qCritical("tactical Cesium/WebEngine capture failed: %s",
+                                      qPrintable(captureError));
+                            QCoreApplication::exit(6);
+                            return;
+                        }
+                        const QImage fallbackImage = window->grabWindow();
+                        if (fallbackImage.isNull() || !fallbackImage.save(path, "PNG"))
+                        {
+                            qCritical("failed to write fallback WebEngine workspace capture: %s",
+                                      qPrintable(captureError));
+                            QCoreApplication::exit(6);
+                            return;
+                        }
                     }
                     const QString workspacePath =
-                        dir.filePath(QStringLiteral("terrain-3d-workspace.png"));
+                        dir.filePath(capture.captureWorkspace + QStringLiteral("-workspace.png"));
                     const QImage workspaceImage = window->grabWindow();
                     if (workspaceImage.isNull() || !workspaceImage.save(workspacePath, "PNG"))
                     {
-                        qCritical("failed to write terrain 3D workspace capture");
+                        qCritical("failed to write WebEngine workspace capture");
                         QCoreApplication::exit(6);
                         return;
                     }

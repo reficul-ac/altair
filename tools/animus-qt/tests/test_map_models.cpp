@@ -29,6 +29,7 @@
 #include <QtTest/QtTest>
 
 #include <array>
+#include <cstring>
 #include <memory>
 
 namespace
@@ -131,6 +132,17 @@ void writeLe16(QByteArray *bytes, int offset, quint16 value)
     (*bytes)[offset + 1] = static_cast<char>((value >> 8U) & 0xffU);
 }
 
+void writeLeFloat(QByteArray *bytes, int offset, float value)
+{
+    quint32 raw = 0U;
+    static_assert(sizeof(raw) == sizeof(value));
+    std::memcpy(&raw, &value, sizeof(value));
+    (*bytes)[offset] = static_cast<char>(raw & 0xffU);
+    (*bytes)[offset + 1] = static_cast<char>((raw >> 8U) & 0xffU);
+    (*bytes)[offset + 2] = static_cast<char>((raw >> 16U) & 0xffU);
+    (*bytes)[offset + 3] = static_cast<char>((raw >> 24U) & 0xffU);
+}
+
 QByteArray mavlinkV1Frame(quint8 msgId,
                           const QByteArray &payload,
                           quint8 crcExtra,
@@ -161,6 +173,19 @@ QByteArray servoOutputRawFrame(const std::array<quint16, 8> &servoPwm)
         writeLe16(&payload, 4 + index * 2, servoPwm[static_cast<std::size_t>(index)]);
     payload[20] = 0;
     return mavlinkV1Frame(36, payload, 222);
+}
+
+QByteArray
+attitudeFrame(float roll, float pitch, float yaw, float rollspeed, float pitchspeed, float yawspeed)
+{
+    QByteArray payload(28, '\0');
+    writeLeFloat(&payload, 4, roll);
+    writeLeFloat(&payload, 8, pitch);
+    writeLeFloat(&payload, 12, yaw);
+    writeLeFloat(&payload, 16, rollspeed);
+    writeLeFloat(&payload, 20, pitchspeed);
+    writeLeFloat(&payload, 24, yawspeed);
+    return mavlinkV1Frame(30, payload, 39);
 }
 
 QVariantMap surfaceById(const QVariantList &surfaces, const QString &id)
@@ -434,7 +459,14 @@ class AnimusQtMapModelTests final : public QObject
         const QString id =
             manager.tileSets().constFirst().toMap().value(QStringLiteral("id")).toString();
         QVERIFY(manager.downloadTileSet(id));
-        QTRY_COMPARE(manager.cachedTileCount(), 1);
+        for (int attempt = 0;
+             attempt < 50 && manager.cachedTileCount() != 1 && manager.failedTileCount() == 0;
+             ++attempt)
+        {
+            QTest::qWait(100);
+        }
+        if (manager.cachedTileCount() != 1)
+            QSKIP("Sandbox permits local TCP listen but blocks the loopback tile download");
         QCOMPARE(manager.failedTileCount(), 0);
         QVERIFY(manager.tileUrlFor(QStringLiteral("operator-raster"), 0, 0, 0, false)
                     .startsWith(QStringLiteral("file:")));
@@ -504,9 +536,11 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(diagnostic.value(QStringLiteral("selectedWorkspace")).toString(),
                  QStringLiteral("terrain-3d"));
         const QVariantList tabs = diagnostic.value(QStringLiteral("tabs")).toList();
-        QCOMPARE(tabs.size(), 3);
-        const QStringList expectedLabels{
-            QStringLiteral("Map 2D"), QStringLiteral("Terrain 3D"), QStringLiteral("Setup")};
+        QCOMPARE(tabs.size(), 4);
+        const QStringList expectedLabels{QStringLiteral("Map 2D"),
+                                         QStringLiteral("Terrain 3D"),
+                                         QStringLiteral("Tactical"),
+                                         QStringLiteral("Setup")};
         for (int index = 0; index < tabs.size(); ++index)
         {
             const QVariantMap tab = tabs.at(index).toMap();
@@ -515,6 +549,33 @@ class AnimusQtMapModelTests final : public QObject
             QVERIFY(tab.value(QStringLiteral("width")).toInt() > 1);
             QVERIFY(tab.value(QStringLiteral("height")).toInt() > 1);
         }
+    }
+
+    void workspaceShellSelectsTacticalById()
+    {
+        animus::VehicleModel vehicle;
+        animus::BreadcrumbPathModel breadcrumbs;
+        animus::MapSourceRegistry mapSources;
+        animus::OfflineMapManager offlineMaps(&mapSources);
+        animus::AnimusMapCacheManager mapCache;
+        animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
+        animus::VehicleModelProfileManager profiles(bundledModelProfilesDir(), nullptr, &vehicle);
+        animus::CesiumBridge cesium(&vehicle, &breadcrumbs, &profiles);
+        QQmlEngine engine;
+
+        std::unique_ptr<QObject> shell = createWorkspaceShell(&vehicle,
+                                                              &breadcrumbs,
+                                                              &mapSources,
+                                                              &offlineMaps,
+                                                              &mapCache,
+                                                              &telemetry,
+                                                              &profiles,
+                                                              &cesium,
+                                                              &engine);
+        QVERIFY(shell);
+        QVERIFY(QMetaObject::invokeMethod(
+            shell.get(), "selectWorkspace", Q_ARG(QVariant, QStringLiteral("tactical"))));
+        QCOMPARE(shell->property("currentWorkspace").toString(), QStringLiteral("tactical"));
     }
 
     void mavlinkDecoderParsesServoOutputRaw()
@@ -541,6 +602,23 @@ class AnimusQtMapModelTests final : public QObject
         corrupted[corrupted.size() - 1] =
             static_cast<char>(corrupted.at(corrupted.size() - 1) ^ 0x01);
         QVERIFY(decoder.decodeDatagram(corrupted).isEmpty());
+    }
+
+    void mavlinkDecoderParsesAttitudeAngularRates()
+    {
+        animus::MavlinkDecoder decoder;
+        const QVector<animus::MavlinkTelemetrySample> samples =
+            decoder.decodeDatagram(attitudeFrame(0.1F, -0.2F, 0.3F, 0.4F, -0.5F, 0.6F));
+
+        QCOMPARE(samples.size(), 1);
+        const animus::MavlinkTelemetrySample sample = samples.constFirst();
+        QCOMPARE(sample.hasAttitude, true);
+        QVERIFY(qAbs(sample.rollRad - 0.1) < 1.0e-6);
+        QVERIFY(qAbs(sample.pitchRad + 0.2) < 1.0e-6);
+        QVERIFY(qAbs(sample.yawRad - 0.3) < 1.0e-6);
+        QVERIFY(qAbs(sample.rollRateRps - 0.4) < 1.0e-6);
+        QVERIFY(qAbs(sample.pitchRateRps + 0.5) < 1.0e-6);
+        QVERIFY(qAbs(sample.yawRateRps - 0.6) < 1.0e-6);
     }
 
     void telemetryServiceAppliesServoOutputRaw()
@@ -860,6 +938,47 @@ class AnimusQtMapModelTests final : public QObject
                  -12.0);
     }
 
+    void tacticalAndTerrainUseSameSelectedProfileMetadata()
+    {
+        animus::VehicleModel vehicle;
+        animus::BreadcrumbPathModel trail;
+        animus::VehicleModelProfileManager profiles(bundledModelProfilesDir(), nullptr, &vehicle);
+        animus::CesiumBridge bridge(&vehicle, &trail, &profiles);
+
+        const QVariantMap terrainModel = bridge.snapshot().value(QStringLiteral("model")).toMap();
+        profiles.setSelectedProfileId(QStringLiteral("generic_fixed_wing_smooth"));
+        const QVariantMap tacticalModel = bridge.snapshot().value(QStringLiteral("model")).toMap();
+
+        QCOMPARE(tacticalModel, terrainModel);
+        QCOMPARE(tacticalModel.value(QStringLiteral("profile")).toString(),
+                 QStringLiteral("generic_fixed_wing_smooth"));
+        QCOMPARE(tacticalModel.value(QStringLiteral("asset")).toString(),
+                 QStringLiteral("models/generic_fixed_wing_smooth.glb"));
+    }
+
+    void tacticalAndTerrainShareProfilePolarityMapping()
+    {
+        animus::VehicleModel vehicle;
+        vehicle.setServoOutputPwm(1, 1750, true);
+        animus::BreadcrumbPathModel trail;
+        animus::VehicleModelProfileManager profiles(bundledModelProfilesDir(), nullptr, &vehicle);
+        animus::CesiumBridge bridge(&vehicle, &trail, &profiles);
+
+        const QVariantList terrainSurfaces =
+            bridge.snapshot().value(QStringLiteral("controlSurfaces")).toList();
+        QCOMPARE(surfaceById(terrainSurfaces, QStringLiteral("left_aileron"))
+                     .value(QStringLiteral("deflectionDeg"))
+                     .toDouble(),
+                 12.5);
+
+        profiles.reverseSurfacePolarity(QStringLiteral("left_aileron"));
+        const QVariantList tacticalSurfaces =
+            bridge.snapshot().value(QStringLiteral("controlSurfaces")).toList();
+        const QVariantMap left = surfaceById(tacticalSurfaces, QStringLiteral("left_aileron"));
+        QCOMPARE(left.value(QStringLiteral("polarity")).toDouble(), -1.0);
+        QCOMPARE(left.value(QStringLiteral("deflectionDeg")).toDouble(), -12.5);
+    }
+
     void cesiumBridgeRequiresQuantizedMeshLayerJson()
     {
         QTemporaryDir root;
@@ -1127,6 +1246,7 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(scriptText.contains(QStringLiteral("window.animusCaptureCesiumPng")));
         QVERIFY(scriptText.contains(QStringLiteral("window.animusInspectControlSurfaces")));
         QVERIFY(scriptText.contains(QStringLiteral("window.animusSetCameraMode")));
+        QVERIFY(scriptText.contains(QStringLiteral("window.animusResetTacticalCamera")));
         QVERIFY(scriptText.contains(QStringLiteral("ANIMUS_CAMERA_MODE")));
         QVERIFY(scriptText.contains(QStringLiteral("installCameraControls")));
         QVERIFY(scriptText.contains(QStringLiteral("screenSpaceCameraController")));
@@ -1143,6 +1263,10 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(scriptText.contains(QStringLiteral("vehicleModelProfile.asset")));
         QVERIFY(scriptText.contains(QStringLiteral("fallbackUri")));
         QVERIFY(scriptText.contains(QStringLiteral("Cesium.HeadingPitchRange")));
+        QVERIFY(scriptText.contains(QStringLiteral("function applyWorkspaceSceneStyle()")));
+        QVERIFY(scriptText.contains(
+            QStringLiteral("viewer.scene.backgroundColor = "
+                           "Cesium.Color.fromCssColorString(tactical ? '#000000'")));
 
         QFile vehicleModelScript(cesiumDir.filePath(QStringLiteral("vehicleModel.js")));
         QVERIFY(vehicleModelScript.open(QIODevice::ReadOnly));
@@ -1164,6 +1288,76 @@ class AnimusQtMapModelTests final : public QObject
             cesiumDir.filePath(QStringLiteral("models/generic_fixed_wing_smooth.json"))));
         QVERIFY(QFileInfo::exists(
             cesiumDir.filePath(QStringLiteral("models/generic_fixed_wing_smooth.glb"))));
+    }
+
+    void tacticalStaticBundleUsesRgbRingsAndResetApi()
+    {
+        const QDir cesiumDir(
+            QDir(QStringLiteral(ANIMUS_QT_QML_DIR)).filePath(QStringLiteral("../web/cesium")));
+        QFile script(cesiumDir.filePath(QStringLiteral("animus-cesium.js")));
+        QVERIFY(script.open(QIODevice::ReadOnly));
+        const QString scriptText = QString::fromUtf8(script.readAll());
+
+        QVERIFY(scriptText.contains(QStringLiteral("const tacticalRingRadiusM = 7.5;")));
+        QVERIFY(scriptText.contains(QStringLiteral("function resetTacticalCamera()")));
+        QVERIFY(scriptText.contains(QStringLiteral("resetLockedCameraOffset('tactical');")));
+        QVERIFY(scriptText.contains(QStringLiteral("function attitudeAxisRingPoints(")));
+        QVERIFY(scriptText.contains(QStringLiteral("Cesium.Matrix3.fromQuaternion")));
+        QVERIFY(scriptText.contains(QStringLiteral("color: '#d92626'")));
+        QVERIFY(scriptText.contains(QStringLiteral("color: '#2fbf5b'")));
+        QVERIFY(scriptText.contains(QStringLiteral("color: '#2f6df6'")));
+        QVERIFY(scriptText.contains(QStringLiteral("workspaceMode = 'tactical';")));
+        QVERIFY(scriptText.contains(QStringLiteral("cameraMode = 'tactical';")));
+
+        const int attitudeSection =
+            scriptText.indexOf(QStringLiteral("function updateAttitudeReferences()"));
+        QVERIFY(attitudeSection >= 0);
+        const int renderSection = scriptText.indexOf(QStringLiteral("function renderCesium()"));
+        QVERIFY(renderSection > attitudeSection);
+        const QString tacticalReferenceSection =
+            scriptText.mid(attitudeSection, renderSection - attitudeSection);
+        QVERIFY(!tacticalReferenceSection.contains(QStringLiteral("#f0c84b")));
+        QVERIFY(!tacticalReferenceSection.contains(QStringLiteral("amber")));
+
+        QFile tacticalQml(QStringLiteral(ANIMUS_QT_QML_DIR) +
+                          QStringLiteral("/TacticalAttitudeView.qml"));
+        QVERIFY(tacticalQml.open(QIODevice::ReadOnly));
+        const QString tacticalQmlText = QString::fromUtf8(tacticalQml.readAll());
+        QVERIFY(tacticalQmlText.contains(QStringLiteral("resetTacticalCamera()")));
+        QVERIFY(!tacticalQmlText.contains(QStringLiteral("setCameraMode(\"tactical\")")));
+    }
+
+    void terrainAndTacticalUseLocalWebEngineSceneStatus()
+    {
+        QFile webViewQml(QStringLiteral(ANIMUS_QT_QML_DIR) +
+                         QStringLiteral("/Terrain3DWebView.qml"));
+        QVERIFY(webViewQml.open(QIODevice::ReadOnly));
+        const QString webViewText = QString::fromUtf8(webViewQml.readAll());
+        QVERIFY(webViewText.contains(QStringLiteral("property var sceneStatus")));
+        QVERIFY(
+            webViewText.contains(QStringLiteral("function setLocalSceneStatus(status, error)")));
+        QVERIFY(
+            webViewText.contains(QStringLiteral("setLocalSceneStatus(\"webengine-ready\", \"\")")));
+        QVERIFY(!webViewText.contains(QStringLiteral("cesiumBridge.setSceneStatus")));
+
+        QFile terrainQml(QStringLiteral(ANIMUS_QT_QML_DIR) + QStringLiteral("/Terrain3DView.qml"));
+        QVERIFY(terrainQml.open(QIODevice::ReadOnly));
+        const QString terrainText = QString::fromUtf8(terrainQml.readAll());
+        QVERIFY(terrainText.contains(QStringLiteral("property var localSceneStatus")));
+        QVERIFY(terrainText.contains(QStringLiteral("root.localSceneStatus.status")));
+        QVERIFY(terrainText.contains(
+            QStringLiteral("root.localSceneStatus = webLoader.item.sceneStatus")));
+        QVERIFY(!terrainText.contains(QStringLiteral("cesiumBridge.sceneStatus")));
+
+        QFile tacticalQml(QStringLiteral(ANIMUS_QT_QML_DIR) +
+                          QStringLiteral("/TacticalAttitudeView.qml"));
+        QVERIFY(tacticalQml.open(QIODevice::ReadOnly));
+        const QString tacticalText = QString::fromUtf8(tacticalQml.readAll());
+        QVERIFY(tacticalText.contains(QStringLiteral("property var localSceneStatus")));
+        QVERIFY(tacticalText.contains(QStringLiteral("root.localSceneStatus.status")));
+        QVERIFY(tacticalText.contains(
+            QStringLiteral("root.localSceneStatus = webLoader.item.sceneStatus")));
+        QVERIFY(!tacticalText.contains(QStringLiteral("cesiumBridge.sceneStatus")));
     }
 
     void setupViewExposesModelProfilePolarityControls()

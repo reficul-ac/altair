@@ -1,0 +1,259 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+Item {
+    id: root
+    objectName: "tacticalAttitudeView"
+
+    property bool lastCaptureOk: false
+    property string lastCaptureError: ""
+    property bool lastControlSurfaceInspectionOk: false
+    property string lastControlSurfaceInspectionError: ""
+    property var localSceneStatus: ({ "status": "initializing", "error": "" })
+    property bool workspaceCurrent: StackLayout.isCurrentItem
+
+    signal captureFinished(bool ok, string error)
+    signal controlSurfaceInspectionFinished(bool ok, string error)
+
+    function writeFallbackDiagnostic(path, extra) {
+        var diagnostic = extra || {}
+        diagnostic.ok = false
+        diagnostic.renderer = "qml-fallback"
+        diagnostic.workspaceMode = "tactical"
+        diagnostic.failures = diagnostic.failures || ["Tactical WebEngine view is not ready"]
+        captureWriter.writeTextFile(path, JSON.stringify(diagnostic, null, 2) + "\n")
+    }
+
+    function captureCesiumPng(path) {
+        if (!webLoader.active || webLoader.status !== Loader.Ready || !webLoader.item) {
+            root.lastCaptureOk = false
+            root.lastCaptureError = "Tactical WebEngine view is not ready"
+            root.captureFinished(false, root.lastCaptureError)
+            return
+        }
+        webLoader.item.captureCesiumPng(path)
+    }
+
+    function inspectControlSurfaces(path, snapshot) {
+        if (!webLoader.active || webLoader.status !== Loader.Ready || !webLoader.item) {
+            root.lastControlSurfaceInspectionOk = false
+            root.lastControlSurfaceInspectionError = "Tactical WebEngine view is not ready"
+            root.writeFallbackDiagnostic(path, {
+                profileLoaded: false,
+                modelLoaded: false,
+                surfaceCount: 0,
+                surfaces: []
+            })
+            root.controlSurfaceInspectionFinished(false, root.lastControlSurfaceInspectionError)
+            return
+        }
+        webLoader.item.inspectControlSurfaces(path, snapshot)
+    }
+
+    function inspectCameraState(path) {
+        if (!webLoader.active || webLoader.status !== Loader.Ready || !webLoader.item) {
+            root.lastControlSurfaceInspectionOk = false
+            root.lastControlSurfaceInspectionError = "Tactical WebEngine view is not ready"
+            root.writeFallbackDiagnostic(path, {
+                mode: "fallback",
+                cameraMode: "fallback",
+                freeRoamAvailable: false,
+                vehicleLocked: false
+            })
+            root.controlSurfaceInspectionFinished(false, root.lastControlSurfaceInspectionError)
+            return
+        }
+        webLoader.item.inspectCameraState(path)
+    }
+
+    function resetCamera() {
+        if (webLoader.active && webLoader.status === Loader.Ready && webLoader.item)
+            webLoader.item.resetTacticalCamera()
+    }
+
+    function valueText(valid, value, suffix, digits) {
+        if (!telemetryService.linkFresh)
+            return "STALE"
+        if (!valid)
+            return "UNK"
+        return Number(value).toFixed(digits) + suffix
+    }
+
+    function useFallbackScene() {
+        var status = root.localSceneStatus.status || "initializing"
+        return !webLoader.active || webLoader.status === Loader.Error ||
+               status === "initializing" || status.indexOf("error") >= 0
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: "#101820"
+    }
+
+    Loader {
+        id: webLoader
+        anchors.fill: parent
+        active: webEngineTerrainEnabled && root.workspaceCurrent
+        visible: !root.useFallbackScene()
+        source: "Terrain3DWebView.qml"
+        onLoaded: {
+            item.workspaceMode = "tactical"
+            item.resetTacticalCamera()
+        }
+    }
+
+    Canvas {
+        anchors.fill: parent
+        visible: root.useFallbackScene()
+        onPaint: {
+            var ctx = getContext("2d")
+            ctx.clearRect(0, 0, width, height)
+            ctx.fillStyle = "#101820"
+            ctx.fillRect(0, 0, width, height)
+            var colors = ["#d92626", "#2fbf5b", "#2f6df6"]
+            ctx.lineWidth = 3
+            for (var i = 0; i < colors.length; ++i) {
+                ctx.strokeStyle = colors[i]
+                ctx.beginPath()
+                ctx.arc(width * 0.5, height * 0.52, (i + 2) * Math.min(width, height) * 0.055, 0, Math.PI * 2)
+                ctx.stroke()
+            }
+            ctx.save()
+            ctx.translate(width * 0.5, height * 0.52)
+            ctx.rotate(vehicleModel.rollRad)
+
+            ctx.fillStyle = "#dfe8ea"
+            ctx.strokeStyle = "#ffffff"
+            ctx.lineWidth = 2
+            ctx.beginPath()
+            ctx.moveTo(66, 0)
+            ctx.lineTo(10, -10)
+            ctx.lineTo(-58, -8)
+            ctx.lineTo(-72, 0)
+            ctx.lineTo(-58, 8)
+            ctx.lineTo(10, 10)
+            ctx.closePath()
+            ctx.fill()
+            ctx.stroke()
+
+            ctx.fillStyle = "#7fb9c8"
+            ctx.beginPath()
+            ctx.ellipse(22, -1, 11, 5, 0, 0, Math.PI * 2)
+            ctx.fill()
+
+            ctx.fillStyle = "#9fb2b8"
+            ctx.beginPath()
+            ctx.moveTo(-5, -7)
+            ctx.lineTo(-18, -56)
+            ctx.lineTo(-30, -53)
+            ctx.lineTo(-22, -6)
+            ctx.closePath()
+            ctx.fill()
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.moveTo(-5, 7)
+            ctx.lineTo(-18, 56)
+            ctx.lineTo(-30, 53)
+            ctx.lineTo(-22, 6)
+            ctx.closePath()
+            ctx.fill()
+            ctx.stroke()
+
+            ctx.fillStyle = "#6f858c"
+            ctx.fillRect(-65, -23, 24, 7)
+            ctx.fillRect(-65, 16, 24, 7)
+            ctx.fillRect(-72, -5, 18, 10)
+            ctx.restore()
+        }
+    }
+
+    Connections {
+        target: webLoader.item
+        ignoreUnknownSignals: true
+        function onCaptureFinished(ok, error) {
+            root.lastCaptureOk = ok
+            root.lastCaptureError = error
+            root.captureFinished(ok, error)
+        }
+        function onControlSurfaceInspectionFinished(ok, error) {
+            root.lastControlSurfaceInspectionOk = ok
+            root.lastControlSurfaceInspectionError = error
+            root.controlSurfaceInspectionFinished(ok, error)
+        }
+        function onSceneStatusChanged() {
+            root.localSceneStatus = webLoader.item.sceneStatus
+        }
+    }
+
+    Frame {
+        objectName: "tacticalAttitudeOverlay"
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.margins: 12
+        padding: 10
+        background: Rectangle {
+            color: "#f7f7f3"
+            opacity: 0.94
+            border.color: telemetryService.linkFresh ? "#8da56f" : "#b77a3d"
+            radius: 6
+        }
+
+        GridLayout {
+            columns: 2
+            rowSpacing: 5
+            columnSpacing: 12
+
+            Label { text: "Roll"; color: "#4b5563"; font.bold: true }
+            Label {
+                text: root.valueText(vehicleModel.attitudeValid,
+                                     vehicleModel.rollRad * 180.0 / Math.PI, " deg", 1)
+            }
+            Label { text: "Pitch"; color: "#4b5563"; font.bold: true }
+            Label {
+                text: root.valueText(vehicleModel.attitudeValid,
+                                     vehicleModel.pitchRad * 180.0 / Math.PI, " deg", 1)
+            }
+            Label { text: "Yaw"; color: "#4b5563"; font.bold: true }
+            Label {
+                text: root.valueText(vehicleModel.attitudeValid,
+                                     vehicleModel.yawRad * 180.0 / Math.PI, " deg", 1)
+            }
+            Label { text: "Heading"; color: "#4b5563"; font.bold: true }
+            Label {
+                text: root.valueText(vehicleModel.attitudeValid, vehicleModel.headingDeg, " deg", 1)
+            }
+            Label { text: "Rates"; color: "#4b5563"; font.bold: true }
+            Label {
+                text: root.valueText(vehicleModel.attitudeValid,
+                                     vehicleModel.rollRateRps * 180.0 / Math.PI, " R", 1) + " " +
+                      root.valueText(vehicleModel.attitudeValid,
+                                     vehicleModel.pitchRateRps * 180.0 / Math.PI, " P", 1) + " " +
+                      root.valueText(vehicleModel.attitudeValid,
+                                     vehicleModel.yawRateRps * 180.0 / Math.PI, " Y", 1)
+            }
+            Label { text: "Link"; color: "#4b5563"; font.bold: true }
+            Label {
+                text: (!telemetryService.running && telemetryService.decodedSampleCount === 0)
+                      ? "UNK" : (telemetryService.linkFresh ? "FRESH" : "STALE")
+                color: telemetryService.linkFresh ? "#0f7b43" : "#7a4b00"
+                font.bold: true
+            }
+        }
+    }
+
+    TelemetryStrip {
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 12
+    }
+
+    Button {
+        objectName: "tacticalSnapButton"
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 12
+        text: "Snap"
+        onClicked: root.resetCamera()
+    }
+}

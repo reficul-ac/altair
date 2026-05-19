@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-WORKSPACES = ("map-2d", "terrain-3d", "setup")
+WORKSPACES = ("map-2d", "terrain-3d", "tactical", "setup")
 XVFB_SCREEN = "1280x820x24"
 EXPECTED_CAPTURE_SIZE = (1280, 820)
 
@@ -44,6 +44,8 @@ WORKSPACE_COLOR_MINIMUMS = {
     "map-2d": 8,
     "terrain-3d": 18,
     "terrain-3d-workspace": 18,
+    "tactical": 8,
+    "tactical-workspace": 8,
     "setup": 7,
 }
 
@@ -61,6 +63,15 @@ WORKSPACE_CONTENT_REGIONS = {
         RegionSpec("terrain workspace scene", (0.04, 0.18, 0.96, 0.84), 18, 28.0, 0.92),
         RegionSpec("clearance overlay", (0.01, 0.70, 0.36, 0.98), 5, 20.0, 0.94),
     ),
+    "tactical": (
+        RegionSpec("tactical attitude canvas", (0.04, 0.08, 0.96, 0.94), 6, 24.0, 0.99),
+        RegionSpec("attitude reference and aircraft", (0.34, 0.24, 0.72, 0.70), 5, 20.0, 0.98),
+    ),
+    "tactical-workspace": (
+        RegionSpec("toolbar and tabs", (0.0, 0.0, 1.0, 0.15), 7, 18.0, 0.96),
+        RegionSpec("tactical workspace scene", (0.04, 0.18, 0.96, 0.84), 6, 24.0, 0.99),
+        RegionSpec("attitude overlay", (0.01, 0.14, 0.34, 0.58), 3, 3.0, 0.995),
+    ),
     "setup": (
         RegionSpec("setup controls", (0.02, 0.18, 0.98, 0.68), 3, 18.0, 0.94),
         RegionSpec("map policy panel", (0.02, 0.14, 0.98, 0.34), 3, 16.0, 0.94),
@@ -69,7 +80,7 @@ WORKSPACE_CONTENT_REGIONS = {
 
 TOP_REGION = RegionSpec("toolbar and tabs", (0.0, 0.0, 1.0, 0.15), 7, 18.0, 0.96)
 WORKSPACE_DIFFERENCE_MINIMUM = 8.0
-EXPECTED_TAB_LABELS = ("Map 2D", "Terrain 3D", "Setup")
+EXPECTED_TAB_LABELS = ("Map 2D", "Terrain 3D", "Tactical", "Setup")
 XCB_FAILURE_MARKERS = (
     "could not connect to display",
     'could not load the qt platform plugin "xcb"',
@@ -359,11 +370,15 @@ def inspect_png(
             if len(colors) < minimum:
                 warnings.append(f"low screenshot color diversity: {len(colors)} < {minimum}")
 
-        diagnostics = [] if workspace == "terrain-3d" else [inspect_region(image, TOP_REGION)]
+        diagnostics = (
+            [] if workspace in ("terrain-3d", "tactical") else [inspect_region(image, TOP_REGION)]
+        )
         for spec in WORKSPACE_CONTENT_REGIONS.get(workspace, ()):
             diagnostics.append(inspect_region(image, spec))
         if workspace == "terrain-3d-workspace":
             diagnostics.append(inspect_clearance_overlay_panel(image))
+        if workspace == "tactical":
+            diagnostics.append(inspect_tactical_visuals(image))
         if seeded_raster:
             diagnostics.append(
                 inspect_region(
@@ -388,6 +403,61 @@ def inspect_png(
     elif warnings:
         result["warning"] = "; ".join(warnings)
     return result
+
+
+def inspect_tactical_visuals(image: PngImage) -> dict[str, object]:
+    failures: list[str] = []
+    warnings: list[str] = []
+    x0 = int(image.width * 0.18)
+    x1 = int(image.width * 0.92)
+    y0 = int(image.height * 0.12)
+    y1 = int(image.height * 0.88)
+    total = 0
+    black = 0
+    red = 0
+    green = 0
+    blue = 0
+    yellow = 0
+    for y in range(y0, y1, 2):
+        for x in range(x0, x1, 2):
+            r, g, b = pixel_rgb(image, x, y)
+            total += 1
+            if r < 24 and g < 24 and b < 24:
+                black += 1
+            if r > 140 and g < 95 and b < 95:
+                red += 1
+            if g > 115 and r < 110 and b < 125:
+                green += 1
+            if b > 145 and r < 115 and g < 140:
+                blue += 1
+            if r > 170 and g > 130 and b < 80:
+                yellow += 1
+
+    if total == 0:
+        failures.append("empty tactical visual sample")
+    else:
+        black_ratio = black / total
+        if black_ratio < 0.20:
+            failures.append(f"black background coverage {black_ratio:.2f} < 0.20")
+    if red < 12:
+        failures.append(f"missing red roll ring pixels: {red}")
+    if green < 12:
+        failures.append(f"missing green pitch ring pixels: {green}")
+    if blue < 12:
+        failures.append(f"missing blue yaw ring pixels: {blue}")
+    if yellow > 20:
+        failures.append(f"unexpected yellow tactical reference pixels: {yellow}")
+
+    return {
+        "name": "tactical RGB attitude references",
+        "failures": failures,
+        "warnings": warnings,
+        "blackPixels": black,
+        "redPixels": red,
+        "greenPixels": green,
+        "bluePixels": blue,
+        "yellowPixels": yellow,
+    }
 
 
 def thumbnail_pixels(
@@ -450,7 +520,9 @@ def compare_workspace_screenshots(captures: list[dict[str, object]]) -> list[dic
     return comparisons
 
 
-def inspect_control_surface_diagnostic(path: Path) -> dict[str, object]:
+def inspect_control_surface_diagnostic(
+    path: Path, expected_workspace: str | None = None
+) -> dict[str, object]:
     result: dict[str, object] = {"path": str(path), "exists": path.exists()}
     failures: list[str] = []
     if not path.exists():
@@ -464,6 +536,36 @@ def inspect_control_surface_diagnostic(path: Path) -> dict[str, object]:
         failures.append(f"invalid control-surface diagnostic: {exc}")
         result.update({"ok": False, "failures": failures, "surfaces": []})
         return result
+
+    renderer = payload.get("renderer")
+    if renderer != "cesium-webengine":
+        failures.append(f"renderer {renderer} is not native cesium-webengine")
+    if expected_workspace and payload.get("workspaceMode") != expected_workspace:
+        failures.append(f"workspace mode {payload.get('workspaceMode')} != {expected_workspace}")
+    if payload.get("profileLoaded") is not True:
+        failures.append("vehicle model profile is not loaded")
+    if payload.get("modelLoaded") is not True:
+        failures.append("vehicle model is not loaded")
+
+    if expected_workspace == "tactical":
+        if payload.get("cameraMode") != "tactical":
+            failures.append(f"camera mode {payload.get('cameraMode')} != tactical")
+        if payload.get("freeRoamAvailable") is not False:
+            failures.append("tactical renderer exposes free roam")
+        if payload.get("vehicleLocked") is not True:
+            failures.append("tactical renderer is not vehicle locked")
+        profile_asset = str(payload.get("profileAssetUri", ""))
+        loaded_model = str(payload.get("loadedModelUri", ""))
+        if not profile_asset:
+            failures.append("missing selected profile asset URI")
+        if not loaded_model:
+            failures.append("missing loaded model URI")
+        if profile_asset and loaded_model and profile_asset != loaded_model:
+            failures.append(
+                f"loaded model {loaded_model} does not match selected profile asset {profile_asset}"
+            )
+        if payload.get("modelMatchesProfileAsset") is not True:
+            failures.append("loaded model does not match selected profile asset")
 
     surfaces = payload.get("surfaces", [])
     by_id = {str(surface.get("id")): surface for surface in surfaces if isinstance(surface, dict)}
@@ -579,6 +681,33 @@ def inspect_clearance_diagnostic(path: Path) -> dict[str, object]:
     return result
 
 
+def inspect_tactical_camera_diagnostic(path: Path) -> dict[str, object]:
+    result: dict[str, object] = {"path": str(path), "ok": False, "failures": []}
+    failures: list[str] = []
+    if not path.exists():
+        result["failures"] = ["missing tactical camera diagnostic"]
+        return result
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        result["failures"] = [f"invalid tactical camera diagnostic: {exc}"]
+        return result
+    if payload.get("renderer") != "cesium-webengine":
+        failures.append(f"renderer {payload.get('renderer')} is not native cesium-webengine")
+    if payload.get("workspaceMode") != "tactical":
+        failures.append(f"workspace mode {payload.get('workspaceMode')} != tactical")
+    if payload.get("mode") != "tactical":
+        failures.append(f"camera mode {payload.get('mode')} != tactical")
+    if payload.get("freeRoamAvailable") is not False:
+        failures.append("tactical camera exposes free roam")
+    if payload.get("vehicleLocked") is not True:
+        failures.append("tactical camera is not vehicle locked")
+    result.update(payload)
+    result["ok"] = not failures
+    result["failures"] = failures
+    return result
+
+
 def summarize_log(path: Path, max_lines: int = 6) -> str:
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -615,7 +744,7 @@ def command_for_workspace(
     ]
     if seed_map_cache:
         command.append("--seed-map-cache-fixture")
-    if workspace == "terrain-3d":
+    if workspace in ("terrain-3d", "tactical"):
         command.append("--verify-terrain-control-surfaces")
     return command
 
@@ -679,6 +808,14 @@ def write_report(run_dir: Path, manifest: dict[str, object]) -> None:
                 f"({clearance.get('state', '-')})"
             )
             messages.extend(str(message) for message in clearance.get("failures", []))
+        camera = capture.get("cameraDiagnostic")
+        if isinstance(camera, dict):
+            diagnostics.append(
+                "camera: "
+                f"{'pass' if camera.get('ok') else 'fail'} "
+                f"({camera.get('renderer', '-')}/{camera.get('mode', '-')})"
+            )
+            messages.extend(str(message) for message in camera.get("failures", []))
         workspace_png = capture.get("workspacePng")
         if isinstance(workspace_png, dict):
             diagnostics.append(
@@ -701,7 +838,10 @@ def write_report(run_dir: Path, manifest: dict[str, object]) -> None:
             diagnostics.append(
                 "control surfaces: "
                 f"{'pass' if control_surfaces.get('ok') else 'fail'} "
-                f"({len(control_surfaces.get('surfaces', []))} surfaces)"
+                f"({control_surfaces.get('renderer', '-')}, "
+                f"{len(control_surfaces.get('surfaces', []))} surfaces, "
+                f"{control_surfaces.get('profileId', '-')}, "
+                f"{control_surfaces.get('loadedModelUri', '-')})"
             )
             messages.extend(str(message) for message in control_surfaces.get("failures", []))
         diagnostic_text = "<br>".join(diagnostics + messages) if diagnostics or messages else "-"
@@ -829,6 +969,7 @@ def main() -> int:
             ]
             attempts: list[dict[str, object]] = []
             completed: subprocess.CompletedProcess[str] | None = None
+            webengine_retry_added = False
             for attempt_index, (strategy, prefix, attempt_env) in enumerate(strategies, start=1):
                 launched_command = prefix + command
                 log_path = logs_dir / f"{capture_label}-attempt-{attempt_index}.log"
@@ -839,7 +980,7 @@ def main() -> int:
                         env=attempt_env,
                         stdout=log,
                         stderr=subprocess.STDOUT,
-                        timeout=max(10, args.capture_delay_ms // 1000 + 10),
+                        timeout=max(35, args.capture_delay_ms // 1000 + 30),
                         check=False,
                     )
                 attempt = {
@@ -862,10 +1003,20 @@ def main() -> int:
                     )
                     notes.append(note)
                     strategies.append(("offscreen-retry", [], offscreen_env(base_env)))
+                elif workspace in ("terrain-3d", "tactical") and not webengine_retry_added:
+                    webengine_retry_added = True
+                    note = (
+                        f"{capture_label}: native WebEngine capture failed; retrying once "
+                        "with the same strict Cesium diagnostics"
+                    )
+                    notes.append(note)
+                    strategies.append((f"{strategy}-webengine-retry", prefix, attempt_env))
             if completed is None:
                 raise RuntimeError("capture did not launch")
 
-            expected_size = None if workspace == "terrain-3d" else EXPECTED_CAPTURE_SIZE
+            expected_size = (
+                None if workspace in ("terrain-3d", "tactical") else EXPECTED_CAPTURE_SIZE
+            )
             png = inspect_png(
                 output_dir / f"{workspace}.png",
                 workspace,
@@ -887,20 +1038,26 @@ def main() -> int:
             capture["chromeDiagnostic"] = inspect_chrome_diagnostic(
                 output_dir / f"{workspace}-chrome.json", workspace
             )
-            if workspace == "terrain-3d":
+            if workspace in ("terrain-3d", "tactical"):
                 capture["controlSurfaceDiagnostic"] = inspect_control_surface_diagnostic(
-                    output_dir / "terrain-3d-control-surfaces.json"
+                    output_dir / f"{workspace}-control-surfaces.json", workspace
                 )
+            if workspace == "tactical":
+                capture["cameraDiagnostic"] = inspect_tactical_camera_diagnostic(
+                    output_dir / "tactical-camera.json"
+                )
+            if workspace == "terrain-3d":
                 capture["clearanceDiagnostic"] = inspect_clearance_diagnostic(
                     output_dir / "terrain-3d-clearance.json"
                 )
+            if workspace in ("terrain-3d", "tactical"):
                 workspace_png = inspect_png(
-                    output_dir / "terrain-3d-workspace.png",
-                    "terrain-3d-workspace",
+                    output_dir / f"{workspace}-workspace.png",
+                    f"{workspace}-workspace",
                     EXPECTED_CAPTURE_SIZE,
                     seeded_raster=False,
                 )
-                capture["workspaceScreenshot"] = str(output_dir / "terrain-3d-workspace.png")
+                capture["workspaceScreenshot"] = str(output_dir / f"{workspace}-workspace.png")
                 capture["workspacePng"] = workspace_png
             return capture
 
@@ -922,6 +1079,7 @@ def main() -> int:
             chrome_diagnostic = capture.get("chromeDiagnostic", {})
             control_surface_diagnostic = capture.get("controlSurfaceDiagnostic", {})
             clearance_diagnostic = capture.get("clearanceDiagnostic", {})
+            camera_diagnostic = capture.get("cameraDiagnostic", {})
             if (
                 capture["exitCode"] != 0
                 or not png.get("ok")
@@ -934,6 +1092,7 @@ def main() -> int:
                     isinstance(clearance_diagnostic, dict)
                     and not clearance_diagnostic.get("ok", True)
                 )
+                or (isinstance(camera_diagnostic, dict) and not camera_diagnostic.get("ok", True))
                 or (isinstance(workspace_png, dict) and not workspace_png.get("ok", True))
             ):
                 manifest["status"] = "fail"

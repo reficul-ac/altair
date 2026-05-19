@@ -69,9 +69,10 @@ strict offline and cached/offline policies render only existing local tiles.
 Implemented now:
 
 - Qt/QML application under `tools/animus-qt`.
-- QML workspace shell with 2D map, WebEngine-backed 3D terrain workspace, and setup views.
-- Deterministic Qt screenshot capture for `map-2d`, `terrain-3d`, `setup`,
-  and a seeded-cache Map 2D raster pass with mock telemetry, semantic tab
+- QML workspace shell with 2D map, WebEngine-backed 3D terrain and tactical
+  attitude workspaces, and setup views.
+- Deterministic Qt screenshot capture for `map-2d`, `terrain-3d`, `tactical`,
+  `setup`, and a seeded-cache Map 2D raster pass with mock telemetry, semantic tab
   diagnostics, and PNG nonblank checks.
 - Vehicle state, bounded/decimated breadcrumb trail, map provider registry,
   offline policy, QGC-style cache metadata/download manager, and Cesium
@@ -83,6 +84,12 @@ Implemented now:
 - Terrain 3D vehicle rendering uses a bundled generic fixed-wing glTF model,
   altitude-aware trail segments, home marker primitives, and chase/orbit/free
   camera modes exposed through QML controls.
+- Tactical attitude rendering reuses the Terrain 3D Cesium/WebEngine model
+  profile, selected GLB, actuator mapping, polarity, and control-surface
+  animation while locking camera interaction to rotate/zoom around the vehicle.
+  The QML silhouette remains a degraded live fallback, but capture acceptance
+  requires native `cesium-webengine` diagnostics with the selected GLB/profile
+  and real control-surface pivot movement.
 - Terrain 3D exports passive terrain-clearance analysis with current AGL,
   home-relative altitude, recent minimum/trend, terrain-report validity, and
   centralized `unknown`/`clear`/`caution`/`warning` thresholds.

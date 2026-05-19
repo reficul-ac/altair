@@ -208,6 +208,9 @@ bool MavlinkDecoder::decodeFrame(const unsigned char *frame,
         sample->rollRad = readFloat(payload, 4);
         sample->pitchRad = readFloat(payload, 8);
         sample->yawRad = readFloat(payload, 12);
+        sample->rollRateRps = readFloat(payload, 16);
+        sample->pitchRateRps = readFloat(payload, 20);
+        sample->yawRateRps = readFloat(payload, 24);
         return true;
     case 33:
         if (payloadLength < 28)

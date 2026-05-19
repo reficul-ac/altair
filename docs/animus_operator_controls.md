@@ -48,17 +48,20 @@ Map 2D raster pass:
 python3 tools/python/capture_animus_qt_sitl.py
 ```
 
-The script captures `map-2d`, `terrain-3d`, `setup`, and
+The script captures `map-2d`, `terrain-3d`, `tactical`, `setup`, and
 `map-2d-seeded-cache` from the built Qt shell with mock telemetry. It writes
 PNGs, per-workspace logs, `visual-report.md`, and `run-manifest.json` under
 `artifacts/animus-qt-screenshots/<timestamp>/`. The report includes
 deterministic PNG diagnostics for capture size, semantic workspace tab
 visibility, seeded raster tile rendering, workspace content regions, sampled
 color diversity, display fallback attempts, and cross-workspace screenshot
-differences. The `terrain-3d` capture uses the bundled Cesium/WebEngine path
-and saves the native Cesium canvas PNG, with Xvfb WebGL flags supplied by the
-capture helper when no display is already present. It also records terrain
-clearance and control-surface diagnostics.
+differences. The `terrain-3d` and `tactical` captures use the bundled
+Cesium/WebEngine path and save native Cesium canvas PNGs, with Xvfb WebGL flags
+supplied by the capture helper when no display is already present. Tactical
+fails verification if it falls back to the QML silhouette, loads a model URI
+that does not match the selected profile asset, or cannot prove real
+control-surface pivot movement. Terrain 3D also records terrain clearance
+diagnostics.
 
 ## Flight View
 
@@ -87,6 +90,13 @@ Flight View parity is future Qt Animus work. The current shell focuses on teleme
   rotates, and the mouse wheel zooms. Rotation and zoom keep the current
   Chase/Orbit vehicle lock; explicitly clicking Chase or Orbit resets that
   vehicle-relative camera offset, while Free keeps the current manual pose.
+- `Tactical` opens the same selected vehicle model/profile and live
+  control-surface animation as Terrain 3D, but suppresses terrain, map,
+  home, breadcrumb, route, and clearance clutter for a vehicle-locked attitude
+  instrument. Dragging rotates the attitude view, the mouse wheel zooms, and
+  `Snap` restores the canonical tactical camera without exposing a free-roam
+  mode. The overlay reports roll, pitch, yaw, heading, roll/pitch/yaw rates,
+  and explicit `FRESH`, `STALE`, or `UNK` link states.
 - Vehicle markers are triangular and point along velocity, with heading as a low-speed fallback. Home/origin markers use an X shape so they are visually distinct from vehicles.
 
 Animus expects licensed QGC-style providers and operator-managed offline tile

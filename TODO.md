@@ -232,9 +232,19 @@ Reusable Bayek framework follow-up is tracked separately in
   - Acceptance: Asset provenance/license is documented before commit.
 - [ ] Add local aircraft model import for Terrain 3D after the operator file
   policy, supported formats, and offline asset packaging are defined.
-- [ ] Add a tactical 3D attitude tab focused on aircraft attitude, angular
+- [x] Add a tactical 3D attitude tab focused on aircraft attitude, angular
   rates, compass heading, and gyro-ring style roll/pitch/yaw visualization
   without trajectory clutter.
+  - Acceptance: Tactical capture passes only through native Cesium/WebEngine
+    GLB diagnostics with the selected profile asset loaded, vehicle-locked
+    tactical camera state, and real deflected control-surface pivot movement;
+    the QML fallback silhouette is allowed only as degraded live UI.
+- [x] Refine Tactical Cesium visuals to use close-in RGB attitude-axis rings
+  on a black background without the yellow reference line or terrain clutter.
+- [x] Make Tactical `Snap` reset to the canonical isometric tactical camera
+  even when the view is already in tactical camera mode.
+- [x] Isolate Terrain 3D and Tactical WebEngine scene status and renderer state
+  so tab switching cannot push either workspace into the other's fallback mode.
 - [ ] Add an FPV tab that renders the flight from the vehicle nose/seeker
   perspective.
 - [ ] Port still-desired retired dashboard, inspector, replay import/export,
@@ -252,6 +262,8 @@ Reusable Bayek framework follow-up is tracked separately in
   initialize.
 - [ ] Diagnose Terrain 3D trackpad event delivery in Qt WebEngine and add a
   non-laggy Space+trackpad rotate path without a full-scene QML input overlay.
+- [ ] Harden the Animus Qt local HTTP tile downloader test so sandbox loopback
+  listen/download behavior is reported separately from cache-manager regressions.
 - [x] Retire the obsolete TypeScript Animus app, generated dependency tree,
   interaction harnesses, and old CI lane now that Qt Animus is canonical.
 

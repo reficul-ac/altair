@@ -203,6 +203,10 @@ void TelemetryService::publishMockSample()
     m_elapsedS += 1.0 / static_cast<double>(m_uiRateHz);
     const double radiusDeg = 0.0012;
     const double angle = m_elapsedS * 0.12;
+    const double rollAmplitude = qDegreesToRadians(18.0);
+    const double pitchAmplitude = qDegreesToRadians(7.0);
+    const double rollPhase = angle * 3.0;
+    const double pitchPhase = angle * 2.4;
     const double lat = 37.4275 + qSin(angle) * radiusDeg;
     const double lon = -122.1697 + qCos(angle) * radiusDeg;
     const double heading = qRadiansToDegrees(angle) + 90.0;
@@ -212,6 +216,11 @@ void TelemetryService::publishMockSample()
     m_vehicle->setAltitudeM(45.0 + qSin(angle * 2.0) * 8.0);
     m_vehicle->setHeadingDeg(std::fmod(heading + 360.0, 360.0));
     m_vehicle->setYawRad(angle);
+    m_vehicle->setRollRad(qSin(rollPhase) * rollAmplitude);
+    m_vehicle->setPitchRad(qCos(pitchPhase) * pitchAmplitude);
+    m_vehicle->setRollRateRps(qCos(rollPhase) * rollAmplitude * 0.36);
+    m_vehicle->setPitchRateRps(-qSin(pitchPhase) * pitchAmplitude * 0.288);
+    m_vehicle->setYawRateRps(0.12);
     m_vehicle->setGroundspeedMps(18.0);
     m_vehicle->setAttitudeValid(true);
     m_vehicle->setPositionValid(true);
@@ -223,6 +232,10 @@ void TelemetryService::publishMockSample()
     m_vehicle->setTerrainLoaded(1);
     m_vehicle->setTerrainPending(0);
     m_vehicle->setTerrainValid(true);
+    m_vehicle->setServoOutputPwm(1, 1500 + qRound(qSin(rollPhase) * 260.0), true);
+    m_vehicle->setServoOutputPwm(2, 1500 - qRound(qSin(rollPhase) * 260.0), true);
+    m_vehicle->setServoOutputPwm(3, 1500 + qRound(qSin(pitchPhase) * 220.0), true);
+    m_vehicle->setServoOutputPwm(4, 1500 + qRound(qSin(angle * 1.7) * 180.0), true);
     updateFreshness(elapsedMs());
     m_trail->append(lat, lon, m_vehicle->altitudeM(), m_elapsedS);
 }
@@ -269,6 +282,9 @@ void TelemetryService::applySample(const MavlinkTelemetrySample &sample)
         m_vehicle->setRollRad(sample.rollRad);
         m_vehicle->setPitchRad(sample.pitchRad);
         m_vehicle->setYawRad(sample.yawRad);
+        m_vehicle->setRollRateRps(sample.rollRateRps);
+        m_vehicle->setPitchRateRps(sample.pitchRateRps);
+        m_vehicle->setYawRateRps(sample.yawRateRps);
         m_vehicle->setAttitudeValid(true);
     }
     if (sample.hasGlobalPosition || sample.hasGpsRaw)
@@ -352,6 +368,9 @@ void TelemetryService::mergePendingSample(const MavlinkTelemetrySample &sample)
         m_pendingSample.rollRad = sample.rollRad;
         m_pendingSample.pitchRad = sample.pitchRad;
         m_pendingSample.yawRad = sample.yawRad;
+        m_pendingSample.rollRateRps = sample.rollRateRps;
+        m_pendingSample.pitchRateRps = sample.pitchRateRps;
+        m_pendingSample.yawRateRps = sample.yawRateRps;
     }
     if (sample.hasGlobalPosition)
     {

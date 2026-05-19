@@ -137,13 +137,19 @@ QVariantMap CesiumBridge::controlSurfaceVerificationSnapshot() const
         else if (surface.id == QStringLiteral("rudder"))
             deflectionDeg = 14.0;
         deflectionDeg *= m_profileManager->surfacePolarity(surface.id);
-        surfaces.push_back(QVariantMap{{QStringLiteral("id"), surface.id},
-                                       {QStringLiteral("label"), surface.label},
-                                       {QStringLiteral("node"), surface.node},
-                                       {QStringLiteral("axis"), surface.axis},
-                                       {QStringLiteral("actuatorChannel"), surface.actuatorChannel},
-                                       {QStringLiteral("deflectionDeg"), deflectionDeg},
-                                       {QStringLiteral("valid"), true}});
+        const double polarity = m_profileManager->surfacePolarity(surface.id);
+        surfaces.push_back(
+            QVariantMap{{QStringLiteral("id"), surface.id},
+                        {QStringLiteral("label"), surface.label},
+                        {QStringLiteral("node"), surface.node},
+                        {QStringLiteral("axis"), surface.axis},
+                        {QStringLiteral("actuatorChannel"), surface.actuatorChannel},
+                        {QStringLiteral("profilePolarity"), surface.profilePolarity},
+                        {QStringLiteral("polarity"), polarity},
+                        {QStringLiteral("polarityOverride"), QVariant()},
+                        {QStringLiteral("polarityReversed"), polarity != surface.profilePolarity},
+                        {QStringLiteral("deflectionDeg"), deflectionDeg},
+                        {QStringLiteral("valid"), true}});
     }
     verification[QStringLiteral("controlSurfaces")] = surfaces;
     return verification;
@@ -199,6 +205,9 @@ QVariantMap CesiumBridge::vehicleMap() const
         {QStringLiteral("rollRad"), m_vehicle->rollRad()},
         {QStringLiteral("pitchRad"), m_vehicle->pitchRad()},
         {QStringLiteral("yawRad"), m_vehicle->yawRad()},
+        {QStringLiteral("rollRateRps"), m_vehicle->rollRateRps()},
+        {QStringLiteral("pitchRateRps"), m_vehicle->pitchRateRps()},
+        {QStringLiteral("yawRateRps"), m_vehicle->yawRateRps()},
         {QStringLiteral("groundspeedMps"), m_vehicle->groundspeedMps()},
         {QStringLiteral("positionValid"), m_vehicle->positionValid()},
         {QStringLiteral("attitudeValid"), m_vehicle->attitudeValid()},

@@ -11,6 +11,7 @@
   let vehiclePointPrimitive = null;
   let homePointPrimitive = null;
   let aircraftOutlineCollection = null;
+  let attitudeReferenceCollection = null;
   let trailPolylineCollection = null;
   let trailEntities = [];
   let imageryLayer = null;
@@ -25,6 +26,7 @@
   let vehicleModelProfile = null;
   let cameraInitialized = false;
   let cameraMode = 'chase';
+  let workspaceMode = 'terrain-3d';
   let lastLockPosition = null;
   let cameraDrag = null;
   let activePointerInteraction = false;
@@ -44,7 +46,15 @@
       rangeM: 520.0,
       followsVehicleHeading: false,
     },
+    tactical: {
+      defaultHeadingDeg: 135.0,
+      headingDeg: 135.0,
+      pitchDeg: -15.0,
+      rangeM: 170.0,
+      followsVehicleHeading: false,
+    },
   };
+  const tacticalRingRadiusM = 7.5;
   const freeCamera = {
     focus: null,
     headingDeg: 0.0,
@@ -243,8 +253,18 @@
     const offset = lockedCameraOffsets[mode];
     if (!offset) return;
     offset.headingDeg = offset.defaultHeadingDeg;
-    offset.pitchDeg = mode === 'orbit' ? -26.0 : -12.0;
-    offset.rangeM = mode === 'orbit' ? 520.0 : 260.0;
+    offset.pitchDeg = mode === 'orbit' ? -26.0 : (mode === 'tactical' ? -15.0 : -12.0);
+    offset.rangeM = mode === 'orbit' ? 520.0 : (mode === 'tactical' ? 170.0 : 260.0);
+  }
+
+  function resetTacticalCamera() {
+    workspaceMode = 'tactical';
+    cameraMode = 'tactical';
+    resetLockedCameraOffset('tactical');
+    applyManualCamera();
+    if (viewer && viewer.scene) viewer.scene.requestRender();
+    emitCameraMode();
+    return true;
   }
 
   function vehicleLockHeadingDeg() {
@@ -269,7 +289,7 @@
   }
 
   function currentFocus() {
-    if (cameraMode === 'free' && freeCamera.focus) return freeCamera.focus;
+    if (workspaceMode !== 'tactical' && cameraMode === 'free' && freeCamera.focus) return freeCamera.focus;
     if (lastLockPosition) return lastLockPosition;
     const vehicle = state.vehicle || {};
     if (vehicle.positionValid && validPosition(vehicle)) return cartesian(vehicle);
@@ -307,7 +327,7 @@
 
   function applyManualCamera() {
     if (!viewer) return;
-    if (cameraMode === 'free') {
+    if (workspaceMode !== 'tactical' && cameraMode === 'free') {
       if (!freeCamera.focus) {
         const focus = currentFocus();
         if (focus) freeCamera.focus = Cesium.Cartesian3.clone(focus, new Cesium.Cartesian3());
@@ -343,7 +363,7 @@
   function rotateCurrentCamera(deltaX, deltaY) {
     const headingDelta = deltaX * 0.35;
     const pitchDelta = -deltaY * 0.25;
-    if (cameraMode === 'free') {
+    if (workspaceMode !== 'tactical' && cameraMode === 'free') {
       freeCamera.headingDeg += headingDelta;
       freeCamera.pitchDeg = clamp(freeCamera.pitchDeg + pitchDelta, -89.0, -2.0);
     } else {
@@ -357,7 +377,7 @@
 
   function zoomCurrentCamera(wheelDeltaY) {
     const factor = Math.exp(clamp(wheelDeltaY, -600.0, 600.0) * 0.0015);
-    if (cameraMode === 'free') {
+    if (workspaceMode !== 'tactical' && cameraMode === 'free') {
       if (!freeCamera.focus) setFreeFromCurrentPose(currentFocus());
       freeCamera.rangeM = clamp(freeCamera.rangeM * factor, 20.0, 50000.0);
     } else {
@@ -369,6 +389,7 @@
   }
 
   function switchToFreeFromPan() {
+    if (workspaceMode === 'tactical') return;
     if (cameraMode === 'free') return;
     setFreeFromCurrentPose(currentFocus());
     cameraMode = 'free';
@@ -396,6 +417,7 @@
       const pressLikeEvent = event.type === 'pointerdown' || event.type === 'mousedown';
       const implicitTrackpadPress = pressLikeEvent && event.button !== 2 && buttons === 0;
       const primaryDown = event.button === 0 || (buttons & 1) !== 0 || implicitTrackpadPress;
+      if (workspaceMode === 'tactical') return primaryDown || middleDown ? 'rotate' : null;
       if (middleDown) return 'rotate';
       if (primaryDown) return spaceDown ? 'rotate' : 'pan';
       return null;
@@ -610,6 +632,15 @@
     imageryLayer.animusUrlTemplate = fixture.imageryUrlTemplate;
   }
 
+  function applyWorkspaceSceneStyle() {
+    if (!viewer || !viewer.scene || !viewer.scene.globe) return;
+    const tactical = workspaceMode === 'tactical';
+    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString(tactical ? '#000000' : '#8fb1ce');
+    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString(tactical ? '#000000' : '#d4dfd7');
+    viewer.scene.globe.show = !tactical;
+    if (headingEntity) headingEntity.show = false;
+  }
+
   function ensureViewer() {
     if (viewer) return true;
     if (!window.Cesium) {
@@ -647,6 +678,8 @@
       viewer.scene.globe.enableLighting = false;
       viewer.scene.skyAtmosphere.show = false;
       viewer.scene.fog.enabled = false;
+      viewer.scene.sun.show = false;
+      viewer.scene.moon.show = false;
       installCameraControls();
       vehicleEntity = viewer.entities.add({
         id: 'vehicle',
@@ -700,6 +733,7 @@
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
       });
       aircraftOutlineCollection = viewer.scene.primitives.add(new Cesium.PolylineCollection());
+      attitudeReferenceCollection = viewer.scene.primitives.add(new Cesium.PolylineCollection());
       trailPolylineCollection = viewer.scene.primitives.add(new Cesium.PolylineCollection());
       setSceneStatus('cesium-ready', '');
       return true;
@@ -713,13 +747,29 @@
 
   async function updateTerrainProvider() {
     if (!viewer) return;
+    if (workspaceMode === 'tactical') {
+      terrainProviderKey = 'tactical';
+      viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+      if (imageryLayer) {
+        viewer.imageryLayers.remove(imageryLayer, true);
+        imageryLayer = null;
+      }
+      viewer.scene.globe.show = false;
+      setSceneStatus('tactical-ready', 'vehicle-locked attitude view');
+      viewer.scene.requestRender();
+      return;
+    }
+    viewer.scene.globe.show = true;
     const terrain = state.terrain || {};
     const fixture = terrain.fixture || {};
     const provider = terrain.provider || 'heightmap-fixture';
     const key = provider === 'quantized-mesh'
       ? `mesh:${terrain.cacheUrl || ''}`
       : `fixture:${fixture.name || 'default'}:${fixture.width || ''}x${fixture.height || ''}`;
-    if (terrainProviderKey === key) return;
+    if (terrainProviderKey === key) {
+      updateImageryProvider(fixture);
+      return;
+    }
     terrainProviderKey = key;
 
     if (provider !== 'quantized-mesh' || !terrain.cacheUrl) {
@@ -1022,6 +1072,12 @@
 
   function updateHome() {
     if (!viewer || !homeEntity) return;
+    if (workspaceMode === 'tactical') {
+      homeEntity.show = false;
+      if (homePointPrimitive) homePointPrimitive.show = false;
+      viewer.scene.requestRender();
+      return;
+    }
     const home = state.home || {};
     if (!home.valid || !validPosition(home)) {
       homeEntity.show = false;
@@ -1044,6 +1100,10 @@
     trailEntities = [];
     if (trailPolylineCollection) {
       trailPolylineCollection.removeAll();
+    }
+    if (workspaceMode === 'tactical') {
+      viewer.scene.requestRender();
+      return;
     }
 
     const trail = (state.trail || []).filter(validPosition);
@@ -1073,6 +1133,7 @@
   }
 
   function updateTerrainReference() {
+    if (workspaceMode === 'tactical') return;
     const vehicle = state.vehicle || {};
     const home = state.home || {};
     const centerLat = numberOr(vehicle.latDeg, numberOr(home.latDeg, 37.4275));
@@ -1092,15 +1153,93 @@
     viewer.scene.requestRender();
   }
 
+  function attitudeAxisRingPoints(position, radiusM, firstAxis, secondAxis) {
+    const points = [];
+    for (let index = 0; index <= 96; ++index) {
+      const angle = (index / 96.0) * Math.PI * 2.0;
+      const first = Cesium.Cartesian3.multiplyByScalar(
+        firstAxis,
+        Math.cos(angle) * radiusM,
+        new Cesium.Cartesian3()
+      );
+      const second = Cesium.Cartesian3.multiplyByScalar(
+        secondAxis,
+        Math.sin(angle) * radiusM,
+        new Cesium.Cartesian3()
+      );
+      const offset = Cesium.Cartesian3.add(first, second, new Cesium.Cartesian3());
+      points.push(Cesium.Cartesian3.add(position, offset, new Cesium.Cartesian3()));
+    }
+    return points;
+  }
+
+  function updateAttitudeReferences() {
+    if (!attitudeReferenceCollection) return;
+    attitudeReferenceCollection.removeAll();
+    if (workspaceMode !== 'tactical') return;
+    const vehicle = state.vehicle || {};
+    if (!vehicle.positionValid || !validPosition(vehicle)) return;
+    const position = cartesian(vehicle);
+    const attitude = Cesium.Matrix3.fromQuaternion(
+      orientationFor(vehicle, position),
+      new Cesium.Matrix3()
+    );
+    const forwardAxis = Cesium.Matrix3.multiplyByVector(
+      attitude,
+      Cesium.Cartesian3.UNIT_X,
+      new Cesium.Cartesian3()
+    );
+    const rightAxis = Cesium.Matrix3.multiplyByVector(
+      attitude,
+      Cesium.Cartesian3.UNIT_Y,
+      new Cesium.Cartesian3()
+    );
+    const upAxis = Cesium.Matrix3.multiplyByVector(
+      attitude,
+      Cesium.Cartesian3.UNIT_Z,
+      new Cesium.Cartesian3()
+    );
+    [
+      {
+        positions: attitudeAxisRingPoints(position, tacticalRingRadiusM, rightAxis, upAxis),
+        color: '#d92626',
+      },
+      {
+        positions: attitudeAxisRingPoints(position, tacticalRingRadiusM * 1.08, forwardAxis, upAxis),
+        color: '#2fbf5b',
+      },
+      {
+        positions: attitudeAxisRingPoints(position, tacticalRingRadiusM * 1.16, forwardAxis, rightAxis),
+        color: '#2f6df6',
+      },
+    ].forEach((ring) => {
+      attitudeReferenceCollection.add({
+        positions: ring.positions,
+        width: 3.0,
+        material: Cesium.Material.fromType('Color', {
+          color: Cesium.Color.fromCssColorString(ring.color).withAlpha(0.92),
+        }),
+      });
+    });
+    viewer.scene.requestRender();
+  }
+
   function renderCesium() {
     if (!ensureViewer()) return;
     canvas.style.display = 'none';
     cesiumScene.style.display = 'block';
+    applyWorkspaceSceneStyle();
+    if (workspaceMode === 'tactical' && cameraMode !== 'tactical') {
+      cameraMode = 'tactical';
+      resetLockedCameraOffset('tactical');
+      emitCameraMode();
+    }
     updateTerrainProvider();
     updateAircraftModel((state.terrain || {}).fixture || {}, state.model || {});
     loadVehicleModelProfile(state.model || {});
     updateTerrainReference();
     updateVehicle();
+    updateAttitudeReferences();
     applyControlSurfaces(state.controlSurfaces || []);
     updateHome();
     updateTrail();
@@ -1125,8 +1264,10 @@
       return '';
     }
     const vehicle = state.vehicle || {};
-    if (vehicle.positionValid && validPosition(vehicle)) {
+    if (workspaceMode !== 'tactical' && vehicle.positionValid && validPosition(vehicle)) {
       applyCamera(vehicle, cartesian(vehicle), true);
+    } else if (workspaceMode === 'tactical') {
+      resetTacticalCamera();
     }
     viewer.resize();
     viewer.scene.requestRender();
@@ -1134,13 +1275,50 @@
     return viewer.scene.canvas.toDataURL('image/png');
   }
 
+  function selectedProfileId() {
+    if (vehicleModelProfile && vehicleModelProfile.id) return String(vehicleModelProfile.id);
+    const model = state.model || {};
+    return model.profile ? String(model.profile) : '';
+  }
+
+  function selectedProfileAssetUri() {
+    if (vehicleModelProfile && vehicleModelProfile.asset) return String(vehicleModelProfile.asset);
+    const model = state.model || {};
+    return model.asset ? String(model.asset) : '';
+  }
+
+  function nativeRendererMetadata() {
+    const profileAssetUri = selectedProfileAssetUri();
+    return {
+      renderer: ensureViewer() ? 'cesium-webengine' : 'html-fallback',
+      workspaceMode,
+      cameraMode,
+      vehicleLocked: workspaceMode === 'tactical' || cameraMode === 'chase' || cameraMode === 'orbit',
+      freeRoamAvailable: workspaceMode !== 'tactical',
+      profileId: selectedProfileId(),
+      profileAssetUri,
+      snapshotProfileId: state.model && state.model.profile ? String(state.model.profile) : '',
+      snapshotAssetUri: state.model && state.model.asset ? String(state.model.asset) : '',
+      loadedModelUri: aircraftModelUri || '',
+      requestedModelUri: aircraftModelRequestedUri || '',
+      modelLoaded: !!aircraftModelPrimitive,
+      modelMatchesProfileAsset: !!profileAssetUri && aircraftModelUri === profileAssetUri,
+    };
+  }
+
   function inspectControlSurfaces() {
+    if (viewer && viewer.scene) {
+      viewer.resize();
+      viewer.scene.requestRender();
+      viewer.scene.render();
+    }
+    const metadata = nativeRendererMetadata();
     const controller = ensureVehicleModelController();
     if (!controller) {
       return {
+        ...metadata,
         ok: false,
         profileLoaded: false,
-        modelLoaded: false,
         surfaceCount: 0,
         surfaces: [],
         failures: ['VehicleModelController is not available'],
@@ -1148,11 +1326,29 @@
     }
     controller.setModel(aircraftModelPrimitive);
     controller.applyControlSurfaces(state.controlSurfaces || []);
-    return controller.inspectControlSurfaces(state.controlSurfaces || []);
+    const diagnostic = controller.inspectControlSurfaces(state.controlSurfaces || []);
+    const failures = Array.isArray(diagnostic.failures) ? diagnostic.failures.slice() : [];
+    if (metadata.renderer !== 'cesium-webengine') {
+      failures.push(`renderer ${metadata.renderer} is not cesium-webengine`);
+    }
+    if (!metadata.modelMatchesProfileAsset) {
+      failures.push(
+        `loaded model ${metadata.loadedModelUri || '-'} does not match selected profile asset ${metadata.profileAssetUri || '-'}`
+      );
+    }
+    return {
+      ...diagnostic,
+      ...metadata,
+      ok: diagnostic.ok && failures.length === 0,
+      failures,
+    };
   }
 
   function setCameraMode(mode) {
-    if (mode !== 'chase' && mode !== 'orbit' && mode !== 'free') {
+    if (workspaceMode === 'tactical' && mode !== 'tactical') {
+      return false;
+    }
+    if (mode !== 'chase' && mode !== 'orbit' && mode !== 'free' && mode !== 'tactical') {
       return false;
     }
     if (mode === 'free' && cameraMode !== 'free') {
@@ -1161,6 +1357,8 @@
     cameraMode = mode;
     if (mode === 'chase' || mode === 'orbit') {
       resetLockedCameraOffset(mode);
+    } else if (mode === 'tactical') {
+      resetLockedCameraOffset('tactical');
     }
     const vehicle = state.vehicle || {};
     if (viewer && vehicle.positionValid && validPosition(vehicle)) {
@@ -1174,6 +1372,38 @@
     return true;
   }
 
+  function setWorkspaceMode(mode) {
+    const nextMode = mode === 'tactical' ? 'tactical' : 'terrain-3d';
+    if (workspaceMode === nextMode) return true;
+    workspaceMode = nextMode;
+    if (workspaceMode === 'tactical') {
+      cameraMode = 'tactical';
+      resetLockedCameraOffset('tactical');
+    } else if (cameraMode === 'tactical') {
+      cameraMode = 'chase';
+      resetLockedCameraOffset('chase');
+    }
+    renderCesium();
+    emitCameraMode();
+    return true;
+  }
+
+  function cameraState() {
+    const offset = lockedCameraOffsets[cameraMode] || null;
+    return {
+      renderer: ensureViewer() ? 'cesium-webengine' : 'html-fallback',
+      ok: workspaceMode !== 'tactical' || cameraMode === 'tactical',
+      workspaceMode,
+      mode: cameraMode,
+      cameraMode,
+      freeRoamAvailable: workspaceMode !== 'tactical',
+      vehicleLocked: workspaceMode === 'tactical' || cameraMode === 'chase' || cameraMode === 'orbit',
+      headingDeg: offset ? offset.headingDeg : freeCamera.headingDeg,
+      pitchDeg: offset ? offset.pitchDeg : freeCamera.pitchDeg,
+      rangeM: offset ? offset.rangeM : freeCamera.rangeM,
+    };
+  }
+
   window.addEventListener('resize', function () {
     if (viewer) {
       viewer.resize();
@@ -1185,6 +1415,9 @@
   window.animusApplySnapshot = applySnapshot;
   window.animusCaptureCesiumPng = captureCesiumPng;
   window.animusInspectControlSurfaces = inspectControlSurfaces;
+  window.animusResetTacticalCamera = resetTacticalCamera;
   window.animusSetCameraMode = setCameraMode;
+  window.animusSetWorkspaceMode = setWorkspaceMode;
+  window.animusCameraState = cameraState;
   statusEl.textContent = 'Waiting for Animus terrain state...';
 })();

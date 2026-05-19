@@ -1,9 +1,9 @@
 # Animus 3D Vehicle Models
 
-Animus Terrain 3D uses GLB/glTF as the runtime aircraft model format. OBJ is
-acceptable as an authoring, import, or export intermediate, but runtime loading,
-resource packaging, profile metadata, and renderer node lookup should target
-GLB/glTF.
+Animus Terrain 3D and Tactical use GLB/glTF as the runtime aircraft model
+format. OBJ is acceptable as an authoring, import, or export intermediate, but
+runtime loading, resource packaging, profile metadata, and renderer node lookup
+should target GLB/glTF.
 
 The vehicle mesh is geometry-only at runtime. Flight semantics live in the
 vehicle/profile configuration and C++ snapshot path, not in Cesium JavaScript.
@@ -72,7 +72,12 @@ Cesium-side JavaScript only receives a profile and a snapshot. It resolves
 nodes by name, stores each original node matrix, and applies fresh rotated
 matrices from snapshot `deflectionDeg` values. It should fail gracefully when a
 profile, GLB, or node is missing because current fresh-checkout Terrain 3D still
-uses the bundled fixture glTF fallback.
+uses the bundled fixture glTF fallback. Tactical may show its QML silhouette as
+a degraded live UI state while WebEngine initializes or fails, but Tactical
+model-parity capture must come from the native Cesium/WebEngine path and must
+report the selected profile asset URI, loaded GLB URI, resolved pivot nodes,
+per-surface polarity/deflection, and a matrix change for the known deflected
+surfaces.
 
 ## Snapshot Flow
 

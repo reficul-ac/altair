@@ -20,6 +20,9 @@ class VehicleModel final : public QObject
     Q_PROPERTY(double rollRad READ rollRad WRITE setRollRad NOTIFY attitudeChanged)
     Q_PROPERTY(double pitchRad READ pitchRad WRITE setPitchRad NOTIFY attitudeChanged)
     Q_PROPERTY(double yawRad READ yawRad WRITE setYawRad NOTIFY attitudeChanged)
+    Q_PROPERTY(double rollRateRps READ rollRateRps WRITE setRollRateRps NOTIFY attitudeChanged)
+    Q_PROPERTY(double pitchRateRps READ pitchRateRps WRITE setPitchRateRps NOTIFY attitudeChanged)
+    Q_PROPERTY(double yawRateRps READ yawRateRps WRITE setYawRateRps NOTIFY attitudeChanged)
     Q_PROPERTY(
         double groundspeedMps READ groundspeedMps WRITE setGroundspeedMps NOTIFY vehicleChanged)
     Q_PROPERTY(double vxNorthMps READ vxNorthMps WRITE setVxNorthMps NOTIFY velocityChanged)
@@ -91,6 +94,15 @@ class VehicleModel final : public QObject
 
     double yawRad() const;
     void setYawRad(double yawRad);
+
+    double rollRateRps() const;
+    void setRollRateRps(double rollRateRps);
+
+    double pitchRateRps() const;
+    void setPitchRateRps(double pitchRateRps);
+
+    double yawRateRps() const;
+    void setYawRateRps(double yawRateRps);
 
     double groundspeedMps() const;
     void setGroundspeedMps(double groundspeedMps);
@@ -211,6 +223,9 @@ class VehicleModel final : public QObject
     double m_rollRad;
     double m_pitchRad;
     double m_yawRad;
+    double m_rollRateRps;
+    double m_pitchRateRps;
+    double m_yawRateRps;
     double m_groundspeedMps;
     double m_vxNorthMps;
     double m_vyEastMps;

@@ -8,15 +8,16 @@ namespace animus
 VehicleModel::VehicleModel(QObject *parent)
     : QObject(parent), m_vehicleId(QStringLiteral("vehicle-1")), m_connected(false),
       m_latitudeDeg(37.4275), m_longitudeDeg(-122.1697), m_altitudeM(30.0), m_headingDeg(0.0),
-      m_rollRad(0.0), m_pitchRad(0.0), m_yawRad(0.0), m_groundspeedMps(0.0), m_vxNorthMps(0.0),
-      m_vyEastMps(0.0), m_vzDownMps(0.0), m_systemId(0), m_componentId(0), m_autopilot(0),
-      m_vehicleType(0), m_baseMode(0), m_systemStatus(0), m_armed(false), m_gpsFixType(0),
-      m_satellitesVisible(-1), m_missionSeq(-1), m_homeLatitudeDeg(37.4275),
-      m_homeLongitudeDeg(-122.1697), m_homeAltitudeM(0.0), m_terrainLatitudeDeg(0.0),
-      m_terrainLongitudeDeg(0.0), m_terrainHeightM(0.0), m_terrainCurrentHeightM(0.0),
-      m_terrainPending(0), m_terrainLoaded(0), m_heartbeatValid(false), m_attitudeValid(false),
-      m_positionValid(false), m_velocityValid(false), m_gpsValid(false), m_missionValid(false),
-      m_homeValid(false), m_terrainValid(false), m_servoOutputPwm{}, m_servoOutputValid{}
+      m_rollRad(0.0), m_pitchRad(0.0), m_yawRad(0.0), m_rollRateRps(0.0), m_pitchRateRps(0.0),
+      m_yawRateRps(0.0), m_groundspeedMps(0.0), m_vxNorthMps(0.0), m_vyEastMps(0.0),
+      m_vzDownMps(0.0), m_systemId(0), m_componentId(0), m_autopilot(0), m_vehicleType(0),
+      m_baseMode(0), m_systemStatus(0), m_armed(false), m_gpsFixType(0), m_satellitesVisible(-1),
+      m_missionSeq(-1), m_homeLatitudeDeg(37.4275), m_homeLongitudeDeg(-122.1697),
+      m_homeAltitudeM(0.0), m_terrainLatitudeDeg(0.0), m_terrainLongitudeDeg(0.0),
+      m_terrainHeightM(0.0), m_terrainCurrentHeightM(0.0), m_terrainPending(0), m_terrainLoaded(0),
+      m_heartbeatValid(false), m_attitudeValid(false), m_positionValid(false),
+      m_velocityValid(false), m_gpsValid(false), m_missionValid(false), m_homeValid(false),
+      m_terrainValid(false), m_servoOutputPwm{}, m_servoOutputValid{}
 {
 }
 
@@ -134,6 +135,45 @@ void VehicleModel::setYawRad(double yawRad)
     if (qFuzzyCompare(m_yawRad, yawRad))
         return;
     m_yawRad = yawRad;
+    emit attitudeChanged();
+}
+
+double VehicleModel::rollRateRps() const
+{
+    return m_rollRateRps;
+}
+
+void VehicleModel::setRollRateRps(double rollRateRps)
+{
+    if (qFuzzyCompare(m_rollRateRps, rollRateRps))
+        return;
+    m_rollRateRps = rollRateRps;
+    emit attitudeChanged();
+}
+
+double VehicleModel::pitchRateRps() const
+{
+    return m_pitchRateRps;
+}
+
+void VehicleModel::setPitchRateRps(double pitchRateRps)
+{
+    if (qFuzzyCompare(m_pitchRateRps, pitchRateRps))
+        return;
+    m_pitchRateRps = pitchRateRps;
+    emit attitudeChanged();
+}
+
+double VehicleModel::yawRateRps() const
+{
+    return m_yawRateRps;
+}
+
+void VehicleModel::setYawRateRps(double yawRateRps)
+{
+    if (qFuzzyCompare(m_yawRateRps, yawRateRps))
+        return;
+    m_yawRateRps = yawRateRps;
     emit attitudeChanged();
 }
 

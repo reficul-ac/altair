@@ -120,7 +120,7 @@ To capture required Qt Animus UI verification screenshots, run:
 python3 tools/python/capture_animus_qt_sitl.py
 ```
 
-Screenshots, logs, manifests, and `visual-report.md` are written under `artifacts/animus-qt-screenshots/<timestamp>/`. The default capture covers `map-2d`, `terrain-3d`, and `setup`.
+Screenshots, logs, manifests, and `visual-report.md` are written under `artifacts/animus-qt-screenshots/<timestamp>/`. The default capture covers `map-2d`, `terrain-3d`, `tactical`, and `setup`.
 
 Latitude, longitude, and altitude in `cruise6dof` logs are derived from the spherical-Earth ECEF truth state in ECEF mode. The local `pos_n_m`, `pos_e_m`, `pos_d_m`, `vel_n_mps`, `vel_e_mps`, and `vel_d_mps` columns remain available as derived compatibility outputs relative to the configured initial origin. The appended `pos_ecef_x_m`, `pos_ecef_y_m`, `pos_ecef_z_m`, `vel_ecef_x_mps`, `vel_ecef_y_mps`, and `vel_ecef_z_mps` columns expose the ECEF truth state directly.
 

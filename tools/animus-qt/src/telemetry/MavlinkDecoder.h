@@ -30,6 +30,9 @@ struct MavlinkTelemetrySample
     double rollRad = 0.0;
     double pitchRad = 0.0;
     double yawRad = 0.0;
+    double rollRateRps = 0.0;
+    double pitchRateRps = 0.0;
+    double yawRateRps = 0.0;
 
     double latitudeDeg = 0.0;
     double longitudeDeg = 0.0;

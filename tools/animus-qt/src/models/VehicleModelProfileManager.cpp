@@ -225,13 +225,20 @@ QVariantList VehicleModelProfileManager::mappedControlSurfaces() const
         const double deflectionDeg =
             valid ? mappedDeflectionDeg(surface, m_vehicle->servoOutputPwm(surface.actuatorChannel))
                   : 0.0;
-        result.push_back(QVariantMap{{QStringLiteral("id"), surface.id},
-                                     {QStringLiteral("label"), surface.label},
-                                     {QStringLiteral("node"), surface.node},
-                                     {QStringLiteral("axis"), surface.axis},
-                                     {QStringLiteral("actuatorChannel"), surface.actuatorChannel},
-                                     {QStringLiteral("deflectionDeg"), deflectionDeg},
-                                     {QStringLiteral("valid"), valid}});
+        const double polarity = effectivePolarity(surface);
+        result.push_back(QVariantMap{
+            {QStringLiteral("id"), surface.id},
+            {QStringLiteral("label"), surface.label},
+            {QStringLiteral("node"), surface.node},
+            {QStringLiteral("axis"), surface.axis},
+            {QStringLiteral("actuatorChannel"), surface.actuatorChannel},
+            {QStringLiteral("profilePolarity"), surface.profilePolarity},
+            {QStringLiteral("polarity"), polarity},
+            {QStringLiteral("polarityOverride"),
+             m_polarityOverrides.contains(surface.id) ? QVariant(polarity) : QVariant()},
+            {QStringLiteral("polarityReversed"), polarity != surface.profilePolarity},
+            {QStringLiteral("deflectionDeg"), deflectionDeg},
+            {QStringLiteral("valid"), valid}});
     }
     return result;
 }
