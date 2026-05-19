@@ -18,7 +18,31 @@
   let aircraftModelUri = '';
   let cameraInitialized = false;
   let cameraMode = 'chase';
-  let orbitAngleDeg = 135.0;
+  let lastLockPosition = null;
+  let pointerDrag = null;
+  let spaceDown = false;
+  const lockedCameraOffsets = {
+    chase: {
+      defaultHeadingDeg: 180.0,
+      headingDeg: 180.0,
+      pitchDeg: -12.0,
+      rangeM: 260.0,
+      followsVehicleHeading: true,
+    },
+    orbit: {
+      defaultHeadingDeg: 135.0,
+      headingDeg: 135.0,
+      pitchDeg: -26.0,
+      rangeM: 520.0,
+      followsVehicleHeading: false,
+    },
+  };
+  const freeCamera = {
+    focus: null,
+    headingDeg: 0.0,
+    pitchDeg: -32.0,
+    rangeM: 500.0,
+  };
   let state = {
     vehicle: null,
     home: null,
@@ -188,6 +212,224 @@
     console.info(`ANIMUS_SCENE_STATUS ${JSON.stringify({status, error: error || ''})}`);
   }
 
+  function emitCameraMode() {
+    console.info(`ANIMUS_CAMERA_MODE ${JSON.stringify({mode: cameraMode})}`);
+  }
+
+  function clamp(value, minimum, maximum) {
+    return Math.max(minimum, Math.min(maximum, value));
+  }
+
+  function resetLockedCameraOffset(mode) {
+    const offset = lockedCameraOffsets[mode];
+    if (!offset) return;
+    offset.headingDeg = offset.defaultHeadingDeg;
+    offset.pitchDeg = mode === 'orbit' ? -26.0 : -12.0;
+    offset.rangeM = mode === 'orbit' ? 520.0 : 260.0;
+  }
+
+  function vehicleLockHeadingDeg() {
+    const vehicle = state.vehicle || {};
+    return vehicle.positionValid && validPosition(vehicle) ? vehicleHeadingDeg(vehicle) : 0.0;
+  }
+
+  function cameraHeadingPitchRange() {
+    if (!viewer) return null;
+    const camera = viewer.camera;
+    const offset = Cesium.Cartesian3.subtract(
+      camera.positionWC,
+      cameraMode === 'free' && freeCamera.focus ? freeCamera.focus : (lastLockPosition || camera.positionWC),
+      new Cesium.Cartesian3()
+    );
+    const range = Math.max(25.0, Cesium.Cartesian3.magnitude(offset));
+    return {
+      headingDeg: Cesium.Math.toDegrees(camera.heading),
+      pitchDeg: Cesium.Math.toDegrees(camera.pitch),
+      rangeM: range,
+    };
+  }
+
+  function currentFocus() {
+    if (cameraMode === 'free' && freeCamera.focus) return freeCamera.focus;
+    if (lastLockPosition) return lastLockPosition;
+    const vehicle = state.vehicle || {};
+    if (vehicle.positionValid && validPosition(vehicle)) return cartesian(vehicle);
+    const home = state.home || {};
+    if (home.valid && validPosition(home)) return cartesian(home);
+    return null;
+  }
+
+  function setFreeFromCurrentPose(focus) {
+    if (!viewer) return;
+    const chosenFocus = focus || currentFocus();
+    if (chosenFocus) {
+      freeCamera.focus = Cesium.Cartesian3.clone(chosenFocus, freeCamera.focus || new Cesium.Cartesian3());
+    }
+    const pose = cameraHeadingPitchRange();
+    if (pose) {
+      freeCamera.headingDeg = pose.headingDeg;
+      freeCamera.pitchDeg = clamp(pose.pitchDeg, -89.0, -2.0);
+      freeCamera.rangeM = clamp(pose.rangeM, 20.0, 50000.0);
+    }
+  }
+
+  function applyCameraToFocus(focus, headingDeg, pitchDeg, rangeM) {
+    if (!viewer || !focus) return;
+    viewer.camera.lookAt(
+      focus,
+      new Cesium.HeadingPitchRange(
+        Cesium.Math.toRadians(headingDeg),
+        Cesium.Math.toRadians(clamp(pitchDeg, -89.0, -2.0)),
+        clamp(rangeM, 20.0, 50000.0)
+      )
+    );
+    viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  }
+
+  function applyManualCamera() {
+    if (!viewer) return;
+    if (cameraMode === 'free') {
+      if (!freeCamera.focus) {
+        const focus = currentFocus();
+        if (focus) freeCamera.focus = Cesium.Cartesian3.clone(focus, new Cesium.Cartesian3());
+      }
+      applyCameraToFocus(freeCamera.focus, freeCamera.headingDeg, freeCamera.pitchDeg, freeCamera.rangeM);
+      return;
+    }
+    const focus = currentFocus();
+    const offset = lockedCameraOffsets[cameraMode];
+    if (!focus || !offset) return;
+    const headingDeg = offset.followsVehicleHeading
+      ? vehicleLockHeadingDeg() + offset.headingDeg
+      : offset.headingDeg;
+    applyCameraToFocus(focus, headingDeg, offset.pitchDeg, offset.rangeM);
+  }
+
+  function panFreeCamera(deltaX, deltaY) {
+    if (!viewer || !freeCamera.focus) return;
+    const range = Math.max(25.0, freeCamera.rangeM);
+    const height = Math.max(1, viewer.scene.canvas.clientHeight || viewer.scene.canvas.height || 1);
+    const metersPerPixel = range / height * 1.2;
+    const right = Cesium.Cartesian3.normalize(viewer.camera.rightWC, new Cesium.Cartesian3());
+    const up = Cesium.Cartesian3.normalize(viewer.camera.upWC, new Cesium.Cartesian3());
+    const move = Cesium.Cartesian3.add(
+      Cesium.Cartesian3.multiplyByScalar(right, -deltaX * metersPerPixel, new Cesium.Cartesian3()),
+      Cesium.Cartesian3.multiplyByScalar(up, deltaY * metersPerPixel, new Cesium.Cartesian3()),
+      new Cesium.Cartesian3()
+    );
+    Cesium.Cartesian3.add(freeCamera.focus, move, freeCamera.focus);
+    applyManualCamera();
+  }
+
+  function rotateCurrentCamera(deltaX, deltaY) {
+    const headingDelta = deltaX * 0.35;
+    const pitchDelta = -deltaY * 0.25;
+    if (cameraMode === 'free') {
+      freeCamera.headingDeg += headingDelta;
+      freeCamera.pitchDeg = clamp(freeCamera.pitchDeg + pitchDelta, -89.0, -2.0);
+    } else {
+      const offset = lockedCameraOffsets[cameraMode];
+      if (!offset) return;
+      offset.headingDeg += headingDelta;
+      offset.pitchDeg = clamp(offset.pitchDeg + pitchDelta, -89.0, -2.0);
+    }
+    applyManualCamera();
+  }
+
+  function zoomCurrentCamera(wheelDeltaY) {
+    const factor = Math.exp(clamp(wheelDeltaY, -600.0, 600.0) * 0.0015);
+    if (cameraMode === 'free') {
+      if (!freeCamera.focus) setFreeFromCurrentPose(currentFocus());
+      freeCamera.rangeM = clamp(freeCamera.rangeM * factor, 20.0, 50000.0);
+    } else {
+      const offset = lockedCameraOffsets[cameraMode];
+      if (!offset) return;
+      offset.rangeM = clamp(offset.rangeM * factor, 20.0, 50000.0);
+    }
+    applyManualCamera();
+  }
+
+  function switchToFreeFromPan() {
+    if (cameraMode === 'free') return;
+    setFreeFromCurrentPose(currentFocus());
+    cameraMode = 'free';
+    emitCameraMode();
+  }
+
+  function installCameraControls() {
+    if (!viewer || !viewer.scene || !viewer.scene.canvas) return;
+    const controller = viewer.scene.screenSpaceCameraController;
+    controller.enableRotate = false;
+    controller.enableTranslate = false;
+    controller.enableZoom = false;
+    controller.enableTilt = false;
+    controller.enableLook = false;
+
+    const target = viewer.scene.canvas;
+    target.tabIndex = 0;
+    target.addEventListener('contextmenu', function (event) {
+      event.preventDefault();
+    });
+    target.addEventListener('pointerdown', function (event) {
+      if (event.button !== 0 && event.button !== 1) return;
+      target.focus();
+      pointerDrag = {
+        id: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        action: event.button === 1 || spaceDown ? 'rotate' : 'pan',
+        button: event.button,
+      };
+      target.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+    target.addEventListener('pointermove', function (event) {
+      if (!pointerDrag || pointerDrag.id !== event.pointerId) return;
+      const deltaX = event.clientX - pointerDrag.x;
+      const deltaY = event.clientY - pointerDrag.y;
+      pointerDrag.x = event.clientX;
+      pointerDrag.y = event.clientY;
+      const rotate = pointerDrag.action === 'rotate' || (pointerDrag.button === 0 && spaceDown);
+      if (rotate) {
+        rotateCurrentCamera(deltaX, deltaY);
+      } else {
+        switchToFreeFromPan();
+        panFreeCamera(deltaX, deltaY);
+      }
+      viewer.scene.requestRender();
+      event.preventDefault();
+    });
+    target.addEventListener('pointerup', function (event) {
+      if (pointerDrag && pointerDrag.id === event.pointerId) {
+        pointerDrag = null;
+        target.releasePointerCapture(event.pointerId);
+      }
+      event.preventDefault();
+    });
+    target.addEventListener('pointercancel', function (event) {
+      if (pointerDrag && pointerDrag.id === event.pointerId) {
+        pointerDrag = null;
+      }
+    });
+    target.addEventListener('wheel', function (event) {
+      zoomCurrentCamera(event.deltaY);
+      viewer.scene.requestRender();
+      event.preventDefault();
+    }, {passive: false});
+    window.addEventListener('keydown', function (event) {
+      if (event.code === 'Space') {
+        spaceDown = true;
+        event.preventDefault();
+      }
+    });
+    window.addEventListener('keyup', function (event) {
+      if (event.code === 'Space') {
+        spaceDown = false;
+        event.preventDefault();
+      }
+    });
+  }
+
   function fixtureRectangle(fixture) {
     return Cesium.Rectangle.fromDegrees(
       numberOr(fixture.westDeg, -122.2607248),
@@ -296,6 +538,7 @@
       viewer.scene.globe.enableLighting = false;
       viewer.scene.skyAtmosphere.show = false;
       viewer.scene.fog.enabled = false;
+      installCameraControls();
       vehicleEntity = viewer.entities.add({
         id: 'vehicle',
         name: 'Altair vehicle',
@@ -422,6 +665,7 @@
 
   function applyCamera(vehicle, position, capturePose) {
     if (!viewer || !validPosition(vehicle)) return;
+    lastLockPosition = Cesium.Cartesian3.clone(position, lastLockPosition || new Cesium.Cartesian3());
     const headingDeg = vehicleHeadingDeg(vehicle);
     if (capturePose) {
       viewer.camera.lookAt(
@@ -436,19 +680,7 @@
       return;
     }
 
-    if (cameraMode === 'free') return;
-    const cameraHeading = cameraMode === 'orbit' ? orbitAngleDeg : headingDeg + 180.0;
-    const pitchDeg = cameraMode === 'orbit' ? -26.0 : -12.0;
-    const rangeM = cameraMode === 'orbit' ? 520.0 : 260.0;
-    viewer.camera.lookAt(
-      position,
-      new Cesium.HeadingPitchRange(
-        Cesium.Math.toRadians(cameraHeading),
-        Cesium.Math.toRadians(pitchDeg),
-        rangeM
-      )
-    );
-    viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+    applyManualCamera();
   }
 
   function vehicleOffsetPoint(position, headingRad, forwardM, rightM, upM) {
@@ -653,15 +885,22 @@
     if (mode !== 'chase' && mode !== 'orbit' && mode !== 'free') {
       return false;
     }
+    if (mode === 'free' && cameraMode !== 'free') {
+      setFreeFromCurrentPose(currentFocus());
+    }
     cameraMode = mode;
-    if (mode === 'orbit') {
-      orbitAngleDeg = (orbitAngleDeg + 35.0) % 360.0;
+    if (mode === 'chase' || mode === 'orbit') {
+      resetLockedCameraOffset(mode);
     }
     const vehicle = state.vehicle || {};
     if (viewer && vehicle.positionValid && validPosition(vehicle)) {
       applyCamera(vehicle, cartesian(vehicle), false);
       viewer.scene.requestRender();
+    } else if (viewer) {
+      applyManualCamera();
+      viewer.scene.requestRender();
     }
+    emitCameraMode();
     return true;
   }
 

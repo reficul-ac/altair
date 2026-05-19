@@ -6,6 +6,7 @@ WebEngineView {
     objectName: "terrain3DWebView"
 
     signal captureFinished(bool ok, string error)
+    signal cameraModeChanged(string mode)
 
     function pushSnapshot() {
         var payload = JSON.stringify(cesiumBridge.snapshot())
@@ -46,6 +47,18 @@ WebEngineView {
     }
 
     onJavaScriptConsoleMessage: function(level, message, lineNumber, sourceID) {
+        var modePrefix = "ANIMUS_CAMERA_MODE "
+        if (message.indexOf(modePrefix) === 0) {
+            try {
+                var camera = JSON.parse(message.substring(modePrefix.length))
+                if (camera.mode)
+                    webView.cameraModeChanged(String(camera.mode))
+            } catch (error) {
+                cesiumBridge.setSceneStatus("camera-mode-error", String(error))
+            }
+            return
+        }
+
         var prefix = "ANIMUS_SCENE_STATUS "
         if (message.indexOf(prefix) !== 0)
             return

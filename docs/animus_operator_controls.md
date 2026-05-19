@@ -71,6 +71,11 @@ Flight View parity is future Qt Animus work. The current shell focuses on teleme
 - Terrain 3D renders the selected vehicle as a bundled generic fixed-wing glTF
   model with altitude-aware breadcrumb history and chase, orbit, and free camera
   modes.
+- Terrain 3D camera controls are mode-aware: left-drag pans and immediately
+  unlocks Chase or Orbit into Free, middle-drag rotates, Space+left-drag
+  rotates, and the mouse wheel zooms. Rotation and zoom keep the current
+  Chase/Orbit vehicle lock; explicitly clicking Chase or Orbit resets that
+  vehicle-relative camera offset, while Free keeps the current manual pose.
 - Vehicle markers are triangular and point along velocity, with heading as a low-speed fallback. Home/origin markers use an X shape so they are visually distinct from vehicles.
 
 Animus expects licensed QGC-style providers and operator-managed offline tile

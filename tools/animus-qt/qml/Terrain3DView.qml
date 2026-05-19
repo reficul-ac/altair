@@ -124,6 +124,10 @@ Item {
             root.lastCaptureError = error
             root.captureFinished(ok, error)
         }
+        function onCameraModeChanged(mode) {
+            if (mode === "chase" || mode === "orbit" || mode === "free")
+                root.cameraMode = mode
+        }
     }
 
     Label {

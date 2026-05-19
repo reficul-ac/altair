@@ -507,6 +507,9 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(scriptText.contains(QStringLiteral("window.animusApplySnapshot")));
         QVERIFY(scriptText.contains(QStringLiteral("window.animusCaptureCesiumPng")));
         QVERIFY(scriptText.contains(QStringLiteral("window.animusSetCameraMode")));
+        QVERIFY(scriptText.contains(QStringLiteral("ANIMUS_CAMERA_MODE")));
+        QVERIFY(scriptText.contains(QStringLiteral("installCameraControls")));
+        QVERIFY(scriptText.contains(QStringLiteral("screenSpaceCameraController")));
         QVERIFY(scriptText.contains(QStringLiteral("CustomHeightmapTerrainProvider")));
         QVERIFY(scriptText.contains(QStringLiteral("UrlTemplateImageryProvider")));
         QVERIFY(scriptText.contains(QStringLiteral("aircraftModelUrl")));
