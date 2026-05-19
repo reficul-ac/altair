@@ -1,5 +1,6 @@
 #include "maps/CesiumBridge.h"
 
+#include "models/VehicleModelProfileManager.h"
 #include "models/VehicleModel.h"
 #include "telemetry/BreadcrumbPathModel.h"
 
@@ -10,24 +11,54 @@
 
 namespace animus
 {
+namespace
+{
+
+constexpr double kVerificationDeflectionDeg = 12.0;
+
+} // namespace
 
 CesiumBridge::CesiumBridge(VehicleModel *vehicle, BreadcrumbPathModel *trail, QObject *parent)
-    : QObject(parent), m_vehicle(vehicle), m_trail(trail),
+    : CesiumBridge(vehicle, trail, nullptr, parent)
+{
+}
+
+CesiumBridge::CesiumBridge(VehicleModel *vehicle,
+                           BreadcrumbPathModel *trail,
+                           VehicleModelProfileManager *profileManager,
+                           QObject *parent)
+    : QObject(parent), m_vehicle(vehicle), m_trail(trail), m_profileManager(profileManager),
       m_terrainCachePath(QDir(QStringLiteral(ANIMUS_REPO_ROOT))
                              .filePath(QStringLiteral("map_cache/terrain/quantized-mesh"))),
       m_sceneStatus({{QStringLiteral("status"), QStringLiteral("initializing")},
                      {QStringLiteral("error"), QString()}})
 {
     setObjectName(QStringLiteral("cesiumBridge"));
+    if (!m_profileManager)
+    {
+        m_ownedProfileManager.reset(new VehicleModelProfileManager(this));
+        m_profileManager = m_ownedProfileManager.data();
+    }
+    m_profileManager->setVehicleModel(vehicle);
+
     connect(vehicle, &VehicleModel::positionChanged, this, &CesiumBridge::publishVehicle);
     connect(vehicle, &VehicleModel::attitudeChanged, this, &CesiumBridge::publishVehicle);
     connect(vehicle, &VehicleModel::velocityChanged, this, &CesiumBridge::publishVehicle);
     connect(vehicle, &VehicleModel::vehicleChanged, this, &CesiumBridge::publishVehicle);
+    connect(vehicle, &VehicleModel::actuatorChanged, this, &CesiumBridge::publishVehicle);
     connect(vehicle, &VehicleModel::homeChanged, this, &CesiumBridge::publishHome);
     connect(vehicle, &VehicleModel::terrainChanged, this, &CesiumBridge::publishTerrain);
     connect(trail, &BreadcrumbPathModel::rowsInserted, this, &CesiumBridge::publishTrail);
     connect(trail, &BreadcrumbPathModel::rowsRemoved, this, &CesiumBridge::publishTrail);
     connect(trail, &BreadcrumbPathModel::modelReset, this, &CesiumBridge::publishTrail);
+    connect(m_profileManager,
+            &VehicleModelProfileManager::selectedProfileChanged,
+            this,
+            &CesiumBridge::publishVehicle);
+    connect(m_profileManager,
+            &VehicleModelProfileManager::surfacesChanged,
+            this,
+            &CesiumBridge::publishVehicle);
 
     publishVehicle();
     publishHome();
@@ -72,7 +103,36 @@ QVariantMap CesiumBridge::snapshot() const
             {QStringLiteral("trail"), m_latestTrail},
             {QStringLiteral("terrain"), m_terrainStatus},
             {QStringLiteral("scene"), m_sceneStatus},
+            {QStringLiteral("model"), m_profileManager->selectedModelMap()},
+            {QStringLiteral("controlSurfaces"), m_profileManager->mappedControlSurfaces()},
             {QStringLiteral("config"), configMap()}};
+}
+
+QVariantMap CesiumBridge::controlSurfaceVerificationSnapshot() const
+{
+    QVariantMap verification = snapshot();
+    const VehicleModelProfileManager::ModelProfile &profile =
+        m_profileManager->selectedModelProfile();
+    QVariantList surfaces;
+    surfaces.reserve(profile.surfaces.size());
+    for (const VehicleModelProfileManager::SurfaceProfile &surface : profile.surfaces)
+    {
+        double deflectionDeg = kVerificationDeflectionDeg;
+        if (surface.id == QStringLiteral("elevator"))
+            deflectionDeg = 10.0;
+        else if (surface.id == QStringLiteral("rudder"))
+            deflectionDeg = 14.0;
+        deflectionDeg *= m_profileManager->surfacePolarity(surface.id);
+        surfaces.push_back(QVariantMap{{QStringLiteral("id"), surface.id},
+                                       {QStringLiteral("label"), surface.label},
+                                       {QStringLiteral("node"), surface.node},
+                                       {QStringLiteral("axis"), surface.axis},
+                                       {QStringLiteral("actuatorChannel"), surface.actuatorChannel},
+                                       {QStringLiteral("deflectionDeg"), deflectionDeg},
+                                       {QStringLiteral("valid"), true}});
+    }
+    verification[QStringLiteral("controlSurfaces")] = surfaces;
+    return verification;
 }
 
 void CesiumBridge::setSceneStatus(const QString &status, const QString &error)

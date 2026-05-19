@@ -3,25 +3,31 @@
 #include "maps/OfflineMapManager.h"
 #include "maps/qgc/AnimusMapCacheManager.h"
 #include "models/VehicleModel.h"
+#include "models/VehicleModelProfileManager.h"
 #include "telemetry/BreadcrumbPathModel.h"
+#include "telemetry/MavlinkDecoder.h"
 #include "telemetry/TelemetryService.h"
 
 #include <QFile>
 #include <QDir>
 #include <QGuiApplication>
 #include <QFileInfo>
+#include <QHash>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
 #include <QHostAddress>
+#include <QSettings>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QUrl>
 #include <QtTest/QtTest>
 
+#include <array>
 #include <memory>
 
 namespace
@@ -70,6 +76,75 @@ int countOccurrences(const QString &text, const QString &needle)
         offset += needle.size();
     }
     return count;
+}
+
+quint16 crcAccumulate(unsigned char data, quint16 crc)
+{
+    unsigned char tmp = data ^ static_cast<unsigned char>(crc & 0xffU);
+    tmp ^= static_cast<unsigned char>(tmp << 4U);
+    return static_cast<quint16>((crc >> 8U) ^ (static_cast<quint16>(tmp) << 8U) ^
+                                (static_cast<quint16>(tmp) << 3U) ^
+                                (static_cast<quint16>(tmp) >> 4U));
+}
+
+void appendLe16(QByteArray *bytes, quint16 value)
+{
+    bytes->append(static_cast<char>(value & 0xffU));
+    bytes->append(static_cast<char>((value >> 8U) & 0xffU));
+}
+
+void writeLe16(QByteArray *bytes, int offset, quint16 value)
+{
+    (*bytes)[offset] = static_cast<char>(value & 0xffU);
+    (*bytes)[offset + 1] = static_cast<char>((value >> 8U) & 0xffU);
+}
+
+QByteArray mavlinkV1Frame(quint8 msgId,
+                          const QByteArray &payload,
+                          quint8 crcExtra,
+                          quint8 systemId = 1,
+                          quint8 componentId = 1)
+{
+    QByteArray frame;
+    frame.append(static_cast<char>(0xfeU));
+    frame.append(static_cast<char>(payload.size()));
+    frame.append(static_cast<char>(1U));
+    frame.append(static_cast<char>(systemId));
+    frame.append(static_cast<char>(componentId));
+    frame.append(static_cast<char>(msgId));
+    frame.append(payload);
+
+    quint16 checksum = 0xffffU;
+    for (int index = 1; index < frame.size(); ++index)
+        checksum = crcAccumulate(static_cast<unsigned char>(frame.at(index)), checksum);
+    checksum = crcAccumulate(crcExtra, checksum);
+    appendLe16(&frame, checksum);
+    return frame;
+}
+
+QByteArray servoOutputRawFrame(const std::array<quint16, 8> &servoPwm)
+{
+    QByteArray payload(21, '\0');
+    for (int index = 0; index < static_cast<int>(servoPwm.size()); ++index)
+        writeLe16(&payload, 4 + index * 2, servoPwm[static_cast<std::size_t>(index)]);
+    payload[20] = 0;
+    return mavlinkV1Frame(36, payload, 222);
+}
+
+QVariantMap surfaceById(const QVariantList &surfaces, const QString &id)
+{
+    for (const QVariant &surfaceValue : surfaces)
+    {
+        const QVariantMap surface = surfaceValue.toMap();
+        if (surface.value(QStringLiteral("id")).toString() == id)
+            return surface;
+    }
+    return {};
+}
+
+QString bundledModelProfilesDir()
+{
+    return QDir(QStringLiteral(ANIMUS_QT_QML_DIR)).filePath(QStringLiteral("../web/cesium/models"));
 }
 
 class TileHttpServer final : public QTcpServer
@@ -335,6 +410,54 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(map->property("following").toBool(), true);
     }
 
+    void mavlinkDecoderParsesServoOutputRaw()
+    {
+        const QByteArray frame =
+            servoOutputRawFrame({1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800});
+
+        animus::MavlinkDecoder decoder;
+        const QVector<animus::MavlinkTelemetrySample> samples = decoder.decodeDatagram(frame);
+
+        QCOMPARE(samples.size(), 1);
+        const animus::MavlinkTelemetrySample sample = samples.constFirst();
+        QCOMPARE(sample.systemId, 1);
+        QCOMPARE(sample.componentId, 1);
+        QCOMPARE(sample.hasServoOutputRaw, true);
+        for (int index = 0; index < 8; ++index)
+        {
+            QCOMPARE(sample.servoOutputValid[index], true);
+            QCOMPARE(sample.servoOutputPwm[index], 1100 + index * 100);
+        }
+        QCOMPARE(sample.servoOutputValid[8], false);
+
+        QByteArray corrupted = frame;
+        corrupted[corrupted.size() - 1] =
+            static_cast<char>(corrupted.at(corrupted.size() - 1) ^ 0x01);
+        QVERIFY(decoder.decodeDatagram(corrupted).isEmpty());
+    }
+
+    void telemetryServiceAppliesServoOutputRaw()
+    {
+        animus::VehicleModel vehicle;
+        animus::BreadcrumbPathModel breadcrumbs;
+        animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
+        QSignalSpy actuatorSpy(&vehicle, &animus::VehicleModel::actuatorChanged);
+
+        QVERIFY(telemetry.ingestDatagram(servoOutputRawFrame({0, 1250, 1500, 1750, 0, 0, 0, 0})));
+        QVERIFY(
+            QMetaObject::invokeMethod(&telemetry, "publishPendingSample", Qt::DirectConnection));
+
+        QCOMPARE(vehicle.servoOutputValid(1), false);
+        QCOMPARE(vehicle.servoOutputPwm(1), 0);
+        QCOMPARE(vehicle.servoOutputValid(2), true);
+        QCOMPARE(vehicle.servoOutputPwm(2), 1250);
+        QCOMPARE(vehicle.servoOutputValid(3), true);
+        QCOMPARE(vehicle.servoOutputPwm(3), 1500);
+        QCOMPARE(vehicle.servoOutputValid(4), true);
+        QCOMPARE(vehicle.servoOutputPwm(4), 1750);
+        QVERIFY(actuatorSpy.count() >= 3);
+    }
+
     void cesiumBridgeSnapshotExportsVehicleTerrainHomeAndTrail()
     {
         QTemporaryDir root;
@@ -404,6 +527,181 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(!terrain.value(QStringLiteral("fixture")).toMap().isEmpty());
         QCOMPARE(terrain.value(QStringLiteral("loaded")).toInt(), 4);
         QCOMPARE(terrain.value(QStringLiteral("pending")).toInt(), 2);
+
+        const QVariantMap model = snapshot.value(QStringLiteral("model")).toMap();
+        QCOMPARE(model.value(QStringLiteral("profile")).toString(),
+                 QStringLiteral("generic_fixed_wing_smooth"));
+        QCOMPARE(model.value(QStringLiteral("asset")).toString(),
+                 QStringLiteral("models/generic_fixed_wing_smooth.glb"));
+
+        const QVariantList controlSurfaces =
+            snapshot.value(QStringLiteral("controlSurfaces")).toList();
+        QCOMPARE(controlSurfaces.size(), 4);
+        const QStringList expectedNodes{QStringLiteral("aileron_left_pivot"),
+                                        QStringLiteral("aileron_right_pivot"),
+                                        QStringLiteral("elevator_pivot"),
+                                        QStringLiteral("rudder_pivot")};
+        for (const QVariant &surfaceValue : controlSurfaces)
+        {
+            const QVariantMap surface = surfaceValue.toMap();
+            QVERIFY(!surface.value(QStringLiteral("id")).toString().isEmpty());
+            QVERIFY(expectedNodes.contains(surface.value(QStringLiteral("node")).toString()));
+            QCOMPARE(surface.value(QStringLiteral("deflectionDeg")).toDouble(), 0.0);
+            QCOMPARE(surface.value(QStringLiteral("valid")).toBool(), false);
+        }
+    }
+
+    void cesiumBridgeMapsServoOutputsToControlSurfaceDeflections()
+    {
+        animus::VehicleModel vehicle;
+        animus::BreadcrumbPathModel trail;
+        animus::CesiumBridge bridge(&vehicle, &trail);
+        QSignalSpy publishSpy(&bridge, &animus::CesiumBridge::latestVehicleChanged);
+
+        QVariantList controlSurfaces =
+            bridge.snapshot().value(QStringLiteral("controlSurfaces")).toList();
+        const QVariantMap neutralLeft =
+            surfaceById(controlSurfaces, QStringLiteral("left_aileron"));
+        QCOMPARE(neutralLeft.value(QStringLiteral("valid")).toBool(), false);
+        QCOMPARE(neutralLeft.value(QStringLiteral("deflectionDeg")).toDouble(), 0.0);
+
+        vehicle.setServoOutputPwm(1, 1750, true);
+        vehicle.setServoOutputPwm(2, 1750, true);
+        vehicle.setServoOutputPwm(3, 1250, true);
+        vehicle.setServoOutputPwm(4, 2000, true);
+        QVERIFY(publishSpy.count() >= 4);
+
+        controlSurfaces = bridge.snapshot().value(QStringLiteral("controlSurfaces")).toList();
+        const QVariantMap left = surfaceById(controlSurfaces, QStringLiteral("left_aileron"));
+        const QVariantMap right = surfaceById(controlSurfaces, QStringLiteral("right_aileron"));
+        const QVariantMap elevator = surfaceById(controlSurfaces, QStringLiteral("elevator"));
+        const QVariantMap rudder = surfaceById(controlSurfaces, QStringLiteral("rudder"));
+
+        QCOMPARE(left.value(QStringLiteral("valid")).toBool(), true);
+        QCOMPARE(right.value(QStringLiteral("valid")).toBool(), true);
+        QCOMPARE(elevator.value(QStringLiteral("valid")).toBool(), true);
+        QCOMPARE(rudder.value(QStringLiteral("valid")).toBool(), true);
+        QCOMPARE(left.value(QStringLiteral("deflectionDeg")).toDouble(), 12.5);
+        QCOMPARE(right.value(QStringLiteral("deflectionDeg")).toDouble(), -12.5);
+        QCOMPARE(elevator.value(QStringLiteral("deflectionDeg")).toDouble(), -15.0);
+        QCOMPARE(rudder.value(QStringLiteral("deflectionDeg")).toDouble(), 28.0);
+
+        vehicle.setServoOutputPwm(1, 2500, true);
+        controlSurfaces = bridge.snapshot().value(QStringLiteral("controlSurfaces")).toList();
+        const QVariantMap clampedLeft =
+            surfaceById(controlSurfaces, QStringLiteral("left_aileron"));
+        QCOMPARE(clampedLeft.value(QStringLiteral("deflectionDeg")).toDouble(), 25.0);
+    }
+
+    void vehicleModelProfileManagerLoadsBundledDefault()
+    {
+        animus::VehicleModel vehicle;
+        animus::VehicleModelProfileManager manager(bundledModelProfilesDir(), nullptr, &vehicle);
+
+        QCOMPARE(manager.selectedProfileId(), QStringLiteral("generic_fixed_wing_smooth"));
+        QCOMPARE(manager.profiles().size(), 1);
+        const QVariantMap selected = manager.selectedProfile();
+        QCOMPARE(selected.value(QStringLiteral("asset")).toString(),
+                 QStringLiteral("models/generic_fixed_wing_smooth.glb"));
+
+        const QVariantList surfaces = manager.surfaces();
+        QCOMPARE(surfaces.size(), 4);
+        const QVariantMap right = surfaceById(surfaces, QStringLiteral("right_aileron"));
+        QCOMPARE(right.value(QStringLiteral("label")).toString(), QStringLiteral("Right aileron"));
+        QCOMPARE(right.value(QStringLiteral("actuatorChannel")).toInt(), 2);
+        QCOMPARE(right.value(QStringLiteral("node")).toString(),
+                 QStringLiteral("aileron_right_pivot"));
+        QCOMPARE(right.value(QStringLiteral("profilePolarity")).toDouble(), -1.0);
+        QCOMPARE(right.value(QStringLiteral("polarity")).toDouble(), -1.0);
+    }
+
+    void vehicleModelProfileManagerReversesAndResetsSurfacePolarity()
+    {
+        animus::VehicleModel vehicle;
+        animus::VehicleModelProfileManager manager(bundledModelProfilesDir(), nullptr, &vehicle);
+
+        QCOMPARE(manager.mappedDeflectionDeg(QStringLiteral("left_aileron"), 1750), 12.5);
+        manager.reverseSurfacePolarity(QStringLiteral("left_aileron"));
+        QCOMPARE(manager.surfacePolarity(QStringLiteral("left_aileron")), -1.0);
+        QCOMPARE(manager.mappedDeflectionDeg(QStringLiteral("left_aileron"), 1750), -12.5);
+
+        QVariantMap left = surfaceById(manager.surfaces(), QStringLiteral("left_aileron"));
+        QCOMPARE(left.value(QStringLiteral("polarityReversed")).toBool(), true);
+        manager.resetSurfacePolarity(QStringLiteral("left_aileron"));
+        QCOMPARE(manager.surfacePolarity(QStringLiteral("left_aileron")), 1.0);
+        QCOMPARE(manager.mappedDeflectionDeg(QStringLiteral("left_aileron"), 1750), 12.5);
+    }
+
+    void vehicleModelProfileManagerSettingsRoundTrip()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QDir sourceDir(bundledModelProfilesDir());
+        const QString profilesDir = root.filePath(QStringLiteral("profiles"));
+        QVERIFY(QDir().mkpath(profilesDir));
+        QVERIFY(QFile::copy(
+            sourceDir.filePath(QStringLiteral("generic_fixed_wing_smooth.json")),
+            QDir(profilesDir).filePath(QStringLiteral("generic_fixed_wing_smooth.json"))));
+
+        QFile genericFile(
+            QDir(profilesDir).filePath(QStringLiteral("generic_fixed_wing_smooth.json")));
+        QVERIFY(genericFile.open(QIODevice::ReadOnly));
+        QJsonDocument variant = QJsonDocument::fromJson(genericFile.readAll());
+        genericFile.close();
+        QJsonObject variantObject = variant.object();
+        variantObject[QStringLiteral("id")] = QStringLiteral("test_variant");
+        variantObject[QStringLiteral("name")] = QStringLiteral("Test Variant");
+        variantObject[QStringLiteral("asset")] = QStringLiteral("models/test_variant.glb");
+        QFile variantFile(QDir(profilesDir).filePath(QStringLiteral("test_variant.json")));
+        QVERIFY(variantFile.open(QIODevice::WriteOnly));
+        QVERIFY(variantFile.write(QJsonDocument(variantObject).toJson()) > 0);
+        variantFile.close();
+
+        const QString settingsPath = root.filePath(QStringLiteral("animus.ini"));
+        {
+            QSettings settings(settingsPath, QSettings::IniFormat);
+            animus::VehicleModelProfileManager manager(profilesDir, &settings, nullptr);
+            QCOMPARE(manager.profiles().size(), 2);
+            manager.setSelectedProfileId(QStringLiteral("test_variant"));
+            manager.reverseSurfacePolarity(QStringLiteral("left_aileron"));
+            settings.sync();
+        }
+
+        QSettings settings(settingsPath, QSettings::IniFormat);
+        animus::VehicleModelProfileManager restored(profilesDir, &settings, nullptr);
+        QCOMPARE(restored.selectedProfileId(), QStringLiteral("test_variant"));
+        QCOMPARE(restored.surfacePolarity(QStringLiteral("left_aileron")), -1.0);
+        restored.resetAllSurfacePolarity();
+        QCOMPARE(restored.surfacePolarity(QStringLiteral("left_aileron")), 1.0);
+    }
+
+    void cesiumBridgeReflectsProfileManagerPolarityOverrides()
+    {
+        animus::VehicleModel vehicle;
+        vehicle.setServoOutputPwm(1, 1750, true);
+        animus::BreadcrumbPathModel trail;
+        animus::VehicleModelProfileManager profiles(bundledModelProfilesDir(), nullptr, &vehicle);
+        animus::CesiumBridge bridge(&vehicle, &trail, &profiles);
+
+        QVariantList surfaces = bridge.snapshot().value(QStringLiteral("controlSurfaces")).toList();
+        QCOMPARE(surfaceById(surfaces, QStringLiteral("left_aileron"))
+                     .value(QStringLiteral("deflectionDeg"))
+                     .toDouble(),
+                 12.5);
+
+        profiles.reverseSurfacePolarity(QStringLiteral("left_aileron"));
+        surfaces = bridge.snapshot().value(QStringLiteral("controlSurfaces")).toList();
+        QCOMPARE(surfaceById(surfaces, QStringLiteral("left_aileron"))
+                     .value(QStringLiteral("deflectionDeg"))
+                     .toDouble(),
+                 -12.5);
+        const QVariantList verification = bridge.controlSurfaceVerificationSnapshot()
+                                              .value(QStringLiteral("controlSurfaces"))
+                                              .toList();
+        QCOMPARE(surfaceById(verification, QStringLiteral("left_aileron"))
+                     .value(QStringLiteral("deflectionDeg"))
+                     .toDouble(),
+                 -12.0);
     }
 
     void cesiumBridgeRequiresQuantizedMeshLayerJson()
@@ -502,6 +800,97 @@ class AnimusQtMapModelTests final : public QObject
                  "Cesium Apache-2.0 license must be bundled");
     }
 
+    void genericFixedWingModelProfileParses()
+    {
+        const QDir cesiumDir(
+            QDir(QStringLiteral(ANIMUS_QT_QML_DIR)).filePath(QStringLiteral("../web/cesium")));
+        QFile profileFile(
+            cesiumDir.filePath(QStringLiteral("models/generic_fixed_wing_smooth.json")));
+        QVERIFY(profileFile.open(QIODevice::ReadOnly));
+        const QJsonDocument document = QJsonDocument::fromJson(profileFile.readAll());
+        QVERIFY(document.isObject());
+        const QJsonObject profile = document.object();
+        QCOMPARE(profile.value(QStringLiteral("id")).toString(),
+                 QStringLiteral("generic_fixed_wing_smooth"));
+        QCOMPARE(profile.value(QStringLiteral("asset")).toString(),
+                 QStringLiteral("models/generic_fixed_wing_smooth.glb"));
+        QCOMPARE(profile.value(QStringLiteral("scale")).toDouble(), 1.0);
+
+        const QJsonArray surfaces = profile.value(QStringLiteral("surfaces")).toArray();
+        QVERIFY(surfaces.size() >= 4);
+        QStringList nodes;
+        for (const QJsonValue &surfaceValue : surfaces)
+        {
+            const QJsonObject surface = surfaceValue.toObject();
+            nodes.push_back(surface.value(QStringLiteral("node")).toString());
+            QVERIFY(surface.value(QStringLiteral("axis")).isArray());
+            QVERIFY(surface.value(QStringLiteral("pwm")).isObject());
+            QVERIFY(surface.value(QStringLiteral("deflectionDeg")).isObject());
+            QVERIFY(surface.value(QStringLiteral("actuatorChannel")).isDouble());
+        }
+        QVERIFY(nodes.contains(QStringLiteral("aileron_left_pivot")));
+        QVERIFY(nodes.contains(QStringLiteral("aileron_right_pivot")));
+        QVERIFY(nodes.contains(QStringLiteral("elevator_pivot")));
+        QVERIFY(nodes.contains(QStringLiteral("rudder_pivot")));
+    }
+
+    void genericFixedWingGlbContainsPivotHierarchy()
+    {
+        const QDir cesiumDir(
+            QDir(QStringLiteral(ANIMUS_QT_QML_DIR)).filePath(QStringLiteral("../web/cesium")));
+        QFile glbFile(cesiumDir.filePath(QStringLiteral("models/generic_fixed_wing_smooth.glb")));
+        QVERIFY2(glbFile.open(QIODevice::ReadOnly),
+                 "generic_fixed_wing_smooth.glb must be bundled for Terrain 3D");
+        const QByteArray glb = glbFile.readAll();
+        QVERIFY(glb.size() > 20);
+
+        auto readLe32 = [&glb](int offset) -> quint32
+        {
+            const auto byte = reinterpret_cast<const uchar *>(glb.constData() + offset);
+            return static_cast<quint32>(byte[0]) | (static_cast<quint32>(byte[1]) << 8) |
+                   (static_cast<quint32>(byte[2]) << 16) | (static_cast<quint32>(byte[3]) << 24);
+        };
+        QCOMPARE(readLe32(0), 0x46546C67u);
+        QCOMPARE(readLe32(4), 2u);
+        QCOMPARE(readLe32(8), static_cast<quint32>(glb.size()));
+        const quint32 jsonLength = readLe32(12);
+        QCOMPARE(readLe32(16), 0x4E4F534Au);
+        QVERIFY(20 + static_cast<int>(jsonLength) <= glb.size());
+
+        const QJsonDocument document =
+            QJsonDocument::fromJson(glb.mid(20, static_cast<int>(jsonLength)).trimmed());
+        QVERIFY(document.isObject());
+        const QJsonObject gltf = document.object();
+        QCOMPARE(gltf.value(QStringLiteral("asset"))
+                     .toObject()
+                     .value(QStringLiteral("version"))
+                     .toString(),
+                 QStringLiteral("2.0"));
+
+        const QJsonArray nodes = gltf.value(QStringLiteral("nodes")).toArray();
+        QHash<QString, QJsonObject> nodesByName;
+        for (const QJsonValue &nodeValue : nodes)
+        {
+            const QJsonObject node = nodeValue.toObject();
+            nodesByName.insert(node.value(QStringLiteral("name")).toString(), node);
+        }
+
+        const QStringList requiredPivots{QStringLiteral("aileron_left_pivot"),
+                                         QStringLiteral("aileron_right_pivot"),
+                                         QStringLiteral("elevator_pivot"),
+                                         QStringLiteral("rudder_pivot")};
+        for (const QString &pivotName : requiredPivots)
+        {
+            QVERIFY2(nodesByName.contains(pivotName), qPrintable(pivotName));
+            const QJsonObject pivot = nodesByName.value(pivotName);
+            const QJsonArray children = pivot.value(QStringLiteral("children")).toArray();
+            QVERIFY2(!children.isEmpty(), qPrintable(pivotName));
+            const int childIndex = children.at(0).toInt(-1);
+            QVERIFY(childIndex >= 0 && childIndex < nodes.size());
+            QVERIFY(nodes.at(childIndex).toObject().value(QStringLiteral("mesh")).isDouble());
+        }
+    }
+
     void terrain3dStaticBundleUsesCesiumOnly()
     {
         const QDir cesiumDir(
@@ -512,12 +901,14 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(!htmlText.contains(QStringLiteral("domScene")));
         QVERIFY(!htmlText.contains(QStringLiteral("domVehicle")));
         QVERIFY(!htmlText.contains(QStringLiteral("domTrail")));
+        QVERIFY(htmlText.contains(QStringLiteral("vehicleModel.js")));
 
         QFile script(cesiumDir.filePath(QStringLiteral("animus-cesium.js")));
         QVERIFY(script.open(QIODevice::ReadOnly));
         const QString scriptText = QString::fromUtf8(script.readAll());
         QVERIFY(scriptText.contains(QStringLiteral("window.animusApplySnapshot")));
         QVERIFY(scriptText.contains(QStringLiteral("window.animusCaptureCesiumPng")));
+        QVERIFY(scriptText.contains(QStringLiteral("window.animusInspectControlSurfaces")));
         QVERIFY(scriptText.contains(QStringLiteral("window.animusSetCameraMode")));
         QVERIFY(scriptText.contains(QStringLiteral("ANIMUS_CAMERA_MODE")));
         QVERIFY(scriptText.contains(QStringLiteral("installCameraControls")));
@@ -525,13 +916,52 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(scriptText.contains(QStringLiteral("CustomHeightmapTerrainProvider")));
         QVERIFY(scriptText.contains(QStringLiteral("UrlTemplateImageryProvider")));
         QVERIFY(scriptText.contains(QStringLiteral("aircraftModelUrl")));
+        QVERIFY(scriptText.contains(QStringLiteral("VehicleModelController")));
+        QVERIFY(scriptText.contains(QStringLiteral("applyControlSurfaces")));
+        QVERIFY(scriptText.contains(QStringLiteral("models/${profile}.json")));
+        QVERIFY(scriptText.contains(QStringLiteral("Cesium.Model.fromGltfAsync")));
+        QVERIFY(scriptText.contains(QStringLiteral("vehicleModelProfile.asset")));
+        QVERIFY(scriptText.contains(QStringLiteral("fallbackUri")));
         QVERIFY(scriptText.contains(QStringLiteral("Cesium.HeadingPitchRange")));
+
+        QFile vehicleModelScript(cesiumDir.filePath(QStringLiteral("vehicleModel.js")));
+        QVERIFY(vehicleModelScript.open(QIODevice::ReadOnly));
+        const QString vehicleModelText = QString::fromUtf8(vehicleModelScript.readAll());
+        QVERIFY(vehicleModelText.contains(QStringLiteral("class VehicleModelController")));
+        QVERIFY(vehicleModelText.contains(QStringLiteral("applyControlSurfaces")));
+        QVERIFY(vehicleModelText.contains(QStringLiteral("inspectControlSurfaces")));
+        QVERIFY(vehicleModelText.contains(QStringLiteral("matrixChanged")));
+        QVERIFY(vehicleModelText.contains(QStringLiteral("getNode")));
+        QVERIFY(vehicleModelText.contains(QStringLiteral("originalMatrix")));
+        QVERIFY(vehicleModelText.contains(QStringLiteral("nodeState.node.matrix")));
 
         QVERIFY(QFileInfo::exists(cesiumDir.filePath(QStringLiteral("fixture/tiles/0/0/0.png"))));
         QVERIFY(QFileInfo::exists(cesiumDir.filePath(QStringLiteral("fixture/tiles/1/1/1.png"))));
         QVERIFY(QFileInfo::exists(cesiumDir.filePath(QStringLiteral("fixture/tiles/2/3/3.png"))));
         QVERIFY(QFileInfo::exists(
             cesiumDir.filePath(QStringLiteral("fixture/aircraft/generic-fixed-wing.gltf"))));
+        QVERIFY(QFileInfo::exists(
+            cesiumDir.filePath(QStringLiteral("models/generic_fixed_wing_smooth.json"))));
+        QVERIFY(QFileInfo::exists(
+            cesiumDir.filePath(QStringLiteral("models/generic_fixed_wing_smooth.glb"))));
+    }
+
+    void setupViewExposesModelProfilePolarityControls()
+    {
+        QFile qml(QStringLiteral(ANIMUS_QT_QML_DIR) + QStringLiteral("/SetupView.qml"));
+        QVERIFY(qml.open(QIODevice::ReadOnly));
+        const QString qmlText = QString::fromUtf8(qml.readAll());
+
+        QVERIFY(qmlText.contains(QStringLiteral("Terrain 3D Vehicle Model")));
+        QVERIFY(qmlText.contains(QStringLiteral("vehicleModelProfiles.profiles")));
+        QVERIFY(qmlText.contains(QStringLiteral("selectedProfileId")));
+        QVERIFY(qmlText.contains(QStringLiteral("selectedProfile.asset")));
+        QVERIFY(qmlText.contains(QStringLiteral("vehicleModelProfiles.surfaces")));
+        QVERIFY(qmlText.contains(QStringLiteral("actuatorChannel")));
+        QVERIFY(qmlText.contains(QStringLiteral("deflectionDeg")));
+        QVERIFY(qmlText.contains(QStringLiteral("reverseSurfacePolarity")));
+        QVERIFY(qmlText.contains(QStringLiteral("resetSurfacePolarity")));
+        QVERIFY(qmlText.contains(QStringLiteral("resetAllSurfacePolarity")));
     }
 
     void terrain3dCameraInputKeepsRotateSeparateFromPan()

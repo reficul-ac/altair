@@ -1,0 +1,76 @@
+# Animus 3D Vehicle Models
+
+Animus Terrain 3D uses GLB/glTF as the runtime aircraft model format. OBJ is
+acceptable as an authoring, import, or export intermediate, but runtime loading,
+resource packaging, profile metadata, and renderer node lookup should target
+GLB/glTF.
+
+The vehicle mesh is geometry-only at runtime. Flight semantics live in the
+vehicle/profile configuration and C++ snapshot path, not in Cesium JavaScript.
+The renderer may look up named glTF nodes and apply rotations, but it must not
+infer actuator channels, polarity, or limits from node names.
+
+## GLB Hierarchy
+
+Each movable control surface needs its own pivot node. The mesh for that
+surface should be a child of the pivot node, with the pivot node's local origin
+placed on the hinge line. Rotating a mesh around an arbitrary parent or the
+aircraft root will produce incorrect motion because ailerons, elevators, and
+rudders do not share a common origin or axis.
+
+The first generic fixed-wing profile expects these node names:
+
+- `aileron_left_pivot`
+- `aileron_right_pivot`
+- `elevator_pivot`
+- `rudder_pivot`
+
+Each profile surface records the hinge origin and local rotation axis. The
+hinge origin documents the intended pivot placement for model authors and
+validators. The local axis is the axis that Cesium rotates about after the node
+is resolved. The GLB authoring transform must align each pivot node so that the
+profile axis matches the intended physical hinge direction.
+
+## Profile Semantics
+
+Vehicle model profiles own these semantics:
+
+- Runtime GLB asset path and model scale.
+- Surface IDs and matching glTF pivot node names.
+- Per-surface local rotation axis and documented hinge origin.
+- Actuator channel mapping.
+- PWM minimum, neutral, and maximum values.
+- Deflection limits and neutral deflection.
+- Polarity.
+
+Cesium-side JavaScript only receives a profile and a snapshot. It resolves
+nodes by name, stores each original node matrix, and applies fresh rotated
+matrices from snapshot `deflectionDeg` values. It should fail gracefully when a
+profile, GLB, or node is missing because current fresh-checkout Terrain 3D still
+uses the bundled fixture glTF fallback.
+
+## Snapshot Flow
+
+MAVLink decoding and vehicle policy stay in Qt/C++:
+
+1. Telemetry decode updates C++ vehicle state.
+2. A vehicle/profile resolver maps actuator state into named control-surface
+   deflections using the selected profile's channel mapping, limits, and
+   polarity.
+3. `CesiumBridge::snapshot()` publishes model intent and control-surface
+   entries through Qt WebChannel.
+4. `animus-cesium.js` preserves `model` and `controlSurfaces` in browser state.
+5. `VehicleModelController` loads or accepts the profile, resolves named glTF
+   nodes from the Cesium model when available, and applies rotations.
+
+The initial scaffolding publishes the `generic_fixed_wing_smooth` profile and
+neutral invalid surface states. It intentionally does not parse
+`ACTUATOR_OUTPUT_STATUS` or `SERVO_OUTPUT_RAW`.
+
+## Setup Workflow
+
+A future Setup tab should expose profile selection, mapping validation, and
+polarity reversal. Operators need to confirm that a visual surface moves in the
+same direction as the real vehicle before relying on Terrain 3D diagnostics.
+That UI should update vehicle/profile-owned configuration; it should not embed
+ArduPilot, PX4, or Altair-specific channel assumptions in the renderer.

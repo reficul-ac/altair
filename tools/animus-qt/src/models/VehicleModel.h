@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include <QObject>
 #include <QString>
 
@@ -59,6 +61,8 @@ class VehicleModel final : public QObject
     Q_PROPERTY(bool terrainValid READ terrainValid WRITE setTerrainValid NOTIFY terrainChanged)
 
   public:
+    static constexpr int MaxServoOutputs = 16;
+
     explicit VehicleModel(QObject *parent = nullptr);
 
     QString vehicleId() const;
@@ -181,6 +185,10 @@ class VehicleModel final : public QObject
     bool terrainValid() const;
     void setTerrainValid(bool terrainValid);
 
+    int servoOutputPwm(int channel) const;
+    bool servoOutputValid(int channel) const;
+    void setServoOutputPwm(int channel, int pwm, bool valid);
+
   signals:
     void vehicleChanged();
     void positionChanged();
@@ -191,6 +199,7 @@ class VehicleModel final : public QObject
     void missionChanged();
     void homeChanged();
     void terrainChanged();
+    void actuatorChanged();
 
   private:
     QString m_vehicleId;
@@ -233,6 +242,8 @@ class VehicleModel final : public QObject
     bool m_missionValid;
     bool m_homeValid;
     bool m_terrainValid;
+    std::array<int, MaxServoOutputs> m_servoOutputPwm;
+    std::array<bool, MaxServoOutputs> m_servoOutputValid;
 };
 
 } // namespace animus

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QScopedPointer>
 #include <QString>
 #include <QVariantList>
 #include <QVariantMap>
@@ -10,6 +11,7 @@ namespace animus
 
 class BreadcrumbPathModel;
 class VehicleModel;
+class VehicleModelProfileManager;
 
 class CesiumBridge final : public QObject
 {
@@ -24,6 +26,10 @@ class CesiumBridge final : public QObject
     explicit CesiumBridge(VehicleModel *vehicle,
                           BreadcrumbPathModel *trail,
                           QObject *parent = nullptr);
+    CesiumBridge(VehicleModel *vehicle,
+                 BreadcrumbPathModel *trail,
+                 VehicleModelProfileManager *profileManager,
+                 QObject *parent = nullptr);
 
     QVariantMap latestVehicle() const;
     QVariantMap terrainStatus() const;
@@ -32,6 +38,7 @@ class CesiumBridge final : public QObject
     void setTerrainCachePath(const QString &terrainCachePath);
 
     Q_INVOKABLE QVariantMap snapshot() const;
+    Q_INVOKABLE QVariantMap controlSurfaceVerificationSnapshot() const;
     Q_INVOKABLE void setSceneStatus(const QString &status, const QString &error = QString());
 
   signals:
@@ -59,6 +66,8 @@ class CesiumBridge final : public QObject
 
     VehicleModel *m_vehicle;
     BreadcrumbPathModel *m_trail;
+    VehicleModelProfileManager *m_profileManager;
+    QScopedPointer<VehicleModelProfileManager> m_ownedProfileManager;
     QVariantMap m_latestVehicle;
     QVariantMap m_latestHome;
     QVariantList m_latestTrail;

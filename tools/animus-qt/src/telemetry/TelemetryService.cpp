@@ -305,6 +305,14 @@ void TelemetryService::applySample(const MavlinkTelemetrySample &sample)
         m_vehicle->setTerrainLoaded(sample.terrainLoaded);
         m_vehicle->setTerrainValid(true);
     }
+    if (sample.hasServoOutputRaw)
+    {
+        for (int index = 0; index < MavlinkTelemetrySample::MaxServoOutputs; ++index)
+        {
+            m_vehicle->setServoOutputPwm(
+                index + 1, sample.servoOutputPwm[index], sample.servoOutputValid[index]);
+        }
+    }
     updateFreshness(elapsedMs());
 }
 
@@ -376,6 +384,17 @@ void TelemetryService::mergePendingSample(const MavlinkTelemetrySample &sample)
         m_pendingSample.terrainCurrentHeightM = sample.terrainCurrentHeightM;
         m_pendingSample.terrainPending = sample.terrainPending;
         m_pendingSample.terrainLoaded = sample.terrainLoaded;
+    }
+    if (sample.hasServoOutputRaw)
+    {
+        m_pendingSample.hasServoOutputRaw = true;
+        for (int index = 0; index < MavlinkTelemetrySample::MaxServoOutputs; ++index)
+        {
+            if (!sample.servoOutputValid[index])
+                continue;
+            m_pendingSample.servoOutputPwm[index] = sample.servoOutputPwm[index];
+            m_pendingSample.servoOutputValid[index] = true;
+        }
     }
 }
 

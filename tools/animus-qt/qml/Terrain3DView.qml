@@ -7,9 +7,12 @@ Item {
 
     property bool lastCaptureOk: false
     property string lastCaptureError: ""
+    property bool lastControlSurfaceInspectionOk: false
+    property string lastControlSurfaceInspectionError: ""
     property string cameraMode: "chase"
 
     signal captureFinished(bool ok, string error)
+    signal controlSurfaceInspectionFinished(bool ok, string error)
 
     function captureCesiumPng(path) {
         if (!webLoader.active || webLoader.status !== Loader.Ready || !webLoader.item) {
@@ -19,6 +22,16 @@ Item {
             return
         }
         webLoader.item.captureCesiumPng(path)
+    }
+
+    function inspectControlSurfaces(path, snapshot) {
+        if (!webLoader.active || webLoader.status !== Loader.Ready || !webLoader.item) {
+            root.lastControlSurfaceInspectionOk = false
+            root.lastControlSurfaceInspectionError = "Terrain WebEngine view is not ready"
+            root.controlSurfaceInspectionFinished(false, "Terrain WebEngine view is not ready")
+            return
+        }
+        webLoader.item.inspectControlSurfaces(path, snapshot)
     }
 
     function setCameraMode(mode) {
@@ -123,6 +136,11 @@ Item {
             root.lastCaptureOk = ok
             root.lastCaptureError = error
             root.captureFinished(ok, error)
+        }
+        function onControlSurfaceInspectionFinished(ok, error) {
+            root.lastControlSurfaceInspectionOk = ok
+            root.lastControlSurfaceInspectionError = error
+            root.controlSurfaceInspectionFinished(ok, error)
         }
         function onCameraModeChanged(mode) {
             if (mode === "chase" || mode === "orbit" || mode === "free")

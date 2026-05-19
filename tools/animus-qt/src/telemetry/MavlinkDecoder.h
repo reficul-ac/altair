@@ -8,6 +8,8 @@ namespace animus
 
 struct MavlinkTelemetrySample
 {
+    static constexpr int MaxServoOutputs = 16;
+
     bool hasHeartbeat = false;
     bool hasAttitude = false;
     bool hasGlobalPosition = false;
@@ -15,6 +17,7 @@ struct MavlinkTelemetrySample
     bool hasMissionCurrent = false;
     bool hasHomePosition = false;
     bool hasTerrainReport = false;
+    bool hasServoOutputRaw = false;
 
     int systemId = 0;
     int componentId = 0;
@@ -52,6 +55,9 @@ struct MavlinkTelemetrySample
     double terrainCurrentHeightM = 0.0;
     int terrainPending = 0;
     int terrainLoaded = 0;
+
+    int servoOutputPwm[MaxServoOutputs] = {};
+    bool servoOutputValid[MaxServoOutputs] = {};
 };
 
 class MavlinkDecoder final

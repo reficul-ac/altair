@@ -16,7 +16,7 @@ VehicleModel::VehicleModel(QObject *parent)
       m_terrainLongitudeDeg(0.0), m_terrainHeightM(0.0), m_terrainCurrentHeightM(0.0),
       m_terrainPending(0), m_terrainLoaded(0), m_heartbeatValid(false), m_attitudeValid(false),
       m_positionValid(false), m_velocityValid(false), m_gpsValid(false), m_missionValid(false),
-      m_homeValid(false), m_terrainValid(false)
+      m_homeValid(false), m_terrainValid(false), m_servoOutputPwm{}, m_servoOutputValid{}
 {
 }
 
@@ -538,6 +538,32 @@ void VehicleModel::setTerrainValid(bool terrainValid)
         return;
     m_terrainValid = terrainValid;
     emit terrainChanged();
+}
+
+int VehicleModel::servoOutputPwm(int channel) const
+{
+    if (channel < 1 || channel > MaxServoOutputs)
+        return 0;
+    return m_servoOutputPwm[static_cast<std::size_t>(channel - 1)];
+}
+
+bool VehicleModel::servoOutputValid(int channel) const
+{
+    if (channel < 1 || channel > MaxServoOutputs)
+        return false;
+    return m_servoOutputValid[static_cast<std::size_t>(channel - 1)];
+}
+
+void VehicleModel::setServoOutputPwm(int channel, int pwm, bool valid)
+{
+    if (channel < 1 || channel > MaxServoOutputs)
+        return;
+    const auto index = static_cast<std::size_t>(channel - 1);
+    if (m_servoOutputPwm[index] == pwm && m_servoOutputValid[index] == valid)
+        return;
+    m_servoOutputPwm[index] = pwm;
+    m_servoOutputValid[index] = valid;
+    emit actuatorChanged();
 }
 
 } // namespace animus

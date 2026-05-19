@@ -22,6 +22,26 @@ ScrollView {
                vehicleModel.satellitesVisible + " sats"
     }
 
+    function profileIndex(profileId) {
+        for (let index = 0; index < vehicleModelProfiles.profiles.length; ++index) {
+            if (vehicleModelProfiles.profiles[index].id === profileId)
+                return index
+        }
+        return 0
+    }
+
+    function polarityText(value) {
+        return value < 0 ? "Reversed" : "Normal"
+    }
+
+    function hasReversedSurface() {
+        for (let index = 0; index < vehicleModelProfiles.surfaces.length; ++index) {
+            if (vehicleModelProfiles.surfaces[index].polarityReversed)
+                return true
+        }
+        return false
+    }
+
     ColumnLayout {
         width: parent.width
         spacing: 12
@@ -97,6 +117,136 @@ ScrollView {
                           ? vehicleModel.terrainCurrentHeightM.toFixed(1) + " m AGL / " +
                             vehicleModel.terrainLoaded + " loaded"
                           : "UNK"
+                }
+            }
+        }
+
+        GroupBox {
+            title: "Terrain 3D Vehicle Model"
+            Layout.fillWidth: true
+            ColumnLayout {
+                width: parent.width
+                spacing: 10
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 2
+                    rowSpacing: 6
+                    columnSpacing: 12
+
+                    Label { text: "Profile"; color: "#4b5563"; font.bold: true }
+                    ComboBox {
+                        id: modelProfileSelector
+                        Layout.fillWidth: true
+                        model: vehicleModelProfiles.profiles
+                        textRole: "name"
+                        valueRole: "id"
+                        currentIndex: root.profileIndex(vehicleModelProfiles.selectedProfileId)
+                        onActivated: vehicleModelProfiles.selectedProfileId = currentValue
+                    }
+
+                    Label { text: "Profile ID"; color: "#4b5563"; font.bold: true }
+                    Label {
+                        Layout.fillWidth: true
+                        text: vehicleModelProfiles.selectedProfile.id
+                        elide: Text.ElideRight
+                    }
+
+                    Label { text: "GLB asset"; color: "#4b5563"; font.bold: true }
+                    Label {
+                        Layout.fillWidth: true
+                        text: vehicleModelProfiles.selectedProfile.asset
+                        elide: Text.ElideMiddle
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label {
+                        Layout.fillWidth: true
+                        text: vehicleModelProfiles.surfaces.length + " mapped surfaces"
+                        color: "#4b5563"
+                    }
+                    Button {
+                        text: "Reset Profile Defaults"
+                        enabled: root.hasReversedSurface()
+                        onClicked: vehicleModelProfiles.resetAllSurfacePolarity()
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: "#d1d5db"
+                }
+
+                Repeater {
+                    model: vehicleModelProfiles.surfaces
+                    delegate: Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: surfaceLayout.implicitHeight + 12
+                        color: "transparent"
+                        border.width: 1
+                        border.color: "#d1d5db"
+                        radius: 4
+
+                        GridLayout {
+                            id: surfaceLayout
+                            anchors.fill: parent
+                            anchors.margins: 6
+                            columns: 2
+                            rowSpacing: 4
+                            columnSpacing: 10
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: modelData.label + " (" + modelData.id + ")"
+                                font.bold: true
+                                elide: Text.ElideRight
+                            }
+                            Button {
+                                text: root.polarityText(modelData.polarity)
+                                onClicked: vehicleModelProfiles.reverseSurfacePolarity(modelData.id)
+                            }
+
+                            RowLayout {
+                                Layout.columnSpan: 2
+                                Layout.fillWidth: true
+                                spacing: 10
+
+                                Label {
+                                    text: "CH " + modelData.actuatorChannel
+                                    color: "#4b5563"
+                                }
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: modelData.node
+                                    color: "#4b5563"
+                                    elide: Text.ElideMiddle
+                                }
+                                Label {
+                                    text: modelData.valid
+                                          ? modelData.deflectionDeg.toFixed(1) + " deg"
+                                          : "UNK"
+                                    color: modelData.valid ? "#202020" : "#7a4b00"
+                                    font.bold: true
+                                }
+                            }
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: "Profile polarity " + modelData.profilePolarity +
+                                      " / active " + modelData.polarity
+                                color: "#4b5563"
+                                elide: Text.ElideRight
+                            }
+                            Button {
+                                text: "Reset Surface"
+                                enabled: modelData.polarityReversed
+                                onClicked: vehicleModelProfiles.resetSurfacePolarity(modelData.id)
+                            }
+                        }
+                    }
                 }
             }
         }

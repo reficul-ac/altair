@@ -6,6 +6,7 @@ WebEngineView {
     objectName: "terrain3DWebView"
 
     signal captureFinished(bool ok, string error)
+    signal controlSurfaceInspectionFinished(bool ok, string error)
     signal cameraModeChanged(string mode)
 
     function pushSnapshot() {
@@ -25,6 +26,27 @@ WebEngineView {
                               return
                           }
                           webView.captureFinished(true, "")
+                      })
+    }
+
+    function inspectControlSurfaces(path, snapshot) {
+        if (snapshot)
+            runJavaScript("window.animusApplySnapshot && window.animusApplySnapshot(" +
+                          JSON.stringify(snapshot) + ")")
+        runJavaScript("window.animusInspectControlSurfaces && window.animusInspectControlSurfaces()",
+                      function(result) {
+                          if (!result) {
+                              webView.controlSurfaceInspectionFinished(
+                                  false, "control-surface inspection returned no result")
+                              return
+                          }
+                          var json = JSON.stringify(result, null, 2) + "\n"
+                          if (!captureWriter.writeTextFile(path, json)) {
+                              webView.controlSurfaceInspectionFinished(
+                                  false, "failed to write control-surface diagnostic")
+                              return
+                          }
+                          webView.controlSurfaceInspectionFinished(!!result.ok, "")
                       })
     }
 

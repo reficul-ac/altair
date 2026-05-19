@@ -16,6 +16,13 @@
   let imageryLayer = null;
   let terrainProviderKey = '';
   let aircraftModelUri = '';
+  let aircraftModelRequestedUri = '';
+  let aircraftModelPrimitive = null;
+  let aircraftModelLoadToken = 0;
+  let aircraftModelScale = 3.0;
+  let vehicleModelController = null;
+  let vehicleModelProfileKey = '';
+  let vehicleModelProfile = null;
   let cameraInitialized = false;
   let cameraMode = 'chase';
   let lastLockPosition = null;
@@ -50,6 +57,8 @@
     trail: [],
     terrain: null,
     scene: null,
+    model: null,
+    controlSurfaces: [],
     config: null,
   };
 
@@ -82,6 +91,15 @@
     return Cesium.Transforms.headingPitchRollQuaternion(
       position,
       new Cesium.HeadingPitchRoll(headingRad, pitchRad, rollRad)
+    );
+  }
+
+  function modelMatrixFor(vehicle, position, scale) {
+    return Cesium.Matrix4.fromTranslationQuaternionRotationScale(
+      position,
+      orientationFor(vehicle, position),
+      new Cesium.Cartesian3(scale, scale, scale),
+      new Cesium.Matrix4()
     );
   }
 
@@ -728,26 +746,161 @@
     viewer.scene.requestRender();
   }
 
-  function updateAircraftModel(fixture) {
+  function removeAircraftModelPrimitive() {
+    if (!aircraftModelPrimitive || !viewer || !viewer.scene) return;
+    viewer.scene.primitives.remove(aircraftModelPrimitive);
+    aircraftModelPrimitive = null;
+    const controller = ensureVehicleModelController();
+    if (controller) controller.setModel(null);
+  }
+
+  function currentVehicleModelMatrix(scale) {
+    const vehicle = state.vehicle || {};
+    if (!vehicle.positionValid || !validPosition(vehicle)) return Cesium.Matrix4.IDENTITY;
+    return modelMatrixFor(vehicle, cartesian(vehicle), scale);
+  }
+
+  async function loadAircraftModelPrimitive(modelUri, scale, fallbackUri) {
+    const token = ++aircraftModelLoadToken;
+    removeAircraftModelPrimitive();
+    if (!modelUri) {
+      aircraftModelUri = '';
+      return;
+    }
+    if (!Cesium.Model || typeof Cesium.Model.fromGltfAsync !== 'function') {
+      const controller = ensureVehicleModelController();
+      if (controller) {
+        controller.warnOnce('model-from-gltf-missing', 'Cesium Model.fromGltfAsync is not available');
+      }
+      aircraftModelUri = '';
+      return;
+    }
+
+    try {
+      const primitive = await Cesium.Model.fromGltfAsync({
+        url: modelUri,
+        modelMatrix: currentVehicleModelMatrix(scale),
+        minimumPixelSize: 150,
+        maximumScale: 1200,
+        color: Cesium.Color.fromCssColorString('#1d6fd6'),
+        colorBlendMode: Cesium.ColorBlendMode.MIX,
+        colorBlendAmount: 0.20,
+        silhouetteColor: Cesium.Color.WHITE,
+        silhouetteSize: 2.0,
+      });
+      if (token !== aircraftModelLoadToken) return;
+      aircraftModelPrimitive = viewer.scene.primitives.add(primitive);
+      aircraftModelUri = modelUri;
+      aircraftModelScale = scale;
+      const controller = ensureVehicleModelController();
+      if (controller) controller.setModel(aircraftModelPrimitive);
+      if (vehiclePointPrimitive) vehiclePointPrimitive.show = false;
+      viewer.scene.requestRender();
+    } catch (error) {
+      if (token !== aircraftModelLoadToken) return;
+      const controller = ensureVehicleModelController();
+      if (controller) {
+        controller.warnOnce(
+          `aircraft-load:${modelUri}`,
+          `failed to load aircraft model ${modelUri}: ${error && error.message ? error.message : String(error)}`
+        );
+      }
+      if (fallbackUri && fallbackUri !== modelUri) {
+        loadAircraftModelPrimitive(fallbackUri, 3.0, '');
+      } else {
+        aircraftModelUri = '';
+      }
+    }
+  }
+
+  function updateAircraftModel(fixture, model) {
     if (!viewer || !vehicleEntity) return;
-    const modelUri = fixture && fixture.aircraftModelUrl ? String(fixture.aircraftModelUrl) : '';
-    if (aircraftModelUri === modelUri) return;
+    const fallbackUri = fixture && fixture.aircraftModelUrl ? String(fixture.aircraftModelUrl) : '';
+    const profileAsset = vehicleModelProfile && vehicleModelProfile.asset
+      ? String(vehicleModelProfile.asset)
+      : '';
+    const snapshotAsset = model && model.asset ? String(model.asset) : '';
+    const modelUri = profileAsset || snapshotAsset || fallbackUri;
+    const scale = vehicleModelProfile && Number.isFinite(Number(vehicleModelProfile.scale))
+      ? Number(vehicleModelProfile.scale) * 3.0
+      : 3.0;
+    if (aircraftModelRequestedUri === modelUri) return;
+    aircraftModelRequestedUri = modelUri;
     aircraftModelUri = modelUri;
-    vehicleEntity.model = modelUri ? new Cesium.ModelGraphics({
-      uri: modelUri,
-      scale: 3.0,
-      minimumPixelSize: 150,
-      maximumScale: 1200,
-      color: Cesium.Color.fromCssColorString('#1d6fd6'),
-      colorBlendMode: Cesium.ColorBlendMode.MIX,
-      colorBlendAmount: 0.85,
-      silhouetteColor: Cesium.Color.WHITE,
-      silhouetteSize: 2.0,
-      runAnimations: false,
-    }) : undefined;
+    vehicleEntity.model = undefined;
+    loadAircraftModelPrimitive(modelUri, scale, fallbackUri);
     if (vehiclePointPrimitive) {
       vehiclePointPrimitive.show = false;
     }
+  }
+
+  function ensureVehicleModelController() {
+    if (vehicleModelController || !window.VehicleModelController) return vehicleModelController;
+    vehicleModelController = new window.VehicleModelController(Cesium);
+    return vehicleModelController;
+  }
+
+  function snapshotVehicleModelProfile(model) {
+    const surfaces = Array.isArray(state.controlSurfaces)
+      ? state.controlSurfaces
+          .filter((surface) => surface && surface.id && surface.node)
+          .map((surface) => ({
+            id: String(surface.id),
+            node: String(surface.node),
+            axis: Array.isArray(surface.axis) ? surface.axis : [1.0, 0.0, 0.0],
+          }))
+      : [];
+    if (!surfaces.length) return null;
+    return {
+      id: model && model.profile ? String(model.profile) : 'snapshot',
+      asset: model && model.asset ? String(model.asset) : '',
+      surfaces,
+    };
+  }
+
+  function loadVehicleModelProfile(model) {
+    const controller = ensureVehicleModelController();
+    if (!controller) return;
+    const profile = model && model.profile ? String(model.profile) : '';
+    const asset = model && model.asset ? String(model.asset) : '';
+    const key = `${profile}:${asset}`;
+    if (vehicleModelProfileKey === key) return;
+    vehicleModelProfileKey = key;
+    if (!profile) {
+      vehicleModelProfile = null;
+      controller.setProfile(null);
+      updateAircraftModel((state.terrain || {}).fixture || {}, state.model || {});
+      return;
+    }
+    const snapshotProfile = snapshotVehicleModelProfile(model);
+    if (snapshotProfile) {
+      controller.setProfile(snapshotProfile);
+    }
+    fetch(`models/${profile}.json`)
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((profileData) => {
+        vehicleModelProfile = profileData;
+        controller.setProfile(profileData);
+        updateAircraftModel((state.terrain || {}).fixture || {}, state.model || {});
+      })
+      .catch((error) => {
+        controller.warnOnce(
+          `profile-load:${profile}`,
+          `failed to load profile models/${profile}.json: ${error && error.message ? error.message : String(error)}`
+        );
+        updateAircraftModel((state.terrain || {}).fixture || {}, state.model || {});
+      });
+  }
+
+  function applyControlSurfaces(controlSurfaces) {
+    const controller = ensureVehicleModelController();
+    if (!controller) return;
+    controller.setModel(aircraftModelPrimitive);
+    controller.applyControlSurfaces(controlSurfaces);
+    if (viewer && viewer.scene) viewer.scene.requestRender();
   }
 
   function vehicleHeadingDeg(vehicle) {
@@ -827,6 +980,7 @@
     if (!vehicle.positionValid || !validPosition(vehicle)) {
       vehicleEntity.show = false;
       headingEntity.show = false;
+      if (aircraftModelPrimitive) aircraftModelPrimitive.show = false;
       if (aircraftOutlineCollection) aircraftOutlineCollection.removeAll();
       if (vehiclePointPrimitive) vehiclePointPrimitive.show = false;
       viewer.scene.requestRender();
@@ -837,9 +991,13 @@
     vehicleEntity.show = true;
     vehicleEntity.position = position;
     vehicleEntity.orientation = orientationFor(vehicle, position);
+    if (aircraftModelPrimitive) {
+      aircraftModelPrimitive.modelMatrix = modelMatrixFor(vehicle, position, aircraftModelScale);
+      aircraftModelPrimitive.show = true;
+    }
     updateAircraftOutline(vehicle, position);
     if (vehiclePointPrimitive) {
-      vehiclePointPrimitive.show = !aircraftModelUri;
+      vehiclePointPrimitive.show = !aircraftModelPrimitive;
       vehiclePointPrimitive.position = position;
     }
 
@@ -939,9 +1097,11 @@
     canvas.style.display = 'none';
     cesiumScene.style.display = 'block';
     updateTerrainProvider();
-    updateAircraftModel((state.terrain || {}).fixture || {});
+    updateAircraftModel((state.terrain || {}).fixture || {}, state.model || {});
+    loadVehicleModelProfile(state.model || {});
     updateTerrainReference();
     updateVehicle();
+    applyControlSurfaces(state.controlSurfaces || []);
     updateHome();
     updateTrail();
   }
@@ -953,6 +1113,8 @@
       trail: snapshot.trail || state.trail || [],
       terrain: snapshot.terrain || state.terrain,
       scene: snapshot.scene || state.scene,
+      model: snapshot.model || state.model,
+      controlSurfaces: snapshot.controlSurfaces || state.controlSurfaces || [],
       config: snapshot.config || state.config,
     };
     renderCesium();
@@ -970,6 +1132,23 @@
     viewer.scene.requestRender();
     viewer.scene.render();
     return viewer.scene.canvas.toDataURL('image/png');
+  }
+
+  function inspectControlSurfaces() {
+    const controller = ensureVehicleModelController();
+    if (!controller) {
+      return {
+        ok: false,
+        profileLoaded: false,
+        modelLoaded: false,
+        surfaceCount: 0,
+        surfaces: [],
+        failures: ['VehicleModelController is not available'],
+      };
+    }
+    controller.setModel(aircraftModelPrimitive);
+    controller.applyControlSurfaces(state.controlSurfaces || []);
+    return controller.inspectControlSurfaces(state.controlSurfaces || []);
   }
 
   function setCameraMode(mode) {
@@ -1005,6 +1184,7 @@
   });
   window.animusApplySnapshot = applySnapshot;
   window.animusCaptureCesiumPng = captureCesiumPng;
+  window.animusInspectControlSurfaces = inspectControlSurfaces;
   window.animusSetCameraMode = setCameraMode;
   statusEl.textContent = 'Waiting for Animus terrain state...';
 })();

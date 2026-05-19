@@ -119,6 +119,57 @@ def main():
             f"expected different workspace screenshots to pass: {different}",
         )
 
+        diagnostic_path = tmp_dir / "terrain-3d-control-surfaces.json"
+        diagnostic_path.write_text(
+            """{
+  "ok": true,
+  "profileLoaded": true,
+  "modelLoaded": true,
+  "surfaces": [
+    {"id": "left_aileron", "node": "aileron_left_pivot", "resolved": true, "deflectionDeg": 12.0, "matrixChanged": true},
+    {"id": "right_aileron", "node": "aileron_right_pivot", "resolved": true, "deflectionDeg": -12.0, "matrixChanged": true},
+    {"id": "elevator", "node": "elevator_pivot", "resolved": true, "deflectionDeg": 10.0, "matrixChanged": true},
+    {"id": "rudder", "node": "rudder_pivot", "resolved": true, "deflectionDeg": 14.0, "matrixChanged": true}
+  ],
+  "failures": []
+}
+""",
+            encoding="utf-8",
+        )
+        diagnostic = module.inspect_control_surface_diagnostic(diagnostic_path)
+        status |= expect(
+            diagnostic["ok"], f"expected control-surface diagnostic to pass: {diagnostic}"
+        )
+
+        diagnostic_path.write_text(
+            """{
+  "ok": false,
+  "surfaces": [
+    {"id": "left_aileron", "node": "aileron_left_pivot", "resolved": true, "deflectionDeg": 12.0, "matrixChanged": false},
+    {"id": "right_aileron", "node": "aileron_right_pivot", "resolved": false, "deflectionDeg": -12.0, "matrixChanged": false},
+    {"id": "elevator", "node": "elevator_pivot", "resolved": true, "deflectionDeg": 0.0, "matrixChanged": false},
+    {"id": "rudder", "node": "rudder_pivot", "resolved": true, "deflectionDeg": 14.0, "matrixChanged": true}
+  ],
+  "failures": []
+}
+""",
+            encoding="utf-8",
+        )
+        diagnostic = module.inspect_control_surface_diagnostic(diagnostic_path)
+        status |= expect(not diagnostic["ok"], "expected unresolved/neutral surfaces to fail")
+        status |= expect(
+            any(
+                "deflected matrix remained neutral" in failure for failure in diagnostic["failures"]
+            ),
+            f"missing neutral matrix failure: {diagnostic}",
+        )
+
+        command = module.command_for_workspace(Path("animus_qt"), tmp_dir, "terrain-3d", 1200)
+        status |= expect(
+            "--verify-terrain-control-surfaces" in command,
+            f"terrain command missing control-surface verification: {command}",
+        )
+
     return 1 if status else 0
 
 

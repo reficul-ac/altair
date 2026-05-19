@@ -2,6 +2,7 @@
 #include "maps/qgc/AnimusMapCacheManager.h"
 #include "maps/MapSourceRegistry.h"
 #include "maps/OfflineMapManager.h"
+#include "models/VehicleModelProfileManager.h"
 #include "models/VehicleModel.h"
 #include "telemetry/BreadcrumbPathModel.h"
 #include "telemetry/TelemetryService.h"
@@ -18,6 +19,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QSettings>
 #include <QTimer>
 #include <QUrl>
 #include <QVariant>
@@ -44,6 +46,15 @@ class CaptureWriter final : public QObject
             return false;
         return file.write(png) == png.size();
     }
+
+    Q_INVOKABLE bool writeTextFile(const QString &path, const QString &text)
+    {
+        QFile file(path);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+            return false;
+        const QByteArray data = text.toUtf8();
+        return file.write(data) == data.size();
+    }
 };
 
 struct CaptureOptions
@@ -57,6 +68,7 @@ struct CaptureOptions
     int udpPort = 14551;
     bool quitAfterCapture = false;
     bool captureTerrainWebEngine = false;
+    bool verifyTerrainControlSurfaces = false;
     bool requested = false;
 };
 
@@ -121,6 +133,10 @@ bool parseArgs(const QStringList &args, CaptureOptions *options)
         {
             options->captureTerrainWebEngine = true;
         }
+        else if (arg == QStringLiteral("--verify-terrain-control-surfaces"))
+        {
+            options->verifyTerrainControlSurfaces = true;
+        }
     }
 
     if (!options->requested)
@@ -154,6 +170,8 @@ int main(int argc, char *argv[])
         QtWebEngineQuick::initialize();
 
     QGuiApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("Altair"));
+    QCoreApplication::setApplicationName(QStringLiteral("AnimusQt"));
 
     animus::VehicleModel vehicle;
     animus::BreadcrumbPathModel trail;
@@ -161,7 +179,13 @@ int main(int argc, char *argv[])
     animus::OfflineMapManager offlineMaps(&mapSources);
     animus::AnimusMapCacheManager mapCache;
     animus::TelemetryService telemetry(&vehicle, &trail);
-    animus::CesiumBridge cesium(&vehicle, &trail);
+    QSettings settings;
+    animus::VehicleModelProfileManager modelProfiles(
+        QDir(QStringLiteral(ANIMUS_REPO_ROOT))
+            .filePath(QStringLiteral("tools/animus-qt/web/cesium/models")),
+        &settings,
+        &vehicle);
+    animus::CesiumBridge cesium(&vehicle, &trail, &modelProfiles);
     CaptureWriter captureWriter;
 
     mapCache.ensureDefaultCruise6DofTileSet();
@@ -173,6 +197,8 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("offlineMaps"), &offlineMaps);
     engine.rootContext()->setContextProperty(QStringLiteral("mapCache"), &mapCache);
     engine.rootContext()->setContextProperty(QStringLiteral("telemetryService"), &telemetry);
+    engine.rootContext()->setContextProperty(QStringLiteral("vehicleModelProfiles"),
+                                             &modelProfiles);
     engine.rootContext()->setContextProperty(QStringLiteral("cesiumBridge"), &cesium);
     engine.rootContext()->setContextProperty(QStringLiteral("captureWriter"), &captureWriter);
     engine.rootContext()->setContextProperty(QStringLiteral("webEngineTerrainEnabled"),
@@ -217,7 +243,7 @@ int main(int argc, char *argv[])
         QTimer::singleShot(
             capture.captureDelayMs,
             &app,
-            [&app, root, capture]()
+            [&app, root, capture, &cesium]()
             {
                 QQuickWindow *window = qobject_cast<QQuickWindow *>(root);
                 if (!window)
@@ -247,6 +273,44 @@ int main(int argc, char *argv[])
                         QCoreApplication::exit(6);
                         return;
                     }
+                    if (capture.verifyTerrainControlSurfaces)
+                    {
+                        QEventLoop inspectLoop;
+                        QObject::connect(terrainView,
+                                         SIGNAL(controlSurfaceInspectionFinished(bool, QString)),
+                                         &inspectLoop,
+                                         SLOT(quit()));
+                        terrainView->setProperty("lastControlSurfaceInspectionOk", false);
+                        terrainView->setProperty("lastControlSurfaceInspectionError",
+                                                 QStringLiteral("inspection timed out"));
+                        const QString diagnosticPath =
+                            dir.filePath(QStringLiteral("terrain-3d-control-surfaces.json"));
+                        const bool inspectInvoked = QMetaObject::invokeMethod(
+                            terrainView,
+                            "inspectControlSurfaces",
+                            Q_ARG(QVariant, diagnosticPath),
+                            Q_ARG(QVariant, cesium.controlSurfaceVerificationSnapshot()));
+                        if (!inspectInvoked)
+                        {
+                            qCritical("failed to invoke terrain 3D control-surface inspection");
+                            QCoreApplication::exit(6);
+                            return;
+                        }
+                        QTimer::singleShot(5000, &inspectLoop, &QEventLoop::quit);
+                        inspectLoop.exec();
+                        const bool inspectOk =
+                            terrainView->property("lastControlSurfaceInspectionOk").toBool();
+                        const QString inspectError =
+                            terrainView->property("lastControlSurfaceInspectionError").toString();
+                        if (!inspectOk)
+                        {
+                            qCritical("terrain 3D control-surface inspection failed: %s",
+                                      qPrintable(inspectError));
+                            QCoreApplication::exit(6);
+                            return;
+                        }
+                    }
+
                     QEventLoop loop;
                     QObject::connect(
                         terrainView, SIGNAL(captureFinished(bool, QString)), &loop, SLOT(quit()));

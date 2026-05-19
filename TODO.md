@@ -72,6 +72,69 @@ Reusable Bayek framework follow-up is tracked separately in
   points, home/origin, event markers, and breadcrumb/history layers.
 - [ ] Add local aircraft model import for Terrain 3D after the operator file
   policy, supported formats, and offline asset packaging are defined.
+- [x] Author or import `generic_fixed_wing_smooth.glb` with named
+  control-surface pivot nodes.
+  - Context: The first profile references a GLB asset that must provide the
+    named pivot nodes before moving surfaces can render.
+  - Suggested location/files:
+    `tools/animus-qt/web/cesium/models/generic_fixed_wing_smooth.glb`.
+  - Acceptance: Terrain 3D loads the GLB and every profile surface resolves to
+    a glTF node with a hinge-aligned pivot.
+- [x] Wire vehicle model profile loading into the Cesium scene.
+  - Context: The profile JSON exists as configuration, but the scene still
+    needs runtime model/profile selection.
+  - Suggested location/files: `tools/animus-qt/web/cesium/animus-cesium.js`,
+    `tools/animus-qt/web/cesium/vehicleModel.js`.
+  - Acceptance: Terrain 3D loads the selected profile asset when present and
+    falls back deterministically when it is missing.
+- [x] Drive Cesium control-surface node rotations from CesiumBridge snapshots.
+  - Context: The JS controller can apply node rotations, but live snapshot
+    state still needs a non-neutral actuator-backed deflection source.
+  - Suggested location/files: `tools/animus-qt/src/maps/CesiumBridge.cpp`,
+    `tools/animus-qt/web/cesium/animus-cesium.js`.
+  - Acceptance: A snapshot with nonzero `deflectionDeg` visibly rotates the
+    matching named GLB nodes without breaking fallback rendering.
+- [x] Parse `ACTUATOR_OUTPUT_STATUS` and/or `SERVO_OUTPUT_RAW` into actuator
+  state.
+  - Context: Animus currently decodes core vehicle and terrain telemetry, not
+    actuator outputs needed for control-surface visualization.
+  - Suggested location/files: `tools/animus-qt/src/telemetry/MavlinkDecoder.*`,
+    `tools/animus-qt/src/telemetry/TelemetryService.*`.
+  - Acceptance: Unit tests cover decoded normalized and/or PWM actuator output
+    fields from MAVLink frames.
+- [x] Add vehicle-specific channel mapping and polarity configuration.
+  - Context: Control-surface polarity and channel assignment are
+    vehicle/profile policy, not renderer policy.
+  - Suggested location/files: `tools/animus-qt/web/cesium/models/*.json`,
+    future Animus vehicle profile model code.
+  - Acceptance: A vehicle profile can map actuator outputs to surface
+    deflections with per-surface polarity and limits.
+- [x] Add Setup tab UI for selecting model profile and validating/reversing
+  surface polarity.
+  - Context: Operators need a safe way to select the visual model and verify
+    that surfaces move in the expected direction.
+  - Suggested location/files: `tools/animus-qt/qml/SetupView.qml`, future
+    profile/model Qt adapter.
+  - Acceptance: Setup exposes model/profile selection plus per-surface polarity
+    validation without hard-coding autopilot conventions.
+- [x] Add test/fixture coverage for neutral and deflected control-surface
+  snapshots.
+  - Context: Neutral snapshot scaffolding is easy to regress once live actuator
+    state is added.
+  - Suggested location/files: `tools/animus-qt/tests/test_map_models.cpp`.
+  - Acceptance: Tests cover neutral, positive, and negative deflection snapshot
+    values and validity flags.
+- [x] Add screenshot or semantic assertions for visible control-surface
+  deflection in Terrain 3D.
+  - Context: Node rotation must be verified visually or semantically in the
+    WebEngine/Cesium scene.
+  - Follow-up: Feed non-neutral `SERVO_OUTPUT_RAW` into the Animus Qt capture
+    workflow or add an equivalent WebEngine semantic assertion so the screenshot
+    bundle proves visible deflection, not just model/fallback health.
+  - Suggested location/files: `tools/python/capture_animus_qt_sitl.py`,
+    `tools/animus-qt/web/cesium/vehicleModel.js`.
+  - Acceptance: Capture or JS-side assertions fail when a known deflected
+    surface does not move from its neutral matrix.
 - [ ] Add multi-vehicle support: per-system vehicle models, fleet
   list/selection, per-vehicle trails/status, and graceful degradation toward
   the documented 12-vehicle analysis target.
@@ -154,7 +217,8 @@ Reusable Bayek framework follow-up is tracked separately in
   latitude/longitude/altitude trajectory view comparable to the Hawkeye 3D
   trajectory workflow.
 - [ ] Render a generic fixed-wing RC airplane model in 3D views and allow the
-  operator to select a replacement model file, such as `.obj`.
+  operator to select a replacement GLB/glTF runtime model file; keep OBJ only
+  as an authoring/import/export intermediate.
 - [ ] Add a tactical 3D attitude tab focused on aircraft attitude, angular
   rates, compass heading, and gyro-ring style roll/pitch/yaw visualization
   without trajectory clutter.

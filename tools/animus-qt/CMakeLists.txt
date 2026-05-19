@@ -18,6 +18,11 @@ file(
     RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
     CONFIGURE_DEPENDS "web/cesium/fixture/*"
 )
+file(
+    GLOB_RECURSE ANIMUS_CESIUM_MODEL_RESOURCES
+    RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    CONFIGURE_DEPENDS "web/cesium/models/*"
+)
 
 find_package(
     Qt6 6.4 REQUIRED
@@ -36,6 +41,7 @@ qt_add_executable(
     animus_qt
     src/main.cpp
     src/models/VehicleModel.cpp
+    src/models/VehicleModelProfileManager.cpp
     src/telemetry/BreadcrumbPathModel.cpp
     src/telemetry/MavlinkDecoder.cpp
     src/telemetry/TelemetryService.cpp
@@ -79,9 +85,11 @@ qt_add_qml_module(
     RESOURCES
     web/cesium/index.html
     web/cesium/animus-cesium.js
+    web/cesium/vehicleModel.js
     web/cesium/vendor/README.md
     web/cesium/vendor/LICENSES.md
     ${ANIMUS_CESIUM_FIXTURE_RESOURCES}
+    ${ANIMUS_CESIUM_MODEL_RESOURCES}
     ${ANIMUS_CESIUM_VENDOR_RESOURCES}
 )
 
@@ -100,6 +108,7 @@ add_executable(
     src/telemetry/MavlinkDecoder.cpp
     src/telemetry/TelemetryService.cpp
     src/models/VehicleModel.cpp
+    src/models/VehicleModelProfileManager.cpp
 )
 target_include_directories(animus_qt_unit_tests PRIVATE src)
 target_compile_features(animus_qt_unit_tests PRIVATE cxx_std_17)

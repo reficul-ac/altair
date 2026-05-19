@@ -63,6 +63,12 @@ WORKSPACE_CONTENT_REGIONS = {
 
 TOP_REGION = RegionSpec("toolbar and tabs", (0.0, 0.0, 1.0, 0.15), 7, 18.0, 0.96)
 WORKSPACE_DIFFERENCE_MINIMUM = 8.0
+REQUIRED_CONTROL_SURFACES = {
+    "left_aileron": "aileron_left_pivot",
+    "right_aileron": "aileron_right_pivot",
+    "elevator": "elevator_pivot",
+    "rudder": "rudder_pivot",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -387,6 +393,46 @@ def compare_workspace_screenshots(captures: list[dict[str, object]]) -> list[dic
     return comparisons
 
 
+def inspect_control_surface_diagnostic(path: Path) -> dict[str, object]:
+    result: dict[str, object] = {"path": str(path), "exists": path.exists()}
+    failures: list[str] = []
+    if not path.exists():
+        failures.append("missing control-surface diagnostic")
+        result.update({"ok": False, "failures": failures, "surfaces": []})
+        return result
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        failures.append(f"invalid control-surface diagnostic: {exc}")
+        result.update({"ok": False, "failures": failures, "surfaces": []})
+        return result
+
+    surfaces = payload.get("surfaces", [])
+    by_id = {str(surface.get("id")): surface for surface in surfaces if isinstance(surface, dict)}
+    for surface_id, node_name in REQUIRED_CONTROL_SURFACES.items():
+        surface = by_id.get(surface_id)
+        if not surface:
+            failures.append(f"{surface_id}: missing diagnostic entry")
+            continue
+        if surface.get("node") != node_name:
+            failures.append(f"{surface_id}: expected node {node_name}, got {surface.get('node')}")
+        if not surface.get("resolved"):
+            failures.append(f"{surface_id}: node {node_name} was not resolved")
+        if abs(float(surface.get("deflectionDeg", 0.0))) <= 1.0e-6:
+            failures.append(f"{surface_id}: expected non-neutral deflection")
+        if not surface.get("matrixChanged"):
+            failures.append(f"{surface_id}: deflected matrix remained neutral")
+
+    payload_failures = payload.get("failures", [])
+    if isinstance(payload_failures, list):
+        failures.extend(str(message) for message in payload_failures)
+    result.update(payload)
+    result["ok"] = not failures
+    result["failures"] = failures
+    return result
+
+
 def summarize_log(path: Path, max_lines: int = 6) -> str:
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -401,7 +447,7 @@ def summarize_log(path: Path, max_lines: int = 6) -> str:
 def command_for_workspace(
     executable: Path, screenshot_dir: Path, workspace: str, delay_ms: int
 ) -> list[str]:
-    return [
+    command = [
         str(executable),
         "--capture-dir",
         str(screenshot_dir),
@@ -412,6 +458,9 @@ def command_for_workspace(
         str(delay_ms),
         "--quit-after-capture",
     ]
+    if workspace == "terrain-3d":
+        command.append("--verify-terrain-control-surfaces")
+    return command
 
 
 def write_report(run_dir: Path, manifest: dict[str, object]) -> None:
@@ -439,6 +488,14 @@ def write_report(run_dir: Path, manifest: dict[str, object]) -> None:
         messages = []
         messages.extend(str(message) for message in png.get("failures", []))
         messages.extend(str(message) for message in png.get("warnings", []))
+        control_surfaces = capture.get("controlSurfaceDiagnostic")
+        if isinstance(control_surfaces, dict):
+            diagnostics.append(
+                "control surfaces: "
+                f"{'pass' if control_surfaces.get('ok') else 'fail'} "
+                f"({len(control_surfaces.get('surfaces', []))} surfaces)"
+            )
+            messages.extend(str(message) for message in control_surfaces.get("failures", []))
         diagnostic_text = "<br>".join(diagnostics + messages) if diagnostics or messages else "-"
         lines.append(
             f"| `{capture['workspace']}` | {capture['exitCode']} | "
@@ -563,10 +620,22 @@ def main() -> int:
                 "screenshot": str(screenshot_dir / f"{workspace}.png"),
                 "png": png,
             }
+            if workspace == "terrain-3d":
+                capture["controlSurfaceDiagnostic"] = inspect_control_surface_diagnostic(
+                    screenshot_dir / "terrain-3d-control-surfaces.json"
+                )
             manifest["captures"].append(capture)
             if png.get("ok"):
                 manifest["screenshots"].append(capture["screenshot"])
-            if completed.returncode != 0 or not png.get("ok"):
+            control_surface_diagnostic = capture.get("controlSurfaceDiagnostic", {})
+            if (
+                completed.returncode != 0
+                or not png.get("ok")
+                or (
+                    isinstance(control_surface_diagnostic, dict)
+                    and not control_surface_diagnostic.get("ok", True)
+                )
+            ):
                 manifest["status"] = "fail"
         manifest["workspaceComparisons"] = compare_workspace_screenshots(manifest["captures"])
         for comparison in manifest["workspaceComparisons"]:

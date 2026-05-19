@@ -37,6 +37,9 @@ bool crcExtra(unsigned int msgId, unsigned char *extra)
     case 33:
         *extra = 104U;
         return true;
+    case 36:
+        *extra = 222U;
+        return true;
     case 42:
         *extra = 28U;
         return true;
@@ -221,6 +224,22 @@ bool MavlinkDecoder::decodeFrame(const unsigned char *frame,
                                  ? 0.0
                                  : static_cast<double>(readU16(payload, 26)) / 100.0;
         return true;
+    case 36:
+    {
+        if (payloadLength < 21)
+            return false;
+        sample->hasServoOutputRaw = true;
+        const int decodedChannels =
+            payloadLength >= 37 ? MavlinkTelemetrySample::MaxServoOutputs : 8;
+        for (int index = 0; index < decodedChannels; ++index)
+        {
+            const int offset = index < 8 ? 4 + index * 2 : 21 + (index - 8) * 2;
+            const int pwm = static_cast<int>(readU16(payload, offset));
+            sample->servoOutputPwm[index] = pwm;
+            sample->servoOutputValid[index] = pwm > 0;
+        }
+        return true;
+    }
     case 42:
         if (payloadLength < 2)
             return false;
