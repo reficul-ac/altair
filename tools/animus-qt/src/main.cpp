@@ -15,6 +15,8 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QObject>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -69,7 +71,9 @@ struct CaptureOptions
     bool quitAfterCapture = false;
     bool captureTerrainWebEngine = false;
     bool verifyTerrainControlSurfaces = false;
+    bool seedMapCacheFixture = false;
     bool requested = false;
+    QString mapCacheRoot;
 };
 
 bool parseArgs(const QStringList &args, CaptureOptions *options)
@@ -137,6 +141,16 @@ bool parseArgs(const QStringList &args, CaptureOptions *options)
         {
             options->verifyTerrainControlSurfaces = true;
         }
+        else if (arg == QStringLiteral("--map-cache-root"))
+        {
+            if (i + 1 >= args.size())
+                return false;
+            options->mapCacheRoot = args.at(++i);
+        }
+        else if (arg == QStringLiteral("--seed-map-cache-fixture"))
+        {
+            options->seedMapCacheFixture = true;
+        }
     }
 
     if (!options->requested)
@@ -188,7 +202,12 @@ int main(int argc, char *argv[])
     animus::CesiumBridge cesium(&vehicle, &trail, &modelProfiles);
     CaptureWriter captureWriter;
 
-    mapCache.ensureDefaultCruise6DofTileSet();
+    if (!capture.mapCacheRoot.isEmpty())
+        mapCache.setRootPath(capture.mapCacheRoot);
+    if (capture.seedMapCacheFixture)
+        mapCache.seedDefaultCruise6DofFixtureTiles();
+    else
+        mapCache.ensureDefaultCruise6DofTileSet();
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("vehicleModel"), &vehicle);
@@ -353,6 +372,27 @@ int main(int argc, char *argv[])
                     qCritical("failed to write capture screenshot");
                     QCoreApplication::exit(6);
                     return;
+                }
+                QVariant chromeDiagnosticJson;
+                if (QMetaObject::invokeMethod(root,
+                                              "workspaceChromeDiagnosticsJson",
+                                              Q_RETURN_ARG(QVariant, chromeDiagnosticJson)))
+                {
+                    QFile chromeFile(
+                        dir.filePath(capture.captureWorkspace + QStringLiteral("-chrome.json")));
+                    if (chromeFile.open(QIODevice::WriteOnly | QIODevice::Text))
+                        chromeFile.write(chromeDiagnosticJson.toString().toUtf8());
+                }
+                if (capture.captureWorkspace == QStringLiteral("terrain-3d"))
+                {
+                    QFile clearanceFile(dir.filePath(QStringLiteral("terrain-3d-clearance.json")));
+                    if (clearanceFile.open(QIODevice::WriteOnly | QIODevice::Text))
+                    {
+                        clearanceFile.write(
+                            QJsonDocument::fromVariant(
+                                cesium.snapshot().value(QStringLiteral("clearance")))
+                                .toJson(QJsonDocument::Indented));
+                    }
                 }
                 if (capture.quitAfterCapture)
                     QCoreApplication::quit();

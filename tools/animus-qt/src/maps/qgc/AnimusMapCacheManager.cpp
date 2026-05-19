@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -37,6 +38,7 @@ constexpr double Cruise6DofEastDeg = -122.0786752;
 constexpr double Cruise6DofNorthDeg = 37.4997849;
 constexpr int Cruise6DofMinZoom = 12;
 constexpr int Cruise6DofMaxZoom = 15;
+constexpr int TilePixelSize = 256;
 
 const char *DefaultCruise6DofTileSetId = "cruise6dof-5mi-origin";
 const char *DefaultCruise6DofTileSetName = "Cruise 6DOF 5mi Origin";
@@ -73,6 +75,28 @@ QString sqliteText(sqlite3_stmt *statement, int column)
 QString utcNow()
 {
     return QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+}
+
+QImage fixtureTileImage(int zoom, int x, int y)
+{
+    QImage image(TilePixelSize, TilePixelSize, QImage::Format_RGB32);
+    const int redBase = 72 + ((x * 29 + zoom * 17) % 112);
+    const int greenBase = 96 + ((y * 23 + zoom * 11) % 104);
+    const int blueBase = 112 + ((x * 7 + y * 13) % 88);
+    for (int row = 0; row < TilePixelSize; ++row)
+    {
+        QRgb *line = reinterpret_cast<QRgb *>(image.scanLine(row));
+        for (int column = 0; column < TilePixelSize; ++column)
+        {
+            const bool grid = (row % 64) < 3 || (column % 64) < 3;
+            const bool diagonal = ((row + column + x + y) % 53) < 4;
+            const int shade = grid ? 42 : (diagonal ? 24 : ((row ^ column) & 15));
+            line[column] = qRgb(qBound(0, redBase + shade, 255),
+                                qBound(0, greenBase + shade / 2, 255),
+                                qBound(0, blueBase - shade / 3, 255));
+        }
+    }
+    return image;
 }
 
 } // namespace
@@ -412,6 +436,47 @@ bool AnimusMapCacheManager::ensureDefaultCruise6DofTileSet()
             return stepOk;
         });
     return ok && seedTileInventory(id) && reloadTileSets();
+}
+
+bool AnimusMapCacheManager::seedDefaultCruise6DofFixtureTiles()
+{
+    if (!ensureDefaultCruise6DofTileSet())
+        return false;
+
+    const QString providerId = QString::fromLatin1(DefaultCruise6DofProviderId);
+    bool ok = true;
+    for (int zoom = Cruise6DofMinZoom; zoom <= Cruise6DofMaxZoom && ok; ++zoom)
+    {
+        const int minX = longitudeTile(Cruise6DofWestDeg, zoom);
+        const int maxX = longitudeTile(Cruise6DofEastDeg, zoom);
+        const int minY = latitudeTile(Cruise6DofNorthDeg, zoom);
+        const int maxY = latitudeTile(Cruise6DofSouthDeg, zoom);
+        for (int x = minX; x <= maxX && ok; ++x)
+        {
+            for (int y = minY; y <= maxY; ++y)
+            {
+                const QString path = providerTilePath(providerId, zoom, x, y);
+                if (path.isEmpty() || !QDir().mkpath(QFileInfo(path).absolutePath()))
+                {
+                    ok = false;
+                    break;
+                }
+                if (!fixtureTileImage(zoom, x, y).save(path, "PNG"))
+                {
+                    ok = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!ok)
+    {
+        setError(QStringLiteral("Failed to seed deterministic capture tile fixture"));
+        return false;
+    }
+    const QString id = QString::fromLatin1(DefaultCruise6DofTileSetId);
+    return seedTileInventory(id) && reloadTileSets();
 }
 
 int AnimusMapCacheManager::estimateTileCount(double westDeg,

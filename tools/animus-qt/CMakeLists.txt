@@ -48,6 +48,7 @@ qt_add_executable(
     src/maps/MapSourceRegistry.cpp
     src/maps/OfflineMapManager.cpp
     src/maps/qgc/AnimusMapCacheManager.cpp
+    src/maps/TerrainClearanceAnalyzer.cpp
     src/maps/CesiumBridge.cpp
 )
 
@@ -103,6 +104,7 @@ add_executable(
     src/maps/MapSourceRegistry.cpp
     src/maps/OfflineMapManager.cpp
     src/maps/qgc/AnimusMapCacheManager.cpp
+    src/maps/TerrainClearanceAnalyzer.cpp
     src/maps/CesiumBridge.cpp
     src/telemetry/BreadcrumbPathModel.cpp
     src/telemetry/MavlinkDecoder.cpp

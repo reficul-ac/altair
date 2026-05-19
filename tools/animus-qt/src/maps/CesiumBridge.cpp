@@ -1,5 +1,6 @@
 #include "maps/CesiumBridge.h"
 
+#include "maps/TerrainClearanceAnalyzer.h"
 #include "models/VehicleModelProfileManager.h"
 #include "models/VehicleModel.h"
 #include "telemetry/BreadcrumbPathModel.h"
@@ -42,15 +43,21 @@ CesiumBridge::CesiumBridge(VehicleModel *vehicle,
     m_profileManager->setVehicleModel(vehicle);
 
     connect(vehicle, &VehicleModel::positionChanged, this, &CesiumBridge::publishVehicle);
+    connect(vehicle, &VehicleModel::positionChanged, this, &CesiumBridge::publishClearance);
     connect(vehicle, &VehicleModel::attitudeChanged, this, &CesiumBridge::publishVehicle);
     connect(vehicle, &VehicleModel::velocityChanged, this, &CesiumBridge::publishVehicle);
     connect(vehicle, &VehicleModel::vehicleChanged, this, &CesiumBridge::publishVehicle);
     connect(vehicle, &VehicleModel::actuatorChanged, this, &CesiumBridge::publishVehicle);
     connect(vehicle, &VehicleModel::homeChanged, this, &CesiumBridge::publishHome);
+    connect(vehicle, &VehicleModel::homeChanged, this, &CesiumBridge::publishClearance);
     connect(vehicle, &VehicleModel::terrainChanged, this, &CesiumBridge::publishTerrain);
+    connect(vehicle, &VehicleModel::terrainChanged, this, &CesiumBridge::publishClearance);
     connect(trail, &BreadcrumbPathModel::rowsInserted, this, &CesiumBridge::publishTrail);
+    connect(trail, &BreadcrumbPathModel::rowsInserted, this, &CesiumBridge::publishClearance);
     connect(trail, &BreadcrumbPathModel::rowsRemoved, this, &CesiumBridge::publishTrail);
+    connect(trail, &BreadcrumbPathModel::rowsRemoved, this, &CesiumBridge::publishClearance);
     connect(trail, &BreadcrumbPathModel::modelReset, this, &CesiumBridge::publishTrail);
+    connect(trail, &BreadcrumbPathModel::modelReset, this, &CesiumBridge::publishClearance);
     connect(m_profileManager,
             &VehicleModelProfileManager::selectedProfileChanged,
             this,
@@ -64,6 +71,7 @@ CesiumBridge::CesiumBridge(VehicleModel *vehicle,
     publishHome();
     publishTrail();
     publishTerrain();
+    publishClearance();
 }
 
 QVariantMap CesiumBridge::latestVehicle() const
@@ -74,6 +82,11 @@ QVariantMap CesiumBridge::latestVehicle() const
 QVariantMap CesiumBridge::terrainStatus() const
 {
     return m_terrainStatus;
+}
+
+QVariantMap CesiumBridge::terrainClearance() const
+{
+    return m_terrainClearance;
 }
 
 QVariantMap CesiumBridge::sceneStatus() const
@@ -102,6 +115,7 @@ QVariantMap CesiumBridge::snapshot() const
             {QStringLiteral("home"), m_latestHome},
             {QStringLiteral("trail"), m_latestTrail},
             {QStringLiteral("terrain"), m_terrainStatus},
+            {QStringLiteral("clearance"), m_terrainClearance},
             {QStringLiteral("scene"), m_sceneStatus},
             {QStringLiteral("model"), m_profileManager->selectedModelMap()},
             {QStringLiteral("controlSurfaces"), m_profileManager->mappedControlSurfaces()},
@@ -166,6 +180,12 @@ void CesiumBridge::publishTerrain()
 {
     m_terrainStatus = terrainMap();
     emit terrainStatusChanged(m_terrainStatus);
+}
+
+void CesiumBridge::publishClearance()
+{
+    m_terrainClearance = TerrainClearanceAnalyzer::analyze(*m_vehicle, *m_trail);
+    emit terrainClearanceChanged(m_terrainClearance);
 }
 
 QVariantMap CesiumBridge::vehicleMap() const

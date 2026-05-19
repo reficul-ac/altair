@@ -50,6 +50,22 @@ Item {
         return terrain + " | " + scene
     }
 
+    function clearanceText(value, suffix) {
+        if (cesiumBridge.terrainClearance.state === "unknown")
+            return "--"
+        return value.toFixed(1) + suffix
+    }
+
+    function clearanceColor() {
+        if (cesiumBridge.terrainClearance.state === "warning")
+            return "#b42318"
+        if (cesiumBridge.terrainClearance.state === "caution")
+            return "#9a5b00"
+        if (cesiumBridge.terrainClearance.state === "clear")
+            return "#0f7b43"
+        return "#4b5563"
+    }
+
     Rectangle {
         anchors.fill: parent
         color: "#d7e3df"
@@ -166,6 +182,63 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 12
+    }
+
+    Frame {
+        objectName: "terrainClearanceOverlay"
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.margins: 12
+        width: Math.min(parent.width - 24, 370)
+        background: Rectangle {
+            color: "#f7f7f3"
+            border.color: root.clearanceColor()
+            border.width: 2
+            radius: 6
+        }
+
+        Grid {
+            columns: 2
+            spacing: 8
+            anchors.fill: parent
+
+            Label {
+                text: "Clearance"
+                font.bold: true
+                color: root.clearanceColor()
+            }
+            Label {
+                text: cesiumBridge.terrainClearance.state || "unknown"
+                color: root.clearanceColor()
+                horizontalAlignment: Text.AlignRight
+                width: 110
+            }
+            Label { text: "AGL"; color: "#4b5563" }
+            Label {
+                text: root.clearanceText(cesiumBridge.terrainClearance.aglM, " m")
+                horizontalAlignment: Text.AlignRight
+                width: 110
+            }
+            Label { text: "Min recent"; color: "#4b5563" }
+            Label {
+                text: root.clearanceText(cesiumBridge.terrainClearance.minimumRecentClearanceM,
+                                         " m")
+                horizontalAlignment: Text.AlignRight
+                width: 110
+            }
+            Label { text: "Trend"; color: "#4b5563" }
+            Label {
+                text: root.clearanceText(cesiumBridge.terrainClearance.trendMps, " m/s")
+                horizontalAlignment: Text.AlignRight
+                width: 110
+            }
+            Label {
+                text: cesiumBridge.terrainClearance.message || "terrain clearance unavailable"
+                color: "#4b5563"
+                width: 230
+                elide: Text.ElideRight
+            }
+        }
     }
 
     Row {

@@ -14,6 +14,14 @@ ApplicationWindow {
         return shell.selectWorkspace(workspaceId)
     }
 
+    function workspaceChromeDiagnostics() {
+        return shell.workspaceChromeDiagnostics()
+    }
+
+    function workspaceChromeDiagnosticsJson() {
+        return shell.workspaceChromeDiagnosticsJson()
+    }
+
     WorkspaceShell {
         id: shell
         anchors.fill: parent

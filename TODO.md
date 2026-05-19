@@ -55,7 +55,7 @@ Reusable Bayek framework follow-up is tracked separately in
   per-tile runtime state.
 - [ ] Add a real Altair-local QtLocation `QGroundControl` provider plugin after
   Qt 6 Location is available in the target environment.
-- [ ] Add a cache-populated Animus Qt capture fixture that verifies real raster
+- [x] Add a cache-populated Animus Qt capture fixture that verifies real raster
   tile rendering while keeping fresh-checkout captures valid with the schematic
   empty-cache fallback.
 - [x] Replace the static 3D terrain canvas placeholder with a WebEngine terrain
@@ -66,7 +66,7 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Replace the Terrain 3D DOM/canvas terrain stand-in with native Cesium
   heightmap fixture terrain, offline raster imagery, bundled aircraft model,
   vehicle/home/trail primitives, and Cesium canvas screenshot capture.
-- [ ] Add richer terrain clearance analysis in Terrain 3D, including vehicle
+- [x] Add richer terrain clearance analysis in Terrain 3D, including vehicle
   clearance trend/history and operator-visible guardrail thresholds.
 - [ ] Add typed Qt models and QML overlays for mission items, geofences, rally
   points, home/origin, event markers, and breadcrumb/history layers.
@@ -176,6 +176,9 @@ Reusable Bayek framework follow-up is tracked separately in
   placeholder: AGL estimate, terrain report age, home-relative altitude,
   projected clearance along recent or active path, terrain-data availability,
   and caution states when terrain and altitude references disagree.
+- [ ] Improve Terrain 3D capture camera framing or add a full-workspace capture
+  so the artifact shows terrain/clearance overlays, not only the native Cesium
+  canvas and aircraft against mostly sky.
 - [ ] Add wind and environment awareness for GNC debugging: estimated wind
   vector, headwind/crosswind components relative to track or mission leg,
   airspeed-vs-groundspeed consistency, and SITL weather/noise provenance during

@@ -1,6 +1,7 @@
 #include "maps/MapSourceRegistry.h"
 #include "maps/CesiumBridge.h"
 #include "maps/OfflineMapManager.h"
+#include "maps/TerrainClearanceAnalyzer.h"
 #include "maps/qgc/AnimusMapCacheManager.h"
 #include "models/VehicleModel.h"
 #include "models/VehicleModelProfileManager.h"
@@ -50,6 +51,37 @@ std::unique_ptr<QObject> createMap2DView(animus::VehicleModel *vehicle,
 
     const QUrl url =
         QUrl::fromLocalFile(QStringLiteral(ANIMUS_QT_QML_DIR) + QStringLiteral("/Map2DView.qml"));
+    QQmlComponent component(engine, url, QQmlComponent::PreferSynchronous);
+    if (component.isError())
+        qWarning().noquote() << component.errors();
+    std::unique_ptr<QObject> object(component.create());
+    if (!object)
+        qWarning().noquote() << component.errors();
+    return object;
+}
+
+std::unique_ptr<QObject> createWorkspaceShell(animus::VehicleModel *vehicle,
+                                              animus::BreadcrumbPathModel *breadcrumbs,
+                                              animus::MapSourceRegistry *mapSources,
+                                              animus::OfflineMapManager *offlineMaps,
+                                              animus::AnimusMapCacheManager *mapCache,
+                                              animus::TelemetryService *telemetry,
+                                              animus::VehicleModelProfileManager *profiles,
+                                              animus::CesiumBridge *cesium,
+                                              QQmlEngine *engine)
+{
+    engine->rootContext()->setContextProperty(QStringLiteral("vehicleModel"), vehicle);
+    engine->rootContext()->setContextProperty(QStringLiteral("breadcrumbModel"), breadcrumbs);
+    engine->rootContext()->setContextProperty(QStringLiteral("mapSources"), mapSources);
+    engine->rootContext()->setContextProperty(QStringLiteral("offlineMaps"), offlineMaps);
+    engine->rootContext()->setContextProperty(QStringLiteral("mapCache"), mapCache);
+    engine->rootContext()->setContextProperty(QStringLiteral("telemetryService"), telemetry);
+    engine->rootContext()->setContextProperty(QStringLiteral("vehicleModelProfiles"), profiles);
+    engine->rootContext()->setContextProperty(QStringLiteral("cesiumBridge"), cesium);
+    engine->rootContext()->setContextProperty(QStringLiteral("webEngineTerrainEnabled"), false);
+
+    const QUrl url = QUrl::fromLocalFile(QStringLiteral(ANIMUS_QT_QML_DIR) +
+                                         QStringLiteral("/WorkspaceShell.qml"));
     QQmlComponent component(engine, url, QQmlComponent::PreferSynchronous);
     if (component.isError())
         qWarning().noquote() << component.errors();
@@ -265,6 +297,28 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(tileSet.value(QStringLiteral("north")).toDouble(), 37.4997849);
     }
 
+    void captureFixtureSeedsDeterministicRasterTiles()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+
+        animus::AnimusMapCacheManager manager;
+        manager.setRootPath(root.path());
+        QVERIFY(manager.seedDefaultCruise6DofFixtureTiles());
+        QCOMPARE(manager.tileSets().size(), 1);
+        const QVariantMap tileSet = manager.tileSets().constFirst().toMap();
+        QCOMPARE(tileSet.value(QStringLiteral("status")).toString(), QStringLiteral("complete"));
+        QCOMPARE(tileSet.value(QStringLiteral("cachedCount")).toInt(),
+                 tileSet.value(QStringLiteral("tileCount")).toInt());
+
+        const QString url =
+            manager.tileUrlFor(QStringLiteral("offline-cache"), 15, 5263, 12705, false);
+        QVERIFY(url.startsWith(QStringLiteral("file:")));
+        QVERIFY(!url.startsWith(QStringLiteral("http:")));
+        QVERIFY(!url.startsWith(QStringLiteral("https:")));
+        QVERIFY(QFileInfo::exists(QUrl(url).toLocalFile()));
+    }
+
     void tileUrlPrefersCachedFilesAndHonorsOfflinePolicy()
     {
         QTemporaryDir root;
@@ -410,6 +464,53 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(map->property("following").toBool(), true);
     }
 
+    void workspaceChromeDiagnosticReportsVisibleTabs()
+    {
+        animus::VehicleModel vehicle;
+        animus::BreadcrumbPathModel breadcrumbs;
+        animus::MapSourceRegistry mapSources;
+        animus::OfflineMapManager offlineMaps(&mapSources);
+        animus::AnimusMapCacheManager mapCache;
+        animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
+        animus::VehicleModelProfileManager profiles(bundledModelProfilesDir(), nullptr, &vehicle);
+        animus::CesiumBridge cesium(&vehicle, &breadcrumbs, &profiles);
+        QQmlEngine engine;
+
+        std::unique_ptr<QObject> shell = createWorkspaceShell(&vehicle,
+                                                              &breadcrumbs,
+                                                              &mapSources,
+                                                              &offlineMaps,
+                                                              &mapCache,
+                                                              &telemetry,
+                                                              &profiles,
+                                                              &cesium,
+                                                              &engine);
+        QVERIFY(shell);
+        shell->setProperty("width", 1280);
+        shell->setProperty("height", 820);
+        QVERIFY(QMetaObject::invokeMethod(
+            shell.get(), "selectWorkspace", Q_ARG(QVariant, QStringLiteral("terrain-3d"))));
+
+        QVariant diagnosticValue;
+        QVERIFY(QMetaObject::invokeMethod(
+            shell.get(), "workspaceChromeDiagnostics", Q_RETURN_ARG(QVariant, diagnosticValue)));
+        const QVariantMap diagnostic = diagnosticValue.toMap();
+        QCOMPARE(diagnostic.value(QStringLiteral("selectedWorkspace")).toString(),
+                 QStringLiteral("terrain-3d"));
+        const QVariantList tabs = diagnostic.value(QStringLiteral("tabs")).toList();
+        QCOMPARE(tabs.size(), 3);
+        const QStringList expectedLabels{
+            QStringLiteral("Map 2D"), QStringLiteral("Terrain 3D"), QStringLiteral("Setup")};
+        for (int index = 0; index < tabs.size(); ++index)
+        {
+            const QVariantMap tab = tabs.at(index).toMap();
+            QCOMPARE(tab.value(QStringLiteral("label")).toString(), expectedLabels.at(index));
+            QCOMPARE(tab.value(QStringLiteral("semanticallyVisible")).toBool(), true);
+            QVERIFY(tab.value(QStringLiteral("width")).toInt() > 1);
+            QVERIFY(tab.value(QStringLiteral("height")).toInt() > 1);
+        }
+    }
+
     void mavlinkDecoderParsesServoOutputRaw()
     {
         const QByteArray frame =
@@ -528,6 +629,12 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(terrain.value(QStringLiteral("loaded")).toInt(), 4);
         QCOMPARE(terrain.value(QStringLiteral("pending")).toInt(), 2);
 
+        const QVariantMap clearance = snapshot.value(QStringLiteral("clearance")).toMap();
+        QCOMPARE(clearance.value(QStringLiteral("terrainReportValid")).toBool(), true);
+        QCOMPARE(clearance.value(QStringLiteral("aglM")).toDouble(), 22.5);
+        QCOMPARE(clearance.value(QStringLiteral("homeRelativeAltitudeM")).toDouble(), 36.0);
+        QCOMPARE(clearance.value(QStringLiteral("state")).toString(), QStringLiteral("warning"));
+
         const QVariantMap model = snapshot.value(QStringLiteral("model")).toMap();
         QCOMPARE(model.value(QStringLiteral("profile")).toString(),
                  QStringLiteral("generic_fixed_wing_smooth"));
@@ -549,6 +656,49 @@ class AnimusQtMapModelTests final : public QObject
             QCOMPARE(surface.value(QStringLiteral("deflectionDeg")).toDouble(), 0.0);
             QCOMPARE(surface.value(QStringLiteral("valid")).toBool(), false);
         }
+    }
+
+    void terrainClearanceAnalyzerHandlesUnknownThresholdsAndTrend()
+    {
+        animus::VehicleModel vehicle;
+        animus::BreadcrumbPathModel trail;
+        QVariantMap clearance = animus::TerrainClearanceAnalyzer::analyze(vehicle, trail);
+        QCOMPARE(clearance.value(QStringLiteral("state")).toString(), QStringLiteral("unknown"));
+        QCOMPARE(clearance.value(QStringLiteral("message")).toString(),
+                 QStringLiteral("position unavailable"));
+
+        vehicle.setPositionValid(true);
+        clearance = animus::TerrainClearanceAnalyzer::analyze(vehicle, trail);
+        QCOMPARE(clearance.value(QStringLiteral("state")).toString(), QStringLiteral("unknown"));
+        QCOMPARE(clearance.value(QStringLiteral("message")).toString(),
+                 QStringLiteral("terrain report unavailable"));
+
+        vehicle.setAltitudeM(125.0);
+        vehicle.setHomeAltitudeM(25.0);
+        vehicle.setHomeValid(true);
+        vehicle.setTerrainCurrentHeightM(80.0);
+        vehicle.setTerrainValid(true);
+        trail.setMinDistanceM(0.0);
+        QVERIFY(trail.append(37.0, -122.0, 145.0, 10.0));
+        QVERIFY(trail.append(37.0, -122.0, 120.0, 15.0));
+        clearance = animus::TerrainClearanceAnalyzer::analyze(vehicle, trail);
+        QCOMPARE(clearance.value(QStringLiteral("aglM")).toDouble(), 45.0);
+        QCOMPARE(clearance.value(QStringLiteral("homeRelativeAltitudeM")).toDouble(), 100.0);
+        QCOMPARE(clearance.value(QStringLiteral("minimumRecentClearanceM")).toDouble(), 40.0);
+        QCOMPARE(clearance.value(QStringLiteral("trendMps")).toDouble(), -5.0);
+        QCOMPARE(clearance.value(QStringLiteral("state")).toString(), QStringLiteral("caution"));
+
+        vehicle.setAltitudeM(95.0);
+        trail.clear();
+        QVERIFY(trail.append(37.0, -122.0, 95.0, 20.0));
+        clearance = animus::TerrainClearanceAnalyzer::analyze(vehicle, trail);
+        QCOMPARE(clearance.value(QStringLiteral("state")).toString(), QStringLiteral("warning"));
+
+        vehicle.setAltitudeM(150.0);
+        trail.clear();
+        QVERIFY(trail.append(37.0, -122.0, 150.0, 30.0));
+        clearance = animus::TerrainClearanceAnalyzer::analyze(vehicle, trail);
+        QCOMPARE(clearance.value(QStringLiteral("state")).toString(), QStringLiteral("clear"));
     }
 
     void cesiumBridgeMapsServoOutputsToControlSurfaceDeflections()

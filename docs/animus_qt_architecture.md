@@ -70,7 +70,9 @@ Implemented now:
 
 - Qt/QML application under `tools/animus-qt`.
 - QML workspace shell with 2D map, WebEngine-backed 3D terrain workspace, and setup views.
-- Deterministic Qt screenshot capture for `map-2d`, `terrain-3d`, and `setup` with mock telemetry and PNG nonblank checks.
+- Deterministic Qt screenshot capture for `map-2d`, `terrain-3d`, `setup`,
+  and a seeded-cache Map 2D raster pass with mock telemetry, semantic tab
+  diagnostics, and PNG nonblank checks.
 - Vehicle state, bounded/decimated breadcrumb trail, map provider registry,
   offline policy, QGC-style cache metadata/download manager, and Cesium
   JavaScript bridge with snapshot and incremental terrain-scene updates.
@@ -81,6 +83,9 @@ Implemented now:
 - Terrain 3D vehicle rendering uses a bundled generic fixed-wing glTF model,
   altitude-aware trail segments, home marker primitives, and chase/orbit/free
   camera modes exposed through QML controls.
+- Terrain 3D exports passive terrain-clearance analysis with current AGL,
+  home-relative altitude, recent minimum/trend, terrain-report validity, and
+  centralized `unknown`/`clear`/`caution`/`warning` thresholds.
 - C++ MAVLink v1/v2 frame decode for heartbeat, attitude, global position, GPS raw, mission current, home position, and terrain report.
 - UDP telemetry ingest with latest-value UI publication throttled to 1-30 Hz.
 - Unit-test target for map policy, cache behavior, bounded trails, MAVLink decode, and telemetry publication throttling when Qt is available.

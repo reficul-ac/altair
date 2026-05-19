@@ -120,6 +120,10 @@ void TelemetryService::startMockTelemetry()
     m_vehicle->setAttitudeValid(true);
     m_vehicle->setPositionValid(true);
     m_vehicle->setVelocityValid(true);
+    m_vehicle->setHomeLatitudeDeg(37.4275);
+    m_vehicle->setHomeLongitudeDeg(-122.1697);
+    m_vehicle->setHomeAltitudeM(18.0);
+    m_vehicle->setHomeValid(true);
     if (!m_linkFresh)
     {
         m_linkFresh = true;
@@ -212,6 +216,13 @@ void TelemetryService::publishMockSample()
     m_vehicle->setAttitudeValid(true);
     m_vehicle->setPositionValid(true);
     m_vehicle->setVelocityValid(true);
+    m_vehicle->setTerrainLatitudeDeg(lat);
+    m_vehicle->setTerrainLongitudeDeg(lon);
+    m_vehicle->setTerrainHeightM(18.0);
+    m_vehicle->setTerrainCurrentHeightM(18.0 + qSin(angle * 0.5) * 2.0);
+    m_vehicle->setTerrainLoaded(1);
+    m_vehicle->setTerrainPending(0);
+    m_vehicle->setTerrainValid(true);
     updateFreshness(elapsedMs());
     m_trail->append(lat, lon, m_vehicle->altitudeM(), m_elapsedS);
 }

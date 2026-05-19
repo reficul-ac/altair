@@ -18,6 +18,7 @@ class CesiumBridge final : public QObject
     Q_OBJECT
     Q_PROPERTY(QVariantMap latestVehicle READ latestVehicle NOTIFY latestVehicleChanged)
     Q_PROPERTY(QVariantMap terrainStatus READ terrainStatus NOTIFY terrainStatusChanged)
+    Q_PROPERTY(QVariantMap terrainClearance READ terrainClearance NOTIFY terrainClearanceChanged)
     Q_PROPERTY(QVariantMap sceneStatus READ sceneStatus NOTIFY sceneStatusChanged)
     Q_PROPERTY(QString terrainCachePath READ terrainCachePath WRITE setTerrainCachePath NOTIFY
                    terrainCachePathChanged)
@@ -33,6 +34,7 @@ class CesiumBridge final : public QObject
 
     QVariantMap latestVehicle() const;
     QVariantMap terrainStatus() const;
+    QVariantMap terrainClearance() const;
     QVariantMap sceneStatus() const;
     QString terrainCachePath() const;
     void setTerrainCachePath(const QString &terrainCachePath);
@@ -46,6 +48,7 @@ class CesiumBridge final : public QObject
     void trailChanged(const QVariantList &trail);
     void homeChanged(const QVariantMap &home);
     void terrainStatusChanged(const QVariantMap &terrain);
+    void terrainClearanceChanged(const QVariantMap &clearance);
     void sceneStatusChanged(const QVariantMap &scene);
     void terrainCachePathChanged();
 
@@ -54,6 +57,7 @@ class CesiumBridge final : public QObject
     void publishHome();
     void publishTrail();
     void publishTerrain();
+    void publishClearance();
 
   private:
     QVariantMap vehicleMap() const;
@@ -72,6 +76,7 @@ class CesiumBridge final : public QObject
     QVariantMap m_latestHome;
     QVariantList m_latestTrail;
     QVariantMap m_terrainStatus;
+    QVariantMap m_terrainClearance;
     QString m_terrainCachePath;
     QVariantMap m_sceneStatus;
 };

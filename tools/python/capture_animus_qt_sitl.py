@@ -63,6 +63,13 @@ WORKSPACE_CONTENT_REGIONS = {
 
 TOP_REGION = RegionSpec("toolbar and tabs", (0.0, 0.0, 1.0, 0.15), 7, 18.0, 0.96)
 WORKSPACE_DIFFERENCE_MINIMUM = 8.0
+EXPECTED_TAB_LABELS = ("Map 2D", "Terrain 3D", "Setup")
+XCB_FAILURE_MARKERS = (
+    "could not connect to display",
+    'could not load the qt platform plugin "xcb"',
+    "no qt platform plugin could be initialized",
+    "xcb",
+)
 REQUIRED_CONTROL_SURFACES = {
     "left_aileron": "aileron_left_pivot",
     "right_aileron": "aileron_right_pivot",
@@ -277,7 +284,10 @@ def inspect_region(image: PngImage, spec: RegionSpec) -> dict[str, object]:
 
 
 def inspect_png(
-    path: Path, workspace: str = "", expected_size: tuple[int, int] = EXPECTED_CAPTURE_SIZE
+    path: Path,
+    workspace: str = "",
+    expected_size: tuple[int, int] = EXPECTED_CAPTURE_SIZE,
+    seeded_raster: bool = False,
 ) -> dict[str, object]:
     result: dict[str, object] = {"path": str(path), "exists": path.exists(), "diagnostics": []}
     failures: list[str] = []
@@ -314,6 +324,13 @@ def inspect_png(
         diagnostics = [] if workspace == "terrain-3d" else [inspect_region(image, TOP_REGION)]
         for spec in WORKSPACE_CONTENT_REGIONS.get(workspace, ()):
             diagnostics.append(inspect_region(image, spec))
+        if seeded_raster:
+            diagnostics.append(
+                inspect_region(
+                    image,
+                    RegionSpec("seeded raster tiles", (0.08, 0.20, 0.92, 0.88), 16, 22.0, 0.86),
+                )
+            )
         result["diagnostics"] = diagnostics
         for diagnostic in diagnostics:
             for message in diagnostic.get("failures", []):
@@ -433,6 +450,79 @@ def inspect_control_surface_diagnostic(path: Path) -> dict[str, object]:
     return result
 
 
+def inspect_chrome_diagnostic(path: Path, expected_workspace: str) -> dict[str, object]:
+    result: dict[str, object] = {"path": str(path), "exists": path.exists()}
+    failures: list[str] = []
+    if not path.exists():
+        failures.append("missing workspace chrome diagnostic")
+        result.update({"ok": False, "failures": failures})
+        return result
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        failures.append(f"invalid workspace chrome diagnostic: {exc}")
+        result.update({"ok": False, "failures": failures})
+        return result
+
+    if payload.get("selectedWorkspace") != expected_workspace:
+        failures.append(
+            f"selected workspace {payload.get('selectedWorkspace')} != {expected_workspace}"
+        )
+    tabs = payload.get("tabs", [])
+    labels = [str(tab.get("label", "")) for tab in tabs if isinstance(tab, dict)]
+    for label in EXPECTED_TAB_LABELS:
+        if label not in labels:
+            failures.append(f"missing tab label {label}")
+            continue
+        tab = next(tab for tab in tabs if isinstance(tab, dict) and tab.get("label") == label)
+        if not tab.get("semanticallyVisible"):
+            failures.append(f"tab label {label} is not semantically visible")
+        if int(tab.get("width", 0)) <= 1 or int(tab.get("height", 0)) <= 1:
+            failures.append(f"tab label {label} has invalid geometry")
+        if not tab.get("enabled", True):
+            failures.append(f"tab label {label} is disabled")
+    chrome = payload.get("chrome", {})
+    if isinstance(chrome, dict) and not chrome.get("semanticallyVisible"):
+        failures.append("workspace chrome is not semantically visible")
+    result.update(payload)
+    result["ok"] = not failures
+    result["failures"] = failures
+    return result
+
+
+def inspect_clearance_diagnostic(path: Path) -> dict[str, object]:
+    result: dict[str, object] = {"path": str(path), "exists": path.exists()}
+    failures: list[str] = []
+    if not path.exists():
+        failures.append("missing terrain clearance diagnostic")
+        result.update({"ok": False, "failures": failures})
+        return result
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        failures.append(f"invalid terrain clearance diagnostic: {exc}")
+        result.update({"ok": False, "failures": failures})
+        return result
+    for key in (
+        "aglM",
+        "homeRelativeAltitudeM",
+        "terrainHeightM",
+        "terrainReportValid",
+        "trendMps",
+        "minimumRecentClearanceM",
+        "state",
+        "message",
+    ):
+        if key not in payload:
+            failures.append(f"missing clearance key {key}")
+    if payload.get("state") not in ("unknown", "clear", "caution", "warning"):
+        failures.append(f"unexpected clearance state {payload.get('state')}")
+    result.update(payload)
+    result["ok"] = not failures
+    result["failures"] = failures
+    return result
+
+
 def summarize_log(path: Path, max_lines: int = 6) -> str:
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -445,8 +535,15 @@ def summarize_log(path: Path, max_lines: int = 6) -> str:
 
 
 def command_for_workspace(
-    executable: Path, screenshot_dir: Path, workspace: str, delay_ms: int
+    executable: Path,
+    screenshot_dir: Path,
+    workspace: str,
+    delay_ms: int,
+    map_cache_root: Path | None = None,
+    seed_map_cache: bool = False,
 ) -> list[str]:
+    if map_cache_root is None:
+        map_cache_root = screenshot_dir / "map-cache"
     command = [
         str(executable),
         "--capture-dir",
@@ -456,11 +553,29 @@ def command_for_workspace(
         "--mock-telemetry",
         "--capture-delay-ms",
         str(delay_ms),
+        "--map-cache-root",
+        str(map_cache_root),
         "--quit-after-capture",
     ]
+    if seed_map_cache:
+        command.append("--seed-map-cache-fixture")
     if workspace == "terrain-3d":
         command.append("--verify-terrain-control-surfaces")
     return command
+
+
+def offscreen_env(base_env: dict[str, str]) -> dict[str, str]:
+    env = base_env.copy()
+    env["QT_QPA_PLATFORM"] = "offscreen"
+    env["QT_QUICK_BACKEND"] = "software"
+    env["QT_OPENGL"] = "software"
+    env.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-software-rasterizer")
+    return env
+
+
+def xcb_startup_failure(log_path: Path) -> bool:
+    text = summarize_log(log_path, max_lines=40).lower()
+    return any(marker in text for marker in XCB_FAILURE_MARKERS)
 
 
 def write_report(run_dir: Path, manifest: dict[str, object]) -> None:
@@ -488,6 +603,28 @@ def write_report(run_dir: Path, manifest: dict[str, object]) -> None:
         messages = []
         messages.extend(str(message) for message in png.get("failures", []))
         messages.extend(str(message) for message in png.get("warnings", []))
+        chrome = capture.get("chromeDiagnostic")
+        if isinstance(chrome, dict):
+            diagnostics.append(f"chrome tabs: {'pass' if chrome.get('ok') else 'fail'}")
+            messages.extend(str(message) for message in chrome.get("failures", []))
+        clearance = capture.get("clearanceDiagnostic")
+        if isinstance(clearance, dict):
+            diagnostics.append(
+                "clearance: "
+                f"{'pass' if clearance.get('ok') else 'fail'} "
+                f"({clearance.get('state', '-')})"
+            )
+            messages.extend(str(message) for message in clearance.get("failures", []))
+        attempts = capture.get("attempts", [])
+        if attempts:
+            diagnostics.append(
+                "attempts: "
+                + ", ".join(
+                    f"{attempt.get('displayStrategy', '-')}/{attempt.get('exitCode', '-')}"
+                    for attempt in attempts
+                    if isinstance(attempt, dict)
+                )
+            )
         control_surfaces = capture.get("controlSurfaceDiagnostic")
         if isinstance(control_surfaces, dict):
             diagnostics.append(
@@ -536,11 +673,14 @@ def main() -> int:
     run_dir = Path(args.artifacts_dir) / timestamp()
     screenshot_dir = run_dir / "screenshots"
     logs_dir = run_dir / "logs"
+    cache_dir = run_dir / "map-cache"
     screenshot_dir.mkdir(parents=True, exist_ok=True)
     logs_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
     executable = Path(args.executable)
     env = os.environ.copy()
+    base_env = env.copy()
     virtual_display = "existing" if env.get("DISPLAY") else "offscreen"
     xvfb_executable = ""
     display = env.get("DISPLAY", "")
@@ -579,6 +719,7 @@ def main() -> int:
         "usedXvfb": virtual_display in ("managed-xvfb", "xvfb-run"),
         "usedOffscreen": virtual_display == "offscreen",
         "captures": [],
+        "captureAttempts": [],
         "screenshots": [],
         "workspaceComparisons": [],
         "notes": notes,
@@ -594,49 +735,147 @@ def main() -> int:
             "animus_qt executable not found; build with -DALTAIR_BUILD_ANIMUS_QT=ON first"
         )
     else:
-        for workspace in WORKSPACES:
+
+        def run_capture(
+            workspace: str,
+            capture_label: str,
+            output_dir: Path,
+            map_cache_root: Path,
+            seed_map_cache: bool = False,
+        ) -> dict[str, object]:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            map_cache_root.mkdir(parents=True, exist_ok=True)
             command = command_for_workspace(
-                executable, screenshot_dir, workspace, args.capture_delay_ms
+                executable,
+                output_dir,
+                workspace,
+                args.capture_delay_ms,
+                map_cache_root,
+                seed_map_cache,
             )
-            launched_command = command_prefix + command
-            log_path = logs_dir / f"{workspace}.log"
-            with log_path.open("w", encoding="utf-8") as log:
-                completed = subprocess.run(
-                    launched_command,
-                    cwd=REPO_ROOT,
-                    env=env,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    timeout=max(10, args.capture_delay_ms // 1000 + 10),
-                    check=False,
-                )
+            strategies: list[tuple[str, list[str], dict[str, str]]] = [
+                (virtual_display, command_prefix, env)
+            ]
+            attempts: list[dict[str, object]] = []
+            completed: subprocess.CompletedProcess[str] | None = None
+            for attempt_index, (strategy, prefix, attempt_env) in enumerate(strategies, start=1):
+                launched_command = prefix + command
+                log_path = logs_dir / f"{capture_label}-attempt-{attempt_index}.log"
+                with log_path.open("w", encoding="utf-8") as log:
+                    completed = subprocess.run(
+                        launched_command,
+                        cwd=REPO_ROOT,
+                        env=attempt_env,
+                        stdout=log,
+                        stderr=subprocess.STDOUT,
+                        timeout=max(10, args.capture_delay_ms // 1000 + 10),
+                        check=False,
+                    )
+                attempt = {
+                    "workspace": workspace,
+                    "capture": capture_label,
+                    "displayStrategy": strategy,
+                    "command": launched_command,
+                    "exitCode": completed.returncode,
+                    "log": str(log_path),
+                    "summary": summarize_log(log_path),
+                }
+                attempts.append(attempt)
+                manifest["captureAttempts"].append(attempt)
+                if completed.returncode == 0:
+                    break
+                if (
+                    strategy == "xvfb-run"
+                    and xcb_startup_failure(log_path)
+                    and len(strategies) == attempt_index
+                ):
+                    note = (
+                        f"{capture_label}: xvfb-run failed during Qt/xcb startup; "
+                        "retrying with Qt offscreen software rendering"
+                    )
+                    notes.append(note)
+                    strategies.append(("offscreen-retry", [], offscreen_env(base_env)))
+            if completed is None:
+                raise RuntimeError("capture did not launch")
+
             expected_size = None if workspace == "terrain-3d" else EXPECTED_CAPTURE_SIZE
-            png = inspect_png(screenshot_dir / f"{workspace}.png", workspace, expected_size)
+            png = inspect_png(
+                output_dir / f"{workspace}.png",
+                workspace,
+                expected_size,
+                seeded_raster=seed_map_cache,
+            )
             capture = {
-                "workspace": workspace,
-                "command": launched_command,
+                "workspace": capture_label,
+                "captureWorkspace": workspace,
+                "command": attempts[-1]["command"] if attempts else command,
                 "exitCode": completed.returncode,
-                "log": str(log_path),
-                "screenshot": str(screenshot_dir / f"{workspace}.png"),
+                "log": attempts[-1]["log"] if attempts else "",
+                "attempts": attempts,
+                "mapCacheRoot": str(map_cache_root),
+                "seededMapCacheFixture": seed_map_cache,
+                "screenshot": str(output_dir / f"{workspace}.png"),
                 "png": png,
             }
+            capture["chromeDiagnostic"] = inspect_chrome_diagnostic(
+                output_dir / f"{workspace}-chrome.json", workspace
+            )
             if workspace == "terrain-3d":
                 capture["controlSurfaceDiagnostic"] = inspect_control_surface_diagnostic(
-                    screenshot_dir / "terrain-3d-control-surfaces.json"
+                    output_dir / "terrain-3d-control-surfaces.json"
                 )
+                capture["clearanceDiagnostic"] = inspect_clearance_diagnostic(
+                    output_dir / "terrain-3d-clearance.json"
+                )
+            return capture
+
+        for workspace in WORKSPACES:
+            capture = run_capture(
+                workspace,
+                workspace,
+                screenshot_dir,
+                cache_dir / "fresh",
+                seed_map_cache=False,
+            )
             manifest["captures"].append(capture)
+            png = capture["png"]
             if png.get("ok"):
                 manifest["screenshots"].append(capture["screenshot"])
+            chrome_diagnostic = capture.get("chromeDiagnostic", {})
             control_surface_diagnostic = capture.get("controlSurfaceDiagnostic", {})
+            clearance_diagnostic = capture.get("clearanceDiagnostic", {})
             if (
-                completed.returncode != 0
+                capture["exitCode"] != 0
                 or not png.get("ok")
+                or (isinstance(chrome_diagnostic, dict) and not chrome_diagnostic.get("ok", True))
                 or (
                     isinstance(control_surface_diagnostic, dict)
                     and not control_surface_diagnostic.get("ok", True)
                 )
+                or (
+                    isinstance(clearance_diagnostic, dict)
+                    and not clearance_diagnostic.get("ok", True)
+                )
             ):
                 manifest["status"] = "fail"
+        seeded_capture = run_capture(
+            "map-2d",
+            "map-2d-seeded-cache",
+            screenshot_dir / "seeded-cache",
+            cache_dir / "seeded",
+            seed_map_cache=True,
+        )
+        manifest["captures"].append(seeded_capture)
+        seeded_png = seeded_capture["png"]
+        if seeded_png.get("ok"):
+            manifest["screenshots"].append(seeded_capture["screenshot"])
+        seeded_chrome = seeded_capture.get("chromeDiagnostic", {})
+        if (
+            seeded_capture["exitCode"] != 0
+            or not seeded_png.get("ok")
+            or (isinstance(seeded_chrome, dict) and not seeded_chrome.get("ok", True))
+        ):
+            manifest["status"] = "fail"
         manifest["workspaceComparisons"] = compare_workspace_screenshots(manifest["captures"])
         for comparison in manifest["workspaceComparisons"]:
             if comparison.get("status") == "fail":

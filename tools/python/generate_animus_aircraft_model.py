@@ -11,9 +11,7 @@ import struct
 from dataclasses import dataclass
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-DEFAULT_OUTPUT = (
-    REPO_ROOT / "tools/animus-qt/web/cesium/models/generic_fixed_wing_smooth.glb"
-)
+DEFAULT_OUTPUT = REPO_ROOT / "tools/animus-qt/web/cesium/models/generic_fixed_wing_smooth.glb"
 GENERATOR_NAME = "Altair Animus procedural RC aircraft generator"
 
 

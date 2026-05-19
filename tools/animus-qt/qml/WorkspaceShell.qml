@@ -4,6 +4,7 @@ import QtQuick.Layouts
 
 Item {
     id: root
+    objectName: "workspaceShell"
 
     readonly property var workspaceIds: ["map-2d", "terrain-3d", "setup"]
     property string currentWorkspace: workspaceIds[tabs.currentIndex]
@@ -15,6 +16,40 @@ Item {
         tabs.currentIndex = index
         currentWorkspace = workspaceId
         return true
+    }
+
+    function itemDiagnostic(item, label) {
+        var topLeft = item.mapToItem(root, 0, 0)
+        return {
+            "objectName": item.objectName,
+            "label": label,
+            "visible": item.visible,
+            "enabled": item.enabled === undefined ? true : item.enabled,
+            "opacity": item.opacity,
+            "x": Math.round(topLeft.x),
+            "y": Math.round(topLeft.y),
+            "width": Math.round(item.width),
+            "height": Math.round(item.height),
+            "semanticallyVisible": item.visible && item.opacity > 0.01 &&
+                                   item.width > 1 && item.height > 1
+        }
+    }
+
+    function workspaceChromeDiagnostics() {
+        return {
+            "selectedWorkspace": root.currentWorkspace,
+            "currentIndex": tabs.currentIndex,
+            "chrome": root.itemDiagnostic(chrome, "chrome"),
+            "tabs": [
+                root.itemDiagnostic(map2DTab, map2DTab.text),
+                root.itemDiagnostic(terrain3DTab, terrain3DTab.text),
+                root.itemDiagnostic(setupTab, setupTab.text)
+            ]
+        }
+    }
+
+    function workspaceChromeDiagnosticsJson() {
+        return JSON.stringify(root.workspaceChromeDiagnostics(), null, 2)
     }
 
     StackLayout {
@@ -33,6 +68,7 @@ Item {
 
     ColumnLayout {
         id: chrome
+        objectName: "workspaceChrome"
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
@@ -69,11 +105,24 @@ Item {
 
         TabBar {
             id: tabs
+            objectName: "workspaceTabs"
             Layout.fillWidth: true
             onCurrentIndexChanged: root.currentWorkspace = root.workspaceIds[currentIndex]
-            TabButton { text: "Map 2D" }
-            TabButton { text: "Terrain 3D" }
-            TabButton { text: "Setup" }
+            TabButton {
+                id: map2DTab
+                objectName: "workspaceTabMap2D"
+                text: "Map 2D"
+            }
+            TabButton {
+                id: terrain3DTab
+                objectName: "workspaceTabTerrain3D"
+                text: "Terrain 3D"
+            }
+            TabButton {
+                id: setupTab
+                objectName: "workspaceTabSetup"
+                text: "Setup"
+            }
         }
     }
 }

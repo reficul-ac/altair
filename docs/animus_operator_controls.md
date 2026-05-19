@@ -41,13 +41,24 @@ It requires Qt 6.4 or newer with the Qt modules listed in [Animus Qt Map And Ter
 
 ## Verification Workflows
 
-The visual verification workflow captures one screenshot per Qt workspace:
+The visual verification workflow captures each Qt workspace plus a seeded-cache
+Map 2D raster pass:
 
 ```sh
 python3 tools/python/capture_animus_qt_sitl.py
 ```
 
-The script captures `map-2d`, `terrain-3d`, and `setup` from the built Qt shell with mock telemetry. It writes PNGs, per-workspace logs, `visual-report.md`, and `run-manifest.json` under `artifacts/animus-qt-screenshots/<timestamp>/`. The report includes deterministic PNG diagnostics for capture size, toolbar/tab visibility, workspace content regions, sampled color diversity, and cross-workspace screenshot differences. The `terrain-3d` capture uses the bundled Cesium/WebEngine path and saves the native Cesium canvas PNG, with Xvfb WebGL flags supplied by the capture helper when no display is already present.
+The script captures `map-2d`, `terrain-3d`, `setup`, and
+`map-2d-seeded-cache` from the built Qt shell with mock telemetry. It writes
+PNGs, per-workspace logs, `visual-report.md`, and `run-manifest.json` under
+`artifacts/animus-qt-screenshots/<timestamp>/`. The report includes
+deterministic PNG diagnostics for capture size, semantic workspace tab
+visibility, seeded raster tile rendering, workspace content regions, sampled
+color diversity, display fallback attempts, and cross-workspace screenshot
+differences. The `terrain-3d` capture uses the bundled Cesium/WebEngine path
+and saves the native Cesium canvas PNG, with Xvfb WebGL flags supplied by the
+capture helper when no display is already present. It also records terrain
+clearance and control-surface diagnostics.
 
 ## Flight View
 

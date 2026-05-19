@@ -94,6 +94,7 @@ class AnimusMapCacheManager final : public QAbstractListModel
     Q_INVOKABLE QString providerBlockReason(const QString &providerId, bool networkAllowed) const;
     Q_INVOKABLE bool initializeCache();
     Q_INVOKABLE bool ensureDefaultCruise6DofTileSet();
+    Q_INVOKABLE bool seedDefaultCruise6DofFixtureTiles();
     Q_INVOKABLE int estimateTileCount(double westDeg,
                                       double southDeg,
                                       double eastDeg,
