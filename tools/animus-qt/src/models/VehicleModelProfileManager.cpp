@@ -125,7 +125,10 @@ VehicleModelProfileManager::VehicleModelProfileManager(const QString &profilesDi
     loadProfiles(profilesDirectory);
     loadSettings();
     if (m_vehicle)
-        connect(m_vehicle, &VehicleModel::actuatorChanged, this, &VehicleModelProfileManager::surfacesChanged);
+        connect(m_vehicle,
+                &VehicleModel::actuatorChanged,
+                this,
+                &VehicleModelProfileManager::surfacesChanged);
 }
 
 QVariantList VehicleModelProfileManager::profiles() const
@@ -182,15 +185,21 @@ void VehicleModelProfileManager::setVehicleModel(VehicleModel *vehicle)
     if (m_vehicle == vehicle)
         return;
     if (m_vehicle)
-        disconnect(m_vehicle, &VehicleModel::actuatorChanged, this, &VehicleModelProfileManager::surfacesChanged);
+        disconnect(m_vehicle,
+                   &VehicleModel::actuatorChanged,
+                   this,
+                   &VehicleModelProfileManager::surfacesChanged);
     m_vehicle = vehicle;
     if (m_vehicle)
-        connect(m_vehicle, &VehicleModel::actuatorChanged, this, &VehicleModelProfileManager::surfacesChanged);
+        connect(m_vehicle,
+                &VehicleModel::actuatorChanged,
+                this,
+                &VehicleModelProfileManager::surfacesChanged);
     emit surfacesChanged();
 }
 
-const VehicleModelProfileManager::ModelProfile &VehicleModelProfileManager::selectedModelProfile()
-    const
+const VehicleModelProfileManager::ModelProfile &
+VehicleModelProfileManager::selectedModelProfile() const
 {
     const int index = selectedProfileIndex();
     return m_profiles.at(index);
@@ -333,8 +342,8 @@ int VehicleModelProfileManager::profileIndex(const QString &profileId) const
     return -1;
 }
 
-const VehicleModelProfileManager::SurfaceProfile *VehicleModelProfileManager::surfaceProfile(
-    const QString &surfaceId) const
+const VehicleModelProfileManager::SurfaceProfile *
+VehicleModelProfileManager::surfaceProfile(const QString &surfaceId) const
 {
     const ModelProfile &profile = selectedModelProfile();
     for (const SurfaceProfile &surface : profile.surfaces)
@@ -385,18 +394,16 @@ double VehicleModelProfileManager::mappedDeflectionDeg(const SurfaceProfile &sur
         if (span <= 0.0)
             return polarity * surface.deflectionNeutralDeg;
         const double ratio = (surface.pwmNeutral - boundedPwm) / span;
-        return polarity *
-               (surface.deflectionNeutralDeg +
-                ratio * (surface.deflectionMinimumDeg - surface.deflectionNeutralDeg));
+        return polarity * (surface.deflectionNeutralDeg +
+                           ratio * (surface.deflectionMinimumDeg - surface.deflectionNeutralDeg));
     }
 
     const double span = surface.pwmMaximum - surface.pwmNeutral;
     if (span <= 0.0)
         return polarity * surface.deflectionNeutralDeg;
     const double ratio = (boundedPwm - surface.pwmNeutral) / span;
-    return polarity *
-           (surface.deflectionNeutralDeg +
-            ratio * (surface.deflectionMaximumDeg - surface.deflectionNeutralDeg));
+    return polarity * (surface.deflectionNeutralDeg +
+                       ratio * (surface.deflectionMaximumDeg - surface.deflectionNeutralDeg));
 }
 
 } // namespace animus

@@ -63,9 +63,11 @@ MAVLink decoding and vehicle policy stay in Qt/C++:
 5. `VehicleModelController` loads or accepts the profile, resolves named glTF
    nodes from the Cesium model when available, and applies rotations.
 
-The initial scaffolding publishes the `generic_fixed_wing_smooth` profile and
-neutral invalid surface states. It intentionally does not parse
-`ACTUATOR_OUTPUT_STATUS` or `SERVO_OUTPUT_RAW`.
+The C++ telemetry and profile path maps actuator PWM, including
+`SERVO_OUTPUT_RAW`, into profile-defined control-surface deflections before the
+snapshot reaches Cesium. Channel mapping, polarity, PWM limits, and deflection
+limits stay in vehicle/profile policy; Cesium JavaScript must not infer those
+semantics from node names or actuator channels.
 
 ## Setup Workflow
 

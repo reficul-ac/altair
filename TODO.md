@@ -70,8 +70,6 @@ Reusable Bayek framework follow-up is tracked separately in
   clearance trend/history and operator-visible guardrail thresholds.
 - [ ] Add typed Qt models and QML overlays for mission items, geofences, rally
   points, home/origin, event markers, and breadcrumb/history layers.
-- [ ] Add local aircraft model import for Terrain 3D after the operator file
-  policy, supported formats, and offline asset packaging are defined.
 - [x] Author or import `generic_fixed_wing_smooth.glb` with named
   control-surface pivot nodes.
   - Context: The first profile references a GLB asset that must provide the
@@ -216,9 +214,21 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Replace the Terrain 3D placeholder with a true x/y/z or
   latitude/longitude/altitude trajectory view comparable to the Hawkeye 3D
   trajectory workflow.
-- [ ] Render a generic fixed-wing RC airplane model in 3D views and allow the
-  operator to select a replacement GLB/glTF runtime model file; keep OBJ only
-  as an authoring/import/export intermediate.
+- [ ] Replace the current minimal bundled Terrain 3D aircraft GLB with a
+  polished generic fixed-wing RC model.
+  - Runtime format is GLB/glTF; OBJ is allowed only as an
+    authoring/import/export intermediate.
+  - Acceptance: Bundled GLB looks like a recognizable RC fixed-wing aircraft
+    in Terrain 3D.
+  - Acceptance: GLB preserves named pivot nodes for `aileron_left_pivot`,
+    `aileron_right_pivot`, `elevator_pivot`, and `rudder_pivot`.
+  - Acceptance: Existing `generic_fixed_wing_smooth.json` or its replacement
+    profile maps all movable surfaces without renderer-side policy.
+  - Acceptance: Animus Qt capture verifies the model loads and required pivot
+    nodes move under the semantic control-surface diagnostic.
+  - Acceptance: Asset provenance/license is documented before commit.
+- [ ] Add local aircraft model import for Terrain 3D after the operator file
+  policy, supported formats, and offline asset packaging are defined.
 - [ ] Add a tactical 3D attitude tab focused on aircraft attitude, angular
   rates, compass heading, and gyro-ring style roll/pitch/yaw visualization
   without trajectory clutter.
