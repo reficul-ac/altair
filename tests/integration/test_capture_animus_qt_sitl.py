@@ -267,6 +267,7 @@ def main():
   "tabs": [
     {"label": "Map 2D", "semanticallyVisible": true, "enabled": true, "width": 80, "height": 32, "labelItem": {"label": "Map 2D", "semanticallyVisible": true, "width": 45, "height": 18}, "labelTextMatches": true, "labelInsideTab": true},
     {"label": "Terrain 3D", "semanticallyVisible": true, "enabled": true, "width": 100, "height": 32, "labelItem": {"label": "Terrain 3D", "semanticallyVisible": true, "width": 70, "height": 18}, "labelTextMatches": true, "labelInsideTab": true},
+    {"label": "FPV", "semanticallyVisible": true, "enabled": true, "width": 62, "height": 32, "labelItem": {"label": "FPV", "semanticallyVisible": true, "width": 26, "height": 18}, "labelTextMatches": true, "labelInsideTab": true},
     {"label": "Tactical", "semanticallyVisible": true, "enabled": true, "width": 88, "height": 32, "labelItem": {"label": "Tactical", "semanticallyVisible": true, "width": 58, "height": 18}, "labelTextMatches": true, "labelInsideTab": true},
     {"label": "Setup", "semanticallyVisible": true, "enabled": true, "width": 70, "height": 32, "labelItem": {"label": "Setup", "semanticallyVisible": true, "width": 42, "height": 18}, "labelTextMatches": true, "labelInsideTab": true}
   ]
@@ -299,6 +300,11 @@ def main():
         status |= expect(
             "--verify-terrain-control-surfaces" in tactical_command,
             f"tactical command missing control-surface verification: {tactical_command}",
+        )
+        fpv_command = module.command_for_workspace(Path("animus_qt"), tmp_dir, "fpv", 1200)
+        status |= expect(
+            "--verify-terrain-control-surfaces" in fpv_command,
+            f"FPV command missing control-surface verification: {fpv_command}",
         )
 
         camera_path = tmp_dir / "tactical-camera.json"
@@ -333,6 +339,36 @@ def main():
         )
         camera = module.inspect_tactical_camera_diagnostic(camera_path)
         status |= expect(not camera["ok"], "expected tactical fallback camera to fail")
+
+        fpv_camera_path = tmp_dir / "fpv-camera.json"
+        fpv_camera_path.write_text(
+            """{
+  "ok": true,
+  "renderer": "cesium-webengine",
+  "workspaceMode": "fpv",
+  "mode": "fpv",
+  "cameraMode": "fpv",
+  "freeRoamAvailable": false,
+  "vehicleLocked": true,
+  "terrainEnabled": true,
+  "ownshipHidden": true,
+  "fixedFovDeg": 70.0,
+  "forwardHemisphereDot": 0.5,
+  "forwardHemisphereCompliant": true
+}
+""",
+            encoding="utf-8",
+        )
+        fpv_camera = module.inspect_fpv_camera_diagnostic(fpv_camera_path)
+        status |= expect(fpv_camera["ok"], f"expected FPV camera diagnostic to pass: {fpv_camera}")
+        fpv_camera_path.write_text(
+            fpv_camera_path.read_text(encoding="utf-8").replace(
+                '"forwardHemisphereCompliant": true', '"forwardHemisphereCompliant": false'
+            ),
+            encoding="utf-8",
+        )
+        fpv_camera = module.inspect_fpv_camera_diagnostic(fpv_camera_path)
+        status |= expect(not fpv_camera["ok"], "expected FPV hemisphere diagnostic to fail")
 
         xcb_log = tmp_dir / "xcb-startup.log"
         xcb_log.write_text(

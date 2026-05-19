@@ -536,9 +536,10 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(diagnostic.value(QStringLiteral("selectedWorkspace")).toString(),
                  QStringLiteral("terrain-3d"));
         const QVariantList tabs = diagnostic.value(QStringLiteral("tabs")).toList();
-        QCOMPARE(tabs.size(), 4);
+        QCOMPARE(tabs.size(), 5);
         const QStringList expectedLabels{QStringLiteral("Map 2D"),
                                          QStringLiteral("Terrain 3D"),
+                                         QStringLiteral("FPV"),
                                          QStringLiteral("Tactical"),
                                          QStringLiteral("Setup")};
         for (int index = 0; index < tabs.size(); ++index)
@@ -576,6 +577,33 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(QMetaObject::invokeMethod(
             shell.get(), "selectWorkspace", Q_ARG(QVariant, QStringLiteral("tactical"))));
         QCOMPARE(shell->property("currentWorkspace").toString(), QStringLiteral("tactical"));
+    }
+
+    void workspaceShellSelectsFpvById()
+    {
+        animus::VehicleModel vehicle;
+        animus::BreadcrumbPathModel breadcrumbs;
+        animus::MapSourceRegistry mapSources;
+        animus::OfflineMapManager offlineMaps(&mapSources);
+        animus::AnimusMapCacheManager mapCache;
+        animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
+        animus::VehicleModelProfileManager profiles(bundledModelProfilesDir(), nullptr, &vehicle);
+        animus::CesiumBridge cesium(&vehicle, &breadcrumbs, &profiles);
+        QQmlEngine engine;
+
+        std::unique_ptr<QObject> shell = createWorkspaceShell(&vehicle,
+                                                              &breadcrumbs,
+                                                              &mapSources,
+                                                              &offlineMaps,
+                                                              &mapCache,
+                                                              &telemetry,
+                                                              &profiles,
+                                                              &cesium,
+                                                              &engine);
+        QVERIFY(shell);
+        QVERIFY(QMetaObject::invokeMethod(
+            shell.get(), "selectWorkspace", Q_ARG(QVariant, QStringLiteral("fpv"))));
+        QCOMPARE(shell->property("currentWorkspace").toString(), QStringLiteral("fpv"));
     }
 
     void mavlinkDecoderParsesServoOutputRaw()
@@ -1246,6 +1274,8 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(scriptText.contains(QStringLiteral("window.animusCaptureCesiumPng")));
         QVERIFY(scriptText.contains(QStringLiteral("window.animusInspectControlSurfaces")));
         QVERIFY(scriptText.contains(QStringLiteral("window.animusSetCameraMode")));
+        QVERIFY(scriptText.contains(QStringLiteral("window.animusResetFpvCamera")));
+        QVERIFY(scriptText.contains(QStringLiteral("window.animusFpvCameraState")));
         QVERIFY(scriptText.contains(QStringLiteral("window.animusResetTacticalCamera")));
         QVERIFY(scriptText.contains(QStringLiteral("ANIMUS_CAMERA_MODE")));
         QVERIFY(scriptText.contains(QStringLiteral("installCameraControls")));
@@ -1327,7 +1357,53 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(!tacticalQmlText.contains(QStringLiteral("setCameraMode(\"tactical\")")));
     }
 
-    void terrainAndTacticalUseLocalWebEngineSceneStatus()
+    void fpvStaticBundleUsesForwardHemisphereCamera()
+    {
+        const QDir cesiumDir(
+            QDir(QStringLiteral(ANIMUS_QT_QML_DIR)).filePath(QStringLiteral("../web/cesium")));
+        QFile script(cesiumDir.filePath(QStringLiteral("animus-cesium.js")));
+        QVERIFY(script.open(QIODevice::ReadOnly));
+        const QString scriptText = QString::fromUtf8(script.readAll());
+
+        QVERIFY(scriptText.contains(QStringLiteral("const fpvVerticalFovDeg = 70.0;")));
+        QVERIFY(scriptText.contains(QStringLiteral("function resetFpvCamera()")));
+        QVERIFY(scriptText.contains(QStringLiteral("workspaceMode = 'fpv';")));
+        QVERIFY(scriptText.contains(QStringLiteral("cameraMode = 'fpv';")));
+        QVERIFY(scriptText.contains(QStringLiteral("function fpvCameraPose(")));
+        QVERIFY(scriptText.contains(QStringLiteral("fpvNoseOffsetM.forward")));
+        QVERIFY(scriptText.contains(QStringLiteral("fpvLook.yawDeg = clamp")));
+        QVERIFY(scriptText.contains(QStringLiteral("fpvLook.forwardDot")));
+        QVERIFY(scriptText.contains(QStringLiteral("forwardHemisphereCompliant")));
+        QVERIFY(scriptText.contains(QStringLiteral("ownshipHidden: workspaceMode === 'fpv'")));
+        QVERIFY(
+            scriptText.contains(QStringLiteral("terrainEnabled: workspaceMode !== 'tactical'")));
+
+        const int fpvPoseSection = scriptText.indexOf(QStringLiteral("function fpvCameraPose("));
+        QVERIFY(fpvPoseSection >= 0);
+        const int applyManualSection =
+            scriptText.indexOf(QStringLiteral("function applyManualCamera()"));
+        QVERIFY(applyManualSection > fpvPoseSection);
+        const QString fpvSection =
+            scriptText.mid(fpvPoseSection, applyManualSection - fpvPoseSection);
+        QVERIFY(
+            fpvSection.contains(QStringLiteral("Cesium.Cartesian3.dot(direction, axes.forward)")));
+        QVERIFY(fpvSection.contains(QStringLiteral("Math.cos(pitchRad) * Math.cos(yawRad)")));
+
+        QFile fpvQml(QStringLiteral(ANIMUS_QT_QML_DIR) + QStringLiteral("/FpvView.qml"));
+        QVERIFY(fpvQml.open(QIODevice::ReadOnly));
+        const QString fpvQmlText = QString::fromUtf8(fpvQml.readAll());
+        QVERIFY(fpvQmlText.contains(QStringLiteral("objectName: \"fpvView\"")));
+        QVERIFY(fpvQmlText.contains(QStringLiteral("item.workspaceMode = \"fpv\"")));
+        QVERIFY(fpvQmlText.contains(QStringLiteral("resetFpvCamera()")));
+
+        QFile webViewQml(QStringLiteral(ANIMUS_QT_QML_DIR) +
+                         QStringLiteral("/Terrain3DWebView.qml"));
+        QVERIFY(webViewQml.open(QIODevice::ReadOnly));
+        const QString webViewText = QString::fromUtf8(webViewQml.readAll());
+        QVERIFY(webViewText.contains(QStringLiteral("function resetFpvCamera()")));
+    }
+
+    void terrainFpvAndTacticalUseLocalWebEngineSceneStatus()
     {
         QFile webViewQml(QStringLiteral(ANIMUS_QT_QML_DIR) +
                          QStringLiteral("/Terrain3DWebView.qml"));
@@ -1348,6 +1424,15 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(terrainText.contains(
             QStringLiteral("root.localSceneStatus = webLoader.item.sceneStatus")));
         QVERIFY(!terrainText.contains(QStringLiteral("cesiumBridge.sceneStatus")));
+
+        QFile fpvQml(QStringLiteral(ANIMUS_QT_QML_DIR) + QStringLiteral("/FpvView.qml"));
+        QVERIFY(fpvQml.open(QIODevice::ReadOnly));
+        const QString fpvText = QString::fromUtf8(fpvQml.readAll());
+        QVERIFY(fpvText.contains(QStringLiteral("property var localSceneStatus")));
+        QVERIFY(fpvText.contains(QStringLiteral("root.localSceneStatus.status")));
+        QVERIFY(
+            fpvText.contains(QStringLiteral("root.localSceneStatus = webLoader.item.sceneStatus")));
+        QVERIFY(!fpvText.contains(QStringLiteral("cesiumBridge.sceneStatus")));
 
         QFile tacticalQml(QStringLiteral(ANIMUS_QT_QML_DIR) +
                           QStringLiteral("/TacticalAttitudeView.qml"));

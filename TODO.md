@@ -245,7 +245,7 @@ Reusable Bayek framework follow-up is tracked separately in
   even when the view is already in tactical camera mode.
 - [x] Isolate Terrain 3D and Tactical WebEngine scene status and renderer state
   so tab switching cannot push either workspace into the other's fallback mode.
-- [ ] Add an FPV tab that renders the flight from the vehicle nose/seeker
+- [x] Add an FPV tab that renders the flight from the vehicle nose/seeker
   perspective.
 - [ ] Port still-desired retired dashboard, inspector, replay import/export,
   flight view, and guarded command workflows into Qt Animus with Qt-native

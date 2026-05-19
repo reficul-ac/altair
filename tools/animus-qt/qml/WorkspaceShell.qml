@@ -6,7 +6,7 @@ Item {
     id: root
     objectName: "workspaceShell"
 
-    readonly property var workspaceIds: ["map-2d", "terrain-3d", "tactical", "setup"]
+    readonly property var workspaceIds: ["map-2d", "terrain-3d", "fpv", "tactical", "setup"]
     property string currentWorkspace: workspaceIds[tabs.currentIndex]
 
     function selectWorkspace(workspaceId) {
@@ -63,6 +63,7 @@ Item {
             "tabs": [
                 root.tabDiagnostic(map2DTab),
                 root.tabDiagnostic(terrain3DTab),
+                root.tabDiagnostic(fpvTab),
                 root.tabDiagnostic(tacticalTab),
                 root.tabDiagnostic(setupTab)
             ]
@@ -84,6 +85,7 @@ Item {
 
         Map2DView {}
         Terrain3DView {}
+        FpvView {}
         TacticalAttitudeView {}
         SetupView {}
     }
@@ -139,6 +141,11 @@ Item {
                 id: terrain3DTab
                 objectName: "workspaceTabTerrain3D"
                 text: "Terrain 3D"
+            }
+            TabButton {
+                id: fpvTab
+                objectName: "workspaceTabFpv"
+                text: "FPV"
             }
             TabButton {
                 id: tacticalTab

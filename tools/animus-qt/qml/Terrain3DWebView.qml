@@ -127,6 +127,10 @@ WebEngineView {
         runJavaScript("window.animusResetTacticalCamera && window.animusResetTacticalCamera()")
     }
 
+    function resetFpvCamera() {
+        runJavaScript("window.animusResetFpvCamera && window.animusResetFpvCamera()")
+    }
+
     settings.localContentCanAccessFileUrls: true
     settings.localContentCanAccessRemoteUrls: false
     url: "qrc:/Animus/web/cesium/index.html"

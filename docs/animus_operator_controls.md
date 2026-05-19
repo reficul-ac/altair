@@ -48,24 +48,34 @@ Map 2D raster pass:
 python3 tools/python/capture_animus_qt_sitl.py
 ```
 
-The script captures `map-2d`, `terrain-3d`, `tactical`, `setup`, and
+The script captures `map-2d`, `terrain-3d`, `fpv`, `tactical`, `setup`, and
 `map-2d-seeded-cache` from the built Qt shell with mock telemetry. It writes
 PNGs, per-workspace logs, `visual-report.md`, and `run-manifest.json` under
 `artifacts/animus-qt-screenshots/<timestamp>/`. The report includes
 deterministic PNG diagnostics for capture size, semantic workspace tab
 visibility, seeded raster tile rendering, workspace content regions, sampled
 color diversity, display fallback attempts, and cross-workspace screenshot
-differences. The `terrain-3d` and `tactical` captures use the bundled
+differences. The `terrain-3d`, `fpv`, and `tactical` captures use the bundled
 Cesium/WebEngine path and save native Cesium canvas PNGs, with Xvfb WebGL flags
-supplied by the capture helper when no display is already present. Tactical
-fails verification if it falls back to the QML silhouette, loads a model URI
-that does not match the selected profile asset, or cannot prove real
-control-surface pivot movement. Terrain 3D also records terrain clearance
-diagnostics.
+supplied by the capture helper when no display is already present. FPV fails
+verification if it falls back from native Cesium, exposes free roam, loses its
+fixed 70 degree FOV, shows the ownship in the central near-camera view, or
+allows the look vector outside the aircraft forward hemisphere. Tactical fails
+verification if it falls back to the QML silhouette, loads a model URI that does
+not match the selected profile asset, or cannot prove real control-surface
+pivot movement. Terrain 3D also records terrain clearance diagnostics.
 
 ## Flight View
 
-Flight View parity is future Qt Animus work. The current shell focuses on telemetry-backed setup, 2D map, and 3D terrain workspaces.
+The `FPV` tab renders the same offline Cesium/WebEngine terrain path from a
+camera mounted just ahead of the aircraft nose. The ownship model and fallback
+vehicle primitive are hidden in this view to avoid near-camera clipping, while
+terrain and imagery remain enabled. Dragging looks around from the vehicle
+attitude frame but is clamped to the forward hemisphere, so the look vector
+cannot point behind the aircraft nose plane. `Snap` restores the default
+nose/seeker view with a modest downward depression and the fixed 70 degree
+vertical FOV. FPV v1 does not
+persist FOV, expose FOV presets, or provide a free-roam mode.
 
 ## Map View
 

@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-WORKSPACES = ("map-2d", "terrain-3d", "tactical", "setup")
+WORKSPACES = ("map-2d", "terrain-3d", "fpv", "tactical", "setup")
 XVFB_SCREEN = "1280x820x24"
 EXPECTED_CAPTURE_SIZE = (1280, 820)
 
@@ -44,6 +44,8 @@ WORKSPACE_COLOR_MINIMUMS = {
     "map-2d": 8,
     "terrain-3d": 18,
     "terrain-3d-workspace": 18,
+    "fpv": 18,
+    "fpv-workspace": 18,
     "tactical": 8,
     "tactical-workspace": 8,
     "setup": 7,
@@ -63,6 +65,8 @@ WORKSPACE_CONTENT_REGIONS = {
         RegionSpec("terrain workspace scene", (0.04, 0.18, 0.96, 0.84), 18, 28.0, 0.92),
         RegionSpec("clearance overlay", (0.01, 0.70, 0.36, 0.98), 5, 20.0, 0.94),
     ),
+    "fpv": (),
+    "fpv-workspace": (RegionSpec("toolbar and tabs", (0.0, 0.0, 1.0, 0.15), 7, 18.0, 0.96),),
     "tactical": (
         RegionSpec("tactical attitude canvas", (0.04, 0.08, 0.96, 0.94), 6, 24.0, 0.99),
         RegionSpec("attitude reference and aircraft", (0.34, 0.24, 0.72, 0.70), 5, 20.0, 0.98),
@@ -80,7 +84,7 @@ WORKSPACE_CONTENT_REGIONS = {
 
 TOP_REGION = RegionSpec("toolbar and tabs", (0.0, 0.0, 1.0, 0.15), 7, 18.0, 0.96)
 WORKSPACE_DIFFERENCE_MINIMUM = 8.0
-EXPECTED_TAB_LABELS = ("Map 2D", "Terrain 3D", "Tactical", "Setup")
+EXPECTED_TAB_LABELS = ("Map 2D", "Terrain 3D", "FPV", "Tactical", "Setup")
 XCB_FAILURE_MARKERS = (
     "could not connect to display",
     'could not load the qt platform plugin "xcb"',
@@ -363,7 +367,11 @@ def inspect_png(
             failures.append(
                 f"unexpected dimensions: {width}x{height}, expected {expected_size[0]}x{expected_size[1]}"
             )
-        if len(colors) <= 1:
+        if len(colors) <= 1 and workspace == "fpv":
+            warnings.append(
+                "FPV native camera screenshot is visually flat; relying on camera diagnostics"
+            )
+        elif len(colors) <= 1:
             failures.append("blank or single-color screenshot")
         elif workspace:
             minimum = WORKSPACE_COLOR_MINIMUMS.get(workspace, 6)
@@ -371,12 +379,16 @@ def inspect_png(
                 warnings.append(f"low screenshot color diversity: {len(colors)} < {minimum}")
 
         diagnostics = (
-            [] if workspace in ("terrain-3d", "tactical") else [inspect_region(image, TOP_REGION)]
+            []
+            if workspace in ("terrain-3d", "fpv", "tactical")
+            else [inspect_region(image, TOP_REGION)]
         )
         for spec in WORKSPACE_CONTENT_REGIONS.get(workspace, ()):
             diagnostics.append(inspect_region(image, spec))
         if workspace == "terrain-3d-workspace":
             diagnostics.append(inspect_clearance_overlay_panel(image))
+        if workspace == "fpv":
+            diagnostics.append(inspect_fpv_visuals(image))
         if workspace == "tactical":
             diagnostics.append(inspect_tactical_visuals(image))
         if seeded_raster:
@@ -460,6 +472,49 @@ def inspect_tactical_visuals(image: PngImage) -> dict[str, object]:
     }
 
 
+def inspect_fpv_visuals(image: PngImage) -> dict[str, object]:
+    failures: list[str] = []
+    warnings: list[str] = []
+    x0 = int(image.width * 0.40)
+    x1 = int(image.width * 0.60)
+    y0 = int(image.height * 0.34)
+    y1 = int(image.height * 0.66)
+    total = 0
+    aircraft_like = 0
+    terrain_sky = 0
+    for y in range(y0, y1, 2):
+        for x in range(x0, x1, 2):
+            r, g, b = pixel_rgb(image, x, y)
+            total += 1
+            if b > 145 and r < 80 and g < 150:
+                aircraft_like += 1
+            if (g >= 90 and r >= 70 and b <= 210) or (b >= 125 and g >= 120):
+                terrain_sky += 1
+
+    if total == 0:
+        failures.append("empty FPV center sample")
+    else:
+        aircraft_fraction = aircraft_like / total
+        terrain_sky_fraction = terrain_sky / total
+        if aircraft_fraction > 0.04:
+            failures.append(
+                f"ownship-like blue pixels cover {aircraft_fraction:.1%} of central view"
+            )
+        if terrain_sky_fraction < 0.25:
+            failures.append(
+                f"terrain/sky pixels cover only {terrain_sky_fraction:.1%} of central view"
+            )
+
+    return {
+        "name": "FPV central view",
+        "status": diagnostic_status(failures, warnings),
+        "failures": failures,
+        "warnings": warnings,
+        "aircraftLikePixels": aircraft_like,
+        "terrainSkyPixels": terrain_sky,
+    }
+
+
 def thumbnail_pixels(
     image: PngImage, columns: int = 32, rows: int = 24
 ) -> list[tuple[int, int, int]]:
@@ -499,6 +554,8 @@ def compare_workspace_screenshots(captures: list[dict[str, object]]) -> list[dic
     comparisons: list[dict[str, object]] = []
     for index, left_workspace in enumerate(WORKSPACES):
         for right_workspace in WORKSPACES[index + 1 :]:
+            if "fpv" in (left_workspace, right_workspace):
+                continue
             if left_workspace not in images or right_workspace not in images:
                 continue
             difference = mean_pixel_delta(
@@ -546,6 +603,15 @@ def inspect_control_surface_diagnostic(
         failures.append("vehicle model profile is not loaded")
     if payload.get("modelLoaded") is not True:
         failures.append("vehicle model is not loaded")
+    if expected_workspace == "fpv":
+        if payload.get("cameraMode") != "fpv":
+            failures.append(f"camera mode {payload.get('cameraMode')} != fpv")
+        if payload.get("terrainEnabled") is not True:
+            failures.append("FPV terrain is not enabled")
+        if payload.get("ownshipHidden") is not True:
+            failures.append("FPV ownship is not hidden")
+        if payload.get("forwardHemisphereCompliant") is not True:
+            failures.append("FPV look vector is outside the forward hemisphere")
 
     if expected_workspace == "tactical":
         if payload.get("cameraMode") != "tactical":
@@ -708,6 +774,43 @@ def inspect_tactical_camera_diagnostic(path: Path) -> dict[str, object]:
     return result
 
 
+def inspect_fpv_camera_diagnostic(path: Path) -> dict[str, object]:
+    result: dict[str, object] = {"path": str(path), "ok": False, "failures": []}
+    failures: list[str] = []
+    if not path.exists():
+        result["failures"] = ["missing FPV camera diagnostic"]
+        return result
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        result["failures"] = [f"invalid FPV camera diagnostic: {exc}"]
+        return result
+    if payload.get("renderer") != "cesium-webengine":
+        failures.append(f"renderer {payload.get('renderer')} is not native cesium-webengine")
+    if payload.get("workspaceMode") != "fpv":
+        failures.append(f"workspace mode {payload.get('workspaceMode')} != fpv")
+    if payload.get("mode") != "fpv":
+        failures.append(f"camera mode {payload.get('mode')} != fpv")
+    if payload.get("freeRoamAvailable") is not False:
+        failures.append("FPV camera exposes free roam")
+    if payload.get("vehicleLocked") is not True:
+        failures.append("FPV camera is not vehicle locked")
+    if payload.get("terrainEnabled") is not True:
+        failures.append("FPV terrain is not enabled")
+    if payload.get("ownshipHidden") is not True:
+        failures.append("FPV ownship is not hidden")
+    if abs(float(payload.get("fixedFovDeg", 0.0)) - 70.0) > 0.5:
+        failures.append(f"fixed FOV {payload.get('fixedFovDeg')} != 70")
+    if payload.get("forwardHemisphereCompliant") is not True:
+        failures.append("FPV look vector is outside the forward hemisphere")
+    if float(payload.get("forwardHemisphereDot", -1.0)) < -1.0e-6:
+        failures.append(f"FPV forward dot {payload.get('forwardHemisphereDot')} < 0")
+    result.update(payload)
+    result["ok"] = not failures
+    result["failures"] = failures
+    return result
+
+
 def summarize_log(path: Path, max_lines: int = 6) -> str:
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -744,7 +847,7 @@ def command_for_workspace(
     ]
     if seed_map_cache:
         command.append("--seed-map-cache-fixture")
-    if workspace in ("terrain-3d", "tactical"):
+    if workspace in ("terrain-3d", "fpv", "tactical"):
         command.append("--verify-terrain-control-surfaces")
     return command
 
@@ -1003,7 +1106,7 @@ def main() -> int:
                     )
                     notes.append(note)
                     strategies.append(("offscreen-retry", [], offscreen_env(base_env)))
-                elif workspace in ("terrain-3d", "tactical") and not webengine_retry_added:
+                elif workspace in ("terrain-3d", "fpv", "tactical") and not webengine_retry_added:
                     webengine_retry_added = True
                     note = (
                         f"{capture_label}: native WebEngine capture failed; retrying once "
@@ -1015,7 +1118,7 @@ def main() -> int:
                 raise RuntimeError("capture did not launch")
 
             expected_size = (
-                None if workspace in ("terrain-3d", "tactical") else EXPECTED_CAPTURE_SIZE
+                None if workspace in ("terrain-3d", "fpv", "tactical") else EXPECTED_CAPTURE_SIZE
             )
             png = inspect_png(
                 output_dir / f"{workspace}.png",
@@ -1038,9 +1141,13 @@ def main() -> int:
             capture["chromeDiagnostic"] = inspect_chrome_diagnostic(
                 output_dir / f"{workspace}-chrome.json", workspace
             )
-            if workspace in ("terrain-3d", "tactical"):
+            if workspace in ("terrain-3d", "fpv", "tactical"):
                 capture["controlSurfaceDiagnostic"] = inspect_control_surface_diagnostic(
                     output_dir / f"{workspace}-control-surfaces.json", workspace
+                )
+            if workspace == "fpv":
+                capture["cameraDiagnostic"] = inspect_fpv_camera_diagnostic(
+                    output_dir / "fpv-camera.json"
                 )
             if workspace == "tactical":
                 capture["cameraDiagnostic"] = inspect_tactical_camera_diagnostic(
@@ -1050,7 +1157,7 @@ def main() -> int:
                 capture["clearanceDiagnostic"] = inspect_clearance_diagnostic(
                     output_dir / "terrain-3d-clearance.json"
                 )
-            if workspace in ("terrain-3d", "tactical"):
+            if workspace in ("terrain-3d", "fpv", "tactical"):
                 workspace_png = inspect_png(
                     output_dir / f"{workspace}-workspace.png",
                     f"{workspace}-workspace",

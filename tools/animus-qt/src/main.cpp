@@ -159,6 +159,7 @@ bool parseArgs(const QStringList &args, CaptureOptions *options)
         return false;
     return options->captureWorkspace == QStringLiteral("map-2d") ||
            options->captureWorkspace == QStringLiteral("terrain-3d") ||
+           options->captureWorkspace == QStringLiteral("fpv") ||
            options->captureWorkspace == QStringLiteral("tactical") ||
            options->captureWorkspace == QStringLiteral("setup");
 }
@@ -180,6 +181,7 @@ int main(int argc, char *argv[])
 
     const bool webEngineTerrainEnabled =
         !capture.requested || capture.captureWorkspace == QStringLiteral("terrain-3d") ||
+        capture.captureWorkspace == QStringLiteral("fpv") ||
         capture.captureWorkspace == QStringLiteral("tactical") || capture.captureTerrainWebEngine;
     if (webEngineTerrainEnabled)
         QtWebEngineQuick::initialize();
@@ -284,12 +286,15 @@ int main(int argc, char *argv[])
                 const QString path =
                     dir.filePath(capture.captureWorkspace + QStringLiteral(".png"));
                 if (capture.captureWorkspace == QStringLiteral("terrain-3d") ||
+                    capture.captureWorkspace == QStringLiteral("fpv") ||
                     capture.captureWorkspace == QStringLiteral("tactical"))
                 {
                     const bool tactical = capture.captureWorkspace == QStringLiteral("tactical");
-                    QObject *webWorkspace =
-                        root->findChild<QObject *>(tactical ? QStringLiteral("tacticalAttitudeView")
-                                                            : QStringLiteral("terrain3DView"));
+                    const bool fpv = capture.captureWorkspace == QStringLiteral("fpv");
+                    QObject *webWorkspace = root->findChild<QObject *>(
+                        tactical
+                            ? QStringLiteral("tacticalAttitudeView")
+                            : (fpv ? QStringLiteral("fpvView") : QStringLiteral("terrain3DView")));
                     if (!webWorkspace)
                     {
                         qCritical("failed to find WebEngine workspace view for capture");
@@ -335,7 +340,7 @@ int main(int argc, char *argv[])
                             return;
                         }
                     }
-                    if (tactical)
+                    if (tactical || fpv)
                     {
                         QEventLoop cameraLoop;
                         QObject::connect(webWorkspace,
@@ -346,12 +351,13 @@ int main(int argc, char *argv[])
                         webWorkspace->setProperty("lastControlSurfaceInspectionError",
                                                   QStringLiteral("camera inspection timed out"));
                         const QString diagnosticPath =
-                            dir.filePath(QStringLiteral("tactical-camera.json"));
+                            dir.filePath(tactical ? QStringLiteral("tactical-camera.json")
+                                                  : QStringLiteral("fpv-camera.json"));
                         const bool cameraInvoked = QMetaObject::invokeMethod(
                             webWorkspace, "inspectCameraState", Q_ARG(QVariant, diagnosticPath));
                         if (!cameraInvoked)
                         {
-                            qCritical("failed to invoke tactical camera inspection");
+                            qCritical("failed to invoke WebEngine camera inspection");
                             QCoreApplication::exit(6);
                             return;
                         }
@@ -361,7 +367,7 @@ int main(int argc, char *argv[])
                             webWorkspace->property("lastControlSurfaceInspectionOk").toBool();
                         if (!cameraOk)
                         {
-                            qCritical("tactical camera inspection failed");
+                            qCritical("WebEngine camera inspection failed");
                             QCoreApplication::exit(6);
                             return;
                         }

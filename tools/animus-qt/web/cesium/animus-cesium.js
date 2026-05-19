@@ -55,6 +55,18 @@
     },
   };
   const tacticalRingRadiusM = 7.5;
+  const fpvVerticalFovDeg = 70.0;
+  const fpvNoseOffsetM = {
+    forward: 8.0,
+    right: 0.0,
+    up: 1.2,
+  };
+  const fpvDefaultPitchDeg = 18.0;
+  const fpvLook = {
+    yawDeg: 0.0,
+    pitchDeg: fpvDefaultPitchDeg,
+    forwardDot: 1.0,
+  };
   const freeCamera = {
     focus: null,
     headingDeg: 0.0,
@@ -267,6 +279,22 @@
     return true;
   }
 
+  function resetFpvLook() {
+    fpvLook.yawDeg = 0.0;
+    fpvLook.pitchDeg = fpvDefaultPitchDeg;
+    fpvLook.forwardDot = 1.0;
+  }
+
+  function resetFpvCamera() {
+    workspaceMode = 'fpv';
+    cameraMode = 'fpv';
+    resetFpvLook();
+    applyManualCamera();
+    if (viewer && viewer.scene) viewer.scene.requestRender();
+    emitCameraMode();
+    return true;
+  }
+
   function vehicleLockHeadingDeg() {
     const vehicle = state.vehicle || {};
     return vehicle.positionValid && validPosition(vehicle) ? vehicleHeadingDeg(vehicle) : 0.0;
@@ -325,8 +353,144 @@
     viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
   }
 
+  function attitudeAxes(vehicle, position) {
+    const attitude = Cesium.Matrix3.fromQuaternion(
+      orientationFor(vehicle, position),
+      new Cesium.Matrix3()
+    );
+    return {
+      forward: Cesium.Cartesian3.normalize(
+        Cesium.Matrix3.multiplyByVector(attitude, Cesium.Cartesian3.UNIT_X, new Cesium.Cartesian3()),
+        new Cesium.Cartesian3()
+      ),
+      right: Cesium.Cartesian3.normalize(
+        Cesium.Matrix3.multiplyByVector(attitude, Cesium.Cartesian3.UNIT_Y, new Cesium.Cartesian3()),
+        new Cesium.Cartesian3()
+      ),
+      up: Cesium.Cartesian3.normalize(
+        Cesium.Matrix3.multiplyByVector(attitude, Cesium.Cartesian3.UNIT_Z, new Cesium.Cartesian3()),
+        new Cesium.Cartesian3()
+      ),
+    };
+  }
+
+  function enuVector(position, eastM, northM, upM) {
+    const transform = Cesium.Transforms.eastNorthUpToFixedFrame(position);
+    return Cesium.Cartesian3.normalize(
+      Cesium.Matrix4.multiplyByPointAsVector(
+        transform,
+        new Cesium.Cartesian3(eastM, northM, upM),
+        new Cesium.Cartesian3()
+      ),
+      new Cesium.Cartesian3()
+    );
+  }
+
+  function fpvAttitudeAxes(vehicle, position) {
+    const headingRad = Cesium.Math.toRadians(vehicleHeadingDeg(vehicle));
+    const pitchRad = numberOr(vehicle.pitchRad, 0);
+    const rollRad = numberOr(vehicle.rollRad, 0);
+    const forward = enuVector(
+      position,
+      Math.sin(headingRad) * Math.cos(pitchRad),
+      Math.cos(headingRad) * Math.cos(pitchRad),
+      Math.sin(pitchRad)
+    );
+    const rightLevel = enuVector(position, Math.cos(headingRad), -Math.sin(headingRad), 0.0);
+    const upNoRoll = Cesium.Cartesian3.normalize(
+      Cesium.Cartesian3.cross(rightLevel, forward, new Cesium.Cartesian3()),
+      new Cesium.Cartesian3()
+    );
+    const right = Cesium.Cartesian3.normalize(
+      Cesium.Cartesian3.add(
+        Cesium.Cartesian3.multiplyByScalar(rightLevel, Math.cos(rollRad), new Cesium.Cartesian3()),
+        Cesium.Cartesian3.multiplyByScalar(upNoRoll, Math.sin(rollRad), new Cesium.Cartesian3()),
+        new Cesium.Cartesian3()
+      ),
+      new Cesium.Cartesian3()
+    );
+    const up = Cesium.Cartesian3.normalize(
+      Cesium.Cartesian3.cross(right, forward, new Cesium.Cartesian3()),
+      new Cesium.Cartesian3()
+    );
+    return {forward, right, up};
+  }
+
+  function fpvCameraPose(vehicle, position) {
+    const axes = fpvAttitudeAxes(vehicle, position);
+    const origin = Cesium.Cartesian3.add(
+      position,
+      Cesium.Cartesian3.add(
+        Cesium.Cartesian3.multiplyByScalar(axes.forward, fpvNoseOffsetM.forward, new Cesium.Cartesian3()),
+        Cesium.Cartesian3.add(
+          Cesium.Cartesian3.multiplyByScalar(axes.right, fpvNoseOffsetM.right, new Cesium.Cartesian3()),
+          Cesium.Cartesian3.multiplyByScalar(axes.up, fpvNoseOffsetM.up, new Cesium.Cartesian3()),
+          new Cesium.Cartesian3()
+        ),
+        new Cesium.Cartesian3()
+      ),
+      new Cesium.Cartesian3()
+    );
+    const yawRad = Cesium.Math.toRadians(clamp(fpvLook.yawDeg, -89.9, 89.9));
+    const pitchRad = Cesium.Math.toRadians(clamp(fpvLook.pitchDeg, -89.0, 89.0));
+    const forwardScale = Math.cos(pitchRad) * Math.cos(yawRad);
+    const rightScale = Math.cos(pitchRad) * Math.sin(yawRad);
+    const upScale = Math.sin(pitchRad);
+    const direction = Cesium.Cartesian3.normalize(
+      Cesium.Cartesian3.add(
+        Cesium.Cartesian3.multiplyByScalar(axes.forward, forwardScale, new Cesium.Cartesian3()),
+        Cesium.Cartesian3.add(
+          Cesium.Cartesian3.multiplyByScalar(axes.right, rightScale, new Cesium.Cartesian3()),
+          Cesium.Cartesian3.multiplyByScalar(axes.up, upScale, new Cesium.Cartesian3()),
+          new Cesium.Cartesian3()
+        ),
+        new Cesium.Cartesian3()
+      ),
+      new Cesium.Cartesian3()
+    );
+    fpvLook.forwardDot = Cesium.Cartesian3.dot(direction, axes.forward);
+    const upProjection = Cesium.Cartesian3.multiplyByScalar(
+      direction,
+      Cesium.Cartesian3.dot(axes.up, direction),
+      new Cesium.Cartesian3()
+    );
+    let cameraUp = Cesium.Cartesian3.subtract(axes.up, upProjection, new Cesium.Cartesian3());
+    if (Cesium.Cartesian3.magnitude(cameraUp) < 1.0e-6) {
+      cameraUp = Cesium.Cartesian3.cross(axes.right, direction, new Cesium.Cartesian3());
+    }
+    cameraUp = Cesium.Cartesian3.normalize(cameraUp, cameraUp);
+    return {origin, direction, right: axes.right, up: cameraUp, forwardDot: fpvLook.forwardDot};
+  }
+
+  function applyFpvCamera() {
+    if (!viewer) return false;
+    const vehicle = state.vehicle || {};
+    if (!vehicle.positionValid || !validPosition(vehicle)) return false;
+    const pose = fpvCameraPose(vehicle, cartesian(vehicle));
+    if (viewer.camera.frustum) {
+      const aspectRatio = Math.max(0.1, numberOr(viewer.camera.frustum.aspectRatio, 1.0));
+      const verticalFovRad = Cesium.Math.toRadians(fpvVerticalFovDeg);
+      viewer.camera.frustum.fov = aspectRatio > 1.0
+        ? 2.0 * Math.atan(Math.tan(verticalFovRad * 0.5) * aspectRatio)
+        : verticalFovRad;
+    }
+    viewer.camera.setView({
+      destination: pose.origin,
+      orientation: {
+        direction: pose.direction,
+        up: pose.up,
+      },
+    });
+    viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+    return true;
+  }
+
   function applyManualCamera() {
     if (!viewer) return;
+    if (workspaceMode === 'fpv' || cameraMode === 'fpv') {
+      applyFpvCamera();
+      return;
+    }
     if (workspaceMode !== 'tactical' && cameraMode === 'free') {
       if (!freeCamera.focus) {
         const focus = currentFocus();
@@ -363,7 +527,10 @@
   function rotateCurrentCamera(deltaX, deltaY) {
     const headingDelta = deltaX * 0.35;
     const pitchDelta = -deltaY * 0.25;
-    if (workspaceMode !== 'tactical' && cameraMode === 'free') {
+    if (workspaceMode === 'fpv' || cameraMode === 'fpv') {
+      fpvLook.yawDeg = clamp(fpvLook.yawDeg + headingDelta, -89.9, 89.9);
+      fpvLook.pitchDeg = clamp(fpvLook.pitchDeg + pitchDelta, -89.0, 89.0);
+    } else if (workspaceMode !== 'tactical' && cameraMode === 'free') {
       freeCamera.headingDeg += headingDelta;
       freeCamera.pitchDeg = clamp(freeCamera.pitchDeg + pitchDelta, -89.0, -2.0);
     } else {
@@ -376,6 +543,10 @@
   }
 
   function zoomCurrentCamera(wheelDeltaY) {
+    if (workspaceMode === 'fpv' || cameraMode === 'fpv') {
+      applyManualCamera();
+      return;
+    }
     const factor = Math.exp(clamp(wheelDeltaY, -600.0, 600.0) * 0.0015);
     if (workspaceMode !== 'tactical' && cameraMode === 'free') {
       if (!freeCamera.focus) setFreeFromCurrentPose(currentFocus());
@@ -389,6 +560,7 @@
   }
 
   function switchToFreeFromPan() {
+    if (workspaceMode === 'fpv') return;
     if (workspaceMode === 'tactical') return;
     if (cameraMode === 'free') return;
     setFreeFromCurrentPose(currentFocus());
@@ -417,6 +589,7 @@
       const pressLikeEvent = event.type === 'pointerdown' || event.type === 'mousedown';
       const implicitTrackpadPress = pressLikeEvent && event.button !== 2 && buttons === 0;
       const primaryDown = event.button === 0 || (buttons & 1) !== 0 || implicitTrackpadPress;
+      if (workspaceMode === 'fpv') return primaryDown || middleDown ? 'rotate' : null;
       if (workspaceMode === 'tactical') return primaryDown || middleDown ? 'rotate' : null;
       if (middleDown) return 'rotate';
       if (primaryDown) return spaceDown ? 'rotate' : 'pan';
@@ -990,6 +1163,7 @@
   function updateAircraftOutline(vehicle, position) {
     if (!aircraftOutlineCollection) return;
     aircraftOutlineCollection.removeAll();
+    if (workspaceMode === 'fpv') return;
     if (!vehicle.positionValid || !validPosition(vehicle)) return;
     if (aircraftModelPrimitive) return;
 
@@ -1038,16 +1212,17 @@
     }
 
     const position = cartesian(vehicle);
-    vehicleEntity.show = true;
+    const ownshipVisible = workspaceMode !== 'fpv';
+    vehicleEntity.show = ownshipVisible;
     vehicleEntity.position = position;
     vehicleEntity.orientation = orientationFor(vehicle, position);
     if (aircraftModelPrimitive) {
       aircraftModelPrimitive.modelMatrix = modelMatrixFor(vehicle, position, aircraftModelScale);
-      aircraftModelPrimitive.show = true;
+      aircraftModelPrimitive.show = ownshipVisible;
     }
     updateAircraftOutline(vehicle, position);
     if (vehiclePointPrimitive) {
-      vehiclePointPrimitive.show = !aircraftModelPrimitive;
+      vehiclePointPrimitive.show = ownshipVisible && !aircraftModelPrimitive;
       vehiclePointPrimitive.position = position;
     }
 
@@ -1072,7 +1247,7 @@
 
   function updateHome() {
     if (!viewer || !homeEntity) return;
-    if (workspaceMode === 'tactical') {
+    if (workspaceMode === 'tactical' || workspaceMode === 'fpv') {
       homeEntity.show = false;
       if (homePointPrimitive) homePointPrimitive.show = false;
       viewer.scene.requestRender();
@@ -1101,7 +1276,7 @@
     if (trailPolylineCollection) {
       trailPolylineCollection.removeAll();
     }
-    if (workspaceMode === 'tactical') {
+    if (workspaceMode === 'tactical' || workspaceMode === 'fpv') {
       viewer.scene.requestRender();
       return;
     }
@@ -1234,6 +1409,11 @@
       resetLockedCameraOffset('tactical');
       emitCameraMode();
     }
+    if (workspaceMode === 'fpv' && cameraMode !== 'fpv') {
+      cameraMode = 'fpv';
+      resetFpvLook();
+      emitCameraMode();
+    }
     updateTerrainProvider();
     updateAircraftModel((state.terrain || {}).fixture || {}, state.model || {});
     loadVehicleModelProfile(state.model || {});
@@ -1264,7 +1444,9 @@
       return '';
     }
     const vehicle = state.vehicle || {};
-    if (workspaceMode !== 'tactical' && vehicle.positionValid && validPosition(vehicle)) {
+    if (workspaceMode === 'fpv') {
+      resetFpvCamera();
+    } else if (workspaceMode !== 'tactical' && vehicle.positionValid && validPosition(vehicle)) {
       applyCamera(vehicle, cartesian(vehicle), true);
     } else if (workspaceMode === 'tactical') {
       resetTacticalCamera();
@@ -1293,8 +1475,14 @@
       renderer: ensureViewer() ? 'cesium-webengine' : 'html-fallback',
       workspaceMode,
       cameraMode,
-      vehicleLocked: workspaceMode === 'tactical' || cameraMode === 'chase' || cameraMode === 'orbit',
-      freeRoamAvailable: workspaceMode !== 'tactical',
+      vehicleLocked: workspaceMode === 'tactical' || workspaceMode === 'fpv' ||
+        cameraMode === 'chase' || cameraMode === 'orbit',
+      freeRoamAvailable: workspaceMode !== 'tactical' && workspaceMode !== 'fpv',
+      terrainEnabled: workspaceMode !== 'tactical',
+      ownshipHidden: workspaceMode === 'fpv',
+      fixedFovDeg: workspaceMode === 'fpv' ? fpvVerticalFovDeg : null,
+      forwardHemisphereDot: workspaceMode === 'fpv' ? fpvLook.forwardDot : null,
+      forwardHemisphereCompliant: workspaceMode !== 'fpv' || fpvLook.forwardDot >= -1.0e-6,
       profileId: selectedProfileId(),
       profileAssetUri,
       snapshotProfileId: state.model && state.model.profile ? String(state.model.profile) : '',
@@ -1348,7 +1536,11 @@
     if (workspaceMode === 'tactical' && mode !== 'tactical') {
       return false;
     }
-    if (mode !== 'chase' && mode !== 'orbit' && mode !== 'free' && mode !== 'tactical') {
+    if (workspaceMode === 'fpv' && mode !== 'fpv') {
+      return false;
+    }
+    if (mode !== 'chase' && mode !== 'orbit' && mode !== 'free' &&
+        mode !== 'tactical' && mode !== 'fpv') {
       return false;
     }
     if (mode === 'free' && cameraMode !== 'free') {
@@ -1359,6 +1551,8 @@
       resetLockedCameraOffset(mode);
     } else if (mode === 'tactical') {
       resetLockedCameraOffset('tactical');
+    } else if (mode === 'fpv') {
+      resetFpvLook();
     }
     const vehicle = state.vehicle || {};
     if (viewer && vehicle.positionValid && validPosition(vehicle)) {
@@ -1373,13 +1567,16 @@
   }
 
   function setWorkspaceMode(mode) {
-    const nextMode = mode === 'tactical' ? 'tactical' : 'terrain-3d';
+    const nextMode = mode === 'tactical' ? 'tactical' : (mode === 'fpv' ? 'fpv' : 'terrain-3d');
     if (workspaceMode === nextMode) return true;
     workspaceMode = nextMode;
     if (workspaceMode === 'tactical') {
       cameraMode = 'tactical';
       resetLockedCameraOffset('tactical');
-    } else if (cameraMode === 'tactical') {
+    } else if (workspaceMode === 'fpv') {
+      cameraMode = 'fpv';
+      resetFpvLook();
+    } else if (cameraMode === 'tactical' || cameraMode === 'fpv') {
       cameraMode = 'chase';
       resetLockedCameraOffset('chase');
     }
@@ -1390,17 +1587,32 @@
 
   function cameraState() {
     const offset = lockedCameraOffsets[cameraMode] || null;
+    if (workspaceMode === 'fpv') {
+      applyFpvCamera();
+    }
     return {
       renderer: ensureViewer() ? 'cesium-webengine' : 'html-fallback',
-      ok: workspaceMode !== 'tactical' || cameraMode === 'tactical',
+      ok: (workspaceMode !== 'tactical' || cameraMode === 'tactical') &&
+        (workspaceMode !== 'fpv' || (cameraMode === 'fpv' && fpvLook.forwardDot >= -1.0e-6)),
       workspaceMode,
       mode: cameraMode,
       cameraMode,
-      freeRoamAvailable: workspaceMode !== 'tactical',
-      vehicleLocked: workspaceMode === 'tactical' || cameraMode === 'chase' || cameraMode === 'orbit',
-      headingDeg: offset ? offset.headingDeg : freeCamera.headingDeg,
-      pitchDeg: offset ? offset.pitchDeg : freeCamera.pitchDeg,
+      freeRoamAvailable: workspaceMode !== 'tactical' && workspaceMode !== 'fpv',
+      vehicleLocked: workspaceMode === 'tactical' || workspaceMode === 'fpv' ||
+        cameraMode === 'chase' || cameraMode === 'orbit',
+      headingDeg: workspaceMode === 'fpv' ? fpvLook.yawDeg :
+        (offset ? offset.headingDeg : freeCamera.headingDeg),
+      pitchDeg: workspaceMode === 'fpv' ? fpvLook.pitchDeg :
+        (offset ? offset.pitchDeg : freeCamera.pitchDeg),
       rangeM: offset ? offset.rangeM : freeCamera.rangeM,
+      fixedFovDeg: workspaceMode === 'fpv' ? fpvVerticalFovDeg : null,
+      fovDeg: viewer && viewer.camera && viewer.camera.frustum
+        ? Cesium.Math.toDegrees(viewer.camera.frustum.fovy)
+        : null,
+      ownshipHidden: workspaceMode === 'fpv',
+      terrainEnabled: workspaceMode !== 'tactical',
+      forwardHemisphereDot: workspaceMode === 'fpv' ? fpvLook.forwardDot : null,
+      forwardHemisphereCompliant: workspaceMode !== 'fpv' || fpvLook.forwardDot >= -1.0e-6,
     };
   }
 
@@ -1415,9 +1627,11 @@
   window.animusApplySnapshot = applySnapshot;
   window.animusCaptureCesiumPng = captureCesiumPng;
   window.animusInspectControlSurfaces = inspectControlSurfaces;
+  window.animusResetFpvCamera = resetFpvCamera;
   window.animusResetTacticalCamera = resetTacticalCamera;
   window.animusSetCameraMode = setCameraMode;
   window.animusSetWorkspaceMode = setWorkspaceMode;
+  window.animusFpvCameraState = cameraState;
   window.animusCameraState = cameraState;
   statusEl.textContent = 'Waiting for Animus terrain state...';
 })();
