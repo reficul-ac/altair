@@ -356,6 +356,15 @@ int main(int argc, char *argv[])
                         QCoreApplication::exit(6);
                         return;
                     }
+                    const QString workspacePath =
+                        dir.filePath(QStringLiteral("terrain-3d-workspace.png"));
+                    const QImage workspaceImage = window->grabWindow();
+                    if (workspaceImage.isNull() || !workspaceImage.save(workspacePath, "PNG"))
+                    {
+                        qCritical("failed to write terrain 3D workspace capture");
+                        QCoreApplication::exit(6);
+                        return;
+                    }
                 }
                 else
                 {

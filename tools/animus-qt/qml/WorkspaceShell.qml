@@ -35,15 +35,35 @@ Item {
         }
     }
 
+    function tabDiagnostic(tab) {
+        var diagnostic = root.itemDiagnostic(tab, tab.text)
+        var labelItem = tab.contentItem
+        if (labelItem) {
+            var labelDiagnostic = root.itemDiagnostic(labelItem, labelItem.text || tab.text)
+            diagnostic["labelItem"] = labelDiagnostic
+            diagnostic["labelTextMatches"] = labelDiagnostic.label === tab.text
+            diagnostic["labelInsideTab"] =
+                    labelDiagnostic.x >= diagnostic.x &&
+                    labelDiagnostic.y >= diagnostic.y &&
+                    labelDiagnostic.x + labelDiagnostic.width <= diagnostic.x + diagnostic.width &&
+                    labelDiagnostic.y + labelDiagnostic.height <= diagnostic.y + diagnostic.height
+        } else {
+            diagnostic["labelItem"] = null
+            diagnostic["labelTextMatches"] = false
+            diagnostic["labelInsideTab"] = false
+        }
+        return diagnostic
+    }
+
     function workspaceChromeDiagnostics() {
         return {
             "selectedWorkspace": root.currentWorkspace,
             "currentIndex": tabs.currentIndex,
             "chrome": root.itemDiagnostic(chrome, "chrome"),
             "tabs": [
-                root.itemDiagnostic(map2DTab, map2DTab.text),
-                root.itemDiagnostic(terrain3DTab, terrain3DTab.text),
-                root.itemDiagnostic(setupTab, setupTab.text)
+                root.tabDiagnostic(map2DTab),
+                root.tabDiagnostic(terrain3DTab),
+                root.tabDiagnostic(setupTab)
             ]
         }
     }

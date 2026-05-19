@@ -176,7 +176,7 @@ Reusable Bayek framework follow-up is tracked separately in
   placeholder: AGL estimate, terrain report age, home-relative altitude,
   projected clearance along recent or active path, terrain-data availability,
   and caution states when terrain and altitude references disagree.
-- [ ] Improve Terrain 3D capture camera framing or add a full-workspace capture
+- [x] Improve Terrain 3D capture camera framing or add a full-workspace capture
   so the artifact shows terrain/clearance overlays, not only the native Cesium
   canvas and aircraft against mostly sky.
 - [ ] Add wind and environment awareness for GNC debugging: estimated wind
@@ -245,7 +245,7 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Restore visible Animus Qt workspace tabs/header in live and capture runs;
   recent screenshots show the 2D/3D/setup selector missing while map content
   starts at the top of the window.
-- [ ] Tighten Animus Qt screenshot analysis to require actual workspace tab
+- [x] Tighten Animus Qt screenshot analysis to require actual workspace tab
   label visibility, not just nonblank top-region pixels.
 - [ ] Make `capture_animus_qt_sitl.py` retry or fall back to
   `xvfb-run`/offscreen when `xvfb-run` assigns a display that Qt/xcb cannot

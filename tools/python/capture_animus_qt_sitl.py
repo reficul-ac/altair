@@ -43,6 +43,7 @@ class RegionSpec:
 WORKSPACE_COLOR_MINIMUMS = {
     "map-2d": 8,
     "terrain-3d": 18,
+    "terrain-3d-workspace": 18,
     "setup": 7,
 }
 
@@ -54,6 +55,11 @@ WORKSPACE_CONTENT_REGIONS = {
     "terrain-3d": (
         RegionSpec("native Cesium terrain canvas", (0.04, 0.06, 0.96, 0.94), 18, 28.0, 0.90),
         RegionSpec("vehicle and trail", (0.36, 0.22, 0.66, 0.62), 5, 30.0, 0.90),
+    ),
+    "terrain-3d-workspace": (
+        RegionSpec("toolbar and tabs", (0.0, 0.0, 1.0, 0.15), 7, 18.0, 0.96),
+        RegionSpec("terrain workspace scene", (0.04, 0.18, 0.96, 0.84), 18, 28.0, 0.92),
+        RegionSpec("clearance overlay", (0.01, 0.70, 0.36, 0.98), 5, 20.0, 0.94),
     ),
     "setup": (
         RegionSpec("setup controls", (0.02, 0.18, 0.98, 0.68), 3, 18.0, 0.94),
@@ -283,6 +289,38 @@ def inspect_region(image: PngImage, spec: RegionSpec) -> dict[str, object]:
     }
 
 
+def inspect_clearance_overlay_panel(image: PngImage) -> dict[str, object]:
+    spec = RegionSpec("clearance overlay panel", (0.01, 0.70, 0.36, 0.98), 5, 20.0, 0.94)
+    pixels = sample_region(image, spec, columns=64, rows=28)
+    panel_pixels = [
+        pixel
+        for pixel in pixels
+        if pixel[0] >= 225 and pixel[1] >= 225 and pixel[2] >= 215 and max(pixel) - min(pixel) <= 28
+    ]
+    state_pixels = [
+        pixel
+        for pixel in pixels
+        if max(pixel) - min(pixel) >= 60 and luminance(pixel) <= 170.0 and max(pixel) >= 85
+    ]
+    panel_fraction = len(panel_pixels) / len(pixels) if pixels else 0.0
+    state_fraction = len(state_pixels) / len(pixels) if pixels else 0.0
+    failures: list[str] = []
+    warnings: list[str] = []
+    if panel_fraction < 0.10:
+        failures.append(f"light overlay panel covers {panel_fraction:.1%} of sampled region")
+    if state_fraction < 0.005:
+        failures.append(f"clearance state accent covers {state_fraction:.1%} of sampled region")
+    return {
+        "name": spec.name,
+        "sampledColors": len({pixel for pixel in pixels}),
+        "panelFraction": round(panel_fraction, 3),
+        "stateAccentFraction": round(state_fraction, 3),
+        "status": diagnostic_status(failures, warnings),
+        "failures": failures,
+        "warnings": warnings,
+    }
+
+
 def inspect_png(
     path: Path,
     workspace: str = "",
@@ -324,6 +362,8 @@ def inspect_png(
         diagnostics = [] if workspace == "terrain-3d" else [inspect_region(image, TOP_REGION)]
         for spec in WORKSPACE_CONTENT_REGIONS.get(workspace, ()):
             diagnostics.append(inspect_region(image, spec))
+        if workspace == "terrain-3d-workspace":
+            diagnostics.append(inspect_clearance_overlay_panel(image))
         if seeded_raster:
             diagnostics.append(
                 inspect_region(
@@ -481,6 +521,22 @@ def inspect_chrome_diagnostic(path: Path, expected_workspace: str) -> dict[str, 
             failures.append(f"tab label {label} has invalid geometry")
         if not tab.get("enabled", True):
             failures.append(f"tab label {label} is disabled")
+        label_item = tab.get("labelItem")
+        if not isinstance(label_item, dict):
+            failures.append(f"tab label {label} is missing visible text item")
+        else:
+            if label_item.get("label") != label:
+                failures.append(
+                    f"tab label {label} text item has unexpected text {label_item.get('label')}"
+                )
+            if not label_item.get("semanticallyVisible"):
+                failures.append(f"tab label {label} text item is not semantically visible")
+            if int(label_item.get("width", 0)) <= 1 or int(label_item.get("height", 0)) <= 1:
+                failures.append(f"tab label {label} text item has invalid geometry")
+        if not tab.get("labelTextMatches"):
+            failures.append(f"tab label {label} text item does not match the tab text")
+        if not tab.get("labelInsideTab"):
+            failures.append(f"tab label {label} text item is outside the tab bounds")
     chrome = payload.get("chrome", {})
     if isinstance(chrome, dict) and not chrome.get("semanticallyVisible"):
         failures.append("workspace chrome is not semantically visible")
@@ -615,6 +671,13 @@ def write_report(run_dir: Path, manifest: dict[str, object]) -> None:
                 f"({clearance.get('state', '-')})"
             )
             messages.extend(str(message) for message in clearance.get("failures", []))
+        workspace_png = capture.get("workspacePng")
+        if isinstance(workspace_png, dict):
+            diagnostics.append(
+                "workspace image: " f"{'pass' if workspace_png.get('ok') else 'fail'}"
+            )
+            messages.extend(str(message) for message in workspace_png.get("failures", []))
+            messages.extend(str(message) for message in workspace_png.get("warnings", []))
         attempts = capture.get("attempts", [])
         if attempts:
             diagnostics.append(
@@ -827,6 +890,14 @@ def main() -> int:
                 capture["clearanceDiagnostic"] = inspect_clearance_diagnostic(
                     output_dir / "terrain-3d-clearance.json"
                 )
+                workspace_png = inspect_png(
+                    output_dir / "terrain-3d-workspace.png",
+                    "terrain-3d-workspace",
+                    EXPECTED_CAPTURE_SIZE,
+                    seeded_raster=False,
+                )
+                capture["workspaceScreenshot"] = str(output_dir / "terrain-3d-workspace.png")
+                capture["workspacePng"] = workspace_png
             return capture
 
         for workspace in WORKSPACES:
@@ -841,6 +912,9 @@ def main() -> int:
             png = capture["png"]
             if png.get("ok"):
                 manifest["screenshots"].append(capture["screenshot"])
+            workspace_png = capture.get("workspacePng", {})
+            if isinstance(workspace_png, dict) and workspace_png.get("ok"):
+                manifest["screenshots"].append(capture["workspaceScreenshot"])
             chrome_diagnostic = capture.get("chromeDiagnostic", {})
             control_surface_diagnostic = capture.get("controlSurfaceDiagnostic", {})
             clearance_diagnostic = capture.get("clearanceDiagnostic", {})
@@ -856,6 +930,7 @@ def main() -> int:
                     isinstance(clearance_diagnostic, dict)
                     and not clearance_diagnostic.get("ok", True)
                 )
+                or (isinstance(workspace_png, dict) and not workspace_png.get("ok", True))
             ):
                 manifest["status"] = "fail"
         seeded_capture = run_capture(
