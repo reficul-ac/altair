@@ -36,7 +36,9 @@ bool validVertexList(const QVariantList &vertices)
 
 } // namespace
 
-MissionItemModel::MissionItemModel(QObject *parent) : QAbstractListModel(parent) {}
+MissionItemModel::MissionItemModel(QObject *parent) : QAbstractListModel(parent)
+{
+}
 
 int MissionItemModel::rowCount(const QModelIndex &parent) const
 {
@@ -99,11 +101,8 @@ bool MissionItemModel::append(int sequence,
         return false;
     const int row = m_items.size();
     beginInsertRows(QModelIndex(), row, row);
-    m_items.push_back({sequence,
-                       label,
-                       QGeoCoordinate(latitudeDeg, longitudeDeg, altitudeM),
-                       command,
-                       active});
+    m_items.push_back(
+        {sequence, label, QGeoCoordinate(latitudeDeg, longitudeDeg, altitudeM), command, active});
     endInsertRows();
     return true;
 }
@@ -123,7 +122,9 @@ QVariantList MissionItemModel::toVariantList() const
     return list;
 }
 
-GeofenceOverlayModel::GeofenceOverlayModel(QObject *parent) : QAbstractListModel(parent) {}
+GeofenceOverlayModel::GeofenceOverlayModel(QObject *parent) : QAbstractListModel(parent)
+{
+}
 
 int GeofenceOverlayModel::rowCount(const QModelIndex &parent) const
 {
@@ -186,13 +187,8 @@ bool GeofenceOverlayModel::appendPolygon(int id,
         return false;
     const int row = m_items.size();
     beginInsertRows(QModelIndex(), row, row);
-    m_items.push_back({id,
-                       label,
-                       QStringLiteral("polygon"),
-                       vertices,
-                       QGeoCoordinate(),
-                       0.0,
-                       enabled});
+    m_items.push_back(
+        {id, label, QStringLiteral("polygon"), vertices, QGeoCoordinate(), 0.0, enabled});
     endInsertRows();
     return true;
 }
@@ -236,7 +232,9 @@ QVariantList GeofenceOverlayModel::toVariantList() const
     return list;
 }
 
-RallyPointModel::RallyPointModel(QObject *parent) : QAbstractListModel(parent) {}
+RallyPointModel::RallyPointModel(QObject *parent) : QAbstractListModel(parent)
+{
+}
 
 int RallyPointModel::rowCount(const QModelIndex &parent) const
 {
@@ -314,7 +312,9 @@ QVariantList RallyPointModel::toVariantList() const
     return list;
 }
 
-EventMarkerModel::EventMarkerModel(QObject *parent) : QAbstractListModel(parent) {}
+EventMarkerModel::EventMarkerModel(QObject *parent) : QAbstractListModel(parent)
+{
+}
 
 int EventMarkerModel::rowCount(const QModelIndex &parent) const
 {
@@ -474,14 +474,13 @@ void NavigationOverlayModels::seedCruise6DofFixture()
                           QStringLiteral("NAV_WAYPOINT"),
                           false);
 
-    m_geofences.appendPolygon(
-        10,
-        QStringLiteral("Stanford ops box"),
-        QVariantList{vertexMap(37.4350, -122.1810),
-                     vertexMap(37.4385, -122.1510),
-                     vertexMap(37.4180, -122.1390),
-                     vertexMap(37.4095, -122.1710)},
-        true);
+    m_geofences.appendPolygon(10,
+                              QStringLiteral("Stanford ops box"),
+                              QVariantList{vertexMap(37.4350, -122.1810),
+                                           vertexMap(37.4385, -122.1510),
+                                           vertexMap(37.4180, -122.1390),
+                                           vertexMap(37.4095, -122.1710)},
+                              true);
     m_geofences.appendCircle(11, QStringLiteral("Launch keep-in"), 37.4275, -122.1697, 720.0, true);
 
     m_rallyPoints.append(20, QStringLiteral("Rally north"), 37.4382, -122.1645, 60.0, true);

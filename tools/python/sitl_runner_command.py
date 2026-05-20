@@ -4,7 +4,6 @@ import argparse
 import pathlib
 from typing import Union
 
-
 SCENARIOS = ("smoke", "cruise6dof")
 PROFILES = ("cruise", "takeoff", "turn", "descent", "failsafe", "mission")
 FRAME_MODES = ("ned", "ecef")
@@ -30,7 +29,9 @@ def add_sitl_runner_arguments(
     parser.add_argument("--initial", help="initial-condition file for cruise6dof")
     parser.add_argument("--case", help="sectioned SITL case file for cruise6dof")
     parser.add_argument("--conditions", help="per-step SITL condition file for cruise6dof")
-    parser.add_argument("--frame-mode", choices=FRAME_MODES, default="ecef", help="6DOF truth frame")
+    parser.add_argument(
+        "--frame-mode", choices=FRAME_MODES, default="ecef", help="6DOF truth frame"
+    )
     parser.add_argument(
         "--realtime",
         action="store_true",

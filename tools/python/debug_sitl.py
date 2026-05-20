@@ -13,7 +13,6 @@ from sitl_runner_command import (
     validate_sitl_runner_args,
 )
 
-
 HOOK_SYMBOL = "sitl_debug_pre_fsw_step_hook"
 
 

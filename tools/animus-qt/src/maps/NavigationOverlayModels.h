@@ -113,10 +113,8 @@ class GeofenceOverlayModel final : public QAbstractListModel
     QHash<int, QByteArray> roleNames() const override;
 
     Q_INVOKABLE void clear();
-    Q_INVOKABLE bool appendPolygon(int id,
-                                   const QString &label,
-                                   const QVariantList &vertices,
-                                   bool enabled);
+    Q_INVOKABLE bool
+    appendPolygon(int id, const QString &label, const QVariantList &vertices, bool enabled);
     Q_INVOKABLE bool appendCircle(int id,
                                   const QString &label,
                                   double centerLatitudeDeg,

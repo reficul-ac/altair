@@ -14,7 +14,7 @@ Reusable Bayek framework follow-up is tracked separately in
 ## Baseline Health
 
 - [ ] Keep CI green for formatting, Debug/Release CMake, CTest, and Qt Animus.
-- [ ] Format `tools/animus-qt/src/maps/NavigationOverlayModels.{h,cpp}` so
+- [x] Format `tools/animus-qt/src/maps/NavigationOverlayModels.{h,cpp}` so
   `tools/python/format_repo.py --check` passes without unrelated cleanup.
 - [ ] Keep generated build, CSV, plot, and Animus capture artifacts out of the worktree.
 
