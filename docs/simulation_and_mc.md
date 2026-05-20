@@ -124,6 +124,86 @@ Screenshots, logs, manifests, and `visual-report.md` are written under `artifact
 
 Latitude, longitude, and altitude in `cruise6dof` logs are derived from the spherical-Earth ECEF truth state in ECEF mode. The local `pos_n_m`, `pos_e_m`, `pos_d_m`, `vel_n_mps`, `vel_e_mps`, and `vel_d_mps` columns remain available as derived compatibility outputs relative to the configured initial origin. The appended `pos_ecef_x_m`, `pos_ecef_y_m`, `pos_ecef_z_m`, `vel_ecef_x_mps`, `vel_ecef_y_mps`, and `vel_ecef_z_mps` columns expose the ECEF truth state directly.
 
+## SITL Debugging
+
+Use native host debuggers for step-level SITL inspection. This workflow is
+Altair host tooling only: it launches the concrete `vehicle/sitl_runner.c`
+binary and inspects the Altair-owned `cruise6dof` loop without adding debugger
+hooks to portable flight code or Bayek.
+
+Build a Debug runner first:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --target sitl_runner --parallel
+```
+
+`tools/python/debug_sitl.py` builds a debugger command around the same
+`sitl_runner` arguments as `run_sitl.py`. It does not build or rebuild the
+runner:
+
+```sh
+python3 tools/python/debug_sitl.py \
+    --initial tests/integration/cruise6dof_initial.ini \
+    --duration 1 --dt 0.01 --output sitl_debug.csv
+```
+
+Use `--dry-run` to inspect the generated command before launching GDB or LLDB:
+
+```sh
+python3 tools/python/debug_sitl.py --dry-run
+python3 tools/python/debug_sitl.py --debugger lldb --dry-run
+```
+
+If no breakpoint option is supplied, the launcher stops at `run_cruise6dof`.
+Additional `--break SYMBOL_OR_FILE_LINE` options become debugger breakpoints.
+For stable step-level stops immediately before `altair_fsw_step()`, prefer the
+Altair runner hook symbol `sitl_debug_pre_fsw_step_hook` over hardcoded source
+line numbers:
+
+```sh
+python3 tools/python/debug_sitl.py --stop-at-step 50
+python3 tools/python/debug_sitl.py --stop-at-time 0.5
+python3 tools/python/debug_sitl.py --condition 'input->gps.fix_valid == 0'
+python3 tools/python/debug_sitl.py \
+    --condition 'plant->body.velocity_ned_mps.x < 12.0f'
+```
+
+The matching `sitl_debug_post_fsw_step_hook` runs immediately after
+`altair_fsw_step()` and before mission-status readback. Both hooks are no-op
+host-runner functions intended only as debugger breakpoint anchors. From the
+pre-step hook frame, inspect `step`, `time_s`, `cfg`, `input`, and `plant`; from
+the post-step hook frame, inspect those plus `output`. Use debugger `step`,
+`next`, IDE locals/watch panes, and normal `continue` to walk through the
+`cruise6dof` loop and continue to the next matching hit.
+
+For VS Code or VSCodium, add a local launch configuration that points at the
+Debug binary and passes the same runner arguments:
+
+```json
+{
+  "name": "Debug cruise6dof SITL",
+  "type": "cppdbg",
+  "request": "launch",
+  "program": "${workspaceFolder}/build/vehicle/sitl_runner",
+  "args": [
+    "--scenario", "cruise6dof",
+    "--initial", "tests/integration/cruise6dof_initial.ini",
+    "--duration", "1",
+    "--dt", "0.01",
+    "--output", "sitl_debug.csv"
+  ],
+  "cwd": "${workspaceFolder}",
+  "MIMode": "gdb",
+  "stopAtEntry": false
+}
+```
+
+Set IDE breakpoints on `run_cruise6dof()`,
+`sitl_debug_pre_fsw_step_hook()`, `sitl_debug_post_fsw_step_hook()`, or
+`altair_fsw_step()`, then add conditions such as `step == 50`,
+`time_s >= 0.5`, or `input->gps.fix_valid == 0` in the breakpoint editor.
+
 ## SITL Replay CSV v1
 
 The first committed replay fixture uses the existing `cruise6dof` CSV as the v1 replay contract. Its identity/configuration is:

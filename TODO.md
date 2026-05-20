@@ -28,6 +28,13 @@ Reusable Bayek framework follow-up is tracked separately in
   and Monte Carlo scenarios after the reusable hooks exist.
 - [ ] Add randomized Monte Carlo inputs for Altair-owned dispersions, guardrails,
   and summary CSV semantics.
+- [x] Add a documented SITL debug workflow: launch Debug-build sitl_runner
+  under GDB/LLDB or an IDE, support breakpoints at file/function locations,
+  conditional breakpoints by sim step/time or state constraint, variable
+  hover/watch inspection, step/next through the full cruise6dof loop, and
+  continue-to-next-hit behavior.
+- [ ] Add debugger workflow polish for SITL, such as IDE launch config
+  generation or broader noninteractive LLDB smoke coverage.
 - [ ] Document Altair aero data provenance before replacing scalar aero formulas
   with reusable Bayek aero database helpers.
 

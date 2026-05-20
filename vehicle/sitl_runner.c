@@ -53,6 +53,46 @@ typedef struct
     uint8_t seq;
 } qgc_link_t;
 
+void sitl_debug_pre_fsw_step_hook(int step,
+                                  double time_s,
+                                  const sitl_config_t *cfg,
+                                  const fsw_input_t *input,
+                                  const sim_fixedwing_state_t *plant);
+void sitl_debug_post_fsw_step_hook(int step,
+                                   double time_s,
+                                   const sitl_config_t *cfg,
+                                   const fsw_input_t *input,
+                                   const fsw_output_t *output,
+                                   const sim_fixedwing_state_t *plant);
+
+void sitl_debug_pre_fsw_step_hook(int step,
+                                  double time_s,
+                                  const sitl_config_t *cfg,
+                                  const fsw_input_t *input,
+                                  const sim_fixedwing_state_t *plant)
+{
+    (void)step;
+    (void)time_s;
+    (void)cfg;
+    (void)input;
+    (void)plant;
+}
+
+void sitl_debug_post_fsw_step_hook(int step,
+                                   double time_s,
+                                   const sitl_config_t *cfg,
+                                   const fsw_input_t *input,
+                                   const fsw_output_t *output,
+                                   const sim_fixedwing_state_t *plant)
+{
+    (void)step;
+    (void)time_s;
+    (void)cfg;
+    (void)input;
+    (void)output;
+    (void)plant;
+}
+
 static void qgc_close(qgc_link_t *link);
 
 static void print_usage(FILE *stream)
@@ -1261,7 +1301,9 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
                 input.gps.fix_valid = gps_fix_valid;
             }
         }
+        sitl_debug_pre_fsw_step_hook(i, (double)(i * cfg->dt_s), cfg, &input, &plant);
         altair_fsw_step(&fsw, &input, &output);
+        sitl_debug_post_fsw_step_hook(i, (double)(i * cfg->dt_s), cfg, &input, &output, &plant);
         altair_fsw_get_mission_status(&fsw, &mission_status);
         if (!sim_output_is_bounded(&output))
         {

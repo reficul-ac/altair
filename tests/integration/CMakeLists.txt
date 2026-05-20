@@ -372,6 +372,12 @@ if(Python3_Interpreter_FOUND)
     )
     set_tests_properties(integration_run_sitl_cruise6dof_summary PROPERTIES SKIP_RETURN_CODE 77)
 
+    add_test(NAME integration_debug_sitl_dry_run
+             COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_debug_sitl.py"
+                     "${CMAKE_SOURCE_DIR}" "${CMAKE_BINARY_DIR}"
+    )
+    set_tests_properties(integration_debug_sitl_dry_run PROPERTIES SKIP_RETURN_CODE 77)
+
     add_test(
         NAME integration_mavlink_live_bridge
         COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_mavlink_live_bridge.py"
