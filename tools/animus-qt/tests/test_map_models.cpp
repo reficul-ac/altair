@@ -1,5 +1,6 @@
 #include "maps/MapSourceRegistry.h"
 #include "maps/CesiumBridge.h"
+#include "maps/NavigationOverlayModels.h"
 #include "maps/OfflineMapManager.h"
 #include "maps/TerrainClearanceAnalyzer.h"
 #include "maps/qgc/AnimusMapCacheManager.h"
@@ -37,6 +38,7 @@ namespace
 
 std::unique_ptr<QObject> createMap2DView(animus::VehicleModel *vehicle,
                                          animus::BreadcrumbPathModel *breadcrumbs,
+                                         animus::NavigationOverlayModels *navigationOverlays,
                                          animus::MapSourceRegistry *mapSources,
                                          animus::OfflineMapManager *offlineMaps,
                                          animus::AnimusMapCacheManager *mapCache,
@@ -45,6 +47,8 @@ std::unique_ptr<QObject> createMap2DView(animus::VehicleModel *vehicle,
 {
     engine->rootContext()->setContextProperty(QStringLiteral("vehicleModel"), vehicle);
     engine->rootContext()->setContextProperty(QStringLiteral("breadcrumbModel"), breadcrumbs);
+    engine->rootContext()->setContextProperty(QStringLiteral("navigationOverlays"),
+                                              navigationOverlays);
     engine->rootContext()->setContextProperty(QStringLiteral("mapSources"), mapSources);
     engine->rootContext()->setContextProperty(QStringLiteral("offlineMaps"), offlineMaps);
     engine->rootContext()->setContextProperty(QStringLiteral("mapCache"), mapCache);
@@ -63,6 +67,7 @@ std::unique_ptr<QObject> createMap2DView(animus::VehicleModel *vehicle,
 
 std::unique_ptr<QObject> createWorkspaceShell(animus::VehicleModel *vehicle,
                                               animus::BreadcrumbPathModel *breadcrumbs,
+                                              animus::NavigationOverlayModels *navigationOverlays,
                                               animus::MapSourceRegistry *mapSources,
                                               animus::OfflineMapManager *offlineMaps,
                                               animus::AnimusMapCacheManager *mapCache,
@@ -73,6 +78,8 @@ std::unique_ptr<QObject> createWorkspaceShell(animus::VehicleModel *vehicle,
 {
     engine->rootContext()->setContextProperty(QStringLiteral("vehicleModel"), vehicle);
     engine->rootContext()->setContextProperty(QStringLiteral("breadcrumbModel"), breadcrumbs);
+    engine->rootContext()->setContextProperty(QStringLiteral("navigationOverlays"),
+                                              navigationOverlays);
     engine->rootContext()->setContextProperty(QStringLiteral("mapSources"), mapSources);
     engine->rootContext()->setContextProperty(QStringLiteral("offlineMaps"), offlineMaps);
     engine->rootContext()->setContextProperty(QStringLiteral("mapCache"), mapCache);
@@ -204,20 +211,6 @@ QString bundledModelProfilesDir()
     return QDir(QStringLiteral(ANIMUS_QT_QML_DIR)).filePath(QStringLiteral("../web/cesium/models"));
 }
 
-void respondToTileRequest(QTcpSocket *socket)
-{
-    if (socket->property("animusTileResponded").toBool() || socket->bytesAvailable() <= 0)
-        return;
-
-    socket->setProperty("animusTileResponded", true);
-    socket->readAll();
-    const QByteArray body = pngTile();
-    socket->write("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\n"
-                  "Content-Length: " +
-                  QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
-    socket->disconnectFromHost();
-}
-
 class TileHttpServer final : public QTcpServer
 {
     Q_OBJECT
@@ -230,15 +223,89 @@ class TileHttpServer final : public QTcpServer
                 this,
                 [this]()
                 {
-                    QTcpSocket *socket = nextPendingConnection();
-                    connect(socket,
-                            &QTcpSocket::readyRead,
-                            socket,
-                            [socket]() { respondToTileRequest(socket); });
-                    connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
-                    respondToTileRequest(socket);
+                    while (hasPendingConnections())
+                    {
+                        ++m_connectionCount;
+                        QTcpSocket *socket = nextPendingConnection();
+                        connect(socket,
+                                &QTcpSocket::readyRead,
+                                socket,
+                                [this, socket]() { respondToTileRequest(socket); });
+                        connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+                        respondToTileRequest(socket);
+                    }
                 });
     }
+
+    int connectionCount() const
+    {
+        return m_connectionCount;
+    }
+    int requestCount() const
+    {
+        return m_requestCount;
+    }
+    QString lastRequestLine() const
+    {
+        return m_lastRequestLine;
+    }
+
+  private:
+    void respondToTileRequest(QTcpSocket *socket)
+    {
+        if (socket->property("animusTileResponded").toBool() || socket->bytesAvailable() <= 0)
+            return;
+
+        socket->setProperty("animusTileResponded", true);
+        const QByteArray request = socket->readAll();
+        ++m_requestCount;
+        const int lineEnd = request.indexOf('\n');
+        m_lastRequestLine =
+            QString::fromUtf8((lineEnd >= 0 ? request.left(lineEnd) : request).trimmed());
+
+        const QByteArray body = pngTile();
+        if (m_lastRequestLine.startsWith(QStringLiteral("GET ")))
+        {
+            socket->write("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\n"
+                          "Content-Length: " +
+                          QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+        }
+        else
+        {
+            socket->write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n"
+                          "Connection: close\r\n\r\n");
+        }
+        socket->disconnectFromHost();
+    }
+
+    int m_connectionCount = 0;
+    int m_requestCount = 0;
+    QString m_lastRequestLine;
+};
+
+class ScopedEnvironmentVariable final
+{
+  public:
+    ScopedEnvironmentVariable(const char *name, const QByteArray &value)
+        : m_name(name), m_wasSet(qEnvironmentVariableIsSet(name)), m_previous(qgetenv(name))
+    {
+        qputenv(name, value);
+    }
+
+    ~ScopedEnvironmentVariable()
+    {
+        if (m_wasSet)
+            qputenv(m_name.constData(), m_previous);
+        else
+            qunsetenv(m_name.constData());
+    }
+
+    Q_DISABLE_COPY_MOVE(ScopedEnvironmentVariable)
+
+  private:
+    QByteArray m_name;
+    bool m_wasSet = false;
+    QByteArray m_previous;
 };
 
 } // namespace
@@ -447,7 +514,7 @@ class AnimusQtMapModelTests final : public QObject
             QSKIP("Sandbox does not permit local TCP listen sockets");
         const QByteArray url =
             QStringLiteral("http://127.0.0.1:%1/{z}/{x}/{y}.png").arg(server.serverPort()).toUtf8();
-        qputenv("ANIMUS_QT_OPERATOR_TILE_URL", url);
+        ScopedEnvironmentVariable operatorTileUrl("ANIMUS_QT_OPERATOR_TILE_URL", url);
 
         QTemporaryDir root;
         QVERIFY(root.isValid());
@@ -459,18 +526,40 @@ class AnimusQtMapModelTests final : public QObject
         const QString id =
             manager.tileSets().constFirst().toMap().value(QStringLiteral("id")).toString();
         QVERIFY(manager.downloadTileSet(id));
-        for (int attempt = 0;
-             attempt < 50 && manager.cachedTileCount() != 1 && manager.failedTileCount() == 0;
-             ++attempt)
-        {
-            QTest::qWait(100);
-        }
-        if (manager.cachedTileCount() != 1)
+
+        const bool requestObserved =
+            QTest::qWaitFor([&server]() { return server.requestCount() > 0; }, 5000);
+        if (!requestObserved && server.connectionCount() == 0)
             QSKIP("Sandbox permits local TCP listen but blocks the loopback tile download");
-        QCOMPARE(manager.failedTileCount(), 0);
-        QVERIFY(manager.tileUrlFor(QStringLiteral("operator-raster"), 0, 0, 0, false)
-                    .startsWith(QStringLiteral("file:")));
-        qunsetenv("ANIMUS_QT_OPERATOR_TILE_URL");
+        if (!requestObserved)
+        {
+            const QString message =
+                QStringLiteral("Local tile server accepted %1 connection(s) but no HTTP request; "
+                               "manager.lastError='%2', activeStatus='%3'")
+                    .arg(server.connectionCount())
+                    .arg(manager.lastError(), manager.activeStatus());
+            QFAIL(qPrintable(message));
+        }
+
+        QTRY_VERIFY_WITH_TIMEOUT(manager.cachedTileCount() == 1 || manager.failedTileCount() > 0,
+                                 5000);
+        manager.reloadTileSets();
+        const QVariantMap tileSet = manager.tileSets().constFirst().toMap();
+        const QString tileSetLastError = tileSet.value(QStringLiteral("lastError")).toString();
+        const QString fileUrl =
+            manager.tileUrlFor(QStringLiteral("operator-raster"), 0, 0, 0, false);
+        if (manager.cachedTileCount() != 1 || manager.failedTileCount() > 0 ||
+            !fileUrl.startsWith(QStringLiteral("file:")))
+        {
+            const QString message =
+                QStringLiteral("Local tile request reached the cache manager but did not produce "
+                               "one cached file tile: cached=%1 failed=%2 fileUrl='%3' "
+                               "manager.lastError='%4' tileSet.lastError='%5' request='%6'")
+                    .arg(manager.cachedTileCount())
+                    .arg(manager.failedTileCount())
+                    .arg(fileUrl, manager.lastError(), tileSetLastError, server.lastRequestLine());
+            QFAIL(qPrintable(message));
+        }
     }
 
     void map2dQmlLoadsWithCacheContext()
@@ -479,14 +568,21 @@ class AnimusQtMapModelTests final : public QObject
         vehicle.setLatitudeDeg(37.4275);
         vehicle.setLongitudeDeg(-122.1697);
         animus::BreadcrumbPathModel breadcrumbs;
+        animus::NavigationOverlayModels navigationOverlays;
         animus::MapSourceRegistry mapSources;
         animus::OfflineMapManager offlineMaps(&mapSources);
         animus::AnimusMapCacheManager mapCache;
         animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
         QQmlEngine engine;
 
-        std::unique_ptr<QObject> map = createMap2DView(
-            &vehicle, &breadcrumbs, &mapSources, &offlineMaps, &mapCache, &telemetry, &engine);
+        std::unique_ptr<QObject> map = createMap2DView(&vehicle,
+                                                       &breadcrumbs,
+                                                       &navigationOverlays,
+                                                       &mapSources,
+                                                       &offlineMaps,
+                                                       &mapCache,
+                                                       &telemetry,
+                                                       &engine);
         QVERIFY(map);
         map->setProperty("width", 800);
         map->setProperty("height", 600);
@@ -502,20 +598,140 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(map->property("following").toBool(), true);
     }
 
+    void navigationOverlayModelsValidateRolesAndFixture()
+    {
+        animus::NavigationOverlayModels overlays;
+
+        QVERIFY(!overlays.missionItems()->append(
+            1, QStringLiteral("bad"), 95.0, -122.0, 10.0, QStringLiteral("NAV_WAYPOINT"), false));
+        QCOMPARE(overlays.missionItems()->rowCount(), 0);
+        QVERIFY(overlays.missionItems()->append(
+            1, QStringLiteral("WP1"), 37.42, -122.17, 80.0, QStringLiteral("NAV_WAYPOINT"), true));
+        QCOMPARE(overlays.missionItems()->roleNames().value(animus::MissionItemModel::LatitudeRole),
+                 QByteArray("latitudeDeg"));
+        QCOMPARE(
+            overlays.missionItems()
+                ->data(overlays.missionItems()->index(0, 0), animus::MissionItemModel::CommandRole)
+                .toString(),
+            QStringLiteral("NAV_WAYPOINT"));
+
+        QVERIFY(!overlays.geofences()->appendCircle(
+            1, QStringLiteral("bad circle"), 37.42, -122.17, -10.0, true));
+        QVERIFY(!overlays.geofences()->appendPolygon(
+            2,
+            QStringLiteral("bad polygon"),
+            QVariantList{QVariantMap{{QStringLiteral("latitudeDeg"), 37.0},
+                                     {QStringLiteral("longitudeDeg"), -122.0}}},
+            true));
+
+        overlays.seedCruise6DofFixture();
+        QCOMPARE(overlays.missionItems()->rowCount(), 3);
+        QCOMPARE(overlays.geofences()->rowCount(), 2);
+        QCOMPARE(overlays.rallyPoints()->rowCount(), 2);
+        QCOMPARE(overlays.eventMarkers()->rowCount(), 2);
+        const QVariantMap exported = overlays.toVariantMap(1, true);
+        QCOMPARE(exported.value(QStringLiteral("missionItems")).toList().size(), 3);
+        QCOMPARE(exported.value(QStringLiteral("geofences")).toList().size(), 2);
+        QCOMPARE(exported.value(QStringLiteral("rallyPoints")).toList().size(), 2);
+        QCOMPARE(exported.value(QStringLiteral("eventMarkers")).toList().size(), 2);
+        QCOMPARE(exported.value(QStringLiteral("activeMissionSeq")).toInt(), 1);
+        QCOMPARE(exported.value(QStringLiteral("missionValid")).toBool(), true);
+
+        overlays.clear();
+        QCOMPARE(overlays.missionItems()->rowCount(), 0);
+        QCOMPARE(overlays.geofences()->rowCount(), 0);
+        QCOMPARE(overlays.rallyPoints()->rowCount(), 0);
+        QCOMPARE(overlays.eventMarkers()->rowCount(), 0);
+    }
+
+    void cesiumBridgeSnapshotExportsNavigationOverlays()
+    {
+        animus::VehicleModel vehicle;
+        vehicle.setMissionSeq(1);
+        vehicle.setMissionValid(true);
+        animus::BreadcrumbPathModel breadcrumbs;
+        animus::NavigationOverlayModels overlays;
+        animus::VehicleModelProfileManager profiles(bundledModelProfilesDir(), nullptr, &vehicle);
+        animus::CesiumBridge bridge(&vehicle, &breadcrumbs, &profiles, &overlays);
+        QSignalSpy overlaysSpy(&bridge, &animus::CesiumBridge::overlaysChanged);
+
+        overlays.seedCruise6DofFixture();
+        QVERIFY(overlaysSpy.count() > 0);
+        const QVariantMap overlaySnapshot =
+            bridge.snapshot().value(QStringLiteral("overlays")).toMap();
+        QCOMPARE(overlaySnapshot.value(QStringLiteral("missionItems")).toList().size(), 3);
+        QCOMPARE(overlaySnapshot.value(QStringLiteral("geofences")).toList().size(), 2);
+        QCOMPARE(overlaySnapshot.value(QStringLiteral("rallyPoints")).toList().size(), 2);
+        QCOMPARE(overlaySnapshot.value(QStringLiteral("eventMarkers")).toList().size(), 2);
+        QCOMPARE(overlaySnapshot.value(QStringLiteral("activeMissionSeq")).toInt(), 1);
+        QCOMPARE(overlaySnapshot.value(QStringLiteral("missionValid")).toBool(), true);
+
+        vehicle.setMissionSeq(2);
+        const QVariantMap updated = bridge.snapshot().value(QStringLiteral("overlays")).toMap();
+        QCOMPARE(updated.value(QStringLiteral("activeMissionSeq")).toInt(), 2);
+    }
+
+    void map2dOverlayDiagnosticsReportSeededLayers()
+    {
+        animus::VehicleModel vehicle;
+        vehicle.setLatitudeDeg(37.4275);
+        vehicle.setLongitudeDeg(-122.1697);
+        vehicle.setHomeValid(true);
+        vehicle.setMissionSeq(1);
+        vehicle.setMissionValid(true);
+        animus::BreadcrumbPathModel breadcrumbs;
+        breadcrumbs.setMinDistanceM(0.0);
+        QVERIFY(breadcrumbs.append(37.4275, -122.1697, 35.0, 0.0));
+        animus::NavigationOverlayModels navigationOverlays;
+        navigationOverlays.seedCruise6DofFixture();
+        animus::MapSourceRegistry mapSources;
+        animus::OfflineMapManager offlineMaps(&mapSources);
+        animus::AnimusMapCacheManager mapCache;
+        animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
+        QQmlEngine engine;
+
+        std::unique_ptr<QObject> map = createMap2DView(&vehicle,
+                                                       &breadcrumbs,
+                                                       &navigationOverlays,
+                                                       &mapSources,
+                                                       &offlineMaps,
+                                                       &mapCache,
+                                                       &telemetry,
+                                                       &engine);
+        QVERIFY(map);
+        map->setProperty("width", 800);
+        map->setProperty("height", 600);
+
+        QVariant diagnosticValue;
+        QVERIFY(QMetaObject::invokeMethod(
+            map.get(), "overlayDiagnostics", Q_RETURN_ARG(QVariant, diagnosticValue)));
+        const QVariantMap diagnostic = diagnosticValue.toMap();
+        QCOMPARE(diagnostic.value(QStringLiteral("missionItems")).toInt(), 3);
+        QCOMPARE(diagnostic.value(QStringLiteral("geofences")).toInt(), 2);
+        QCOMPARE(diagnostic.value(QStringLiteral("rallyPoints")).toInt(), 2);
+        QCOMPARE(diagnostic.value(QStringLiteral("eventMarkers")).toInt(), 2);
+        QCOMPARE(diagnostic.value(QStringLiteral("breadcrumbs")).toInt(), 1);
+        QCOMPARE(diagnostic.value(QStringLiteral("home")).toInt(), 1);
+        QCOMPARE(diagnostic.value(QStringLiteral("activeMissionSeq")).toInt(), 1);
+        QCOMPARE(diagnostic.value(QStringLiteral("missionValid")).toBool(), true);
+    }
+
     void workspaceChromeDiagnosticReportsVisibleTabs()
     {
         animus::VehicleModel vehicle;
         animus::BreadcrumbPathModel breadcrumbs;
+        animus::NavigationOverlayModels navigationOverlays;
         animus::MapSourceRegistry mapSources;
         animus::OfflineMapManager offlineMaps(&mapSources);
         animus::AnimusMapCacheManager mapCache;
         animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
         animus::VehicleModelProfileManager profiles(bundledModelProfilesDir(), nullptr, &vehicle);
-        animus::CesiumBridge cesium(&vehicle, &breadcrumbs, &profiles);
+        animus::CesiumBridge cesium(&vehicle, &breadcrumbs, &profiles, &navigationOverlays);
         QQmlEngine engine;
 
         std::unique_ptr<QObject> shell = createWorkspaceShell(&vehicle,
                                                               &breadcrumbs,
+                                                              &navigationOverlays,
                                                               &mapSources,
                                                               &offlineMaps,
                                                               &mapCache,
@@ -556,16 +772,18 @@ class AnimusQtMapModelTests final : public QObject
     {
         animus::VehicleModel vehicle;
         animus::BreadcrumbPathModel breadcrumbs;
+        animus::NavigationOverlayModels navigationOverlays;
         animus::MapSourceRegistry mapSources;
         animus::OfflineMapManager offlineMaps(&mapSources);
         animus::AnimusMapCacheManager mapCache;
         animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
         animus::VehicleModelProfileManager profiles(bundledModelProfilesDir(), nullptr, &vehicle);
-        animus::CesiumBridge cesium(&vehicle, &breadcrumbs, &profiles);
+        animus::CesiumBridge cesium(&vehicle, &breadcrumbs, &profiles, &navigationOverlays);
         QQmlEngine engine;
 
         std::unique_ptr<QObject> shell = createWorkspaceShell(&vehicle,
                                                               &breadcrumbs,
+                                                              &navigationOverlays,
                                                               &mapSources,
                                                               &offlineMaps,
                                                               &mapCache,
@@ -583,16 +801,18 @@ class AnimusQtMapModelTests final : public QObject
     {
         animus::VehicleModel vehicle;
         animus::BreadcrumbPathModel breadcrumbs;
+        animus::NavigationOverlayModels navigationOverlays;
         animus::MapSourceRegistry mapSources;
         animus::OfflineMapManager offlineMaps(&mapSources);
         animus::AnimusMapCacheManager mapCache;
         animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
         animus::VehicleModelProfileManager profiles(bundledModelProfilesDir(), nullptr, &vehicle);
-        animus::CesiumBridge cesium(&vehicle, &breadcrumbs, &profiles);
+        animus::CesiumBridge cesium(&vehicle, &breadcrumbs, &profiles, &navigationOverlays);
         QQmlEngine engine;
 
         std::unique_ptr<QObject> shell = createWorkspaceShell(&vehicle,
                                                               &breadcrumbs,
+                                                              &navigationOverlays,
                                                               &mapSources,
                                                               &offlineMaps,
                                                               &mapCache,
@@ -1273,6 +1493,7 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(scriptText.contains(QStringLiteral("window.animusApplySnapshot")));
         QVERIFY(scriptText.contains(QStringLiteral("window.animusCaptureCesiumPng")));
         QVERIFY(scriptText.contains(QStringLiteral("window.animusInspectControlSurfaces")));
+        QVERIFY(scriptText.contains(QStringLiteral("window.animusOverlayDiagnostics")));
         QVERIFY(scriptText.contains(QStringLiteral("window.animusSetCameraMode")));
         QVERIFY(scriptText.contains(QStringLiteral("window.animusResetFpvCamera")));
         QVERIFY(scriptText.contains(QStringLiteral("window.animusFpvCameraState")));
@@ -1285,6 +1506,12 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(scriptText.contains(QStringLiteral("aircraftModelUrl")));
         QVERIFY(scriptText.contains(QStringLiteral("VehicleModelController")));
         QVERIFY(scriptText.contains(QStringLiteral("applyControlSurfaces")));
+        QVERIFY(scriptText.contains(QStringLiteral("function updateNavigationOverlays()")));
+        QVERIFY(scriptText.contains(QStringLiteral("overlayEntities")));
+        QVERIFY(scriptText.contains(QStringLiteral("overlays.missionItems")));
+        QVERIFY(scriptText.contains(QStringLiteral("overlays.geofences")));
+        QVERIFY(scriptText.contains(
+            QStringLiteral("workspaceMode === 'tactical' || workspaceMode === 'fpv'")));
         QVERIFY(scriptText.contains(QStringLiteral("models/${profile}.json")));
         QVERIFY(scriptText.contains(QStringLiteral("Cesium.Model.fromGltfAsync")));
         QVERIFY(scriptText.contains(QStringLiteral("upAxis: Cesium.Axis.Z")));

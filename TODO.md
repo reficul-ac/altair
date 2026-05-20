@@ -68,7 +68,7 @@ Reusable Bayek framework follow-up is tracked separately in
   vehicle/home/trail primitives, and Cesium canvas screenshot capture.
 - [x] Add richer terrain clearance analysis in Terrain 3D, including vehicle
   clearance trend/history and operator-visible guardrail thresholds.
-- [ ] Add typed Qt models and QML overlays for mission items, geofences, rally
+- [x] Add typed Qt models and QML overlays for mission items, geofences, rally
   points, home/origin, event markers, and breadcrumb/history layers.
 - [x] Author or import `generic_fixed_wing_smooth.glb` with named
   control-surface pivot nodes.
@@ -262,7 +262,7 @@ Reusable Bayek framework follow-up is tracked separately in
   initialize.
 - [ ] Diagnose Terrain 3D trackpad event delivery in Qt WebEngine and add a
   non-laggy Space+trackpad rotate path without a full-scene QML input overlay.
-- [ ] Harden the Animus Qt local HTTP tile downloader test so sandbox loopback
+- [x] Harden the Animus Qt local HTTP tile downloader test so sandbox loopback
   listen/download behavior is reported separately from cache-manager regressions.
 - [x] Retire the obsolete TypeScript Animus app, generated dependency tree,
   interaction harnesses, and old CI lane now that Qt Animus is canonical.

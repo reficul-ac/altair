@@ -10,6 +10,7 @@ namespace animus
 {
 
 class BreadcrumbPathModel;
+class NavigationOverlayModels;
 class VehicleModel;
 class VehicleModelProfileManager;
 
@@ -31,6 +32,11 @@ class CesiumBridge final : public QObject
                  BreadcrumbPathModel *trail,
                  VehicleModelProfileManager *profileManager,
                  QObject *parent = nullptr);
+    CesiumBridge(VehicleModel *vehicle,
+                 BreadcrumbPathModel *trail,
+                 VehicleModelProfileManager *profileManager,
+                 NavigationOverlayModels *overlays,
+                 QObject *parent = nullptr);
 
     QVariantMap latestVehicle() const;
     QVariantMap terrainStatus() const;
@@ -49,6 +55,7 @@ class CesiumBridge final : public QObject
     void homeChanged(const QVariantMap &home);
     void terrainStatusChanged(const QVariantMap &terrain);
     void terrainClearanceChanged(const QVariantMap &clearance);
+    void overlaysChanged(const QVariantMap &overlays);
     void sceneStatusChanged(const QVariantMap &scene);
     void terrainCachePathChanged();
 
@@ -58,12 +65,14 @@ class CesiumBridge final : public QObject
     void publishTrail();
     void publishTerrain();
     void publishClearance();
+    void publishOverlays();
 
   private:
     QVariantMap vehicleMap() const;
     QVariantMap homeMap() const;
     QVariantList trailList() const;
     QVariantMap terrainMap() const;
+    QVariantMap overlaysMap() const;
     QVariantMap configMap() const;
     QVariantMap fixtureMap() const;
     bool hasQuantizedMeshTerrain() const;
@@ -71,12 +80,14 @@ class CesiumBridge final : public QObject
     VehicleModel *m_vehicle;
     BreadcrumbPathModel *m_trail;
     VehicleModelProfileManager *m_profileManager;
+    NavigationOverlayModels *m_overlays;
     QScopedPointer<VehicleModelProfileManager> m_ownedProfileManager;
     QVariantMap m_latestVehicle;
     QVariantMap m_latestHome;
     QVariantList m_latestTrail;
     QVariantMap m_terrainStatus;
     QVariantMap m_terrainClearance;
+    QVariantMap m_latestOverlays;
     QString m_terrainCachePath;
     QVariantMap m_sceneStatus;
 };

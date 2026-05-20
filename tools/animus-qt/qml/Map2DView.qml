@@ -142,6 +142,32 @@ Item {
         return mapCache.activeAttribution + " | QGC-style cache | " + mapCache.activeMapTypeId
     }
 
+    function metersPerPixel() {
+        var latitudeRad = clampLatitude(centerLatitudeDeg) * Math.PI / 180.0
+        return 156543.03392 * Math.cos(latitudeRad) / Math.pow(2, zoomLevel)
+    }
+
+    function severityColor(severity) {
+        if (severity === "warning")
+            return "#d92626"
+        if (severity === "caution")
+            return "#d59b28"
+        return "#3f4a3d"
+    }
+
+    function overlayDiagnostics() {
+        return {
+            "missionItems": navigationOverlays.missionItemList().length,
+            "geofences": navigationOverlays.geofenceList().length,
+            "rallyPoints": navigationOverlays.rallyPointList().length,
+            "eventMarkers": navigationOverlays.eventMarkerList().length,
+            "breadcrumbs": breadcrumbModel.count,
+            "home": vehicleModel.homeValid ? 1 : 0,
+            "activeMissionSeq": vehicleModel.missionSeq,
+            "missionValid": vehicleModel.missionValid
+        }
+    }
+
     function resetMapWarning() {
         mapWarningDismissed = false
         mapWarningExpanded = false
@@ -164,6 +190,20 @@ Item {
     Connections {
         target: offlineMaps
         function onModeChanged() { root.resetMapWarning() }
+    }
+
+    Connections {
+        target: navigationOverlays.missionItems
+        function onRowsInserted() { overlayCanvas.requestPaint() }
+        function onRowsRemoved() { overlayCanvas.requestPaint() }
+        function onModelReset() { overlayCanvas.requestPaint() }
+    }
+
+    Connections {
+        target: navigationOverlays.geofences
+        function onRowsInserted() { overlayCanvas.requestPaint() }
+        function onRowsRemoved() { overlayCanvas.requestPaint() }
+        function onModelReset() { overlayCanvas.requestPaint() }
     }
 
     Rectangle {
@@ -225,6 +265,125 @@ Item {
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             cache: true
+        }
+    }
+
+    Canvas {
+        id: overlayCanvas
+        anchors.fill: parent
+        onPaint: {
+            var ctx = getContext("2d")
+            ctx.clearRect(0, 0, width, height)
+
+            var geofences = navigationOverlays.geofenceList()
+            for (var g = 0; g < geofences.length; ++g) {
+                var fence = geofences[g]
+                if (!fence.enabled)
+                    continue
+                ctx.strokeStyle = "rgba(213, 155, 40, 0.95)"
+                ctx.fillStyle = "rgba(213, 155, 40, 0.16)"
+                ctx.lineWidth = 2
+                if (fence.type === "polygon" && fence.vertices.length >= 3) {
+                    ctx.beginPath()
+                    for (var v = 0; v < fence.vertices.length; ++v) {
+                        var vertex = fence.vertices[v]
+                        var x = root.projectX(vertex.longitudeDeg)
+                        var y = root.projectY(vertex.latitudeDeg)
+                        if (v === 0)
+                            ctx.moveTo(x, y)
+                        else
+                            ctx.lineTo(x, y)
+                    }
+                    ctx.closePath()
+                    ctx.fill()
+                    ctx.stroke()
+                } else if (fence.type === "circle") {
+                    var radiusPx = Math.max(8, fence.radiusM / Math.max(0.1, root.metersPerPixel()))
+                    ctx.beginPath()
+                    ctx.arc(root.projectX(fence.centerLongitudeDeg),
+                            root.projectY(fence.centerLatitudeDeg), radiusPx, 0, Math.PI * 2)
+                    ctx.fill()
+                    ctx.stroke()
+                }
+            }
+
+            var mission = navigationOverlays.missionItemList()
+            if (mission.length >= 2) {
+                ctx.strokeStyle = "rgba(29, 111, 214, 0.82)"
+                ctx.lineWidth = 3
+                ctx.beginPath()
+                for (var i = 0; i < mission.length; ++i) {
+                    var item = mission[i]
+                    var mx = root.projectX(item.longitudeDeg)
+                    var my = root.projectY(item.latitudeDeg)
+                    if (i === 0)
+                        ctx.moveTo(mx, my)
+                    else
+                        ctx.lineTo(mx, my)
+                }
+                ctx.stroke()
+            }
+        }
+
+        Connections {
+            target: root
+            function onCenterLatitudeDegChanged() { overlayCanvas.requestPaint() }
+            function onCenterLongitudeDegChanged() { overlayCanvas.requestPaint() }
+            function onZoomLevelChanged() { overlayCanvas.requestPaint() }
+            function onWidthChanged() { overlayCanvas.requestPaint() }
+            function onHeightChanged() { overlayCanvas.requestPaint() }
+        }
+    }
+
+    Repeater {
+        model: navigationOverlays.missionItems
+        delegate: Rectangle {
+            width: 24
+            height: 24
+            radius: 12
+            x: root.projectX(longitudeDeg) - width / 2
+            y: root.projectY(latitudeDeg) - height / 2
+            color: active ? "#1d6fd6" : "#f7f7f3"
+            border.color: "#1d6fd6"
+            border.width: 2
+
+            Label {
+                anchors.centerIn: parent
+                text: sequence
+                color: active ? "white" : "#1d6fd6"
+                font.bold: true
+            }
+        }
+    }
+
+    Repeater {
+        model: navigationOverlays.rallyPoints
+        delegate: Rectangle {
+            width: 18
+            height: 18
+            radius: 3
+            rotation: 45
+            x: root.projectX(longitudeDeg) - width / 2
+            y: root.projectY(latitudeDeg) - height / 2
+            visible: valid
+            color: "#0f7b43"
+            border.color: "white"
+            border.width: 2
+        }
+    }
+
+    Repeater {
+        model: navigationOverlays.eventMarkers
+        delegate: Rectangle {
+            width: 16
+            height: 16
+            radius: 8
+            x: root.projectX(longitudeDeg) - width / 2
+            y: root.projectY(latitudeDeg) - height / 2
+            visible: positionValid
+            color: root.severityColor(severity)
+            border.color: "white"
+            border.width: 2
         }
     }
 

@@ -18,6 +18,7 @@ struct BreadcrumbPoint
 class BreadcrumbPathModel final : public QAbstractListModel
 {
     Q_OBJECT
+    Q_PROPERTY(int count READ count NOTIFY countChanged)
     Q_PROPERTY(int maxPoints READ maxPoints WRITE setMaxPoints NOTIFY limitsChanged)
     Q_PROPERTY(double minDistanceM READ minDistanceM WRITE setMinDistanceM NOTIFY limitsChanged)
 
@@ -37,6 +38,7 @@ class BreadcrumbPathModel final : public QAbstractListModel
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     QHash<int, QByteArray> roleNames() const override;
 
+    int count() const;
     int maxPoints() const;
     void setMaxPoints(int maxPoints);
 
@@ -49,6 +51,7 @@ class BreadcrumbPathModel final : public QAbstractListModel
 
   signals:
     void limitsChanged();
+    void countChanged();
 
   private:
     QVector<BreadcrumbPoint> m_points;

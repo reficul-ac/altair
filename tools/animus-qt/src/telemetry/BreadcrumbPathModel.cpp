@@ -47,6 +47,11 @@ QHash<int, QByteArray> BreadcrumbPathModel::roleNames() const
     return roles;
 }
 
+int BreadcrumbPathModel::count() const
+{
+    return m_points.size();
+}
+
 int BreadcrumbPathModel::maxPoints() const
 {
     return m_maxPoints;
@@ -63,6 +68,7 @@ void BreadcrumbPathModel::setMaxPoints(int maxPoints)
         beginRemoveRows(QModelIndex(), 0, 0);
         m_points.removeFirst();
         endRemoveRows();
+        emit countChanged();
     }
     emit limitsChanged();
 }
@@ -83,9 +89,12 @@ void BreadcrumbPathModel::setMinDistanceM(double minDistanceM)
 
 void BreadcrumbPathModel::clear()
 {
+    const bool changed = !m_points.isEmpty();
     beginResetModel();
     m_points.clear();
     endResetModel();
+    if (changed)
+        emit countChanged();
 }
 
 bool BreadcrumbPathModel::append(double latitudeDeg,
@@ -114,6 +123,7 @@ bool BreadcrumbPathModel::append(double latitudeDeg,
     beginInsertRows(QModelIndex(), row, row);
     m_points.push_back({coordinate, timestampS});
     endInsertRows();
+    emit countChanged();
     return true;
 }
 

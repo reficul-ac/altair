@@ -1,5 +1,6 @@
 #include "maps/CesiumBridge.h"
 
+#include "maps/NavigationOverlayModels.h"
 #include "maps/TerrainClearanceAnalyzer.h"
 #include "models/VehicleModelProfileManager.h"
 #include "models/VehicleModel.h"
@@ -20,7 +21,7 @@ constexpr double kVerificationDeflectionDeg = 12.0;
 } // namespace
 
 CesiumBridge::CesiumBridge(VehicleModel *vehicle, BreadcrumbPathModel *trail, QObject *parent)
-    : CesiumBridge(vehicle, trail, nullptr, parent)
+    : CesiumBridge(vehicle, trail, nullptr, nullptr, parent)
 {
 }
 
@@ -28,7 +29,17 @@ CesiumBridge::CesiumBridge(VehicleModel *vehicle,
                            BreadcrumbPathModel *trail,
                            VehicleModelProfileManager *profileManager,
                            QObject *parent)
+    : CesiumBridge(vehicle, trail, profileManager, nullptr, parent)
+{
+}
+
+CesiumBridge::CesiumBridge(VehicleModel *vehicle,
+                           BreadcrumbPathModel *trail,
+                           VehicleModelProfileManager *profileManager,
+                           NavigationOverlayModels *overlays,
+                           QObject *parent)
     : QObject(parent), m_vehicle(vehicle), m_trail(trail), m_profileManager(profileManager),
+      m_overlays(overlays),
       m_terrainCachePath(QDir(QStringLiteral(ANIMUS_REPO_ROOT))
                              .filePath(QStringLiteral("map_cache/terrain/quantized-mesh"))),
       m_sceneStatus({{QStringLiteral("status"), QStringLiteral("initializing")},
@@ -48,6 +59,7 @@ CesiumBridge::CesiumBridge(VehicleModel *vehicle,
     connect(vehicle, &VehicleModel::velocityChanged, this, &CesiumBridge::publishVehicle);
     connect(vehicle, &VehicleModel::vehicleChanged, this, &CesiumBridge::publishVehicle);
     connect(vehicle, &VehicleModel::actuatorChanged, this, &CesiumBridge::publishVehicle);
+    connect(vehicle, &VehicleModel::missionChanged, this, &CesiumBridge::publishOverlays);
     connect(vehicle, &VehicleModel::homeChanged, this, &CesiumBridge::publishHome);
     connect(vehicle, &VehicleModel::homeChanged, this, &CesiumBridge::publishClearance);
     connect(vehicle, &VehicleModel::terrainChanged, this, &CesiumBridge::publishTerrain);
@@ -66,12 +78,64 @@ CesiumBridge::CesiumBridge(VehicleModel *vehicle,
             &VehicleModelProfileManager::surfacesChanged,
             this,
             &CesiumBridge::publishVehicle);
+    if (m_overlays)
+    {
+        connect(m_overlays->missionItems(),
+                &QAbstractItemModel::rowsInserted,
+                this,
+                &CesiumBridge::publishOverlays);
+        connect(m_overlays->missionItems(),
+                &QAbstractItemModel::rowsRemoved,
+                this,
+                &CesiumBridge::publishOverlays);
+        connect(m_overlays->missionItems(),
+                &QAbstractItemModel::modelReset,
+                this,
+                &CesiumBridge::publishOverlays);
+        connect(m_overlays->geofences(),
+                &QAbstractItemModel::rowsInserted,
+                this,
+                &CesiumBridge::publishOverlays);
+        connect(m_overlays->geofences(),
+                &QAbstractItemModel::rowsRemoved,
+                this,
+                &CesiumBridge::publishOverlays);
+        connect(m_overlays->geofences(),
+                &QAbstractItemModel::modelReset,
+                this,
+                &CesiumBridge::publishOverlays);
+        connect(m_overlays->rallyPoints(),
+                &QAbstractItemModel::rowsInserted,
+                this,
+                &CesiumBridge::publishOverlays);
+        connect(m_overlays->rallyPoints(),
+                &QAbstractItemModel::rowsRemoved,
+                this,
+                &CesiumBridge::publishOverlays);
+        connect(m_overlays->rallyPoints(),
+                &QAbstractItemModel::modelReset,
+                this,
+                &CesiumBridge::publishOverlays);
+        connect(m_overlays->eventMarkers(),
+                &QAbstractItemModel::rowsInserted,
+                this,
+                &CesiumBridge::publishOverlays);
+        connect(m_overlays->eventMarkers(),
+                &QAbstractItemModel::rowsRemoved,
+                this,
+                &CesiumBridge::publishOverlays);
+        connect(m_overlays->eventMarkers(),
+                &QAbstractItemModel::modelReset,
+                this,
+                &CesiumBridge::publishOverlays);
+    }
 
     publishVehicle();
     publishHome();
     publishTrail();
     publishTerrain();
     publishClearance();
+    publishOverlays();
 }
 
 QVariantMap CesiumBridge::latestVehicle() const
@@ -116,6 +180,7 @@ QVariantMap CesiumBridge::snapshot() const
             {QStringLiteral("trail"), m_latestTrail},
             {QStringLiteral("terrain"), m_terrainStatus},
             {QStringLiteral("clearance"), m_terrainClearance},
+            {QStringLiteral("overlays"), m_latestOverlays},
             {QStringLiteral("scene"), m_sceneStatus},
             {QStringLiteral("model"), m_profileManager->selectedModelMap()},
             {QStringLiteral("controlSurfaces"), m_profileManager->mappedControlSurfaces()},
@@ -194,6 +259,12 @@ void CesiumBridge::publishClearance()
     emit terrainClearanceChanged(m_terrainClearance);
 }
 
+void CesiumBridge::publishOverlays()
+{
+    m_latestOverlays = overlaysMap();
+    emit overlaysChanged(m_latestOverlays);
+}
+
 QVariantMap CesiumBridge::vehicleMap() const
 {
     return {
@@ -267,6 +338,20 @@ QVariantMap CesiumBridge::terrainMap() const
         {QStringLiteral("cachePath"), terrainPath},
         {QStringLiteral("cacheUrl"), QUrl::fromLocalFile(terrainUrlPath).toString()},
         {QStringLiteral("fixture"), fixtureMap()}};
+}
+
+QVariantMap CesiumBridge::overlaysMap() const
+{
+    if (!m_overlays)
+    {
+        return {{QStringLiteral("missionItems"), QVariantList()},
+                {QStringLiteral("geofences"), QVariantList()},
+                {QStringLiteral("rallyPoints"), QVariantList()},
+                {QStringLiteral("eventMarkers"), QVariantList()},
+                {QStringLiteral("activeMissionSeq"), m_vehicle->missionSeq()},
+                {QStringLiteral("missionValid"), m_vehicle->missionValid()}};
+    }
+    return m_overlays->toVariantMap(m_vehicle->missionSeq(), m_vehicle->missionValid());
 }
 
 QVariantMap CesiumBridge::configMap() const

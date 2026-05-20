@@ -14,6 +14,7 @@
   let attitudeReferenceCollection = null;
   let trailPolylineCollection = null;
   let trailEntities = [];
+  let overlayEntities = [];
   let imageryLayer = null;
   let terrainProviderKey = '';
   let aircraftModelUri = '';
@@ -79,6 +80,7 @@
     trail: [],
     terrain: null,
     scene: null,
+    overlays: null,
     model: null,
     controlSurfaces: [],
     config: null,
@@ -94,6 +96,21 @@
       Number.isFinite(Number(point.latDeg)) &&
       Number.isFinite(Number(point.lonDeg)) &&
       Number.isFinite(Number(point.altitudeM));
+  }
+
+  function validOverlayPosition(point) {
+    return point &&
+      Number.isFinite(Number(point.latitudeDeg)) &&
+      Number.isFinite(Number(point.longitudeDeg)) &&
+      Number.isFinite(Number(point.altitudeM));
+  }
+
+  function overlayCartesian(point) {
+    return Cesium.Cartesian3.fromDegrees(
+      numberOr(point.longitudeDeg, 0),
+      numberOr(point.latitudeDeg, 0),
+      numberOr(point.altitudeM, 0)
+    );
   }
 
   function cartesian(point) {
@@ -1307,6 +1324,155 @@
     viewer.scene.requestRender();
   }
 
+  function clearOverlayEntities() {
+    if (!viewer) return;
+    overlayEntities.forEach((entity) => viewer.entities.remove(entity));
+    overlayEntities = [];
+  }
+
+  function eventSeverityColor(severity) {
+    if (severity === 'warning') return '#d92626';
+    if (severity === 'caution') return '#d59b28';
+    return '#3f4a3d';
+  }
+
+  function updateNavigationOverlays() {
+    if (!viewer) return;
+    clearOverlayEntities();
+    if (workspaceMode === 'tactical' || workspaceMode === 'fpv') {
+      viewer.scene.requestRender();
+      return;
+    }
+
+    const overlays = state.overlays || {};
+    const missionItems = Array.isArray(overlays.missionItems)
+      ? overlays.missionItems.filter(validOverlayPosition)
+      : [];
+    if (missionItems.length >= 2) {
+      overlayEntities.push(viewer.entities.add({
+        id: 'overlay-mission-route',
+        name: 'Mission route',
+        polyline: {
+          positions: missionItems.map(overlayCartesian),
+          width: 4,
+          material: Cesium.Color.fromCssColorString('#1d6fd6').withAlpha(0.86),
+          depthFailMaterial: Cesium.Color.fromCssColorString('#1d6fd6').withAlpha(0.42),
+        },
+      }));
+    }
+    missionItems.forEach((item) => {
+      const active = Number(item.sequence) === Number(overlays.activeMissionSeq);
+      overlayEntities.push(viewer.entities.add({
+        name: `Mission ${item.sequence}`,
+        position: overlayCartesian(item),
+        point: {
+          pixelSize: active ? 16 : 13,
+          color: Cesium.Color.fromCssColorString(active ? '#1d6fd6' : '#f7f7f3'),
+          outlineColor: Cesium.Color.fromCssColorString('#1d6fd6'),
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: String(item.sequence),
+          font: '12px sans-serif',
+          fillColor: Cesium.Color.fromCssColorString(active ? '#ffffff' : '#1d6fd6'),
+          style: Cesium.LabelStyle.FILL,
+          verticalOrigin: Cesium.VerticalOrigin.CENTER,
+          pixelOffset: new Cesium.Cartesian2(0, 0),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      }));
+    });
+
+    const geofences = Array.isArray(overlays.geofences) ? overlays.geofences : [];
+    geofences.forEach((fence) => {
+      if (!fence || !fence.enabled) return;
+      if (fence.type === 'polygon' && Array.isArray(fence.vertices) && fence.vertices.length >= 3) {
+        const vertices = fence.vertices.filter((vertex) =>
+          Number.isFinite(Number(vertex.latitudeDeg)) &&
+          Number.isFinite(Number(vertex.longitudeDeg))
+        );
+        if (vertices.length < 3) return;
+        const positions = vertices.map((vertex) => Cesium.Cartesian3.fromDegrees(
+          numberOr(vertex.longitudeDeg, 0),
+          numberOr(vertex.latitudeDeg, 0),
+          0
+        ));
+        overlayEntities.push(viewer.entities.add({
+          name: fence.label || 'Geofence polygon',
+          polygon: {
+            hierarchy: positions,
+            material: Cesium.Color.fromCssColorString('#d59b28').withAlpha(0.18),
+            outline: true,
+            outlineColor: Cesium.Color.fromCssColorString('#d59b28'),
+            height: 0,
+          },
+          polyline: {
+            positions: positions.concat([positions[0]]),
+            width: 3,
+            material: Cesium.Color.fromCssColorString('#d59b28').withAlpha(0.95),
+            clampToGround: true,
+          },
+        }));
+      } else if (fence.type === 'circle' &&
+                 Number.isFinite(Number(fence.centerLatitudeDeg)) &&
+                 Number.isFinite(Number(fence.centerLongitudeDeg)) &&
+                 Number(fence.radiusM) > 0) {
+        overlayEntities.push(viewer.entities.add({
+          name: fence.label || 'Geofence circle',
+          position: Cesium.Cartesian3.fromDegrees(
+            numberOr(fence.centerLongitudeDeg, 0),
+            numberOr(fence.centerLatitudeDeg, 0),
+            0
+          ),
+          ellipse: {
+            semiMajorAxis: numberOr(fence.radiusM, 1),
+            semiMinorAxis: numberOr(fence.radiusM, 1),
+            material: Cesium.Color.fromCssColorString('#d59b28').withAlpha(0.13),
+            outline: true,
+            outlineColor: Cesium.Color.fromCssColorString('#d59b28'),
+            height: 0,
+          },
+        }));
+      }
+    });
+
+    const rallyPoints = Array.isArray(overlays.rallyPoints)
+      ? overlays.rallyPoints.filter((point) => point.valid && validOverlayPosition(point))
+      : [];
+    rallyPoints.forEach((point) => {
+      overlayEntities.push(viewer.entities.add({
+        name: point.label || 'Rally point',
+        position: overlayCartesian(point),
+        point: {
+          pixelSize: 14,
+          color: Cesium.Color.fromCssColorString('#0f7b43'),
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      }));
+    });
+
+    const eventMarkers = Array.isArray(overlays.eventMarkers)
+      ? overlays.eventMarkers.filter((event) => event.positionValid && validOverlayPosition(event))
+      : [];
+    eventMarkers.forEach((event) => {
+      overlayEntities.push(viewer.entities.add({
+        name: event.label || 'Event marker',
+        position: overlayCartesian(event),
+        point: {
+          pixelSize: 12,
+          color: Cesium.Color.fromCssColorString(eventSeverityColor(event.severity)),
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      }));
+    });
+    viewer.scene.requestRender();
+  }
+
   function updateTerrainReference() {
     if (workspaceMode === 'tactical') return;
     const vehicle = state.vehicle || {};
@@ -1423,6 +1589,7 @@
     applyControlSurfaces(state.controlSurfaces || []);
     updateHome();
     updateTrail();
+    updateNavigationOverlays();
   }
 
   function applySnapshot(snapshot) {
@@ -1432,6 +1599,7 @@
       trail: snapshot.trail || state.trail || [],
       terrain: snapshot.terrain || state.terrain,
       scene: snapshot.scene || state.scene,
+      overlays: snapshot.overlays || state.overlays,
       model: snapshot.model || state.model,
       controlSurfaces: snapshot.controlSurfaces || state.controlSurfaces || [],
       config: snapshot.config || state.config,
@@ -1491,6 +1659,25 @@
       requestedModelUri: aircraftModelRequestedUri || '',
       modelLoaded: !!aircraftModelPrimitive,
       modelMatchesProfileAsset: !!profileAssetUri && aircraftModelUri === profileAssetUri,
+    };
+  }
+
+  function overlayDiagnostics() {
+    const overlays = state.overlays || {};
+    const missionItems = Array.isArray(overlays.missionItems) ? overlays.missionItems : [];
+    const geofences = Array.isArray(overlays.geofences) ? overlays.geofences : [];
+    const rallyPoints = Array.isArray(overlays.rallyPoints) ? overlays.rallyPoints : [];
+    const eventMarkers = Array.isArray(overlays.eventMarkers) ? overlays.eventMarkers : [];
+    return {
+      workspaceMode,
+      visible: workspaceMode !== 'tactical' && workspaceMode !== 'fpv',
+      missionItems: missionItems.length,
+      geofences: geofences.length,
+      rallyPoints: rallyPoints.length,
+      eventMarkers: eventMarkers.length,
+      activeMissionSeq: numberOr(overlays.activeMissionSeq, -1),
+      missionValid: !!overlays.missionValid,
+      renderedEntities: overlayEntities.length,
     };
   }
 
@@ -1627,6 +1814,7 @@
   window.animusApplySnapshot = applySnapshot;
   window.animusCaptureCesiumPng = captureCesiumPng;
   window.animusInspectControlSurfaces = inspectControlSurfaces;
+  window.animusOverlayDiagnostics = overlayDiagnostics;
   window.animusResetFpvCamera = resetFpvCamera;
   window.animusResetTacticalCamera = resetTacticalCamera;
   window.animusSetCameraMode = setCameraMode;

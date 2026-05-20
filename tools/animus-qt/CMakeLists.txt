@@ -47,6 +47,7 @@ qt_add_executable(
     src/telemetry/TelemetryService.cpp
     src/maps/MapSourceRegistry.cpp
     src/maps/OfflineMapManager.cpp
+    src/maps/NavigationOverlayModels.cpp
     src/maps/qgc/AnimusMapCacheManager.cpp
     src/maps/TerrainClearanceAnalyzer.cpp
     src/maps/CesiumBridge.cpp
@@ -105,6 +106,7 @@ add_executable(
     tests/test_map_models.cpp
     src/maps/MapSourceRegistry.cpp
     src/maps/OfflineMapManager.cpp
+    src/maps/NavigationOverlayModels.cpp
     src/maps/qgc/AnimusMapCacheManager.cpp
     src/maps/TerrainClearanceAnalyzer.cpp
     src/maps/CesiumBridge.cpp

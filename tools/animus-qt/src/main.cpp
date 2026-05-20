@@ -1,6 +1,7 @@
 #include "maps/CesiumBridge.h"
 #include "maps/qgc/AnimusMapCacheManager.h"
 #include "maps/MapSourceRegistry.h"
+#include "maps/NavigationOverlayModels.h"
 #include "maps/OfflineMapManager.h"
 #include "models/VehicleModelProfileManager.h"
 #include "models/VehicleModel.h"
@@ -195,6 +196,7 @@ int main(int argc, char *argv[])
     animus::MapSourceRegistry mapSources;
     animus::OfflineMapManager offlineMaps(&mapSources);
     animus::AnimusMapCacheManager mapCache;
+    animus::NavigationOverlayModels navigationOverlays;
     animus::TelemetryService telemetry(&vehicle, &trail);
     QSettings settings;
     animus::VehicleModelProfileManager modelProfiles(
@@ -202,7 +204,10 @@ int main(int argc, char *argv[])
             .filePath(QStringLiteral("tools/animus-qt/web/cesium/models")),
         &settings,
         &vehicle);
-    animus::CesiumBridge cesium(&vehicle, &trail, &modelProfiles);
+    if (capture.requested)
+        navigationOverlays.seedCruise6DofFixture();
+
+    animus::CesiumBridge cesium(&vehicle, &trail, &modelProfiles, &navigationOverlays);
     CaptureWriter captureWriter;
 
     if (!capture.mapCacheRoot.isEmpty())
@@ -215,6 +220,8 @@ int main(int argc, char *argv[])
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("vehicleModel"), &vehicle);
     engine.rootContext()->setContextProperty(QStringLiteral("breadcrumbModel"), &trail);
+    engine.rootContext()->setContextProperty(QStringLiteral("navigationOverlays"),
+                                             &navigationOverlays);
     engine.rootContext()->setContextProperty(QStringLiteral("mapSources"), &mapSources);
     engine.rootContext()->setContextProperty(QStringLiteral("offlineMaps"), &offlineMaps);
     engine.rootContext()->setContextProperty(QStringLiteral("mapCache"), &mapCache);
