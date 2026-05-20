@@ -397,6 +397,13 @@ if(Python3_Interpreter_FOUND)
     )
 
     add_test(
+        NAME integration_clean_generated_artifacts
+        COMMAND
+            ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_clean_generated_artifacts.py"
+            "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/clean_generated_artifacts"
+    )
+
+    add_test(
         NAME integration_capture_animus_qt_sitl_png_checks
         COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_capture_animus_qt_sitl.py"
                 "${CMAKE_SOURCE_DIR}"
