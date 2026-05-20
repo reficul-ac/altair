@@ -14,6 +14,8 @@ Reusable Bayek framework follow-up is tracked separately in
 ## Baseline Health
 
 - [ ] Keep CI green for formatting, Debug/Release CMake, CTest, and Qt Animus.
+- [ ] Format `tools/animus-qt/src/maps/NavigationOverlayModels.{h,cpp}` so
+  `tools/python/format_repo.py --check` passes without unrelated cleanup.
 - [ ] Keep generated build, CSV, plot, and Animus capture artifacts out of the worktree.
 
 ## Vehicle And SITL
@@ -31,7 +33,7 @@ Reusable Bayek framework follow-up is tracked separately in
 
 ## Telemetry And Replay
 
-- [ ] Define required telemetry packets for SITL, embedded, and log replay.
+- [x] Define required telemetry packets for SITL, embedded, and log replay.
 - [x] Add Altair replay schema compatibility checks around imported telemetry
   and live viewer session snapshots.
 - [ ] Add log-to-replay tooling for deterministic regression tests.
@@ -44,6 +46,9 @@ Reusable Bayek framework follow-up is tracked separately in
   `build-animus-qt`, and `capture_animus_qt_sitl.py`.
 - [ ] Complete the remaining Animus Qt migration work: offline PMTiles serving,
   mission/fence/rally overlays, and broader Qt parity.
+- [ ] Fix Animus Qt capture under Xvfb/WebEngine so the tactical workspace
+  writes a screenshot and FPV/tactical camera diagnostics are present in
+  `capture_animus_qt_sitl.py` artifacts.
 - [x] Record the exact upstream QGroundControl revision, license headers, and
   source-to-Animus mapping in `docs/animus_qgc_map_audit.md` before importing
   or adapting QGC-derived map/provider code.

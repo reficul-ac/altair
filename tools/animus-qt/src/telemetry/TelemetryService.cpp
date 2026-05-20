@@ -304,6 +304,16 @@ void TelemetryService::applySample(const MavlinkTelemetrySample &sample)
         m_vehicle->setGroundspeedMps(std::hypot(sample.vxNorthMps, sample.vyEastMps));
         m_vehicle->setVelocityValid(true);
     }
+    if (sample.hasVfrHud)
+    {
+        m_vehicle->setAirspeedMps(sample.airspeedMps);
+        m_vehicle->setGroundspeedMps(sample.groundspeedMps);
+        m_vehicle->setClimbMps(sample.climbMps);
+        m_vehicle->setHeadingDeg(sample.headingDeg);
+        m_vehicle->setThrottlePct(sample.throttlePct);
+        m_vehicle->setAltitudeM(sample.altitudeM);
+        m_vehicle->setVelocityValid(true);
+    }
     if (sample.hasGpsRaw)
     {
         m_vehicle->setGpsFixType(sample.gpsFixType);
@@ -392,6 +402,16 @@ void TelemetryService::mergePendingSample(const MavlinkTelemetrySample &sample)
         m_pendingSample.altitudeM = sample.altitudeM;
         m_pendingSample.gpsFixType = sample.gpsFixType;
         m_pendingSample.satellitesVisible = sample.satellitesVisible;
+    }
+    if (sample.hasVfrHud)
+    {
+        m_pendingSample.hasVfrHud = true;
+        m_pendingSample.airspeedMps = sample.airspeedMps;
+        m_pendingSample.groundspeedMps = sample.groundspeedMps;
+        m_pendingSample.climbMps = sample.climbMps;
+        m_pendingSample.headingDeg = sample.headingDeg;
+        m_pendingSample.throttlePct = sample.throttlePct;
+        m_pendingSample.altitudeM = sample.altitudeM;
     }
     if (sample.hasMissionCurrent)
     {

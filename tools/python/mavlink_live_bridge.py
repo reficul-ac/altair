@@ -19,8 +19,11 @@ from typing import Iterable
 MAVLINK_V1_STX = 0xFE
 MAVLINK_CRC_EXTRA = {
     0: 50,
+    24: 24,
     30: 39,
     33: 104,
+    36: 222,
+    42: 28,
     44: 221,
     45: 232,
     47: 153,
@@ -29,12 +32,17 @@ MAVLINK_CRC_EXTRA = {
     74: 20,
     76: 152,
     77: 143,
+    136: 1,
+    242: 104,
 }
 
 MAVLINK_MESSAGE_NAMES = {
     0: "HEARTBEAT",
+    24: "GPS_RAW_INT",
     30: "ATTITUDE",
     33: "GLOBAL_POSITION_INT",
+    36: "SERVO_OUTPUT_RAW",
+    42: "MISSION_CURRENT",
     44: "MISSION_COUNT",
     45: "MISSION_CLEAR_ALL",
     47: "MISSION_ACK",
@@ -43,6 +51,8 @@ MAVLINK_MESSAGE_NAMES = {
     74: "VFR_HUD",
     76: "COMMAND_LONG",
     77: "COMMAND_ACK",
+    136: "TERRAIN_REPORT",
+    242: "HOME_POSITION",
 }
 
 MAV_TYPE_NAMES = {
@@ -151,6 +161,19 @@ class LiveVehicleState:
     groundspeed_mps: float | None = None
     climb_mps: float | None = None
     throttle_pct: int | None = None
+    gps_fix_type: int | None = None
+    satellites_visible: int | None = None
+    mission_seq: int | None = None
+    home_lat_deg: float | None = None
+    home_lon_deg: float | None = None
+    home_altitude_m: float | None = None
+    terrain_lat_deg: float | None = None
+    terrain_lon_deg: float | None = None
+    terrain_height_m: float | None = None
+    terrain_current_height_m: float | None = None
+    terrain_pending: int | None = None
+    terrain_loaded: int | None = None
+    servo_outputs_pwm: list[int | None] = field(default_factory=lambda: [None] * 16)
     vehicle_type: str | None = None
     autopilot: int | None = None
     base_mode: int | None = None
@@ -183,6 +206,15 @@ class LiveVehicleState:
                 ) = decoded
                 self.vehicle_type = MAV_TYPE_NAMES.get(vehicle_type, f"MAV type {vehicle_type}")
                 self.armed = bool(self.base_mode & 0x80)
+        elif message.msg_id == 24:
+            decoded = _unpack("<QiiiHHHHBB", message.payload, 30)
+            if decoded is not None:
+                _, lat, lon, alt, _eph, _epv, _vel, _cog, fix_type, satellites = decoded
+                self.lat_deg = lat / 10000000.0
+                self.lon_deg = lon / 10000000.0
+                self.altitude_m = alt / 1000.0
+                self.gps_fix_type = fix_type
+                self.satellites_visible = None if satellites == 255 else satellites
         elif message.msg_id == 30:
             decoded = _unpack("<Iffffff", message.payload, 28)
             if decoded is not None:
@@ -225,6 +257,43 @@ class LiveVehicleState:
                 ) = decoded
                 self.heading_deg = float(heading)
                 self.throttle_pct = throttle
+        elif message.msg_id == 36:
+            if len(message.payload) >= 21:
+                channels = min(8, (len(message.payload) - 4) // 2)
+                for index in range(channels):
+                    self.servo_outputs_pwm[index] = struct.unpack_from(
+                        "<H", message.payload, 4 + index * 2
+                    )[0]
+                if len(message.payload) >= 37:
+                    for index in range(8, 16):
+                        self.servo_outputs_pwm[index] = struct.unpack_from(
+                            "<H", message.payload, 21 + (index - 8) * 2
+                        )[0]
+        elif message.msg_id == 42:
+            decoded = _unpack("<H", message.payload, 2)
+            if decoded is not None:
+                (self.mission_seq,) = decoded
+        elif message.msg_id == 136:
+            decoded = _unpack("<iiHffHH", message.payload, 22)
+            if decoded is not None:
+                (
+                    lat,
+                    lon,
+                    _spacing,
+                    self.terrain_height_m,
+                    self.terrain_current_height_m,
+                    self.terrain_pending,
+                    self.terrain_loaded,
+                ) = decoded
+                self.terrain_lat_deg = lat / 10000000.0
+                self.terrain_lon_deg = lon / 10000000.0
+        elif message.msg_id == 242:
+            decoded = _unpack("<iiifff", message.payload, 24)
+            if decoded is not None:
+                lat, lon, alt, _x, _y, _z = decoded
+                self.home_lat_deg = lat / 10000000.0
+                self.home_lon_deg = lon / 10000000.0
+                self.home_altitude_m = alt / 1000.0
 
     def to_jsonable(self, now: float | None = None) -> dict:
         now = time.monotonic() if now is None else now
@@ -280,14 +349,28 @@ class LiveVehicleState:
                 "baseMode": self.base_mode,
                 "customMode": self.custom_mode,
                 "systemStatus": self.system_status,
-                "gpsFix": None,
-                "satellitesVisible": None,
+                "gpsFix": self.gps_fix_type,
+                "satellitesVisible": self.satellites_visible,
                 "batteryRemainingPct": None,
                 "batteryVoltageV": None,
                 "onboardControlSensorsHealth": None,
-                "missionSeq": None,
+                "missionSeq": self.mission_seq,
                 "lastStatusText": None,
             },
+            "home": {
+                "latDeg": self.home_lat_deg,
+                "lonDeg": self.home_lon_deg,
+                "altitudeM": self.home_altitude_m,
+            },
+            "terrain": {
+                "latDeg": self.terrain_lat_deg,
+                "lonDeg": self.terrain_lon_deg,
+                "terrainHeightM": self.terrain_height_m,
+                "currentHeightM": self.terrain_current_height_m,
+                "pending": self.terrain_pending,
+                "loaded": self.terrain_loaded,
+            },
+            "actuators": {"servoOutputsPwm": self.servo_outputs_pwm},
             "trail": self.trail,
             "commandCapabilities": {
                 "liveLink": self.connected and (packet_age is None or packet_age < 2.0),
@@ -467,6 +550,23 @@ def decode_message_fields(message: MavlinkMessage) -> dict[str, float | int | st
             "pitchRateRps": pitchspeed,
             "yawRateRps": yawspeed,
         }
+    if message.msg_id == 24:
+        decoded = _unpack("<QiiiHHHHBB", message.payload, 30)
+        if decoded is None:
+            return {}
+        time_usec, lat, lon, alt, eph, epv, vel, cog, fix_type, satellites = decoded
+        return {
+            "timeUsec": time_usec,
+            "latDeg": lat / 10000000.0,
+            "lonDeg": lon / 10000000.0,
+            "altitudeM": alt / 1000.0,
+            "ephCm": eph,
+            "epvCm": epv,
+            "groundspeedMps": vel / 100.0,
+            "courseDeg": None if cog == 65535 else cog / 100.0,
+            "fixType": fix_type,
+            "satellitesVisible": None if satellites == 255 else satellites,
+        }
     if message.msg_id == 33:
         decoded = _unpack("<IiiiihhhH", message.payload, 28)
         if decoded is None:
@@ -495,6 +595,48 @@ def decode_message_fields(message: MavlinkMessage) -> dict[str, float | int | st
             "throttlePct": throttle,
             "altitudeM": altitude,
             "climbMps": climb,
+        }
+    if message.msg_id == 36:
+        fields: dict[str, float | int | str | None] = {
+            "timeBootMs": (
+                struct.unpack_from("<I", message.payload)[0] if len(message.payload) >= 4 else None
+            )
+        }
+        if len(message.payload) >= 21:
+            for index in range(8):
+                fields[f"servo{index + 1}Raw"] = struct.unpack_from(
+                    "<H", message.payload, 4 + index * 2
+                )[0]
+        return fields
+    if message.msg_id == 42:
+        decoded = _unpack("<H", message.payload, 2)
+        return {} if decoded is None else {"seq": decoded[0]}
+    if message.msg_id == 136:
+        decoded = _unpack("<iiHffHH", message.payload, 22)
+        if decoded is None:
+            return {}
+        lat, lon, spacing, terrain_height, current_height, pending, loaded = decoded
+        return {
+            "latDeg": lat / 10000000.0,
+            "lonDeg": lon / 10000000.0,
+            "spacingM": spacing,
+            "terrainHeightM": terrain_height,
+            "currentHeightM": current_height,
+            "pending": pending,
+            "loaded": loaded,
+        }
+    if message.msg_id == 242:
+        decoded = _unpack("<iiifff", message.payload, 24)
+        if decoded is None:
+            return {}
+        lat, lon, alt, x, y, z = decoded
+        return {
+            "latDeg": lat / 10000000.0,
+            "lonDeg": lon / 10000000.0,
+            "altitudeM": alt / 1000.0,
+            "xM": x,
+            "yM": y,
+            "zM": z,
         }
     return {"payloadBytes": len(message.payload), "sequence": message.seq}
 

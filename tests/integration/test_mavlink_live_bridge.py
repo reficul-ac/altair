@@ -59,9 +59,73 @@ def main():
         ),
         seq=9,
     )
+    gps_raw = frame(
+        bridge,
+        24,
+        struct.pack(
+            "<QiiiHHHHBB",
+            100000,
+            int(37.4275 * 1e7),
+            int(-122.1697 * 1e7),
+            151000,
+            100,
+            150,
+            1810,
+            13000,
+            3,
+            10,
+        ),
+        seq=11,
+    )
     vfr_hud = frame(bridge, 74, struct.pack("<ffhHff", 18.5, 18.1, 130, 0, 151.0, 0.2), seq=10)
+    servo = frame(
+        bridge,
+        36,
+        struct.pack("<IHHHHHHHHB", 100, 1600, 1500, 1510, 1490, 0, 0, 0, 0, 0),
+        seq=12,
+    )
+    mission_current = frame(bridge, 42, struct.pack("<H", 2), seq=13)
+    terrain_report = frame(
+        bridge,
+        136,
+        struct.pack("<iiHffHH", int(37.4275 * 1e7), int(-122.1697 * 1e7), 100, 0.0, 151.0, 0, 1),
+        seq=14,
+    )
+    home_position = frame(
+        bridge,
+        242,
+        struct.pack(
+            "<iii" + "f" * 10,
+            int(37.4275 * 1e7),
+            int(-122.1697 * 1e7),
+            150000,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ),
+        seq=15,
+    )
 
-    for message in parser.feed(heartbeat + attitude + global_position + vfr_hud):
+    required_stream = (
+        heartbeat
+        + attitude
+        + global_position
+        + gps_raw
+        + vfr_hud
+        + servo
+        + mission_current
+        + terrain_report
+        + home_position
+    )
+
+    for message in parser.feed(required_stream):
         state.apply(message, now=10.0)
 
     payload = state.to_jsonable(now=10.5)
@@ -77,6 +141,15 @@ def main():
     if abs(payload["metrics"]["airspeedMps"] - 18.5) > 1e-6:
         print("VFR_HUD was not decoded", file=sys.stderr)
         return 1
+    if payload["status"]["gpsFix"] != 3 or payload["status"]["missionSeq"] != 2:
+        print("GPS or mission status was not decoded", file=sys.stderr)
+        return 1
+    if payload["home"]["altitudeM"] != 150.0 or payload["terrain"]["loaded"] != 1:
+        print("home or terrain state was not decoded", file=sys.stderr)
+        return 1
+    if payload["actuators"]["servoOutputsPwm"][0] != 1600:
+        print("servo outputs were not decoded", file=sys.stderr)
+        return 1
     if payload["id"] != "1:1" or payload["vehicleType"] != "Fixed-wing":
         print("vehicle identity was not decoded", file=sys.stderr)
         return 1
@@ -85,7 +158,7 @@ def main():
         return 1
 
     snapshot = bridge.LiveSessionSnapshot(bridge.LiveVehicleState())
-    snapshot.apply_datagram(parser.feed(heartbeat + attitude + global_position + vfr_hud), now=20.0)
+    snapshot.apply_datagram(parser.feed(required_stream), now=20.0)
     snapshot_payload = snapshot.to_jsonable(now=20.5)
     message_names = {message["name"] for message in snapshot_payload["messages"]}
     if (
@@ -94,7 +167,18 @@ def main():
     ):
         print("session snapshot identity was not populated", file=sys.stderr)
         return 1
-    if not {"HEARTBEAT", "ATTITUDE", "GLOBAL_POSITION_INT", "VFR_HUD"}.issubset(message_names):
+    required_names = {
+        "HEARTBEAT",
+        "ATTITUDE",
+        "GLOBAL_POSITION_INT",
+        "GPS_RAW_INT",
+        "VFR_HUD",
+        "SERVO_OUTPUT_RAW",
+        "MISSION_CURRENT",
+        "TERRAIN_REPORT",
+        "HOME_POSITION",
+    }
+    if not required_names.issubset(message_names):
         print("session snapshot message summaries were not populated", file=sys.stderr)
         return 1
     attitude_summary = next(

@@ -590,28 +590,125 @@ static void qgc_send_global_position(qgc_link_t *link,
     qgc_send_packet(link, cfg, 33U, payload, sizeof(payload), 104U);
 }
 
+static void qgc_send_gps_raw(qgc_link_t *link,
+                             const sitl_config_t *cfg,
+                             uint32_t time_boot_ms,
+                             real_t lat_deg,
+                             real_t lon_deg,
+                             real_t altitude_m,
+                             const sim_fixedwing_state_t *plant,
+                             euler_t euler,
+                             uint32_t gps_fix_valid)
+{
+    uint8_t payload[30] = {0};
+    const real_t ground_speed_mps =
+        (real_t)sqrtf(plant->body.velocity_ned_mps.x * plant->body.velocity_ned_mps.x +
+                      plant->body.velocity_ned_mps.y * plant->body.velocity_ned_mps.y);
+    mavlink_put_u32(payload, 0, time_boot_ms * 1000U);
+    mavlink_put_u32(payload, 4, 0U);
+    mavlink_put_i32(payload, 8, scaled_i32(lat_deg, 10000000.0f));
+    mavlink_put_i32(payload, 12, scaled_i32(lon_deg, 10000000.0f));
+    mavlink_put_i32(payload, 16, scaled_i32(altitude_m, 1000.0f));
+    mavlink_put_u16(payload, 20, 100U);
+    mavlink_put_u16(payload, 22, 150U);
+    mavlink_put_u16(payload, 24, (uint16_t)lrintf(ground_speed_mps * 100.0f));
+    mavlink_put_u16(payload, 26, heading_cdeg(euler.yaw));
+    payload[28] = gps_fix_valid ? 3U : 0U;
+    payload[29] = gps_fix_valid ? 10U : 0U;
+    qgc_send_packet(link, cfg, 24U, payload, sizeof(payload), 24U);
+}
+
 static void qgc_send_vfr_hud(qgc_link_t *link,
                              const sitl_config_t *cfg,
                              real_t airspeed_mps,
                              real_t groundspeed_mps,
                              real_t altitude_m,
                              real_t climb_mps,
-                             euler_t euler)
+                             euler_t euler,
+                             const actuator_cmd_t *actuators)
 {
     uint8_t payload[20] = {0};
     mavlink_put_float(payload, 0, airspeed_mps);
     mavlink_put_float(payload, 4, groundspeed_mps);
     mavlink_put_i16(payload, 8, (int16_t)lrintf((real_t)heading_cdeg(euler.yaw) / 100.0f));
-    mavlink_put_u16(payload, 10, 0U);
+    mavlink_put_u16(payload, 10, (uint16_t)lrintf(actuators->motor * 100.0f));
     mavlink_put_float(payload, 12, altitude_m);
     mavlink_put_float(payload, 16, climb_mps);
     qgc_send_packet(link, cfg, 74U, payload, sizeof(payload), 20U);
+}
+
+static uint16_t actuator_pwm(real_t normalized, int centered)
+{
+    real_t bounded = normalized;
+    if (bounded < (centered ? -1.0f : 0.0f))
+    {
+        bounded = centered ? -1.0f : 0.0f;
+    }
+    if (bounded > 1.0f)
+    {
+        bounded = 1.0f;
+    }
+    return (uint16_t)lrintf(centered ? 1500.0f + bounded * 500.0f : 1000.0f + bounded * 1000.0f);
+}
+
+static void qgc_send_servo_output_raw(qgc_link_t *link,
+                                      const sitl_config_t *cfg,
+                                      uint32_t time_boot_ms,
+                                      const actuator_cmd_t *actuators)
+{
+    uint8_t payload[21] = {0};
+    mavlink_put_u32(payload, 0, time_boot_ms);
+    mavlink_put_u16(payload, 4, actuator_pwm(actuators->motor, 0));
+    mavlink_put_u16(payload, 6, actuator_pwm(actuators->aileron, 1));
+    mavlink_put_u16(payload, 8, actuator_pwm(actuators->elevator, 1));
+    mavlink_put_u16(payload, 10, actuator_pwm(actuators->rudder, 1));
+    payload[20] = 0U;
+    qgc_send_packet(link, cfg, 36U, payload, sizeof(payload), 222U);
+}
+
+static void qgc_send_mission_current(qgc_link_t *link,
+                                     const sitl_config_t *cfg,
+                                     const bayek_mission_status_t *mission_status)
+{
+    uint8_t payload[2] = {0};
+    mavlink_put_u16(payload, 0, (uint16_t)mission_status->active_waypoint_index);
+    qgc_send_packet(link, cfg, 42U, payload, sizeof(payload), 28U);
+}
+
+static void qgc_send_home_position(qgc_link_t *link,
+                                   const sitl_config_t *cfg,
+                                   const sitl_initial_conditions_t *initial)
+{
+    uint8_t payload[52] = {0};
+    mavlink_put_i32(payload, 0, scaled_i32(initial->lat_deg, 10000000.0f));
+    mavlink_put_i32(payload, 4, scaled_i32(initial->lon_deg, 10000000.0f));
+    mavlink_put_i32(payload, 8, scaled_i32(initial->altitude_m, 1000.0f));
+    mavlink_put_float(payload, 24, 1.0f);
+    qgc_send_packet(link, cfg, 242U, payload, sizeof(payload), 104U);
+}
+
+static void qgc_send_terrain_report(
+    qgc_link_t *link, const sitl_config_t *cfg, real_t lat_deg, real_t lon_deg, real_t altitude_m)
+{
+    uint8_t payload[22] = {0};
+    mavlink_put_i32(payload, 0, scaled_i32(lat_deg, 10000000.0f));
+    mavlink_put_i32(payload, 4, scaled_i32(lon_deg, 10000000.0f));
+    mavlink_put_u16(payload, 8, 100U);
+    mavlink_put_float(payload, 10, 0.0f);
+    mavlink_put_float(payload, 14, altitude_m);
+    mavlink_put_u16(payload, 18, 0U);
+    mavlink_put_u16(payload, 20, 1U);
+    qgc_send_packet(link, cfg, 136U, payload, sizeof(payload), 1U);
 }
 
 static void qgc_send_state(qgc_link_t *link,
                            const sitl_config_t *cfg,
                            int step,
                            const sim_fixedwing_state_t *plant,
+                           const actuator_cmd_t *actuators,
+                           const bayek_mission_status_t *mission_status,
+                           const sitl_initial_conditions_t *initial,
+                           uint32_t gps_fix_valid,
                            real_t lat_deg,
                            real_t lon_deg,
                            real_t altitude_m,
@@ -634,13 +731,20 @@ static void qgc_send_state(qgc_link_t *link,
     }
     qgc_send_attitude(link, cfg, time_boot_ms, plant, euler);
     qgc_send_global_position(link, cfg, time_boot_ms, lat_deg, lon_deg, altitude_m, plant, euler);
+    qgc_send_gps_raw(
+        link, cfg, time_boot_ms, lat_deg, lon_deg, altitude_m, plant, euler, gps_fix_valid);
     qgc_send_vfr_hud(link,
                      cfg,
                      plant->last_airspeed_mps,
                      groundspeed_mps,
                      altitude_m,
                      -plant->body.velocity_ned_mps.z,
-                     euler);
+                     euler,
+                     actuators);
+    qgc_send_mission_current(link, cfg, mission_status);
+    qgc_send_home_position(link, cfg, initial);
+    qgc_send_terrain_report(link, cfg, lat_deg, lon_deg, altitude_m);
+    qgc_send_servo_output_raw(link, cfg, time_boot_ms, actuators);
 }
 
 static int checked_close(FILE *stream, const char *path)
@@ -1178,7 +1282,18 @@ static int run_cruise6dof(const sitl_config_t *cfg, int steps, FILE *csv)
                              &lat_deg,
                              &lon_deg,
                              &altitude_m);
-        qgc_send_state(&qgc, cfg, i, &plant, lat_deg, lon_deg, altitude_m, euler);
+        qgc_send_state(&qgc,
+                       cfg,
+                       i,
+                       &plant,
+                       &output.actuators,
+                       &mission_status,
+                       &initial,
+                       gps_fix_valid,
+                       lat_deg,
+                       lon_deg,
+                       altitude_m,
+                       euler);
         if (fprintf(csv,
                     "%d,%.3f,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
                     "%u,%.8f,%.8f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"

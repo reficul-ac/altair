@@ -84,7 +84,7 @@ SITL runs as fast as possible by default. Add `--realtime` when a run should be 
 ./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --realtime
 ```
 
-For live MAVLink telemetry, run `cruise6dof` with `--mavlink`. The runner sends MAVLink v1 `HEARTBEAT`, `ATTITUDE`, `GLOBAL_POSITION_INT`, and `VFR_HUD` messages to UDP `127.0.0.1:14550` by default. `--mavlink` implies realtime pacing because MAVLink consumers expect a live stream:
+For live MAVLink telemetry, run `cruise6dof` with `--mavlink`. The runner sends the required Altair MAVLink v1 set from [the telemetry contract](telemetry_contract.md): `HEARTBEAT`, `ATTITUDE`, `GLOBAL_POSITION_INT`, `GPS_RAW_INT`, `VFR_HUD`, `MISSION_CURRENT`, `HOME_POSITION`, `TERRAIN_REPORT`, and `SERVO_OUTPUT_RAW` to UDP `127.0.0.1:14550` by default. `--mavlink` implies realtime pacing because MAVLink consumers expect a live stream:
 
 ```sh
 ./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --mavlink

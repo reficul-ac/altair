@@ -18,5 +18,6 @@ Bayek framework documentation lives in the submodule:
 - [Bayek Flight Core](../bayek/docs/flight_core.md)
 - [Bayek Simulation](../bayek/docs/simulation.md)
 - [Bayek Telemetry](../bayek/docs/telemetry.md)
+- [Altair Telemetry Contract](telemetry_contract.md)
 - [Bayek Testing Strategy](../bayek/docs/testing.md)
 - [Bayek Design Rationale](../bayek/docs/design_rationale.md)

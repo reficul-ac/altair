@@ -139,6 +139,14 @@ void writeLe16(QByteArray *bytes, int offset, quint16 value)
     (*bytes)[offset + 1] = static_cast<char>((value >> 8U) & 0xffU);
 }
 
+void writeLe32(QByteArray *bytes, int offset, quint32 value)
+{
+    (*bytes)[offset] = static_cast<char>(value & 0xffU);
+    (*bytes)[offset + 1] = static_cast<char>((value >> 8U) & 0xffU);
+    (*bytes)[offset + 2] = static_cast<char>((value >> 16U) & 0xffU);
+    (*bytes)[offset + 3] = static_cast<char>((value >> 24U) & 0xffU);
+}
+
 void writeLeFloat(QByteArray *bytes, int offset, float value)
 {
     quint32 raw = 0U;
@@ -193,6 +201,93 @@ attitudeFrame(float roll, float pitch, float yaw, float rollspeed, float pitchsp
     writeLeFloat(&payload, 20, pitchspeed);
     writeLeFloat(&payload, 24, yawspeed);
     return mavlinkV1Frame(30, payload, 39);
+}
+
+QByteArray heartbeatFrame()
+{
+    QByteArray payload(9, '\0');
+    payload[4] = 1;
+    payload[5] = 0;
+    payload[6] = static_cast<char>(0x80U);
+    payload[7] = 4;
+    payload[8] = 3;
+    return mavlinkV1Frame(0, payload, 50);
+}
+
+QByteArray vfrHudFrame(float airspeed,
+                       float groundspeed,
+                       qint16 heading,
+                       quint16 throttle,
+                       float altitude,
+                       float climb)
+{
+    QByteArray payload(20, '\0');
+    writeLeFloat(&payload, 0, airspeed);
+    writeLeFloat(&payload, 4, groundspeed);
+    writeLe16(&payload, 8, static_cast<quint16>(heading));
+    writeLe16(&payload, 10, throttle);
+    writeLeFloat(&payload, 12, altitude);
+    writeLeFloat(&payload, 16, climb);
+    return mavlinkV1Frame(74, payload, 20);
+}
+
+QByteArray gpsRawIntFrame()
+{
+    QByteArray payload(30, '\0');
+    writeLe32(&payload, 8, static_cast<quint32>(qint32(374275000)));
+    writeLe32(&payload, 12, static_cast<quint32>(qint32(-1221697000)));
+    writeLe32(&payload, 16, 151000U);
+    writeLe16(&payload, 20, 100U);
+    writeLe16(&payload, 22, 150U);
+    writeLe16(&payload, 24, 1810U);
+    writeLe16(&payload, 26, 13000U);
+    payload[28] = 3;
+    payload[29] = 10;
+    return mavlinkV1Frame(24, payload, 24);
+}
+
+QByteArray globalPositionFrame()
+{
+    QByteArray payload(28, '\0');
+    writeLe32(&payload, 4, static_cast<quint32>(qint32(374275000)));
+    writeLe32(&payload, 8, static_cast<quint32>(qint32(-1221697000)));
+    writeLe32(&payload, 12, 151000U);
+    writeLe32(&payload, 16, 151000U);
+    writeLe16(&payload, 20, 1800U);
+    writeLe16(&payload, 22, 100U);
+    writeLe16(&payload, 24, static_cast<quint16>(qint16(-20)));
+    writeLe16(&payload, 26, 13000U);
+    return mavlinkV1Frame(33, payload, 104);
+}
+
+QByteArray missionCurrentFrame()
+{
+    QByteArray payload(2, '\0');
+    writeLe16(&payload, 0, 2U);
+    return mavlinkV1Frame(42, payload, 28);
+}
+
+QByteArray terrainReportFrame()
+{
+    QByteArray payload(22, '\0');
+    writeLe32(&payload, 0, static_cast<quint32>(qint32(374275000)));
+    writeLe32(&payload, 4, static_cast<quint32>(qint32(-1221697000)));
+    writeLe16(&payload, 8, 100U);
+    writeLeFloat(&payload, 10, 0.0F);
+    writeLeFloat(&payload, 14, 151.0F);
+    writeLe16(&payload, 18, 0U);
+    writeLe16(&payload, 20, 1U);
+    return mavlinkV1Frame(136, payload, 1);
+}
+
+QByteArray homePositionFrame()
+{
+    QByteArray payload(52, '\0');
+    writeLe32(&payload, 0, static_cast<quint32>(qint32(374275000)));
+    writeLe32(&payload, 4, static_cast<quint32>(qint32(-1221697000)));
+    writeLe32(&payload, 8, 150000U);
+    writeLeFloat(&payload, 24, 1.0F);
+    return mavlinkV1Frame(242, payload, 104);
 }
 
 QVariantMap surfaceById(const QVariantList &surfaces, const QString &id)
@@ -869,6 +964,23 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(qAbs(sample.yawRateRps - 0.6) < 1.0e-6);
     }
 
+    void mavlinkDecoderParsesVfrHud()
+    {
+        animus::MavlinkDecoder decoder;
+        const QVector<animus::MavlinkTelemetrySample> samples =
+            decoder.decodeDatagram(vfrHudFrame(18.5F, 18.1F, 130, 62, 151.0F, 0.2F));
+
+        QCOMPARE(samples.size(), 1);
+        const animus::MavlinkTelemetrySample sample = samples.constFirst();
+        QCOMPARE(sample.hasVfrHud, true);
+        QVERIFY(qAbs(sample.airspeedMps - 18.5) < 1.0e-6);
+        QVERIFY(qAbs(sample.groundspeedMps - 18.1) < 1.0e-6);
+        QCOMPARE(sample.headingDeg, 130.0);
+        QCOMPARE(sample.throttlePct, 62);
+        QVERIFY(qAbs(sample.altitudeM - 151.0) < 1.0e-6);
+        QVERIFY(qAbs(sample.climbMps - 0.2) < 1.0e-6);
+    }
+
     void telemetryServiceAppliesServoOutputRaw()
     {
         animus::VehicleModel vehicle;
@@ -889,6 +1001,47 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(vehicle.servoOutputValid(4), true);
         QCOMPARE(vehicle.servoOutputPwm(4), 1750);
         QVERIFY(actuatorSpy.count() >= 3);
+    }
+
+    void telemetryServiceAppliesRequiredSitlMavlinkSet()
+    {
+        animus::VehicleModel vehicle;
+        animus::BreadcrumbPathModel breadcrumbs;
+        animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
+        QByteArray datagram;
+        datagram.append(heartbeatFrame());
+        datagram.append(attitudeFrame(0.1F, -0.2F, 0.3F, 0.4F, -0.5F, 0.6F));
+        datagram.append(globalPositionFrame());
+        datagram.append(gpsRawIntFrame());
+        datagram.append(vfrHudFrame(18.5F, 18.1F, 130, 62, 151.0F, 0.2F));
+        datagram.append(missionCurrentFrame());
+        datagram.append(homePositionFrame());
+        datagram.append(terrainReportFrame());
+        datagram.append(servoOutputRawFrame({1600, 1500, 1510, 1490, 0, 0, 0, 0}));
+
+        QVERIFY(telemetry.ingestDatagram(datagram));
+        QVERIFY(
+            QMetaObject::invokeMethod(&telemetry, "publishPendingSample", Qt::DirectConnection));
+
+        QCOMPARE(vehicle.attitudeValid(), true);
+        QCOMPARE(vehicle.heartbeatValid(), true);
+        QCOMPARE(vehicle.armed(), true);
+        QCOMPARE(vehicle.positionValid(), true);
+        QCOMPARE(vehicle.velocityValid(), true);
+        QCOMPARE(vehicle.gpsValid(), true);
+        QCOMPARE(vehicle.missionValid(), true);
+        QCOMPARE(vehicle.homeValid(), true);
+        QCOMPARE(vehicle.terrainValid(), true);
+        QVERIFY(qAbs(vehicle.airspeedMps() - 18.5) < 1.0e-6);
+        QVERIFY(qAbs(vehicle.groundspeedMps() - 18.1) < 1.0e-6);
+        QVERIFY(qAbs(vehicle.climbMps() - 0.2) < 1.0e-6);
+        QCOMPARE(vehicle.throttlePct(), 62);
+        QCOMPARE(vehicle.gpsFixType(), 3);
+        QCOMPARE(vehicle.satellitesVisible(), 10);
+        QCOMPARE(vehicle.missionSeq(), 2);
+        QCOMPARE(vehicle.homeAltitudeM(), 150.0);
+        QCOMPARE(vehicle.terrainLoaded(), 1);
+        QCOMPARE(vehicle.servoOutputPwm(1), 1600);
     }
 
     void cesiumBridgeSnapshotExportsVehicleTerrainHomeAndTrail()

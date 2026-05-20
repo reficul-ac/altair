@@ -25,6 +25,9 @@ class VehicleModel final : public QObject
     Q_PROPERTY(double yawRateRps READ yawRateRps WRITE setYawRateRps NOTIFY attitudeChanged)
     Q_PROPERTY(
         double groundspeedMps READ groundspeedMps WRITE setGroundspeedMps NOTIFY vehicleChanged)
+    Q_PROPERTY(double airspeedMps READ airspeedMps WRITE setAirspeedMps NOTIFY vehicleChanged)
+    Q_PROPERTY(double climbMps READ climbMps WRITE setClimbMps NOTIFY vehicleChanged)
+    Q_PROPERTY(int throttlePct READ throttlePct WRITE setThrottlePct NOTIFY vehicleChanged)
     Q_PROPERTY(double vxNorthMps READ vxNorthMps WRITE setVxNorthMps NOTIFY velocityChanged)
     Q_PROPERTY(double vyEastMps READ vyEastMps WRITE setVyEastMps NOTIFY velocityChanged)
     Q_PROPERTY(double vzDownMps READ vzDownMps WRITE setVzDownMps NOTIFY velocityChanged)
@@ -106,6 +109,15 @@ class VehicleModel final : public QObject
 
     double groundspeedMps() const;
     void setGroundspeedMps(double groundspeedMps);
+
+    double airspeedMps() const;
+    void setAirspeedMps(double airspeedMps);
+
+    double climbMps() const;
+    void setClimbMps(double climbMps);
+
+    int throttlePct() const;
+    void setThrottlePct(int throttlePct);
 
     double vxNorthMps() const;
     void setVxNorthMps(double vxNorthMps);
@@ -227,6 +239,9 @@ class VehicleModel final : public QObject
     double m_pitchRateRps;
     double m_yawRateRps;
     double m_groundspeedMps;
+    double m_airspeedMps;
+    double m_climbMps;
+    int m_throttlePct;
     double m_vxNorthMps;
     double m_vyEastMps;
     double m_vzDownMps;

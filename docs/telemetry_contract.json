@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "owner": "Altair",
+  "sitl_live_mavlink": {
+    "transport": "MAVLink v1 UDP",
+    "required_messages": [
+      {"id": 0, "name": "HEARTBEAT", "rate": "1 Hz"},
+      {"id": 30, "name": "ATTITUDE", "rate": "simulation step"},
+      {"id": 33, "name": "GLOBAL_POSITION_INT", "rate": "simulation step"},
+      {"id": 24, "name": "GPS_RAW_INT", "rate": "simulation step"},
+      {"id": 74, "name": "VFR_HUD", "rate": "simulation step"},
+      {"id": 42, "name": "MISSION_CURRENT", "rate": "simulation step"},
+      {"id": 242, "name": "HOME_POSITION", "rate": "simulation step"},
+      {"id": 136, "name": "TERRAIN_REPORT", "rate": "simulation step"},
+      {"id": 36, "name": "SERVO_OUTPUT_RAW", "rate": "simulation step"}
+    ],
+    "deterministic_placeholders": {
+      "GPS_RAW_INT.eph_cm": 100,
+      "GPS_RAW_INT.epv_cm": 150,
+      "GPS_RAW_INT.satellites_visible_when_valid": 10,
+      "TERRAIN_REPORT.spacing_m": 100,
+      "TERRAIN_REPORT.terrain_height_m": 0.0,
+      "TERRAIN_REPORT.current_height_m": "truth altitude above the zero-height local datum",
+      "HOME_POSITION.orientation": "identity quaternion"
+    }
+  },
+  "embedded_bayek_envelope": {
+    "topic_id_floor": "TELEMETRY_TOPIC_VEHICLE_BASE",
+    "required_topics": [
+      {"id": 1000, "name": "altair.heartbeat_status"},
+      {"id": 1001, "name": "altair.vehicle_state"},
+      {"id": 1002, "name": "altair.actuator_outputs"},
+      {"id": 1003, "name": "altair.navigation_mission_state"},
+      {"id": 1004, "name": "altair.environment_terrain_state"},
+      {"id": 1005, "name": "altair.health_fault_summary"}
+    ]
+  },
+  "replay_log": {
+    "format": "cruise6dof CSV v1",
+    "source_doc": "docs/simulation_and_mc.md#sitl-replay-csv-v1",
+    "required_groups": {
+      "heartbeat_status": ["step", "time_s", "mode", "gps_fix_valid"],
+      "vehicle_state": [
+        "lat_deg",
+        "lon_deg",
+        "altitude_m",
+        "pos_n_m",
+        "pos_e_m",
+        "pos_d_m",
+        "vel_n_mps",
+        "vel_e_mps",
+        "vel_d_mps",
+        "roll_rad",
+        "pitch_rad",
+        "yaw_rad",
+        "quat_w",
+        "quat_x",
+        "quat_y",
+        "quat_z",
+        "p_rps",
+        "q_rps",
+        "r_rps",
+        "airspeed_mps"
+      ],
+      "actuator_outputs": ["motor", "aileron", "elevator", "rudder"],
+      "navigation_mission_state": [
+        "mission_loaded",
+        "mission_active_wp",
+        "mission_wp_count",
+        "mission_distance_m"
+      ],
+      "environment_terrain_state": [
+        "pos_ecef_x_m",
+        "pos_ecef_y_m",
+        "pos_ecef_z_m",
+        "vel_ecef_x_mps",
+        "vel_ecef_y_mps",
+        "vel_ecef_z_mps"
+      ],
+      "health_fault_summary": [
+        "trim_active",
+        "trim_achieved",
+        "trim_failed",
+        "trim_iteration_count",
+        "trim_residual_norm"
+      ]
+    }
+  }
+}

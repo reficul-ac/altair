@@ -349,6 +349,13 @@ add_test(NAME integration_vehicle_interface COMMAND test_vehicle_interface)
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
     add_test(
+        NAME integration_telemetry_contract_manifest
+        COMMAND
+            ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_telemetry_contract_manifest.py"
+            "${CMAKE_SOURCE_DIR}"
+    )
+
+    add_test(
         NAME integration_sitl_cruise6dof_failsafe_fixture_replay
         COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/python/compare_sitl_replay.py"
                 --expected "${SITL_FAILSAFE_FIXTURE}" --actual "${SITL_FAILSAFE_FIXTURE_ACTUAL}"
@@ -370,6 +377,13 @@ if(Python3_Interpreter_FOUND)
         COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_mavlink_live_bridge.py"
                 "${CMAKE_SOURCE_DIR}"
     )
+
+    add_test(
+        NAME integration_sitl_mavlink_required
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_sitl_mavlink_required.py"
+                "${CMAKE_SOURCE_DIR}" "${CMAKE_BINARY_DIR}"
+    )
+    set_tests_properties(integration_sitl_mavlink_required PROPERTIES SKIP_RETURN_CODE 77)
 
     add_test(NAME integration_verify_agent_work_selector
              COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_verify_agent_work.py"

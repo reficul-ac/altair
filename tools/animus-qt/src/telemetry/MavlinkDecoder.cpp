@@ -43,6 +43,9 @@ bool crcExtra(unsigned int msgId, unsigned char *extra)
     case 42:
         *extra = 28U;
         return true;
+    case 74:
+        *extra = 20U;
+        return true;
     case 136:
         *extra = 1U;
         return true;
@@ -248,6 +251,17 @@ bool MavlinkDecoder::decodeFrame(const unsigned char *frame,
             return false;
         sample->hasMissionCurrent = true;
         sample->missionSeq = readU16(payload, 0);
+        return true;
+    case 74:
+        if (payloadLength < 20)
+            return false;
+        sample->hasVfrHud = true;
+        sample->airspeedMps = readFloat(payload, 0);
+        sample->groundspeedMps = readFloat(payload, 4);
+        sample->headingDeg = readI16(payload, 8);
+        sample->throttlePct = readU16(payload, 10);
+        sample->altitudeM = readFloat(payload, 12);
+        sample->climbMps = readFloat(payload, 16);
         return true;
     case 136:
         if (payloadLength < 22)

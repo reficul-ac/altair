@@ -18,6 +18,7 @@ struct MavlinkTelemetrySample
     bool hasHomePosition = false;
     bool hasTerrainReport = false;
     bool hasServoOutputRaw = false;
+    bool hasVfrHud = false;
 
     int systemId = 0;
     int componentId = 0;
@@ -42,6 +43,10 @@ struct MavlinkTelemetrySample
     double vyEastMps = 0.0;
     double vzDownMps = 0.0;
     double headingDeg = 0.0;
+    double airspeedMps = 0.0;
+    double groundspeedMps = 0.0;
+    double climbMps = 0.0;
+    int throttlePct = 0;
 
     int gpsFixType = 0;
     int satellitesVisible = -1;

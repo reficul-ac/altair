@@ -9,12 +9,13 @@ VehicleModel::VehicleModel(QObject *parent)
     : QObject(parent), m_vehicleId(QStringLiteral("vehicle-1")), m_connected(false),
       m_latitudeDeg(37.4275), m_longitudeDeg(-122.1697), m_altitudeM(30.0), m_headingDeg(0.0),
       m_rollRad(0.0), m_pitchRad(0.0), m_yawRad(0.0), m_rollRateRps(0.0), m_pitchRateRps(0.0),
-      m_yawRateRps(0.0), m_groundspeedMps(0.0), m_vxNorthMps(0.0), m_vyEastMps(0.0),
-      m_vzDownMps(0.0), m_systemId(0), m_componentId(0), m_autopilot(0), m_vehicleType(0),
-      m_baseMode(0), m_systemStatus(0), m_armed(false), m_gpsFixType(0), m_satellitesVisible(-1),
-      m_missionSeq(-1), m_homeLatitudeDeg(37.4275), m_homeLongitudeDeg(-122.1697),
-      m_homeAltitudeM(0.0), m_terrainLatitudeDeg(0.0), m_terrainLongitudeDeg(0.0),
-      m_terrainHeightM(0.0), m_terrainCurrentHeightM(0.0), m_terrainPending(0), m_terrainLoaded(0),
+      m_yawRateRps(0.0), m_groundspeedMps(0.0), m_airspeedMps(0.0), m_climbMps(0.0),
+      m_throttlePct(0), m_vxNorthMps(0.0), m_vyEastMps(0.0), m_vzDownMps(0.0), m_systemId(0),
+      m_componentId(0), m_autopilot(0), m_vehicleType(0), m_baseMode(0), m_systemStatus(0),
+      m_armed(false), m_gpsFixType(0), m_satellitesVisible(-1), m_missionSeq(-1),
+      m_homeLatitudeDeg(37.4275), m_homeLongitudeDeg(-122.1697), m_homeAltitudeM(0.0),
+      m_terrainLatitudeDeg(0.0), m_terrainLongitudeDeg(0.0), m_terrainHeightM(0.0),
+      m_terrainCurrentHeightM(0.0), m_terrainPending(0), m_terrainLoaded(0),
       m_heartbeatValid(false), m_attitudeValid(false), m_positionValid(false),
       m_velocityValid(false), m_gpsValid(false), m_missionValid(false), m_homeValid(false),
       m_terrainValid(false), m_servoOutputPwm{}, m_servoOutputValid{}
@@ -187,6 +188,45 @@ void VehicleModel::setGroundspeedMps(double groundspeedMps)
     if (qFuzzyCompare(m_groundspeedMps, groundspeedMps))
         return;
     m_groundspeedMps = groundspeedMps;
+    emit vehicleChanged();
+}
+
+double VehicleModel::airspeedMps() const
+{
+    return m_airspeedMps;
+}
+
+void VehicleModel::setAirspeedMps(double airspeedMps)
+{
+    if (qFuzzyCompare(m_airspeedMps, airspeedMps))
+        return;
+    m_airspeedMps = airspeedMps;
+    emit vehicleChanged();
+}
+
+double VehicleModel::climbMps() const
+{
+    return m_climbMps;
+}
+
+void VehicleModel::setClimbMps(double climbMps)
+{
+    if (qFuzzyCompare(m_climbMps, climbMps))
+        return;
+    m_climbMps = climbMps;
+    emit vehicleChanged();
+}
+
+int VehicleModel::throttlePct() const
+{
+    return m_throttlePct;
+}
+
+void VehicleModel::setThrottlePct(int throttlePct)
+{
+    if (m_throttlePct == throttlePct)
+        return;
+    m_throttlePct = throttlePct;
     emit vehicleChanged();
 }
 
