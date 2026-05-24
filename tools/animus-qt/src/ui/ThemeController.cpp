@@ -10,7 +10,7 @@ QString themeModeSetting()
 {
     return QStringLiteral("ui/themeMode");
 }
-}
+} // namespace
 
 ThemeController::ThemeController(QSettings *settings, QObject *parent)
     : QObject(parent), m_settings(settings)

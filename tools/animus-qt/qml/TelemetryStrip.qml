@@ -2,17 +2,11 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-Frame {
+AnimusOverlayPanel {
     id: root
 
     width: Math.min(parent ? parent.width - 24 : implicitWidth, 560)
-    padding: 8
-    background: Rectangle {
-        color: animusTheme.overlay
-        opacity: 0.94
-        border.color: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
-        radius: 6
-    }
+    borderColor: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
 
     function valueText(valid, value, suffix, digits) {
         if (!telemetryService.linkFresh)
@@ -121,11 +115,9 @@ Frame {
             font.pixelSize: 11
             font.bold: true
         }
-        Label {
+        AnimusStatusBadge {
             text: root.linkText()
-            color: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
-            font.pixelSize: 12
-            font.bold: true
+            tone: telemetryService.linkFresh ? "success" : "warning"
         }
     }
 }

@@ -61,7 +61,9 @@ Item {
             "currentIndex": tabs.currentIndex,
             "chrome": root.itemDiagnostic(chrome, "chrome"),
             "themeMode": animusTheme.mode,
-            "themeToggle": root.itemDiagnostic(themeToggle, themeToggle.text),
+            "settingsDisclosure": root.itemDiagnostic(settingsButton, settingsButton.toolTipText),
+            "linkStatus": root.itemDiagnostic(linkStatusLabel, linkStatusLabel.text),
+            "authority": root.itemDiagnostic(authorityLabel, authorityLabel.text),
             "tabs": [
                 root.tabDiagnostic(map2DTab),
                 root.tabDiagnostic(terrain3DTab),
@@ -74,6 +76,26 @@ Item {
 
     function workspaceChromeDiagnosticsJson() {
         return JSON.stringify(root.workspaceChromeDiagnostics(), null, 2)
+    }
+
+    function linkStatusText() {
+        if (!telemetryService.running && telemetryService.decodedSampleCount === 0)
+            return "Link idle"
+        return telemetryService.linkFresh ? "Link fresh" : "Link stale"
+    }
+
+    function linkStatusColor() {
+        if (telemetryService.linkFresh)
+            return animusTheme.success
+        if (telemetryService.running || telemetryService.decodedSampleCount > 0)
+            return animusTheme.warning
+        return animusTheme.mutedText
+    }
+
+    function telemetryStatusText() {
+        var source = telemetryService.running ? "RUNNING" : "STOPPED"
+        var freshness = telemetryService.linkFresh ? "FRESH" : "STALE"
+        return source + " / " + freshness + " / decoded " + telemetryService.decodedSampleCount
     }
 
     StackLayout {
@@ -109,6 +131,7 @@ Item {
             }
             RowLayout {
                 anchors.fill: parent
+                spacing: 10
                 Label {
                     text: "Animus Qt"
                     color: animusTheme.text
@@ -117,25 +140,115 @@ Item {
                     Layout.leftMargin: 12
                 }
                 Label {
-                    text: vehicleModel.connected ? "Telemetry live" : "Telemetry idle"
-                    color: vehicleModel.connected ? animusTheme.success : animusTheme.warning
-                    Layout.leftMargin: 16
+                    id: linkStatusLabel
+                    objectName: "linkStatusLabel"
+                    text: root.linkStatusText()
+                    color: root.linkStatusColor()
+                    font.bold: telemetryService.linkFresh
+                    Layout.leftMargin: 10
+                }
+                Label {
+                    id: authorityLabel
+                    objectName: "commandAuthorityLabel"
+                    text: "Read-only"
+                    color: animusTheme.mutedText
                 }
                 Item { Layout.fillWidth: true }
-                Button {
-                    id: themeToggle
-                    objectName: "themeToggleButton"
-                    text: animusTheme.displayName
-                    onClicked: animusTheme.toggleMode()
+                AnimusIconButton {
+                    id: settingsButton
+                    objectName: "headerSettingsButton"
+                    text: "..."
+                    toolTipText: "Telemetry and display settings"
+                    Layout.preferredWidth: 36
+                    Layout.preferredHeight: 34
+                    Layout.rightMargin: 12
+                    onClicked: settingsPopup.open()
                 }
-                Button {
-                    text: telemetryService.running ? "Stop" : "Mock Telemetry"
-                    onClicked: telemetryService.running ? telemetryService.stop() : telemetryService.startMockTelemetry()
-                }
-                Button {
-                    text: "UDP"
-                    enabled: !telemetryService.running
-                    onClicked: telemetryService.startUdpTelemetry()
+                Popup {
+                    id: settingsPopup
+                    objectName: "headerSettingsPopup"
+                    x: Math.max(8, settingsButton.x + settingsButton.width - width)
+                    y: settingsButton.y + settingsButton.height + 6
+                    width: 320
+                    padding: 0
+                    modal: false
+                    focus: true
+                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+                    background: Rectangle {
+                        color: animusTheme.overlay
+                        border.color: animusTheme.border
+                        radius: 6
+                    }
+                    contentItem: ColumnLayout {
+                        spacing: 10
+
+                        Label {
+                            text: "Header Settings"
+                            color: animusTheme.text
+                            font.bold: true
+                            Layout.leftMargin: 12
+                            Layout.rightMargin: 12
+                            Layout.topMargin: 12
+                        }
+                        GridLayout {
+                            columns: 2
+                            rowSpacing: 6
+                            columnSpacing: 12
+                            Layout.leftMargin: 12
+                            Layout.rightMargin: 12
+                            Layout.fillWidth: true
+
+                            Label {
+                                text: "Endpoint"
+                                color: animusTheme.mutedText
+                                font.bold: true
+                            }
+                            Label {
+                                text: telemetryService.udpHost + ":" + telemetryService.udpPort
+                                color: animusTheme.text
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                            Label {
+                                text: "State"
+                                color: animusTheme.mutedText
+                                font.bold: true
+                            }
+                            Label {
+                                text: root.telemetryStatusText()
+                                color: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                        }
+                        Button {
+                            objectName: "headerThemeToggleButton"
+                            text: "Theme: " + animusTheme.displayName
+                            Layout.leftMargin: 12
+                            Layout.rightMargin: 12
+                            Layout.fillWidth: true
+                            onClicked: animusTheme.toggleMode()
+                        }
+                        Button {
+                            objectName: "headerMockTelemetryButton"
+                            text: telemetryService.running ? "Stop Telemetry" : "Start Mock Telemetry"
+                            Layout.leftMargin: 12
+                            Layout.rightMargin: 12
+                            Layout.fillWidth: true
+                            onClicked: telemetryService.running ? telemetryService.stop()
+                                                              : telemetryService.startMockTelemetry()
+                        }
+                        Button {
+                            objectName: "headerUdpTelemetryButton"
+                            text: "Start UDP Telemetry"
+                            enabled: !telemetryService.running
+                            Layout.leftMargin: 12
+                            Layout.rightMargin: 12
+                            Layout.bottomMargin: 12
+                            Layout.fillWidth: true
+                            onClicked: telemetryService.startUdpTelemetry()
+                        }
+                    }
                 }
             }
         }

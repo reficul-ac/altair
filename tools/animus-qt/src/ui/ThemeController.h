@@ -40,9 +40,15 @@ class ThemeController final : public QObject
   public:
     explicit ThemeController(QSettings *settings, QObject *parent = nullptr);
 
-    QString mode() const { return m_mode; }
+    QString mode() const
+    {
+        return m_mode;
+    }
     QString displayName() const;
-    bool dark() const { return m_mode == QStringLiteral("dark"); }
+    bool dark() const
+    {
+        return m_mode == QStringLiteral("dark");
+    }
 
     QColor window() const;
     QColor surface() const;

@@ -172,6 +172,10 @@ Reusable Bayek framework follow-up is tracked separately in
   tests and capture coverage.
 - [ ] Diagnose Terrain 3D trackpad event delivery in Qt WebEngine and add a
   non-laggy Space+trackpad rotate path without a full-scene QML input overlay.
+- [ ] Implement the behavior-preserving Animus UI declutter pass from
+  `docs/animus_bloat_audit.md`: shared QML status/overlay/control components,
+  progressive diagnostics disclosure, less always-visible debug chrome, and
+  before/after screenshot comparison.
 
 ## Test Ownership
 

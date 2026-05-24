@@ -199,18 +199,13 @@ Item {
         }
     }
 
-    Frame {
+    AnimusOverlayPanel {
         objectName: "tacticalAttitudeOverlay"
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.margins: 12
         padding: 10
-        background: Rectangle {
-            color: animusTheme.overlay
-            opacity: 0.94
-            border.color: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
-            radius: 6
-        }
+        borderColor: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
 
         GridLayout {
             columns: 2
@@ -246,11 +241,10 @@ Item {
                                      vehicleModel.yawRateRps * 180.0 / Math.PI, " Y", 1)
             }
             Label { text: "Link"; color: animusTheme.mutedText; font.bold: true }
-            Label {
+            AnimusStatusBadge {
                 text: (!telemetryService.running && telemetryService.decodedSampleCount === 0)
                       ? "UNK" : (telemetryService.linkFresh ? "FRESH" : "STALE")
-                color: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
-                font.bold: true
+                tone: telemetryService.linkFresh ? "success" : "warning"
             }
         }
     }
@@ -261,12 +255,13 @@ Item {
         anchors.margins: 12
     }
 
-    Button {
+    AnimusIconButton {
         objectName: "tacticalSnapButton"
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 12
-        text: "Snap"
+        text: "\u21ba"
+        toolTipText: "Reset tactical camera"
         onClicked: root.resetCamera()
     }
 }

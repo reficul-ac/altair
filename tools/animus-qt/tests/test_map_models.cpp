@@ -923,9 +923,17 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(diagnostic.value(QStringLiteral("selectedWorkspace")).toString(),
                  QStringLiteral("terrain-3d"));
         QCOMPARE(diagnostic.value(QStringLiteral("themeMode")).toString(), QStringLiteral("light"));
-        const QVariantMap themeToggle = diagnostic.value(QStringLiteral("themeToggle")).toMap();
-        QCOMPARE(themeToggle.value(QStringLiteral("semanticallyVisible")).toBool(), true);
-        QCOMPARE(themeToggle.value(QStringLiteral("label")).toString(), QStringLiteral("Light"));
+        const QVariantMap settingsDisclosure =
+            diagnostic.value(QStringLiteral("settingsDisclosure")).toMap();
+        QCOMPARE(settingsDisclosure.value(QStringLiteral("semanticallyVisible")).toBool(), true);
+        QCOMPARE(settingsDisclosure.value(QStringLiteral("label")).toString(),
+                 QStringLiteral("Telemetry and display settings"));
+        const QVariantMap linkStatus = diagnostic.value(QStringLiteral("linkStatus")).toMap();
+        QCOMPARE(linkStatus.value(QStringLiteral("semanticallyVisible")).toBool(), true);
+        QCOMPARE(linkStatus.value(QStringLiteral("label")).toString(), QStringLiteral("Link idle"));
+        const QVariantMap authority = diagnostic.value(QStringLiteral("authority")).toMap();
+        QCOMPARE(authority.value(QStringLiteral("semanticallyVisible")).toBool(), true);
+        QCOMPARE(authority.value(QStringLiteral("label")).toString(), QStringLiteral("Read-only"));
         const QVariantList tabs = diagnostic.value(QStringLiteral("tabs")).toList();
         QCOMPARE(tabs.size(), 5);
         const QStringList expectedLabels{QStringLiteral("Map 2D"),

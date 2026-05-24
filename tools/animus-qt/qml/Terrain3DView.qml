@@ -185,17 +185,13 @@ Item {
         }
     }
 
-    Label {
+    AnimusOverlayPanel {
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.margins: 12
-        text: root.statusText()
-        padding: 8
-        color: animusTheme.text
-        background: Rectangle {
-            color: animusTheme.overlay
-            border.color: animusTheme.border
-            radius: 6
+        Label {
+            text: root.statusText()
+            color: animusTheme.text
         }
     }
 
@@ -205,86 +201,74 @@ Item {
         anchors.margins: 12
     }
 
-    Frame {
+    AnimusOverlayPanel {
         objectName: "terrainClearanceOverlay"
         anchors.left: parent.left
         anchors.bottom: parent.bottom
         anchors.margins: 12
         width: Math.min(parent.width - 24, 370)
-        background: Rectangle {
-            color: animusTheme.overlay
-            border.color: root.clearanceColor()
-            border.width: 2
-            radius: 6
-        }
+        borderColor: root.clearanceColor()
+        borderWidth: 2
 
-        Grid {
+        GridLayout {
             columns: 2
-            spacing: 8
             anchors.fill: parent
+            rowSpacing: 8
+            columnSpacing: 8
 
             Label {
                 text: "Clearance"
                 font.bold: true
                 color: root.clearanceColor()
             }
-            Label {
+            AnimusStatusBadge {
                 text: cesiumBridge.terrainClearance.state || "unknown"
-                color: root.clearanceColor()
+                tone: cesiumBridge.terrainClearance.state === "warning" ? "danger"
+                      : cesiumBridge.terrainClearance.state === "caution" ? "warning"
+                      : cesiumBridge.terrainClearance.state === "clear" ? "success"
+                      : "neutral"
                 horizontalAlignment: Text.AlignRight
-                width: 110
+                Layout.preferredWidth: 110
             }
             Label { text: "AGL"; color: animusTheme.mutedText }
             Label {
                 text: root.clearanceText(cesiumBridge.terrainClearance.aglM, " m")
                 horizontalAlignment: Text.AlignRight
-                width: 110
+                Layout.preferredWidth: 110
             }
             Label { text: "Min recent"; color: animusTheme.mutedText }
             Label {
                 text: root.clearanceText(cesiumBridge.terrainClearance.minimumRecentClearanceM,
                                          " m")
                 horizontalAlignment: Text.AlignRight
-                width: 110
+                Layout.preferredWidth: 110
             }
             Label { text: "Trend"; color: animusTheme.mutedText }
             Label {
                 text: root.clearanceText(cesiumBridge.terrainClearance.trendMps, " m/s")
                 horizontalAlignment: Text.AlignRight
-                width: 110
+                Layout.preferredWidth: 110
             }
             Label {
                 text: cesiumBridge.terrainClearance.message || "terrain clearance unavailable"
                 color: animusTheme.mutedText
-                width: 230
+                Layout.columnSpan: 2
+                Layout.fillWidth: true
                 elide: Text.ElideRight
             }
         }
     }
 
-    Row {
+    AnimusSegmentedControl {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 12
-        spacing: 4
-
-        Button {
-            text: "Chase"
-            checkable: true
-            checked: root.cameraMode === "chase"
-            onClicked: root.setCameraMode("chase")
-        }
-        Button {
-            text: "Orbit"
-            checkable: true
-            checked: root.cameraMode === "orbit"
-            onClicked: root.setCameraMode("orbit")
-        }
-        Button {
-            text: "Free"
-            checkable: true
-            checked: root.cameraMode === "free"
-            onClicked: root.setCameraMode("free")
-        }
+        segments: [
+            { "label": "Chase", "value": "chase" },
+            { "label": "Orbit", "value": "orbit" },
+            { "label": "Free", "value": "free" }
+        ]
+        currentValue: root.cameraMode
+        onSelected: function(value) { root.setCameraMode(value) }
     }
 }

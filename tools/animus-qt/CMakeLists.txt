@@ -79,6 +79,10 @@ qt_add_qml_module(
     1.0
     QML_FILES
     qml/Main.qml
+    qml/AnimusIconButton.qml
+    qml/AnimusOverlayPanel.qml
+    qml/AnimusSegmentedControl.qml
+    qml/AnimusStatusBadge.qml
     qml/WorkspaceShell.qml
     qml/Map2DView.qml
     qml/TelemetryStrip.qml

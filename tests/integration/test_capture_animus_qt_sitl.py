@@ -264,6 +264,10 @@ def main():
             """{
   "selectedWorkspace": "terrain-3d",
   "chrome": {"semanticallyVisible": true},
+  "themeMode": "light",
+  "settingsDisclosure": {"semanticallyVisible": true},
+  "linkStatus": {"semanticallyVisible": true},
+  "authority": {"semanticallyVisible": true},
   "tabs": [
     {"label": "Map 2D", "semanticallyVisible": true, "enabled": true, "width": 80, "height": 32, "labelItem": {"label": "Map 2D", "semanticallyVisible": true, "width": 45, "height": 18}, "labelTextMatches": true, "labelInsideTab": true},
     {"label": "Terrain 3D", "semanticallyVisible": true, "enabled": true, "width": 100, "height": 32, "labelItem": {"label": "Terrain 3D", "semanticallyVisible": true, "width": 70, "height": 18}, "labelTextMatches": true, "labelInsideTab": true},

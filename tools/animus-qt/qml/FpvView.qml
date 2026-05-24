@@ -175,17 +175,13 @@ Item {
         }
     }
 
-    Label {
+    AnimusOverlayPanel {
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.margins: 12
-        text: root.statusText()
-        padding: 8
-        color: animusTheme.text
-        background: Rectangle {
-            color: animusTheme.overlay
-            border.color: animusTheme.border
-            radius: 6
+        Label {
+            text: root.statusText()
+            color: animusTheme.text
         }
     }
 
@@ -195,12 +191,13 @@ Item {
         anchors.margins: 12
     }
 
-    Button {
+    AnimusIconButton {
         objectName: "fpvSnapButton"
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 12
-        text: "Snap"
+        text: "\u21ba"
+        toolTipText: "Reset FPV camera"
         onClicked: root.resetCamera()
     }
 }

@@ -726,6 +726,24 @@ def inspect_chrome_diagnostic(path: Path, expected_workspace: str) -> dict[str, 
     chrome = payload.get("chrome", {})
     if isinstance(chrome, dict) and not chrome.get("semanticallyVisible"):
         failures.append("workspace chrome is not semantically visible")
+    theme_mode = payload.get("themeMode")
+    if theme_mode not in ("light", "dark"):
+        failures.append(f"unexpected theme mode {theme_mode}")
+    settings = payload.get("settingsDisclosure")
+    if not isinstance(settings, dict):
+        failures.append("missing settings disclosure diagnostic")
+    elif not settings.get("semanticallyVisible"):
+        failures.append("settings disclosure is not semantically visible")
+    link_status = payload.get("linkStatus")
+    if not isinstance(link_status, dict):
+        failures.append("missing link status diagnostic")
+    elif not link_status.get("semanticallyVisible"):
+        failures.append("link status is not semantically visible")
+    authority = payload.get("authority")
+    if not isinstance(authority, dict):
+        failures.append("missing command authority diagnostic")
+    elif not authority.get("semanticallyVisible"):
+        failures.append("command authority is not semantically visible")
     result.update(payload)
     result["ok"] = not failures
     result["failures"] = failures
