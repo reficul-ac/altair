@@ -2,46 +2,21 @@
   "schema_version": 1,
   "owner": "Altair",
   "contract_version": "altair-telemetry-contract-v1",
-  "field_states": [
-    "fresh",
-    "stale",
-    "unsupported",
-    "unknown"
-  ],
+  "field_states": ["fresh", "stale", "unsupported", "unknown"],
   "freshness_timeout_s": 2.0,
   "sitl_live_mavlink": {
     "transport": "MAVLink v1 UDP",
     "required_messages": [
-      {
-        "id": 0,
-        "name": "HEARTBEAT",
-        "rate": "1 Hz",
-        "group": "heartbeat_status"
-      },
-      {
-        "id": 30,
-        "name": "ATTITUDE",
-        "rate": "simulation step",
-        "group": "vehicle_state"
-      },
+      {"id": 0, "name": "HEARTBEAT", "rate": "1 Hz", "group": "heartbeat_status"},
+      {"id": 30, "name": "ATTITUDE", "rate": "simulation step", "group": "vehicle_state"},
       {
         "id": 33,
         "name": "GLOBAL_POSITION_INT",
         "rate": "simulation step",
         "group": "vehicle_state"
       },
-      {
-        "id": 24,
-        "name": "GPS_RAW_INT",
-        "rate": "simulation step",
-        "group": "vehicle_state"
-      },
-      {
-        "id": 74,
-        "name": "VFR_HUD",
-        "rate": "simulation step",
-        "group": "vehicle_state"
-      },
+      {"id": 24, "name": "GPS_RAW_INT", "rate": "simulation step", "group": "vehicle_state"},
+      {"id": 74, "name": "VFR_HUD", "rate": "simulation step", "group": "vehicle_state"},
       {
         "id": 42,
         "name": "MISSION_CURRENT",
@@ -80,21 +55,9 @@
   "embedded_bayek_envelope": {
     "topic_id_floor": "TELEMETRY_TOPIC_VEHICLE_BASE",
     "required_topics": [
-      {
-        "id": 1000,
-        "name": "altair.heartbeat_status",
-        "group": "heartbeat_status"
-      },
-      {
-        "id": 1001,
-        "name": "altair.vehicle_state",
-        "group": "vehicle_state"
-      },
-      {
-        "id": 1002,
-        "name": "altair.actuator_outputs",
-        "group": "actuator_outputs"
-      },
+      {"id": 1000, "name": "altair.heartbeat_status", "group": "heartbeat_status"},
+      {"id": 1001, "name": "altair.vehicle_state", "group": "vehicle_state"},
+      {"id": 1002, "name": "altair.actuator_outputs", "group": "actuator_outputs"},
       {
         "id": 1003,
         "name": "altair.navigation_mission_state",
@@ -105,23 +68,14 @@
         "name": "altair.environment_terrain_state",
         "group": "environment_terrain_state"
       },
-      {
-        "id": 1005,
-        "name": "altair.health_fault_summary",
-        "group": "health_fault_summary"
-      }
+      {"id": 1005, "name": "altair.health_fault_summary", "group": "health_fault_summary"}
     ]
   },
   "replay_log": {
     "format": "cruise6dof CSV v1",
     "source_doc": "docs/simulation_and_mc.md#sitl-replay-csv-v1",
     "required_groups": {
-      "heartbeat_status": [
-        "step",
-        "time_s",
-        "mode",
-        "gps_fix_valid"
-      ],
+      "heartbeat_status": ["step", "time_s", "mode", "gps_fix_valid"],
       "vehicle_state": [
         "lat_deg",
         "lon_deg",

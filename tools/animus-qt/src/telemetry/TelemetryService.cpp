@@ -109,6 +109,51 @@ bool TelemetryService::linkFresh() const
     return m_linkFresh;
 }
 
+QString TelemetryService::attitudeFieldState() const
+{
+    return stateForValidity(m_vehicle->attitudeValid());
+}
+
+QString TelemetryService::positionFieldState() const
+{
+    return stateForValidity(m_vehicle->positionValid());
+}
+
+QString TelemetryService::velocityFieldState() const
+{
+    return stateForValidity(m_vehicle->velocityValid());
+}
+
+QString TelemetryService::statusFieldState() const
+{
+    return stateForValidity(m_vehicle->heartbeatValid() || m_vehicle->gpsValid() ||
+                            m_vehicle->missionValid());
+}
+
+QString TelemetryService::terrainFieldState() const
+{
+    return stateForValidity(m_vehicle->terrainValid());
+}
+
+QString TelemetryService::fieldState(const QString &group) const
+{
+    if (group == QStringLiteral("attitude"))
+        return attitudeFieldState();
+    if (group == QStringLiteral("position") || group == QStringLiteral("globalPosition") ||
+        group == QStringLiteral("localPosition"))
+        return positionFieldState();
+    if (group == QStringLiteral("velocity"))
+        return velocityFieldState();
+    if (group == QStringLiteral("status") || group == QStringLiteral("gps") ||
+        group == QStringLiteral("mission"))
+        return statusFieldState();
+    if (group == QStringLiteral("terrain"))
+        return terrainFieldState();
+    if (group == QStringLiteral("battery"))
+        return QStringLiteral("unsupported");
+    return QStringLiteral("unknown");
+}
+
 void TelemetryService::startMockTelemetry()
 {
     if (m_running)
@@ -495,6 +540,13 @@ void TelemetryService::updateFreshness(qint64 nowMs)
     }
     m_linkFresh = fresh;
     emit freshnessChanged();
+}
+
+QString TelemetryService::stateForValidity(bool valid) const
+{
+    if (!valid)
+        return QStringLiteral("unknown");
+    return m_linkFresh ? QStringLiteral("fresh") : QStringLiteral("stale");
 }
 
 void TelemetryService::setRunning(bool running)

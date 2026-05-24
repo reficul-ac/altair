@@ -31,10 +31,10 @@ Reusable Bayek framework follow-up is tracked separately in
 
 ## Telemetry And Replay
 
-- [ ] Add log-to-replay tooling for deterministic regression tests: canonical
+- [x] Add log-to-replay tooling for deterministic regression tests: canonical
   `.altlog` capture, `.tlog` export, replay/export commands, summary JSON,
   CSV round-trip compatibility, and baseline-vs-candidate diff expectations.
-- [ ] Version and generate `docs/telemetry_contract.json` plus schema/docs,
+- [x] Version and generate `docs/telemetry_contract.json` plus schema/docs,
   CSV header checks, Animus topic documentation, compatibility checks, and
   fresh/stale/unsupported field-state semantics.
 
@@ -65,6 +65,8 @@ Reusable Bayek framework follow-up is tracked separately in
   report integration.
 - [ ] Add a replay-diff workflow for CSV and future `.altlog`
   baseline-vs-candidate analysis.
+- [ ] Extend `.altlog` replay beyond CSV and raw MAVLink export into a
+  timeline-driven Animus replay importer with scrubbed field-state playback.
 - [ ] Add embedded/HAL maturity checks and PlatformIO compile verification.
 
 ## Animus
@@ -153,7 +155,8 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Automatically record received telemetry to a `.tlog` during each live
   SITL/Animus session; persist the operator-selected save path, expose a CLI
   flag, integrate artifact manifest/report output, and warn/fail clearly when
-  recording is unavailable. TODO: revisit the default save location before
+  recording is unavailable. Bridge-side `.altlog` recording and raw `.tlog`
+  export exist; Qt operator path persistence/report integration remain. TODO: revisit the default save location before
   hardware use.
 - [x] Add Animus dark/light mode switching with consistent theme behavior,
   readable diagnostics, non-color-only safety state, persisted operator

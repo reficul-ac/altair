@@ -230,6 +230,16 @@ python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_init
 python3 tools/python/run_sitl.py --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --mavlink --mavlink-port 14551
 ```
 
+Convert deterministic CSV output into the canonical `.altlog` v1 bundle, replay
+it back to CSV, summarize it, and compare it against a baseline with:
+
+```sh
+python3 tools/python/capture_altlog.py --csv tests/integration/fixtures/sitl_cruise6dof_failsafe_v1.csv --output failsafe.altlog
+python3 tools/python/replay_altlog.py --input failsafe.altlog --output-csv replay.csv
+python3 tools/python/summarize_altlog.py --input failsafe.altlog --output summary.json
+python3 tools/python/compare_sitl_replay.py --expected tests/integration/fixtures/sitl_cruise6dof_failsafe_v1.csv --actual replay.csv --summary-json diff.json
+```
+
 `--plot` accepts `velocities`, `attitudes`, `rates`, `position`, `ecef`, or `all`. Static plots are saved to `--plots-dir`, which defaults to `plots/sitl` when plotting is requested.
 
 Offline trajectory playback and CSV import are future Qt Animus work. Keep SITL CSV logs as deterministic artifacts for now.

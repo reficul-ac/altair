@@ -303,6 +303,12 @@ foreach(PROFILE IN LISTS SITL_CRUISE6DOF_PROFILES)
     set_tests_properties(
         ${SITL_PROFILE_REPLAY} PROPERTIES DEPENDS "${SITL_PROFILE_RUN_A};${SITL_PROFILE_RUN_B}"
     )
+    set_tests_properties(${SITL_PROFILE_RUN_A} PROPERTIES FIXTURES_SETUP ${SITL_PROFILE_RUN_A})
+    set_tests_properties(${SITL_PROFILE_RUN_B} PROPERTIES FIXTURES_SETUP ${SITL_PROFILE_RUN_B})
+    set_tests_properties(
+        ${SITL_PROFILE_REPLAY} PROPERTIES FIXTURES_REQUIRED
+                                          "${SITL_PROFILE_RUN_A};${SITL_PROFILE_RUN_B}"
+    )
     set_tests_properties(${SITL_PROFILE_GUARDRAILS} PROPERTIES DEPENDS ${SITL_PROFILE_RUN_A})
 endforeach()
 
@@ -355,6 +361,11 @@ if(Python3_Interpreter_FOUND)
             "${CMAKE_SOURCE_DIR}"
     )
 
+    add_test(NAME integration_telemetry_contract_generated
+             COMMAND ${Python3_EXECUTABLE}
+                     "${CMAKE_SOURCE_DIR}/tools/python/generate_telemetry_contract.py" --check
+    )
+
     add_test(
         NAME integration_sitl_cruise6dof_failsafe_fixture_replay
         COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/python/compare_sitl_replay.py"
@@ -363,6 +374,19 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(
         integration_sitl_cruise6dof_failsafe_fixture_replay
         PROPERTIES DEPENDS integration_sitl_cruise6dof_failsafe_fixture_run
+    )
+    set_tests_properties(
+        integration_sitl_cruise6dof_failsafe_fixture_run
+        PROPERTIES FIXTURES_SETUP integration_sitl_cruise6dof_failsafe_fixture_run
+    )
+    set_tests_properties(
+        integration_sitl_cruise6dof_failsafe_fixture_replay
+        PROPERTIES FIXTURES_REQUIRED integration_sitl_cruise6dof_failsafe_fixture_run
+    )
+
+    add_test(NAME integration_altlog_csv_roundtrip
+             COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_altlog.py"
+                     "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/altlog"
     )
 
     add_test(

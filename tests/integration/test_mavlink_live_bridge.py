@@ -126,6 +126,9 @@ def main():
     )
 
     for message in parser.feed(required_stream):
+        if not message.raw_frame:
+            print("parser did not retain raw MAVLink frame bytes", file=sys.stderr)
+            return 1
         state.apply(message, now=10.0)
 
     payload = state.to_jsonable(now=10.5)
@@ -155,6 +158,12 @@ def main():
         return 1
     if len(payload["trail"]) != 1:
         print("vehicle trail was not populated", file=sys.stderr)
+        return 1
+    if (
+        payload["fieldStates"]["attitude"] != "fresh"
+        or payload["fieldStates"]["battery"] != "unsupported"
+    ):
+        print("field-state metadata was not populated", file=sys.stderr)
         return 1
 
     snapshot = bridge.LiveSessionSnapshot(bridge.LiveVehicleState())

@@ -29,6 +29,11 @@ class TelemetryService final : public QObject
     Q_PROPERTY(double lastDatagramAgeS READ lastDatagramAgeS NOTIFY freshnessChanged)
     Q_PROPERTY(double lastDecodedAgeS READ lastDecodedAgeS NOTIFY freshnessChanged)
     Q_PROPERTY(bool linkFresh READ linkFresh NOTIFY freshnessChanged)
+    Q_PROPERTY(QString attitudeFieldState READ attitudeFieldState NOTIFY freshnessChanged)
+    Q_PROPERTY(QString positionFieldState READ positionFieldState NOTIFY freshnessChanged)
+    Q_PROPERTY(QString velocityFieldState READ velocityFieldState NOTIFY freshnessChanged)
+    Q_PROPERTY(QString statusFieldState READ statusFieldState NOTIFY freshnessChanged)
+    Q_PROPERTY(QString terrainFieldState READ terrainFieldState NOTIFY freshnessChanged)
 
   public:
     explicit TelemetryService(VehicleModel *vehicle,
@@ -49,10 +54,16 @@ class TelemetryService final : public QObject
     double lastDatagramAgeS() const;
     double lastDecodedAgeS() const;
     bool linkFresh() const;
+    QString attitudeFieldState() const;
+    QString positionFieldState() const;
+    QString velocityFieldState() const;
+    QString statusFieldState() const;
+    QString terrainFieldState() const;
 
     Q_INVOKABLE void startMockTelemetry();
     Q_INVOKABLE bool startUdpTelemetry();
     Q_INVOKABLE void stop();
+    Q_INVOKABLE QString fieldState(const QString &group) const;
     bool ingestDatagram(const QByteArray &datagram);
     void updateFreshnessForElapsedMs(qint64 elapsedMs);
 
@@ -76,6 +87,7 @@ class TelemetryService final : public QObject
     void markDatagramReceived();
     void markDecodedSample();
     void updateFreshness(qint64 nowMs);
+    QString stateForValidity(bool valid) const;
     void setRunning(bool running);
 
     VehicleModel *m_vehicle;

@@ -101,6 +101,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="enable guarded SITL-only write controls in Animus; disabled by default",
     )
     parser.add_argument(
+        "--record-altlog",
+        help="record bridge-received MAVLink packets to an .altlog directory or .zip",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="print commands without starting any processes",
@@ -145,6 +149,8 @@ def bridge_command(args: argparse.Namespace) -> list[str]:
         command.append("--no-forward")
     if args.writable_animus:
         command.append("--writable-animus")
+    if args.record_altlog:
+        command.extend(["--record-altlog", args.record_altlog])
     return command
 
 

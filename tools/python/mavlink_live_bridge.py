@@ -14,7 +14,11 @@ import struct
 import sys
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterable
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from altlog import ALTLOG_SCHEMA_VERSION, write_altlog
 
 MAVLINK_V1_STX = 0xFE
 MAVLINK_CRC_EXTRA = {
@@ -85,6 +89,7 @@ class MavlinkMessage:
     seq: int
     system_id: int
     component_id: int
+    raw_frame: bytes = b""
 
 
 class MavlinkV1Parser:
@@ -125,9 +130,16 @@ class MavlinkV1Parser:
                     seq=frame[2],
                     system_id=frame[3],
                     component_id=frame[4],
+                    raw_frame=frame,
                 )
             )
         return messages
+
+
+def field_state(last_update_s: float | None, now: float, timeout_s: float = 2.0) -> str:
+    if last_update_s is None:
+        return "unknown"
+    return "fresh" if now - last_update_s < timeout_s else "stale"
 
 
 def _unpack(fmt: str, payload: bytes, min_len: int):
@@ -141,6 +153,13 @@ class LiveVehicleState:
     connected: bool = False
     last_packet_time: float | None = None
     last_heartbeat_time: float | None = None
+    last_attitude_time: float | None = None
+    last_position_time: float | None = None
+    last_metrics_time: float | None = None
+    last_status_time: float | None = None
+    last_home_time: float | None = None
+    last_terrain_time: float | None = None
+    last_actuator_time: float | None = None
     system_id: int | None = None
     component_id: int | None = None
     roll_rad: float = 0.0
@@ -194,6 +213,7 @@ class LiveVehicleState:
         self.component_id = message.component_id
         if message.msg_id == 0:
             self.last_heartbeat_time = now
+            self.last_status_time = now
             decoded = _unpack("<IBBBBB", message.payload, 9)
             if decoded is not None:
                 (
@@ -207,6 +227,7 @@ class LiveVehicleState:
                 self.vehicle_type = MAV_TYPE_NAMES.get(vehicle_type, f"MAV type {vehicle_type}")
                 self.armed = bool(self.base_mode & 0x80)
         elif message.msg_id == 24:
+            self.last_status_time = now
             decoded = _unpack("<QiiiHHHHBB", message.payload, 30)
             if decoded is not None:
                 _, lat, lon, alt, _eph, _epv, _vel, _cog, fix_type, satellites = decoded
@@ -216,6 +237,7 @@ class LiveVehicleState:
                 self.gps_fix_type = fix_type
                 self.satellites_visible = None if satellites == 255 else satellites
         elif message.msg_id == 30:
+            self.last_attitude_time = now
             decoded = _unpack("<Iffffff", message.payload, 28)
             if decoded is not None:
                 (
@@ -228,6 +250,7 @@ class LiveVehicleState:
                     self.yawspeed_rps,
                 ) = decoded
         elif message.msg_id == 33:
+            self.last_position_time = now
             decoded = _unpack("<IiiiihhhH", message.payload, 28)
             if decoded is not None:
                 _, lat, lon, alt, rel_alt, vx, vy, vz, hdg = decoded
@@ -245,6 +268,7 @@ class LiveVehicleState:
                     self.origin_altitude_m = self.altitude_m
                 self._append_trail(now)
         elif message.msg_id == 74:
+            self.last_metrics_time = now
             decoded = _unpack("<ffhHff", message.payload, 20)
             if decoded is not None:
                 (
@@ -258,6 +282,7 @@ class LiveVehicleState:
                 self.heading_deg = float(heading)
                 self.throttle_pct = throttle
         elif message.msg_id == 36:
+            self.last_actuator_time = now
             if len(message.payload) >= 21:
                 channels = min(8, (len(message.payload) - 4) // 2)
                 for index in range(channels):
@@ -270,10 +295,12 @@ class LiveVehicleState:
                             "<H", message.payload, 21 + (index - 8) * 2
                         )[0]
         elif message.msg_id == 42:
+            self.last_status_time = now
             decoded = _unpack("<H", message.payload, 2)
             if decoded is not None:
                 (self.mission_seq,) = decoded
         elif message.msg_id == 136:
+            self.last_terrain_time = now
             decoded = _unpack("<iiHffHH", message.payload, 22)
             if decoded is not None:
                 (
@@ -288,6 +315,7 @@ class LiveVehicleState:
                 self.terrain_lat_deg = lat / 10000000.0
                 self.terrain_lon_deg = lon / 10000000.0
         elif message.msg_id == 242:
+            self.last_home_time = now
             decoded = _unpack("<iiifff", message.payload, 24)
             if decoded is not None:
                 lat, lon, alt, _x, _y, _z = decoded
@@ -371,6 +399,18 @@ class LiveVehicleState:
                 "loaded": self.terrain_loaded,
             },
             "actuators": {"servoOutputsPwm": self.servo_outputs_pwm},
+            "fieldStates": {
+                "attitude": field_state(self.last_attitude_time, now),
+                "globalPosition": field_state(self.last_position_time, now),
+                "localPosition": field_state(self.last_position_time, now),
+                "velocity": field_state(self.last_position_time, now),
+                "metrics": field_state(self.last_metrics_time, now),
+                "status": field_state(self.last_status_time, now),
+                "home": field_state(self.last_home_time, now),
+                "terrain": field_state(self.last_terrain_time, now),
+                "actuators": field_state(self.last_actuator_time, now),
+                "battery": "unsupported",
+            },
             "trail": self.trail,
             "commandCapabilities": {
                 "liveLink": self.connected and (packet_age is None or packet_age < 2.0),
@@ -521,6 +561,50 @@ class LiveSessionSnapshot:
         }
 
 
+@dataclass
+class AltlogRecorder:
+    output: Path
+    records: list[dict] = field(default_factory=list)
+
+    def record(self, messages: Iterable[MavlinkMessage], now: float) -> None:
+        for message in messages:
+            self.records.append(
+                {
+                    "type": "mavlink_packet",
+                    "timeS": now,
+                    "msgId": message.msg_id,
+                    "messageName": MAVLINK_MESSAGE_NAMES.get(
+                        message.msg_id, f"MSG_{message.msg_id}"
+                    ),
+                    "systemId": message.system_id,
+                    "componentId": message.component_id,
+                    "rawFrameHex": message.raw_frame.hex(),
+                }
+            )
+
+    def close(self) -> None:
+        self.records.sort(key=lambda record: record["timeS"])
+        manifest = {
+            "schemaVersion": ALTLOG_SCHEMA_VERSION,
+            "contractVersion": "altair-telemetry-contract-v1",
+            "source": {"tool": "mavlink_live_bridge.py"},
+            "recordFiles": ["records.jsonl"],
+            "csvHeader": [],
+            "requiredTelemetryGroups": {},
+            "unsupportedFields": [],
+            "startTimeS": self.records[0]["timeS"] if self.records else None,
+            "endTimeS": self.records[-1]["timeS"] if self.records else None,
+            "vehicleIds": sorted(
+                {
+                    f"{record['systemId']}:{record['componentId']}"
+                    for record in self.records
+                    if record.get("type") == "mavlink_packet"
+                }
+            ),
+        }
+        write_altlog(self.output, manifest, self.records)
+
+
 def decode_message_fields(message: MavlinkMessage) -> dict[str, float | int | str | None]:
     if message.msg_id == 0:
         decoded = _unpack("<IBBBBB", message.payload, 9)
@@ -669,16 +753,21 @@ class BridgeProtocol(asyncio.DatagramProtocol):
         snapshot: LiveSessionSnapshot,
         forwarder: UdpForwarder,
         broadcasters: Iterable,
+        recorder: AltlogRecorder | None = None,
     ) -> None:
         self.parser = parser
         self.snapshot = snapshot
         self.forwarder = forwarder
         self.broadcasters = list(broadcasters)
+        self.recorder = recorder
 
     def datagram_received(self, data: bytes, addr) -> None:
         self.forwarder.forward(data)
         now = time.monotonic()
-        self.snapshot.apply_datagram(self.parser.feed(data), now)
+        messages = self.parser.feed(data)
+        self.snapshot.apply_datagram(messages, now)
+        if self.recorder is not None:
+            self.recorder.record(messages, now)
         payload = json.dumps(self.snapshot.state.to_jsonable(now), separators=(",", ":"))
         snapshot_payload = json.dumps(self.snapshot.to_jsonable(now), separators=(",", ":"))
         for broadcaster in self.broadcasters:
@@ -808,6 +897,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="advertise guarded SITL-only write support to Animus clients",
     )
+    parser.add_argument(
+        "--record-altlog",
+        help="write received raw MAVLink packets to an .altlog directory or .zip on shutdown",
+    )
     args = parser.parse_args(argv)
     if args.no_forward:
         args.forward = []
@@ -821,6 +914,7 @@ async def serve(args: argparse.Namespace) -> None:
     state = LiveVehicleState(writable_animus=args.writable_animus)
     snapshot = LiveSessionSnapshot(state)
     forwarder = UdpForwarder(args.forward)
+    recorder = AltlogRecorder(Path(args.record_altlog)) if args.record_altlog else None
     clients: set[WebSocketClient] = set()
 
     def broadcast(payload: str) -> None:
@@ -835,7 +929,7 @@ async def serve(args: argparse.Namespace) -> None:
 
     loop = asyncio.get_running_loop()
     transport, _ = await loop.create_datagram_endpoint(
-        lambda: BridgeProtocol(parser, snapshot, forwarder, [broadcast]),
+        lambda: BridgeProtocol(parser, snapshot, forwarder, [broadcast], recorder),
         local_addr=(args.listen_host, args.listen_port),
     )
     server = await asyncio.start_server(
@@ -856,6 +950,8 @@ async def serve(args: argparse.Namespace) -> None:
         server.close()
         await server.wait_closed()
         forwarder.close()
+        if recorder is not None:
+            recorder.close()
 
 
 def main(argv: list[str] | None = None) -> int:

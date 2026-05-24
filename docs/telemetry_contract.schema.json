@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "contract_version": {
+      "type": "string"
+    },
+    "embedded_bayek_envelope": {
+      "required": [
+        "topic_id_floor",
+        "required_topics"
+      ],
+      "type": "object"
+    },
+    "field_states": {
+      "items": {
+        "enum": [
+          "fresh",
+          "stale",
+          "unsupported",
+          "unknown"
+        ]
+      },
+      "minItems": 4,
+      "type": "array"
+    },
+    "freshness_timeout_s": {
+      "exclusiveMinimum": 0,
+      "type": "number"
+    },
+    "owner": {
+      "const": "Altair"
+    },
+    "replay_log": {
+      "required": [
+        "format",
+        "source_doc",
+        "required_groups"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "sitl_live_mavlink": {
+      "required": [
+        "transport",
+        "required_messages",
+        "deterministic_placeholders"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "owner",
+    "contract_version",
+    "field_states",
+    "freshness_timeout_s",
+    "sitl_live_mavlink",
+    "embedded_bayek_envelope",
+    "replay_log"
+  ],
+  "title": "Altair Telemetry Contract",
+  "type": "object"
+}
