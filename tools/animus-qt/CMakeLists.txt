@@ -82,6 +82,7 @@ qt_add_qml_module(
     qml/AnimusIconButton.qml
     qml/AnimusOverlayPanel.qml
     qml/AnimusSegmentedControl.qml
+    qml/AnimusSceneStatus.qml
     qml/AnimusStatusBadge.qml
     qml/WorkspaceShell.qml
     qml/Map2DView.qml

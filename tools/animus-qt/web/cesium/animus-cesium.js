@@ -261,12 +261,28 @@
     const terrainText = terrain.provider === 'quantized-mesh'
       ? 'quantized-mesh terrain unavailable in renderer'
       : 'heightmap fixture unavailable in renderer';
+    statusEl.hidden = false;
     statusEl.textContent = errorText ? `${terrainText} | ${errorText}` : terrainText;
+  }
+
+  function isHealthySceneStatus(status, detail) {
+    if (status === 'webengine-ready' || status === 'cesium-ready') {
+      return !detail;
+    }
+    if (status === 'terrain-ready') {
+      return !detail || detail === 'local heightmap fixture' ||
+        detail === 'local quantized-mesh terrain';
+    }
+    if (status === 'tactical-ready') {
+      return !detail || detail === 'vehicle-locked attitude view';
+    }
+    return false;
   }
 
   function setSceneStatus(status, error) {
     const suffix = error ? ` | ${error}` : '';
     statusEl.textContent = `${status}${suffix}`;
+    statusEl.hidden = isHealthySceneStatus(status, error || '');
     console.info(`ANIMUS_SCENE_STATUS ${JSON.stringify({status, error: error || ''})}`);
   }
 

@@ -36,16 +36,16 @@ Global chrome disclosure:
 
 Map 2D cleanup:
 
-- [ ] Convert primitive text controls for pan, zoom, recenter, disclosure, and
+- [x] Convert primitive text controls for pan, zoom, recenter, disclosure, and
   close into shared compact controls with tooltips.
-- [ ] Collapse repeated provider/cache wording into a concise status plus
+- [x] Collapse repeated provider/cache wording into a concise status plus
   expanded details without hiding offline/licensing state.
 
 Scene debug-status cleanup:
 
-- [ ] Hide healthy WebEngine, fixture, and renderer readiness sentences from
+- [x] Hide healthy WebEngine, fixture, and renderer readiness sentences from
   the primary layer while keeping degraded states explicit.
-- [ ] Keep scene status, fallback, and capture diagnostics in artifacts/logs.
+- [x] Keep scene status, fallback, and capture diagnostics in artifacts/logs.
 
 Setup rework:
 
@@ -63,6 +63,25 @@ Visual refresh:
 
 ### Completed Work
 
+- 2026-05-24: Consolidated Terrain 3D, FPV, and Tactical scene status
+  presentation behind `AnimusSceneStatus`, hiding healthy `webengine-ready`,
+  `terrain-ready`, `tactical-ready`, and local fixture/provider readiness text
+  from the primary UI while keeping initialization, fallback, error, stale, and
+  degraded states visible. The Cesium/WebEngine status element now also hides
+  known healthy ready states but remains visible for renderer fallback. Capture
+  diagnostics and WebEngine/Cesium status propagation remain intact.
+  Verification: `python3 tools/python/format_repo.py --check`, `cmake -S . -B
+  build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON -DCMAKE_BUILD_TYPE=Debug`,
+  `cmake --build build-animus-qt --target animus_qt animus_qt_unit_tests
+  --parallel`, `ctest --test-dir build-animus-qt --output-on-failure -R
+  animus_qt`, and `python3 tools/python/capture_animus_qt_sitl.py` passed.
+  Screenshot artifact: `artifacts/animus-qt-screenshots/20260524T193619Z/`.
+  Compared against
+  `artifacts/animus-qt-screenshots/20260524T095811Z/screenshots/`; mean pixel
+  deltas for the affected screenshots were `1.23` (Terrain 3D), `4.48` (FPV),
+  and `11.42` (Tactical). No new visual verification failures were found; the
+  report retains existing low-diversity warnings for WebEngine/Cesium scene
+  captures.
 - 2026-05-24: Started the behavior-preserving foundation patch by adding shared
   QML primitives and migrating the first duplicated overlay/control surfaces.
   Verification: `cmake -S . -B build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON
@@ -91,10 +110,27 @@ Visual refresh:
   (Tactical), and `6.5` (Setup). No new visual verification failures were
   found; the report retains existing low-diversity warnings for some
   WebEngine/Cesium scene captures.
+- 2026-05-24: Cleaned up the Map 2D first-layer controls by replacing raw
+  zoom, recenter, disclosure, warning, and pan-pad buttons with shared
+  `AnimusIconButton` controls and tooltips. The provider panel now keeps the
+  offline mode, provider selector, concise map/cache status, warning color, and
+  scale/follow state visible while moving provider ID, map type, cache tile-set
+  detail, cache DB path, and attribution into a details disclosure. Attribution
+  remains visible by default as legal/source text. Verification: `python3
+  tools/python/format_repo.py --check`, `cmake -S . -B build-animus-qt
+  -DALTAIR_BUILD_ANIMUS_QT=ON -DCMAKE_BUILD_TYPE=Debug`, `cmake --build
+  build-animus-qt --target animus_qt animus_qt_unit_tests --parallel`, `ctest
+  --test-dir build-animus-qt --output-on-failure -R animus_qt`, and `python3
+  tools/python/capture_animus_qt_sitl.py` passed. Screenshot artifact:
+  `artifacts/animus-qt-screenshots/20260524T192525Z/`. Compared against
+  `artifacts/animus-qt-screenshots/20260524T095811Z/screenshots/`; Map 2D mean
+  pixel deltas were `4.6` (default cache) and `10.1` (seeded cache). No new
+  visual verification failures were found; existing scene-diversity warnings
+  remain outside this Map 2D slice.
 
 ### Remaining Decisions
 
-- Approve the default disclosure behavior for Map 2D provider/cache details,
+- Review the cleaned-up Map 2D provider/cache disclosure in operator use,
   including attribution placement for offline/local providers.
 - Approve the threshold for hiding healthy scene readiness text in Terrain 3D,
   FPV, and Tactical while preserving degraded source visibility.

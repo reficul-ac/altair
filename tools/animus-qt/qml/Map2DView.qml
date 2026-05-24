@@ -6,14 +6,17 @@ Item {
     id: root
 
     property bool following: true
+    property bool mapDetailsExpanded: false
     property bool mapWarningExpanded: false
     property bool mapWarningDismissed: false
     property double manualCenterLatitudeDeg: vehicleModel.latitudeDeg
     property double manualCenterLongitudeDeg: vehicleModel.longitudeDeg
     property int zoomLevel: 15
 
+    readonly property string providerBlockMessage:
+        mapCache.providerBlockReason(mapCache.activeProviderId, offlineMaps.networkAllowed)
     readonly property bool providerAllowed:
-        mapCache.providerBlockReason(mapCache.activeProviderId, offlineMaps.networkAllowed) === ""
+        providerBlockMessage === ""
     readonly property double centerLatitudeDeg: following ? vehicleModel.latitudeDeg
                                                           : manualCenterLatitudeDeg
     readonly property double centerLongitudeDeg: following ? vehicleModel.longitudeDeg
@@ -91,6 +94,24 @@ Item {
         return "default offline area not initialized"
     }
 
+    function conciseTileSetStatus() {
+        for (var i = 0; i < mapCache.tileSets.length; ++i) {
+            if (mapCache.tileSets[i].id === "cruise6dof-5mi-origin")
+                return mapCache.tileSets[i].status + " " +
+                       mapCache.tileSets[i].cachedCount + "/" +
+                       mapCache.tileSets[i].tileCount
+        }
+        return "no seeded area"
+    }
+
+    function mapDetailText() {
+        return "Provider: " + mapCache.activeProviderId + "\n" +
+               "Map type: " + mapCache.activeMapTypeId + "\n" +
+               "Cache tile set: " + root.defaultTileSetStatus() + "\n" +
+               "Cache DB: " + (mapCache.cacheDatabasePath || "none") + "\n" +
+               "Attribution: " + root.attributionText()
+    }
+
     function syncManualCenterToVehicle() {
         manualCenterLatitudeDeg = clampLatitude(vehicleModel.latitudeDeg)
         manualCenterLongitudeDeg = wrappedLongitude(vehicleModel.longitudeDeg)
@@ -130,16 +151,13 @@ Item {
     }
 
     function statusText() {
-        var blockReason = mapCache.providerBlockReason(mapCache.activeProviderId,
-                                                       offlineMaps.networkAllowed)
-        if (blockReason)
-            return blockReason
-        return mapCache.activeProviderId + " / " + mapCache.activeMapTypeId +
-               " | " + root.defaultTileSetStatus()
+        if (root.providerBlockMessage)
+            return root.providerBlockMessage
+        return mapCache.activeMapTypeId + " | " + root.conciseTileSetStatus()
     }
 
     function attributionText() {
-        return mapCache.activeAttribution + " | QGC-style cache | " + mapCache.activeMapTypeId
+        return mapCache.activeAttribution || "Map attribution unavailable"
     }
 
     function metersPerPixel() {
@@ -477,25 +495,29 @@ Item {
         }
     }
 
-    Frame {
+    AnimusOverlayPanel {
+        id: mapSourcePanel
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.margins: 12
-        width: Math.min(parent.width - 24, 660)
-        background: Rectangle { color: animusTheme.overlay; border.color: animusTheme.border; radius: 6 }
+        width: Math.min(parent.width - 24, root.mapDetailsExpanded ? 620 : 560)
+        borderColor: root.providerAllowed ? animusTheme.border : animusTheme.warning
+
         ColumnLayout {
             anchors.fill: parent
             spacing: 6
 
             RowLayout {
                 Layout.fillWidth: true
-                Label {
+                spacing: 8
+
+                AnimusStatusBadge {
                     text: offlineMaps.modeLabel()
-                    font.bold: true
+                    tone: offlineMaps.networkAllowed ? "success" : "warning"
                 }
                 ComboBox {
                     id: providerSelector
-                    Layout.preferredWidth: 220
+                    Layout.preferredWidth: 210
                     model: mapCache
                     textRole: "label"
                     currentIndex: mapCache.providerIndex(mapCache.activeProviderId)
@@ -517,13 +539,27 @@ Item {
                     elide: Text.ElideRight
                     text: root.statusText()
                     color: root.providerAllowed ? animusTheme.mutedText : animusTheme.warning
+                    font.bold: !root.providerAllowed
+                }
+                AnimusIconButton {
+                    text: root.mapDetailsExpanded ? "\u25b2" : "\u25bc"
+                    toolTipText: root.mapDetailsExpanded ? "Hide map source details"
+                                                           : "Show map source details"
+                    Layout.preferredWidth: 30
+                    Layout.preferredHeight: 28
+                    onClicked: root.mapDetailsExpanded = !root.mapDetailsExpanded
                 }
             }
 
             RowLayout {
-                Button {
-                    text: "-"
+                Layout.fillWidth: true
+                spacing: 6
+
+                AnimusIconButton {
+                    text: "\u2212"
+                    toolTipText: "Zoom out"
                     Layout.preferredWidth: 36
+                    Layout.preferredHeight: 32
                     enabled: root.zoomLevel > root.clampZoom(root.zoomLevel - 1)
                     onClicked: root.zoomBy(-1)
                 }
@@ -532,19 +568,24 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     Layout.preferredWidth: 42
                 }
-                Button {
+                AnimusIconButton {
                     text: "+"
+                    toolTipText: "Zoom in"
                     Layout.preferredWidth: 36
+                    Layout.preferredHeight: 32
                     enabled: root.zoomLevel < root.clampZoom(root.zoomLevel + 1)
                     onClicked: root.zoomBy(1)
                 }
-                Button {
-                    text: "Snap"
+                AnimusIconButton {
+                    text: "\u21ba"
+                    toolTipText: "Recenter on vehicle"
+                    Layout.preferredWidth: 36
+                    Layout.preferredHeight: 32
                     onClicked: root.recenterOnVehicle()
                 }
-                Label {
+                AnimusStatusBadge {
                     text: root.following ? "Following vehicle" : "Manual pan"
-                    color: root.following ? animusTheme.success : animusTheme.warning
+                    tone: root.following ? "success" : "warning"
                 }
                 Item { Layout.fillWidth: true }
                 Label {
@@ -556,6 +597,15 @@ Item {
                     Layout.preferredHeight: 6
                     color: animusTheme.text
                 }
+            }
+
+            Label {
+                Layout.fillWidth: true
+                visible: root.mapDetailsExpanded
+                text: root.mapDetailText()
+                color: animusTheme.mutedText
+                wrapMode: Text.WordWrap
+                font.pixelSize: 11
             }
         }
     }
@@ -621,15 +671,18 @@ Item {
                 }
             }
 
-            Button {
-                text: root.mapWarningExpanded ? "^" : "v"
+            AnimusIconButton {
+                text: root.mapWarningExpanded ? "\u25b2" : "\u25bc"
+                toolTipText: root.mapWarningExpanded ? "Hide map warning details"
+                                                       : "Show map warning details"
                 Layout.preferredWidth: 30
                 Layout.preferredHeight: 28
                 onClicked: root.mapWarningExpanded = !root.mapWarningExpanded
             }
 
-            Button {
-                text: "x"
+            AnimusIconButton {
+                text: "\u00d7"
+                toolTipText: "Dismiss map warning"
                 Layout.preferredWidth: 30
                 Layout.preferredHeight: 28
                 onClicked: root.mapWarningDismissed = true
@@ -649,8 +702,7 @@ Item {
 
             Label {
                 Layout.fillWidth: true
-                text: mapCache.providerBlockReason(mapCache.activeProviderId,
-                                                   offlineMaps.networkAllowed)
+                text: root.providerBlockMessage
                 color: animusTheme.text
                 wrapMode: Text.WordWrap
             }
@@ -664,48 +716,55 @@ Item {
         }
     }
 
-    Frame {
+    AnimusOverlayPanel {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         anchors.margins: 12
-        background: Rectangle { color: animusTheme.overlay; border.color: animusTheme.border; radius: 6 }
+        padding: 6
+        panelOpacity: 0.82
+
         GridLayout {
             columns: 3
             rowSpacing: 2
             columnSpacing: 2
-            Button {
-                text: "^"
+            AnimusIconButton {
+                text: "\u25b2"
+                toolTipText: "Pan north"
                 Layout.column: 1
                 Layout.preferredWidth: 34
                 Layout.preferredHeight: 30
                 onClicked: root.panByPixels(0, 96)
             }
-            Button {
-                text: "<"
+            AnimusIconButton {
+                text: "\u25c0"
+                toolTipText: "Pan west"
                 Layout.row: 1
                 Layout.column: 0
                 Layout.preferredWidth: 34
                 Layout.preferredHeight: 30
                 onClicked: root.panByPixels(96, 0)
             }
-            Button {
-                text: "o"
+            AnimusIconButton {
+                text: "\u21ba"
+                toolTipText: "Recenter on vehicle"
                 Layout.row: 1
                 Layout.column: 1
                 Layout.preferredWidth: 34
                 Layout.preferredHeight: 30
                 onClicked: root.recenterOnVehicle()
             }
-            Button {
-                text: ">"
+            AnimusIconButton {
+                text: "\u25b6"
+                toolTipText: "Pan east"
                 Layout.row: 1
                 Layout.column: 2
                 Layout.preferredWidth: 34
                 Layout.preferredHeight: 30
                 onClicked: root.panByPixels(-96, 0)
             }
-            Button {
-                text: "v"
+            AnimusIconButton {
+                text: "\u25bc"
+                toolTipText: "Pan south"
                 Layout.row: 2
                 Layout.column: 1
                 Layout.preferredWidth: 34

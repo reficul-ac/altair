@@ -78,16 +78,6 @@ Item {
             webLoader.item.resetFpvCamera()
     }
 
-    function statusText() {
-        var terrain = cesiumBridge.terrainStatus.provider === "quantized-mesh"
-                ? "terrain available: " + cesiumBridge.terrainStatus.cachePath
-                : "terrain fixture: " + cesiumBridge.terrainStatus.fixture.name
-        var scene = root.localSceneStatus.status || "initializing"
-        if (root.localSceneStatus.error)
-            return terrain + " | FPV | " + scene + ": " + root.localSceneStatus.error
-        return terrain + " | FPV | " + scene
-    }
-
     function useFallbackScene() {
         var status = root.localSceneStatus.status || "initializing"
         return !webLoader.active || webLoader.status === Loader.Error ||
@@ -175,14 +165,18 @@ Item {
         }
     }
 
-    AnimusOverlayPanel {
+    AnimusSceneStatus {
+        objectName: "fpvSceneStatusOverlay"
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.margins: 12
-        Label {
-            text: root.statusText()
-            color: animusTheme.text
-        }
+        workspaceLabel: "FPV"
+        sceneStatus: root.localSceneStatus
+        terrainStatus: cesiumBridge.terrainStatus
+        webSceneActive: webLoader.active
+        webSceneReady: webLoader.status === Loader.Ready && webLoader.item !== null
+        webSceneError: webLoader.status === Loader.Error
+        fallbackActive: root.useFallbackScene()
     }
 
     TelemetryStrip {

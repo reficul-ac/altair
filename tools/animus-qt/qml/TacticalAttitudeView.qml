@@ -255,6 +255,19 @@ Item {
         anchors.margins: 12
     }
 
+    AnimusSceneStatus {
+        objectName: "tacticalSceneStatusOverlay"
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.margins: 12
+        workspaceLabel: "Tactical"
+        sceneStatus: root.localSceneStatus
+        webSceneActive: webLoader.active
+        webSceneReady: webLoader.status === Loader.Ready && webLoader.item !== null
+        webSceneError: webLoader.status === Loader.Error
+        fallbackActive: root.useFallbackScene()
+    }
+
     AnimusIconButton {
         objectName: "tacticalSnapButton"
         anchors.right: parent.right

@@ -43,16 +43,6 @@ Item {
             webLoader.item.setCameraMode(mode)
     }
 
-    function statusText() {
-        var terrain = cesiumBridge.terrainStatus.provider === "quantized-mesh"
-                ? "terrain available: " + cesiumBridge.terrainStatus.cachePath
-                : "terrain fixture: " + cesiumBridge.terrainStatus.fixture.name
-        var scene = root.localSceneStatus.status || "initializing"
-        if (root.localSceneStatus.error)
-            return terrain + " | " + scene + ": " + root.localSceneStatus.error
-        return terrain + " | " + scene
-    }
-
     function clearanceText(value, suffix) {
         if (cesiumBridge.terrainClearance.state === "unknown")
             return "--"
@@ -185,14 +175,18 @@ Item {
         }
     }
 
-    AnimusOverlayPanel {
+    AnimusSceneStatus {
+        objectName: "terrainSceneStatusOverlay"
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.margins: 12
-        Label {
-            text: root.statusText()
-            color: animusTheme.text
-        }
+        workspaceLabel: "Terrain 3D"
+        sceneStatus: root.localSceneStatus
+        terrainStatus: cesiumBridge.terrainStatus
+        webSceneActive: webLoader.active
+        webSceneReady: webLoader.status === Loader.Ready && webLoader.item !== null
+        webSceneError: webLoader.status === Loader.Error
+        fallbackActive: root.useFallbackScene()
     }
 
     TelemetryStrip {
