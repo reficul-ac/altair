@@ -2,6 +2,7 @@
 """Launch sitl_runner under a native debugger with SITL-focused breakpoints."""
 
 import argparse
+import json
 import shlex
 import subprocess
 import sys
@@ -46,7 +47,22 @@ def parse_args() -> argparse.Namespace:
         help=f"add a conditional breakpoint on {HOOK_SYMBOL}; repeat for multiple expressions",
     )
     parser.add_argument("--dry-run", action="store_true", help="print the debugger command")
+    parser.add_argument(
+        "--emit-vscode-launch",
+        action="store_true",
+        help="print a VS Code/VSCodium cppdbg launch configuration",
+    )
+    parser.add_argument("--vscode-name", default="Debug cruise6dof SITL")
+    parser.add_argument(
+        "--vscode-mi-mode",
+        choices=("gdb", "lldb"),
+        help="cppdbg MIMode for --emit-vscode-launch; defaults to --debugger",
+    )
     args = parser.parse_args()
+    if args.dry_run and args.emit_vscode_launch:
+        parser.error("--dry-run and --emit-vscode-launch cannot be used together")
+    if args.vscode_mi_mode is None:
+        args.vscode_mi_mode = args.debugger
     validate_sitl_runner_args(parser, args)
     if args.stop_at_step is not None and args.stop_at_step < 0:
         parser.error("--stop-at-step must be nonnegative")
@@ -112,6 +128,20 @@ def debugger_command(args: argparse.Namespace) -> list[str]:
     return debugger + sitl_command
 
 
+def vscode_launch_config(args: argparse.Namespace) -> dict:
+    sitl_command = build_sitl_runner_command(args)
+    return {
+        "name": args.vscode_name,
+        "type": "cppdbg",
+        "request": "launch",
+        "program": sitl_command[0],
+        "args": sitl_command[1:],
+        "cwd": "${workspaceFolder}",
+        "MIMode": args.vscode_mi_mode,
+        "stopAtEntry": False,
+    }
+
+
 def main() -> int:
     args = parse_args()
     exe = sitl_runner_path(args.build_dir)
@@ -124,6 +154,10 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+
+    if args.emit_vscode_launch:
+        print(json.dumps(vscode_launch_config(args), indent=2))
+        return 0
 
     command = debugger_command(args)
     if args.dry_run:

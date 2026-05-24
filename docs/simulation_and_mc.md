@@ -177,27 +177,19 @@ the post-step hook frame, inspect those plus `output`. Use debugger `step`,
 `next`, IDE locals/watch panes, and normal `continue` to walk through the
 `cruise6dof` loop and continue to the next matching hit.
 
-For VS Code or VSCodium, add a local launch configuration that points at the
-Debug binary and passes the same runner arguments:
+For VS Code or VSCodium, print a launch configuration that points at the Debug
+binary and passes the same runner arguments:
 
-```json
-{
-  "name": "Debug cruise6dof SITL",
-  "type": "cppdbg",
-  "request": "launch",
-  "program": "${workspaceFolder}/build/vehicle/sitl_runner",
-  "args": [
-    "--scenario", "cruise6dof",
-    "--initial", "tests/integration/cruise6dof_initial.ini",
-    "--duration", "1",
-    "--dt", "0.01",
-    "--output", "sitl_debug.csv"
-  ],
-  "cwd": "${workspaceFolder}",
-  "MIMode": "gdb",
-  "stopAtEntry": false
-}
+```sh
+python3 tools/python/debug_sitl.py \
+    --emit-vscode-launch \
+    --initial tests/integration/cruise6dof_initial.ini \
+    --duration 1 --dt 0.01 --output sitl_debug.csv
 ```
+
+Paste the printed JSON object into the `configurations` array in
+`.vscode/launch.json`. Use `--vscode-name` to rename it, or
+`--vscode-mi-mode lldb` when the IDE should drive LLDB instead of GDB.
 
 Set IDE breakpoints on `run_cruise6dof()`,
 `sitl_debug_pre_fsw_step_hook()`, `sitl_debug_post_fsw_step_hook()`, or

@@ -24,7 +24,7 @@ Reusable Bayek framework follow-up is tracked separately in
   and Monte Carlo scenarios after the reusable hooks exist.
 - [ ] Add randomized Monte Carlo inputs for Altair-owned dispersions, guardrails,
   and summary CSV semantics.
-- [ ] Add debugger workflow polish for SITL, such as IDE launch config
+- [x] Add debugger workflow polish for SITL, such as IDE launch config
   generation or broader noninteractive LLDB smoke coverage.
 - [ ] Document Altair aero data provenance before replacing scalar aero formulas
   with reusable Bayek aero database helpers.

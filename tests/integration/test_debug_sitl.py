@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 
+import json
 import shlex
 import subprocess
 import sys
 from pathlib import Path
 
 
-def run_debug_sitl(repo_root, build_dir, *args):
+def run_debug_sitl(repo_root, build_dir, *args, dry_run=True):
+    command = [
+        sys.executable,
+        str(repo_root / "tools/python/debug_sitl.py"),
+        "--build-dir",
+        str(build_dir),
+    ]
+    if dry_run:
+        command.append("--dry-run")
+    command.extend(args)
     return subprocess.run(
-        [
-            sys.executable,
-            str(repo_root / "tools/python/debug_sitl.py"),
-            "--build-dir",
-            str(build_dir),
-            "--dry-run",
-            *args,
-        ],
+        command,
         check=False,
         capture_output=True,
         text=True,
@@ -129,6 +132,98 @@ def main():
         "ned",
     ):
         require(token in command, f"{token} missing from pass-through command")
+
+    result = run_debug_sitl(repo_root, build_dir, "--emit-vscode-launch", dry_run=False)
+    require_success(result)
+    config = json.loads(result.stdout)
+    require(config["name"] == "Debug cruise6dof SITL", "default VS Code launch name changed")
+    require(config["type"] == "cppdbg", "VS Code config type was not cppdbg")
+    require(config["request"] == "launch", "VS Code config request was not launch")
+    require(config["program"] == str(sitl_runner), "VS Code program did not point at sitl_runner")
+    require(config["cwd"] == "${workspaceFolder}", "VS Code cwd was not workspaceFolder")
+    require(config["MIMode"] == "gdb", "default VS Code MIMode was not gdb")
+    require(config["stopAtEntry"] is False, "VS Code stopAtEntry should be false")
+    require(config["args"][0:2] == ["--scenario", "cruise6dof"], "default scenario args missing")
+    for token in ("--profile", "cruise", "--duration", "5.0", "--dt", "0.01"):
+        require(token in config["args"], f"{token} missing from default VS Code args")
+
+    vscode_output = build_dir / "debug_sitl_vscode.csv"
+    result = run_debug_sitl(
+        repo_root,
+        build_dir,
+        "--emit-vscode-launch",
+        "--initial",
+        str(repo_root / "tests/integration/cruise6dof_initial.ini"),
+        "--case",
+        str(repo_root / "tests/integration/cruise6dof_case_mission.ini"),
+        "--conditions",
+        str(repo_root / "tests/integration/cruise6dof_conditions_gps.ini"),
+        "--duration",
+        "1.25",
+        "--dt",
+        "0.02",
+        "--output",
+        str(vscode_output),
+        "--frame-mode",
+        "ned",
+        "--mavlink",
+        "--mavlink-host",
+        "127.0.0.2",
+        "--mavlink-port",
+        "14551",
+        "--mavlink-system-id",
+        "42",
+        "--mavlink-source-port",
+        "14552",
+        dry_run=False,
+    )
+    require_success(result)
+    config = json.loads(result.stdout)
+    for token in (
+        "--initial",
+        str(repo_root / "tests/integration/cruise6dof_initial.ini"),
+        "--case",
+        str(repo_root / "tests/integration/cruise6dof_case_mission.ini"),
+        "--conditions",
+        str(repo_root / "tests/integration/cruise6dof_conditions_gps.ini"),
+        "--duration",
+        "1.25",
+        "--dt",
+        "0.02",
+        "--output",
+        str(vscode_output),
+        "--frame-mode",
+        "ned",
+        "--mavlink",
+        "--mavlink-host",
+        "127.0.0.2",
+        "--mavlink-port",
+        "14551",
+        "--mavlink-system-id",
+        "42",
+        "--mavlink-source-port",
+        "14552",
+    ):
+        require(token in config["args"], f"{token} missing from VS Code pass-through args")
+
+    result = run_debug_sitl(
+        repo_root,
+        build_dir,
+        "--debugger",
+        "lldb",
+        "--emit-vscode-launch",
+        dry_run=False,
+    )
+    require_success(result)
+    config = json.loads(result.stdout)
+    require(config["MIMode"] == "lldb", "VS Code MIMode did not default to lldb")
+
+    result = run_debug_sitl(repo_root, build_dir, "--emit-vscode-launch")
+    require(result.returncode != 0, "--dry-run and --emit-vscode-launch should fail together")
+    require(
+        "--dry-run and --emit-vscode-launch cannot be used together" in result.stderr,
+        "combined dry-run/VS Code parser error missing",
+    )
 
     return 0
 
