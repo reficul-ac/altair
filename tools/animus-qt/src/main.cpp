@@ -333,7 +333,7 @@ int main(int argc, char *argv[])
                             QCoreApplication::exit(6);
                             return;
                         }
-                        QTimer::singleShot(20000, &inspectLoop, &QEventLoop::quit);
+                        QTimer::singleShot(35000, &inspectLoop, &QEventLoop::quit);
                         inspectLoop.exec();
                         const bool inspectOk =
                             webWorkspace->property("lastControlSurfaceInspectionOk").toBool();
@@ -351,11 +351,11 @@ int main(int argc, char *argv[])
                     {
                         QEventLoop cameraLoop;
                         QObject::connect(webWorkspace,
-                                         SIGNAL(controlSurfaceInspectionFinished(bool, QString)),
+                                         SIGNAL(cameraInspectionFinished(bool, QString)),
                                          &cameraLoop,
                                          SLOT(quit()));
-                        webWorkspace->setProperty("lastControlSurfaceInspectionOk", false);
-                        webWorkspace->setProperty("lastControlSurfaceInspectionError",
+                        webWorkspace->setProperty("lastCameraInspectionOk", false);
+                        webWorkspace->setProperty("lastCameraInspectionError",
                                                   QStringLiteral("camera inspection timed out"));
                         const QString diagnosticPath =
                             dir.filePath(tactical ? QStringLiteral("tactical-camera.json")
@@ -371,10 +371,13 @@ int main(int argc, char *argv[])
                         QTimer::singleShot(10000, &cameraLoop, &QEventLoop::quit);
                         cameraLoop.exec();
                         const bool cameraOk =
-                            webWorkspace->property("lastControlSurfaceInspectionOk").toBool();
+                            webWorkspace->property("lastCameraInspectionOk").toBool();
                         if (!cameraOk)
                         {
-                            qCritical("WebEngine camera inspection failed");
+                            const QString cameraError =
+                                webWorkspace->property("lastCameraInspectionError").toString();
+                            qCritical("WebEngine camera inspection failed: %s",
+                                      qPrintable(cameraError));
                             QCoreApplication::exit(6);
                             return;
                         }

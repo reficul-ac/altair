@@ -7,6 +7,7 @@ WebEngineView {
 
     signal captureFinished(bool ok, string error)
     signal controlSurfaceInspectionFinished(bool ok, string error)
+    signal cameraInspectionFinished(bool ok, string error)
     signal cameraModeChanged(string mode)
 
     property string workspaceMode: "terrain-3d"
@@ -14,7 +15,9 @@ WebEngineView {
     property string pendingControlSurfaceDiagnosticPath: ""
     property string pendingControlSurfaceSnapshotJson: ""
     property int pendingControlSurfaceDiagnosticAttempts: 0
-    property int maxControlSurfaceDiagnosticAttempts: 100
+    property int maxControlSurfaceDiagnosticAttempts: 200
+    property bool lastCameraInspectionOk: false
+    property string lastCameraInspectionError: ""
 
     function setLocalSceneStatus(status, error) {
         webView.sceneStatus = {
@@ -104,17 +107,25 @@ WebEngineView {
         runJavaScript("window.animusCameraState && window.animusCameraState()",
                       function(result) {
                           if (!result) {
-                              webView.controlSurfaceInspectionFinished(
+                              webView.lastCameraInspectionOk = false
+                              webView.lastCameraInspectionError =
+                                      "camera state inspection returned no result"
+                              webView.cameraInspectionFinished(
                                   false, "camera state inspection returned no result")
                               return
                           }
                           var json = JSON.stringify(result, null, 2) + "\n"
                           if (!captureWriter.writeTextFile(path, json)) {
-                              webView.controlSurfaceInspectionFinished(
+                              webView.lastCameraInspectionOk = false
+                              webView.lastCameraInspectionError =
+                                      "failed to write camera state diagnostic"
+                              webView.cameraInspectionFinished(
                                   false, "failed to write camera state diagnostic")
                               return
                           }
-                          webView.controlSurfaceInspectionFinished(!!result.ok, "")
+                          webView.lastCameraInspectionOk = !!result.ok
+                          webView.lastCameraInspectionError = result.ok ? "" : "camera state not ready"
+                          webView.cameraInspectionFinished(!!result.ok, "")
                       })
     }
 

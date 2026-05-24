@@ -10,11 +10,14 @@ Item {
     property string lastCaptureError: ""
     property bool lastControlSurfaceInspectionOk: false
     property string lastControlSurfaceInspectionError: ""
+    property bool lastCameraInspectionOk: false
+    property string lastCameraInspectionError: ""
     property var localSceneStatus: ({ "status": "initializing", "error": "" })
     property bool workspaceCurrent: StackLayout.isCurrentItem
 
     signal captureFinished(bool ok, string error)
     signal controlSurfaceInspectionFinished(bool ok, string error)
+    signal cameraInspectionFinished(bool ok, string error)
 
     function writeFallbackDiagnostic(path, extra) {
         var diagnostic = extra || {}
@@ -53,15 +56,15 @@ Item {
 
     function inspectCameraState(path) {
         if (!webLoader.active || webLoader.status !== Loader.Ready || !webLoader.item) {
-            root.lastControlSurfaceInspectionOk = false
-            root.lastControlSurfaceInspectionError = "Tactical WebEngine view is not ready"
+            root.lastCameraInspectionOk = false
+            root.lastCameraInspectionError = "Tactical WebEngine view is not ready"
             root.writeFallbackDiagnostic(path, {
                 mode: "fallback",
                 cameraMode: "fallback",
                 freeRoamAvailable: false,
                 vehicleLocked: false
             })
-            root.controlSurfaceInspectionFinished(false, root.lastControlSurfaceInspectionError)
+            root.cameraInspectionFinished(false, root.lastCameraInspectionError)
             return
         }
         webLoader.item.inspectCameraState(path)
@@ -180,6 +183,11 @@ Item {
             root.lastControlSurfaceInspectionOk = ok
             root.lastControlSurfaceInspectionError = error
             root.controlSurfaceInspectionFinished(ok, error)
+        }
+        function onCameraInspectionFinished(ok, error) {
+            root.lastCameraInspectionOk = ok
+            root.lastCameraInspectionError = error
+            root.cameraInspectionFinished(ok, error)
         }
         function onSceneStatusChanged() {
             root.localSceneStatus = webLoader.item.sceneStatus
