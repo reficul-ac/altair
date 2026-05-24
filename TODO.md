@@ -43,7 +43,41 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Define required telemetry packets for SITL, embedded, and log replay.
 - [x] Add Altair replay schema compatibility checks around imported telemetry
   and live viewer session snapshots.
-- [ ] Add log-to-replay tooling for deterministic regression tests.
+- [ ] Add log-to-replay tooling for deterministic regression tests: canonical
+  `.altlog` capture, `.tlog` export, replay/export commands, summary JSON,
+  CSV round-trip compatibility, and baseline-vs-candidate diff expectations.
+- [ ] Version and generate `docs/telemetry_contract.json` plus schema/docs,
+  CSV header checks, Animus topic documentation, compatibility checks, and
+  fresh/stale/unsupported field-state semantics.
+
+## Workflow, Artifacts, And Verification
+
+- [ ] Add a unified `tools/python/altairctl.py` CLI for doctor, build, run,
+  Monte Carlo, replay, capture, verify, clean, map, terrain, and log workflows
+  while preserving existing scripts as wrappers.
+- [ ] Create a scenario/test-card registry under `cases/` with YAML validation,
+  list/run/report commands, smoke and cruise6dof seed cases, docs, and
+  integration tests.
+- [ ] Define a canonical versioned `.altlog` format with inspect, export,
+  replay, and diff commands, CSV round-trip compatibility, `.tlog` export,
+  docs, and fixture coverage.
+- [ ] Add a simulation credibility scorecard and parameter provenance manifest,
+  including `docs/model_credibility/`, a validator, generated summary, and
+  report/CLI exposure of credibility tier.
+- [ ] Add a Monte Carlo YAML campaign framework under `mc/campaigns/` with
+  deterministic seed/run-index replay, richer CSV/JSON/HTML outputs, failure
+  artifacts, and local smoke coverage.
+- [ ] Define explicit CI/local verification evidence tiers covering PlatformIO
+  compile, sanitizer/static-analysis lanes, SITL/Animus artifacts, and
+  integration with `verify_agent_work.py` or future `altairctl verify`.
+- [ ] Standardize HTML artifact reports and predictable ignored artifact roots
+  for SITL, Monte Carlo, replay, Animus capture, and agent verification bundles.
+- [ ] Add lightweight requirements and verification traceability under
+  `docs/requirements/` with a checker, generated matrix/test-card summary, and
+  report integration.
+- [ ] Add a replay-diff workflow for CSV and future `.altlog`
+  baseline-vs-candidate analysis.
+- [ ] Add embedded/HAL maturity checks and PlatformIO compile verification.
 
 ## Animus
 
@@ -52,6 +86,8 @@ Reusable Bayek framework follow-up is tracked separately in
   `capture_animus_sitl.py`; point them to `tools/animus-qt`,
   `build-animus-qt`, and `capture_animus_qt_sitl.py`.
 - [ ] Complete the remaining Animus Qt migration work: offline PMTiles serving,
+  offline map/terrain pack manager, manifest/checksum verification, setup
+  status, import/remove/list commands, seeded-cache compatibility,
   mission/fence/rally overlays, and broader Qt parity.
 - [ ] Fix Animus Qt capture under Xvfb/WebEngine so the tactical workspace
   writes a screenshot and FPV/tactical camera diagnostics are present in
@@ -145,23 +181,29 @@ Reusable Bayek framework follow-up is tracked separately in
     `tools/animus-qt/web/cesium/vehicleModel.js`.
   - Acceptance: Capture or JS-side assertions fail when a known deflected
     surface does not move from its neutral matrix.
-- [ ] Add multi-vehicle support: per-system vehicle models, fleet
-  list/selection, per-vehicle trails/status, and graceful degradation toward
-  the documented 12-vehicle analysis target.
+- [ ] Add multi-vehicle support: route telemetry by MAVLink system/component
+  ID, per-system vehicle models, active vehicle selection, separate
+  history/trails/status, diagnostics identity, tests, documented limitations,
+  and graceful degradation toward the documented 12-vehicle analysis target.
 - [ ] Build Qt-native Flight, Dashboard, Inspector, Replay, Plan, Setup
   readiness, and guarded-command workflows only for features still wanted from
   the retired UI, with capture/test coverage for each workspace.
 - [ ] Extend the first-pass Animus telemetry/link diagnostics beyond packet
   counters, decode errors, link freshness, MAVLink system/component identity,
   armed state, GPS, mission, home, and terrain summaries: add firmware/mode
-  labels, battery/readiness summaries, packet age by message family, update
-  rates, jitter, dropped/decoded counts, clock/source timestamps where
-  available, and per-field stale/unsupported/unknown states.
+  labels, readiness panel fields, battery/readiness summaries, packet age by
+  message family, update rates, jitter, dropped/decoded counts,
+  clock/source timestamps where available, sim metadata, model credibility tier,
+  per-field fresh/stale/unsupported/unknown states, Qt tests, screenshots, and
+  docs.
 - [ ] Move UDP receive/decode, map tile IO, and terrain/cache work
   behind explicit worker boundaries so rendering, synchronous tile reads,
   and map loading cannot contend with telemetry ingestion.
 - [x] Replace Animus Qt capture readiness artifacts with real map-2d,
   terrain-3d, and setup screenshots plus nonblank scene checks.
+- [ ] Feed Animus capture bundles into the standard artifact report path with
+  manifest metadata, screenshot links, scene diagnostics, and ignored output
+  roots shared with SITL/replay/agent verification reports.
 - [ ] Add QtLocation-backed Animus Qt map rendering once CI and operator
   installs have a portable runtime package strategy; Ubuntu 24.04 repositories
   available on this host do not provide Qt 6 Location.
@@ -188,6 +230,9 @@ Reusable Bayek framework follow-up is tracked separately in
   placeholder: AGL estimate, terrain report age, home-relative altitude,
   projected clearance along recent or active path, terrain-data availability,
   and caution states when terrain and altitude references disagree.
+- [ ] Add mission/fence/rally analysis overlays with mission path, active leg,
+  terrain-clearance corridor, actuator margin, wind/uncertainty/event overlays,
+  persisted toggle state, event explanation panel, tests, and docs.
 - [x] Improve Terrain 3D capture camera framing or add a full-workspace capture
   so the artifact shows terrain/clearance overlays, not only the native Cesium
   canvas and aircraft against mostly sky.
@@ -214,21 +259,27 @@ Reusable Bayek framework follow-up is tracked separately in
   `LOCAL_POSITION_NED`, `SERVO_OUTPUT_RAW`, `RC_CHANNELS`, `ESTIMATOR_STATUS`,
   `EKF_STATUS_REPORT`, and `STATUSTEXT`, and keep GNC-derived calculations
   centralized in Qt C++ model/helper code.
-- [ ] Add operator-built custom telemetry widgets that can subscribe to selected
-  MAVLink messages/fields and define simple math/comparison-driven status
-  displays.
+- [ ] Add operator-built custom telemetry widgets backed by JSON/QML-safe
+  configs and telemetry-contract binding, including numeric, status, bar, and
+  sparkline widgets, fresh/stale/unsupported states, load errors, and Qt tests.
 - [ ] Automatically fetch and display active mission plan/waypoint data needed
   by route-progress views when Altair/Bayek or the connected vehicle exposes
   mission data.
-- [ ] Add UI to view and upload current flight parameters for the connected
-  vehicle, using the existing Altair/Bayek parameter workflow where applicable.
-- [ ] Automatically record received telemetry to a `.tlog` during each Animus
-  session; persist the operator-selected save path, and default to the current
-  repo when unset. TODO: revisit the default save location before hardware use.
-- [ ] Add Animus dark/light mode switching with persisted operator preference.
-- [ ] Replace the Terrain 3D placeholder with a true x/y/z or
-  latitude/longitude/altitude trajectory view comparable to the Hawkeye 3D
-  trajectory workflow.
+- [ ] Add a read-only parameter view for connected vehicles first: source,
+  value, unit, range, validation state, runtime-updatable status, and no
+  implied persistent writes until write policy is explicit.
+- [ ] Automatically record received telemetry to a `.tlog` during each live
+  SITL/Animus session; persist the operator-selected save path, expose a CLI
+  flag, integrate artifact manifest/report output, and warn/fail clearly when
+  recording is unavailable. TODO: revisit the default save location before
+  hardware use.
+- [ ] Add Animus dark/light mode switching with consistent theme behavior,
+  readable diagnostics, non-color-only safety state, persisted operator
+  preference, and screenshot/manual verification.
+- [ ] Replace the Terrain 3D placeholder with a true trajectory analysis
+  workspace: synchronized 3D/local trajectory views, plots, scrubber,
+  baseline/candidate comparison, exports, `.altlog`/CSV input, tests, capture,
+  and docs.
 - [x] Replace the current minimal bundled Terrain 3D aircraft GLB with a
   polished generic fixed-wing RC model.
   - Runtime format is GLB/glTF; OBJ is allowed only as an
