@@ -149,10 +149,10 @@ Item {
 
     function severityColor(severity) {
         if (severity === "warning")
-            return "#d92626"
+            return animusTheme.danger
         if (severity === "caution")
-            return "#d59b28"
-        return "#3f4a3d"
+            return animusTheme.warning
+        return animusTheme.mutedText
     }
 
     function overlayDiagnostics() {
@@ -208,7 +208,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#dfe7de"
+        color: animusTheme.mapBackground
 
         Repeater {
             model: 16
@@ -216,7 +216,7 @@ Item {
                 width: parent.width
                 height: 1
                 y: index * parent.height / 15
-                color: "#c6d0c5"
+                color: animusTheme.mapGrid
             }
         }
 
@@ -226,7 +226,7 @@ Item {
                 width: 1
                 height: parent.height
                 x: index * parent.width / 23
-                color: "#c6d0c5"
+                color: animusTheme.mapGrid
             }
         }
 
@@ -237,7 +237,7 @@ Item {
             height: 28
             radius: 14
             rotation: -11
-            color: "#b9c7bd"
+            color: animusTheme.mapLand
             opacity: 0.85
         }
 
@@ -248,7 +248,7 @@ Item {
             height: 22
             radius: 11
             rotation: 31
-            color: "#ccd7cb"
+            color: animusTheme.mapLandAlt
             opacity: 0.8
         }
     }
@@ -333,6 +333,10 @@ Item {
             function onWidthChanged() { overlayCanvas.requestPaint() }
             function onHeightChanged() { overlayCanvas.requestPaint() }
         }
+        Connections {
+            target: animusTheme
+            function onThemeChanged() { overlayCanvas.requestPaint() }
+        }
     }
 
     Repeater {
@@ -343,14 +347,14 @@ Item {
             radius: 12
             x: root.projectX(longitudeDeg) - width / 2
             y: root.projectY(latitudeDeg) - height / 2
-            color: active ? "#1d6fd6" : "#f7f7f3"
-            border.color: "#1d6fd6"
+            color: active ? animusTheme.accent : animusTheme.surface
+            border.color: animusTheme.accent
             border.width: 2
 
             Label {
                 anchors.centerIn: parent
                 text: sequence
-                color: active ? "white" : "#1d6fd6"
+                color: active ? "white" : animusTheme.accent
                 font.bold: true
             }
         }
@@ -366,8 +370,8 @@ Item {
             x: root.projectX(longitudeDeg) - width / 2
             y: root.projectY(latitudeDeg) - height / 2
             visible: valid
-            color: "#0f7b43"
-            border.color: "white"
+            color: animusTheme.success
+            border.color: animusTheme.surface
             border.width: 2
         }
     }
@@ -382,7 +386,7 @@ Item {
             y: root.projectY(latitudeDeg) - height / 2
             visible: positionValid
             color: root.severityColor(severity)
-            border.color: "white"
+            border.color: animusTheme.surface
             border.width: 2
         }
     }
@@ -395,7 +399,7 @@ Item {
             radius: 3.5
             x: root.projectX(longitude) - width / 2
             y: root.projectY(latitude) - height / 2
-            color: "#1d6fd6"
+            color: animusTheme.accent
             opacity: 0.42
         }
     }
@@ -406,14 +410,14 @@ Item {
         radius: 12
         x: root.projectX(vehicleModel.homeLongitudeDeg) - width / 2
         y: root.projectY(vehicleModel.homeLatitudeDeg) - height / 2
-        color: "#f7f7f3"
-        border.color: "#b32020"
+        color: animusTheme.surface
+        border.color: animusTheme.danger
         border.width: 2
 
         Label {
             anchors.centerIn: parent
             text: "H"
-            color: "#b32020"
+            color: animusTheme.danger
             font.bold: true
         }
     }
@@ -426,6 +430,7 @@ Item {
         rotation: vehicleModel.headingDeg
 
         Canvas {
+            id: ownshipCanvas
             anchors.fill: parent
             onPaint: {
                 var ctx = getContext("2d")
@@ -436,12 +441,16 @@ Item {
                 ctx.lineTo(width / 2, height - 13)
                 ctx.lineTo(5, height - 5)
                 ctx.closePath()
-                ctx.fillStyle = "#1d6fd6"
-                ctx.strokeStyle = "white"
+                ctx.fillStyle = animusTheme.accent
+                ctx.strokeStyle = animusTheme.surface
                 ctx.lineWidth = 3
                 ctx.fill()
                 ctx.stroke()
             }
+        }
+        Connections {
+            target: animusTheme
+            function onThemeChanged() { ownshipCanvas.requestPaint() }
         }
     }
 
@@ -473,7 +482,7 @@ Item {
         anchors.top: parent.top
         anchors.margins: 12
         width: Math.min(parent.width - 24, 660)
-        background: Rectangle { color: "#f7f7f3"; border.color: "#c9c9c0"; radius: 6 }
+        background: Rectangle { color: animusTheme.overlay; border.color: animusTheme.border; radius: 6 }
         ColumnLayout {
             anchors.fill: parent
             spacing: 6
@@ -507,7 +516,7 @@ Item {
                     Layout.fillWidth: true
                     elide: Text.ElideRight
                     text: root.statusText()
-                    color: root.providerAllowed ? "#4b5563" : "#7a4b00"
+                    color: root.providerAllowed ? animusTheme.mutedText : animusTheme.warning
                 }
             }
 
@@ -535,17 +544,17 @@ Item {
                 }
                 Label {
                     text: root.following ? "Following vehicle" : "Manual pan"
-                    color: root.following ? "#0f7b43" : "#7a4b00"
+                    color: root.following ? animusTheme.success : animusTheme.warning
                 }
                 Item { Layout.fillWidth: true }
                 Label {
                     text: root.scaleLabel()
-                    color: "#4b5563"
+                    color: animusTheme.mutedText
                 }
                 Rectangle {
                     Layout.preferredWidth: 96
                     Layout.preferredHeight: 6
-                    color: "#202020"
+                    color: animusTheme.text
                 }
             }
         }
@@ -566,8 +575,8 @@ Item {
         height: root.mapWarningExpanded ? 190 : 54
         visible: !root.providerAllowed && !root.mapWarningDismissed
         z: 4
-        color: "#fbfbf8"
-        border.color: "#d59b28"
+        color: animusTheme.surface
+        border.color: animusTheme.warning
         border.width: 1
         radius: 8
 
@@ -585,11 +594,11 @@ Item {
                 Layout.preferredWidth: 24
                 Layout.preferredHeight: 24
                 radius: 12
-                color: "#f3b334"
+                color: animusTheme.warning
                 Label {
                     anchors.centerIn: parent
                     text: "!"
-                    color: "#1f2933"
+                    color: animusTheme.window
                     font.bold: true
                 }
             }
@@ -600,14 +609,14 @@ Item {
                 Label {
                     Layout.fillWidth: true
                     text: "Map Warning"
-                    color: "#1f2933"
+                    color: animusTheme.text
                     font.bold: true
                     elide: Text.ElideRight
                 }
                 Label {
                     Layout.fillWidth: true
                     text: root.statusText()
-                    color: "#4b5563"
+                    color: animusTheme.mutedText
                     elide: Text.ElideRight
                 }
             }
@@ -642,14 +651,14 @@ Item {
                 Layout.fillWidth: true
                 text: mapCache.providerBlockReason(mapCache.activeProviderId,
                                                    offlineMaps.networkAllowed)
-                color: "#3f4a3d"
+                color: animusTheme.text
                 wrapMode: Text.WordWrap
             }
 
             Label {
                 Layout.fillWidth: true
                 text: "Cache DB: " + (mapCache.cacheDatabasePath || "none")
-                color: "#4b5563"
+                color: animusTheme.mutedText
                 elide: Text.ElideRight
             }
         }
@@ -659,7 +668,7 @@ Item {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         anchors.margins: 12
-        background: Rectangle { color: "#f7f7f3"; border.color: "#c9c9c0"; radius: 6 }
+        background: Rectangle { color: animusTheme.overlay; border.color: animusTheme.border; radius: 6 }
         GridLayout {
             columns: 3
             rowSpacing: 2
@@ -712,9 +721,9 @@ Item {
         anchors.margins: 10
         width: Math.min(parent.width - 20, implicitWidth)
         text: root.attributionText()
-        color: "#202020"
+        color: animusTheme.text
         padding: 6
         elide: Text.ElideRight
-        background: Rectangle { color: "#f7f7f3"; opacity: 0.9; radius: 4 }
+        background: Rectangle { color: animusTheme.overlay; opacity: 0.9; radius: 4 }
     }
 }

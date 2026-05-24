@@ -9,6 +9,7 @@
 #include "telemetry/BreadcrumbPathModel.h"
 #include "telemetry/MavlinkDecoder.h"
 #include "telemetry/TelemetryService.h"
+#include "ui/ThemeController.h"
 
 #include <QFile>
 #include <QDir>
@@ -43,6 +44,7 @@ std::unique_ptr<QObject> createMap2DView(animus::VehicleModel *vehicle,
                                          animus::OfflineMapManager *offlineMaps,
                                          animus::AnimusMapCacheManager *mapCache,
                                          animus::TelemetryService *telemetry,
+                                         animus::ThemeController *theme,
                                          QQmlEngine *engine)
 {
     engine->rootContext()->setContextProperty(QStringLiteral("vehicleModel"), vehicle);
@@ -53,6 +55,7 @@ std::unique_ptr<QObject> createMap2DView(animus::VehicleModel *vehicle,
     engine->rootContext()->setContextProperty(QStringLiteral("offlineMaps"), offlineMaps);
     engine->rootContext()->setContextProperty(QStringLiteral("mapCache"), mapCache);
     engine->rootContext()->setContextProperty(QStringLiteral("telemetryService"), telemetry);
+    engine->rootContext()->setContextProperty(QStringLiteral("animusTheme"), theme);
 
     const QUrl url =
         QUrl::fromLocalFile(QStringLiteral(ANIMUS_QT_QML_DIR) + QStringLiteral("/Map2DView.qml"));
@@ -74,6 +77,7 @@ std::unique_ptr<QObject> createWorkspaceShell(animus::VehicleModel *vehicle,
                                               animus::TelemetryService *telemetry,
                                               animus::VehicleModelProfileManager *profiles,
                                               animus::CesiumBridge *cesium,
+                                              animus::ThemeController *theme,
                                               QQmlEngine *engine)
 {
     engine->rootContext()->setContextProperty(QStringLiteral("vehicleModel"), vehicle);
@@ -84,6 +88,7 @@ std::unique_ptr<QObject> createWorkspaceShell(animus::VehicleModel *vehicle,
     engine->rootContext()->setContextProperty(QStringLiteral("offlineMaps"), offlineMaps);
     engine->rootContext()->setContextProperty(QStringLiteral("mapCache"), mapCache);
     engine->rootContext()->setContextProperty(QStringLiteral("telemetryService"), telemetry);
+    engine->rootContext()->setContextProperty(QStringLiteral("animusTheme"), theme);
     engine->rootContext()->setContextProperty(QStringLiteral("vehicleModelProfiles"), profiles);
     engine->rootContext()->setContextProperty(QStringLiteral("cesiumBridge"), cesium);
     engine->rootContext()->setContextProperty(QStringLiteral("webEngineTerrainEnabled"), false);
@@ -410,6 +415,71 @@ class AnimusQtMapModelTests final : public QObject
     Q_OBJECT
 
   private slots:
+    void themeControllerDefaultsToLight()
+    {
+        animus::ThemeController theme(nullptr);
+
+        QCOMPARE(theme.mode(), QStringLiteral("light"));
+        QCOMPARE(theme.displayName(), QStringLiteral("Light"));
+        QCOMPARE(theme.dark(), false);
+        QVERIFY(theme.text().isValid());
+        QVERIFY(theme.surface().isValid());
+    }
+
+    void themeControllerInvalidPersistedModeFallsBackToLight()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings settings(QDir(dir.path()).filePath(QStringLiteral("theme.ini")),
+                           QSettings::IniFormat);
+        settings.setValue(QStringLiteral("ui/themeMode"), QStringLiteral("sepia"));
+
+        animus::ThemeController theme(&settings);
+
+        QCOMPARE(theme.mode(), QStringLiteral("light"));
+        QCOMPARE(theme.dark(), false);
+    }
+
+    void themeControllerPersistsAndEmitsChanges()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings settings(QDir(dir.path()).filePath(QStringLiteral("theme.ini")),
+                           QSettings::IniFormat);
+        animus::ThemeController theme(&settings);
+        QSignalSpy modeSpy(&theme, &animus::ThemeController::modeChanged);
+        QSignalSpy themeSpy(&theme, &animus::ThemeController::themeChanged);
+
+        theme.setMode(QStringLiteral("dark"));
+        QCOMPARE(theme.mode(), QStringLiteral("dark"));
+        QCOMPARE(settings.value(QStringLiteral("ui/themeMode")).toString(), QStringLiteral("dark"));
+        QCOMPARE(modeSpy.count(), 1);
+        QCOMPARE(themeSpy.count(), 1);
+
+        theme.toggleMode();
+        QCOMPARE(theme.mode(), QStringLiteral("light"));
+        QCOMPARE(settings.value(QStringLiteral("ui/themeMode")).toString(),
+                 QStringLiteral("light"));
+        QCOMPARE(modeSpy.count(), 2);
+        QCOMPARE(themeSpy.count(), 2);
+    }
+
+    void themeControllerOverrideDoesNotPersist()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings settings(QDir(dir.path()).filePath(QStringLiteral("theme.ini")),
+                           QSettings::IniFormat);
+        settings.setValue(QStringLiteral("ui/themeMode"), QStringLiteral("light"));
+        animus::ThemeController theme(&settings);
+
+        theme.setModeOverride(QStringLiteral("dark"));
+
+        QCOMPARE(theme.mode(), QStringLiteral("dark"));
+        QCOMPARE(settings.value(QStringLiteral("ui/themeMode")).toString(),
+                 QStringLiteral("light"));
+    }
+
     void strictOfflineRejectsNetworkSource()
     {
         animus::MapSourceRegistry registry;
@@ -668,6 +738,7 @@ class AnimusQtMapModelTests final : public QObject
         animus::OfflineMapManager offlineMaps(&mapSources);
         animus::AnimusMapCacheManager mapCache;
         animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
+        animus::ThemeController theme(nullptr);
         QQmlEngine engine;
 
         std::unique_ptr<QObject> map = createMap2DView(&vehicle,
@@ -677,6 +748,7 @@ class AnimusQtMapModelTests final : public QObject
                                                        &offlineMaps,
                                                        &mapCache,
                                                        &telemetry,
+                                                       &theme,
                                                        &engine);
         QVERIFY(map);
         map->setProperty("width", 800);
@@ -783,6 +855,7 @@ class AnimusQtMapModelTests final : public QObject
         animus::OfflineMapManager offlineMaps(&mapSources);
         animus::AnimusMapCacheManager mapCache;
         animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
+        animus::ThemeController theme(nullptr);
         QQmlEngine engine;
 
         std::unique_ptr<QObject> map = createMap2DView(&vehicle,
@@ -792,6 +865,7 @@ class AnimusQtMapModelTests final : public QObject
                                                        &offlineMaps,
                                                        &mapCache,
                                                        &telemetry,
+                                                       &theme,
                                                        &engine);
         QVERIFY(map);
         map->setProperty("width", 800);
@@ -822,6 +896,7 @@ class AnimusQtMapModelTests final : public QObject
         animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
         animus::VehicleModelProfileManager profiles(bundledModelProfilesDir(), nullptr, &vehicle);
         animus::CesiumBridge cesium(&vehicle, &breadcrumbs, &profiles, &navigationOverlays);
+        animus::ThemeController theme(nullptr);
         QQmlEngine engine;
 
         std::unique_ptr<QObject> shell = createWorkspaceShell(&vehicle,
@@ -833,6 +908,7 @@ class AnimusQtMapModelTests final : public QObject
                                                               &telemetry,
                                                               &profiles,
                                                               &cesium,
+                                                              &theme,
                                                               &engine);
         QVERIFY(shell);
         shell->setProperty("width", 1280);
@@ -846,6 +922,10 @@ class AnimusQtMapModelTests final : public QObject
         const QVariantMap diagnostic = diagnosticValue.toMap();
         QCOMPARE(diagnostic.value(QStringLiteral("selectedWorkspace")).toString(),
                  QStringLiteral("terrain-3d"));
+        QCOMPARE(diagnostic.value(QStringLiteral("themeMode")).toString(), QStringLiteral("light"));
+        const QVariantMap themeToggle = diagnostic.value(QStringLiteral("themeToggle")).toMap();
+        QCOMPARE(themeToggle.value(QStringLiteral("semanticallyVisible")).toBool(), true);
+        QCOMPARE(themeToggle.value(QStringLiteral("label")).toString(), QStringLiteral("Light"));
         const QVariantList tabs = diagnostic.value(QStringLiteral("tabs")).toList();
         QCOMPARE(tabs.size(), 5);
         const QStringList expectedLabels{QStringLiteral("Map 2D"),
@@ -861,6 +941,17 @@ class AnimusQtMapModelTests final : public QObject
             QVERIFY(tab.value(QStringLiteral("width")).toInt() > 1);
             QVERIFY(tab.value(QStringLiteral("height")).toInt() > 1);
         }
+
+        theme.toggleMode();
+        QVERIFY(QMetaObject::invokeMethod(
+            shell.get(), "workspaceChromeDiagnostics", Q_RETURN_ARG(QVariant, diagnosticValue)));
+        const QVariantMap darkDiagnostic = diagnosticValue.toMap();
+        QCOMPARE(darkDiagnostic.value(QStringLiteral("themeMode")).toString(),
+                 QStringLiteral("dark"));
+        const QVariantList darkTabs = darkDiagnostic.value(QStringLiteral("tabs")).toList();
+        QCOMPARE(darkTabs.size(), 5);
+        for (const QVariant &tabValue : darkTabs)
+            QCOMPARE(tabValue.toMap().value(QStringLiteral("semanticallyVisible")).toBool(), true);
     }
 
     void workspaceShellSelectsTacticalById()
@@ -874,6 +965,7 @@ class AnimusQtMapModelTests final : public QObject
         animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
         animus::VehicleModelProfileManager profiles(bundledModelProfilesDir(), nullptr, &vehicle);
         animus::CesiumBridge cesium(&vehicle, &breadcrumbs, &profiles, &navigationOverlays);
+        animus::ThemeController theme(nullptr);
         QQmlEngine engine;
 
         std::unique_ptr<QObject> shell = createWorkspaceShell(&vehicle,
@@ -885,6 +977,7 @@ class AnimusQtMapModelTests final : public QObject
                                                               &telemetry,
                                                               &profiles,
                                                               &cesium,
+                                                              &theme,
                                                               &engine);
         QVERIFY(shell);
         QVERIFY(QMetaObject::invokeMethod(
@@ -903,6 +996,7 @@ class AnimusQtMapModelTests final : public QObject
         animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
         animus::VehicleModelProfileManager profiles(bundledModelProfilesDir(), nullptr, &vehicle);
         animus::CesiumBridge cesium(&vehicle, &breadcrumbs, &profiles, &navigationOverlays);
+        animus::ThemeController theme(nullptr);
         QQmlEngine engine;
 
         std::unique_ptr<QObject> shell = createWorkspaceShell(&vehicle,
@@ -914,6 +1008,7 @@ class AnimusQtMapModelTests final : public QObject
                                                               &telemetry,
                                                               &profiles,
                                                               &cesium,
+                                                              &theme,
                                                               &engine);
         QVERIFY(shell);
         QVERIFY(QMetaObject::invokeMethod(

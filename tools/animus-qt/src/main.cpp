@@ -7,6 +7,7 @@
 #include "models/VehicleModel.h"
 #include "telemetry/BreadcrumbPathModel.h"
 #include "telemetry/TelemetryService.h"
+#include "ui/ThemeController.h"
 
 #include <QCoreApplication>
 #include <QByteArray>
@@ -75,6 +76,7 @@ struct CaptureOptions
     bool seedMapCacheFixture = false;
     bool requested = false;
     QString mapCacheRoot;
+    QString themeMode;
 };
 
 bool parseArgs(const QStringList &args, CaptureOptions *options)
@@ -152,6 +154,15 @@ bool parseArgs(const QStringList &args, CaptureOptions *options)
         {
             options->seedMapCacheFixture = true;
         }
+        else if (arg == QStringLiteral("--theme"))
+        {
+            if (i + 1 >= args.size())
+                return false;
+            const QString theme = args.at(++i).trimmed().toLower();
+            if (theme != QStringLiteral("light") && theme != QStringLiteral("dark"))
+                return false;
+            options->themeMode = theme;
+        }
     }
 
     if (!options->requested)
@@ -221,6 +232,9 @@ int main(int argc, char *argv[])
     animus::NavigationOverlayModels navigationOverlays;
     animus::TelemetryService telemetry(&vehicle, &trail);
     QSettings settings;
+    animus::ThemeController theme(&settings);
+    if (!capture.themeMode.isEmpty())
+        theme.setModeOverride(capture.themeMode);
     animus::VehicleModelProfileManager modelProfiles(
         QDir(QStringLiteral(ANIMUS_REPO_ROOT))
             .filePath(QStringLiteral("tools/animus-qt/web/cesium/models")),
@@ -248,6 +262,7 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("offlineMaps"), &offlineMaps);
     engine.rootContext()->setContextProperty(QStringLiteral("mapCache"), &mapCache);
     engine.rootContext()->setContextProperty(QStringLiteral("telemetryService"), &telemetry);
+    engine.rootContext()->setContextProperty(QStringLiteral("animusTheme"), &theme);
     engine.rootContext()->setContextProperty(QStringLiteral("vehicleModelProfiles"),
                                              &modelProfiles);
     engine.rootContext()->setContextProperty(QStringLiteral("cesiumBridge"), &cesium);

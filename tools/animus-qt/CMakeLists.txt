@@ -51,6 +51,7 @@ qt_add_executable(
     src/maps/qgc/AnimusMapCacheManager.cpp
     src/maps/TerrainClearanceAnalyzer.cpp
     src/maps/CesiumBridge.cpp
+    src/ui/ThemeController.cpp
 )
 
 target_include_directories(animus_qt PRIVATE src)
@@ -115,6 +116,7 @@ add_executable(
     src/telemetry/TelemetryService.cpp
     src/models/VehicleModel.cpp
     src/models/VehicleModelProfileManager.cpp
+    src/ui/ThemeController.cpp
 )
 target_include_directories(animus_qt_unit_tests PRIVATE src)
 target_compile_features(animus_qt_unit_tests PRIVATE cxx_std_17)

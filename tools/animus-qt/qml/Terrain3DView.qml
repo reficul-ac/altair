@@ -61,12 +61,12 @@ Item {
 
     function clearanceColor() {
         if (cesiumBridge.terrainClearance.state === "warning")
-            return "#b42318"
+            return animusTheme.danger
         if (cesiumBridge.terrainClearance.state === "caution")
-            return "#9a5b00"
+            return animusTheme.warning
         if (cesiumBridge.terrainClearance.state === "clear")
-            return "#0f7b43"
-        return "#4b5563"
+            return animusTheme.success
+        return animusTheme.mutedText
     }
 
     function useFallbackScene() {
@@ -77,7 +77,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#d7e3df"
+        color: animusTheme.mapBackground
     }
 
     Canvas {
@@ -89,8 +89,8 @@ Item {
             ctx.clearRect(0, 0, width, height)
 
             var sky = ctx.createLinearGradient(0, 0, 0, height * 0.58)
-            sky.addColorStop(0, "#8fb1ce")
-            sky.addColorStop(1, "#e6ece8")
+            sky.addColorStop(0, animusTheme.sceneSkyTop)
+            sky.addColorStop(1, animusTheme.sceneSkyBottom)
             ctx.fillStyle = sky
             ctx.fillRect(0, 0, width, height)
 
@@ -109,11 +109,11 @@ Item {
             }
 
             ridge([[0, 0.64], [0.12, 0.52], [0.24, 0.59], [0.38, 0.43], [0.55, 0.55], [0.72, 0.46], [1, 0.61]],
-                  "#879a83", "#61705f")
+                  animusTheme.sceneRidge, animusTheme.border)
             ridge([[0, 0.78], [0.16, 0.69], [0.32, 0.73], [0.48, 0.62], [0.68, 0.7], [0.82, 0.59], [1, 0.73]],
-                  "#5f775f", "#415542")
+                  animusTheme.sceneRidgeDark, animusTheme.border)
 
-            ctx.strokeStyle = "#d7e6d0"
+            ctx.strokeStyle = animusTheme.sceneGroundLine
             ctx.lineWidth = 1
             for (var y = 0.68; y < 0.96; y += 0.055) {
                 ctx.beginPath()
@@ -125,6 +125,10 @@ Item {
             }
         }
     }
+    Connections {
+        target: animusTheme
+        function onThemeChanged() { fallbackCanvas.requestPaint() }
+    }
 
     Rectangle {
         width: 46
@@ -133,8 +137,8 @@ Item {
         x: parent.width * 0.5 - width / 2
         y: parent.height * 0.42 - height / 2
         visible: fallbackCanvas.visible
-        color: "#1d6fd6"
-        border.color: "white"
+        color: animusTheme.accent
+        border.color: animusTheme.surface
         border.width: 3
 
         Rectangle {
@@ -142,7 +146,7 @@ Item {
             height: 70
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.top
-            color: "#1d6fd6"
+            color: animusTheme.accent
             opacity: 0.45
         }
     }
@@ -187,10 +191,10 @@ Item {
         anchors.margins: 12
         text: root.statusText()
         padding: 8
-        color: "#1f2a2a"
+        color: animusTheme.text
         background: Rectangle {
-            color: "#f7f7f3"
-            border.color: "#c9c9c0"
+            color: animusTheme.overlay
+            border.color: animusTheme.border
             radius: 6
         }
     }
@@ -208,7 +212,7 @@ Item {
         anchors.margins: 12
         width: Math.min(parent.width - 24, 370)
         background: Rectangle {
-            color: "#f7f7f3"
+            color: animusTheme.overlay
             border.color: root.clearanceColor()
             border.width: 2
             radius: 6
@@ -230,20 +234,20 @@ Item {
                 horizontalAlignment: Text.AlignRight
                 width: 110
             }
-            Label { text: "AGL"; color: "#4b5563" }
+            Label { text: "AGL"; color: animusTheme.mutedText }
             Label {
                 text: root.clearanceText(cesiumBridge.terrainClearance.aglM, " m")
                 horizontalAlignment: Text.AlignRight
                 width: 110
             }
-            Label { text: "Min recent"; color: "#4b5563" }
+            Label { text: "Min recent"; color: animusTheme.mutedText }
             Label {
                 text: root.clearanceText(cesiumBridge.terrainClearance.minimumRecentClearanceM,
                                          " m")
                 horizontalAlignment: Text.AlignRight
                 width: 110
             }
-            Label { text: "Trend"; color: "#4b5563" }
+            Label { text: "Trend"; color: animusTheme.mutedText }
             Label {
                 text: root.clearanceText(cesiumBridge.terrainClearance.trendMps, " m/s")
                 horizontalAlignment: Text.AlignRight
@@ -251,7 +255,7 @@ Item {
             }
             Label {
                 text: cesiumBridge.terrainClearance.message || "terrain clearance unavailable"
-                color: "#4b5563"
+                color: animusTheme.mutedText
                 width: 230
                 elide: Text.ElideRight
             }

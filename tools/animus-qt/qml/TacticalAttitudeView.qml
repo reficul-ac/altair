@@ -91,7 +91,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#101820"
+        color: animusTheme.tacticalBackground
     }
 
     Loader {
@@ -107,14 +107,15 @@ Item {
     }
 
     Canvas {
+        id: fallbackCanvas
         anchors.fill: parent
         visible: root.useFallbackScene()
         onPaint: {
             var ctx = getContext("2d")
             ctx.clearRect(0, 0, width, height)
-            ctx.fillStyle = "#101820"
+            ctx.fillStyle = animusTheme.tacticalBackground
             ctx.fillRect(0, 0, width, height)
-            var colors = ["#d92626", "#2fbf5b", "#2f6df6"]
+            var colors = [animusTheme.danger, animusTheme.success, animusTheme.accent]
             ctx.lineWidth = 3
             for (var i = 0; i < colors.length; ++i) {
                 ctx.strokeStyle = colors[i]
@@ -126,8 +127,8 @@ Item {
             ctx.translate(width * 0.5, height * 0.52)
             ctx.rotate(vehicleModel.rollRad)
 
-            ctx.fillStyle = "#dfe8ea"
-            ctx.strokeStyle = "#ffffff"
+            ctx.fillStyle = animusTheme.surface
+            ctx.strokeStyle = animusTheme.text
             ctx.lineWidth = 2
             ctx.beginPath()
             ctx.moveTo(66, 0)
@@ -140,12 +141,12 @@ Item {
             ctx.fill()
             ctx.stroke()
 
-            ctx.fillStyle = "#7fb9c8"
+            ctx.fillStyle = animusTheme.accent
             ctx.beginPath()
             ctx.ellipse(22, -1, 11, 5, 0, 0, Math.PI * 2)
             ctx.fill()
 
-            ctx.fillStyle = "#9fb2b8"
+            ctx.fillStyle = animusTheme.mutedText
             ctx.beginPath()
             ctx.moveTo(-5, -7)
             ctx.lineTo(-18, -56)
@@ -163,12 +164,16 @@ Item {
             ctx.fill()
             ctx.stroke()
 
-            ctx.fillStyle = "#6f858c"
+            ctx.fillStyle = animusTheme.border
             ctx.fillRect(-65, -23, 24, 7)
             ctx.fillRect(-65, 16, 24, 7)
             ctx.fillRect(-72, -5, 18, 10)
             ctx.restore()
         }
+    }
+    Connections {
+        target: animusTheme
+        function onThemeChanged() { fallbackCanvas.requestPaint() }
     }
 
     Connections {
@@ -201,9 +206,9 @@ Item {
         anchors.margins: 12
         padding: 10
         background: Rectangle {
-            color: "#f7f7f3"
+            color: animusTheme.overlay
             opacity: 0.94
-            border.color: telemetryService.linkFresh ? "#8da56f" : "#b77a3d"
+            border.color: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
             radius: 6
         }
 
@@ -212,26 +217,26 @@ Item {
             rowSpacing: 5
             columnSpacing: 12
 
-            Label { text: "Roll"; color: "#4b5563"; font.bold: true }
+            Label { text: "Roll"; color: animusTheme.mutedText; font.bold: true }
             Label {
                 text: root.valueText(vehicleModel.attitudeValid,
                                      vehicleModel.rollRad * 180.0 / Math.PI, " deg", 1)
             }
-            Label { text: "Pitch"; color: "#4b5563"; font.bold: true }
+            Label { text: "Pitch"; color: animusTheme.mutedText; font.bold: true }
             Label {
                 text: root.valueText(vehicleModel.attitudeValid,
                                      vehicleModel.pitchRad * 180.0 / Math.PI, " deg", 1)
             }
-            Label { text: "Yaw"; color: "#4b5563"; font.bold: true }
+            Label { text: "Yaw"; color: animusTheme.mutedText; font.bold: true }
             Label {
                 text: root.valueText(vehicleModel.attitudeValid,
                                      vehicleModel.yawRad * 180.0 / Math.PI, " deg", 1)
             }
-            Label { text: "Heading"; color: "#4b5563"; font.bold: true }
+            Label { text: "Heading"; color: animusTheme.mutedText; font.bold: true }
             Label {
                 text: root.valueText(vehicleModel.attitudeValid, vehicleModel.headingDeg, " deg", 1)
             }
-            Label { text: "Rates"; color: "#4b5563"; font.bold: true }
+            Label { text: "Rates"; color: animusTheme.mutedText; font.bold: true }
             Label {
                 text: root.valueText(vehicleModel.attitudeValid,
                                      vehicleModel.rollRateRps * 180.0 / Math.PI, " R", 1) + " " +
@@ -240,11 +245,11 @@ Item {
                       root.valueText(vehicleModel.attitudeValid,
                                      vehicleModel.yawRateRps * 180.0 / Math.PI, " Y", 1)
             }
-            Label { text: "Link"; color: "#4b5563"; font.bold: true }
+            Label { text: "Link"; color: animusTheme.mutedText; font.bold: true }
             Label {
                 text: (!telemetryService.running && telemetryService.decodedSampleCount === 0)
                       ? "UNK" : (telemetryService.linkFresh ? "FRESH" : "STALE")
-                color: telemetryService.linkFresh ? "#0f7b43" : "#7a4b00"
+                color: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
                 font.bold: true
             }
         }

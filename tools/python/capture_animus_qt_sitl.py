@@ -115,6 +115,12 @@ def parse_args() -> argparse.Namespace:
         "--capture-delay-ms", type=int, default=1200, help="Render delay before each screenshot."
     )
     parser.add_argument(
+        "--theme",
+        choices=("light", "dark", "both"),
+        default="light",
+        help="Theme mode to force during capture.",
+    )
+    parser.add_argument(
         "--no-run", action="store_true", help="Only write readiness artifacts; do not launch Qt."
     )
     return parser.parse_args()
@@ -307,22 +313,33 @@ def inspect_region(image: PngImage, spec: RegionSpec) -> dict[str, object]:
 def inspect_clearance_overlay_panel(image: PngImage) -> dict[str, object]:
     spec = RegionSpec("clearance overlay panel", (0.01, 0.70, 0.36, 0.98), 5, 20.0, 0.94)
     pixels = sample_region(image, spec, columns=64, rows=28)
-    panel_pixels = [
+    light_panel_pixels = [
         pixel
         for pixel in pixels
         if pixel[0] >= 225 and pixel[1] >= 225 and pixel[2] >= 215 and max(pixel) - min(pixel) <= 28
+    ]
+    dark_panel_pixels = [
+        pixel
+        for pixel in pixels
+        if pixel[0] <= 55
+        and pixel[1] <= 70
+        and pixel[2] <= 85
+        and max(pixel) - min(pixel) <= 38
+        and luminance(pixel) >= 20.0
     ]
     state_pixels = [
         pixel
         for pixel in pixels
         if max(pixel) - min(pixel) >= 60 and luminance(pixel) <= 170.0 and max(pixel) >= 85
     ]
-    panel_fraction = len(panel_pixels) / len(pixels) if pixels else 0.0
+    panel_fraction = (
+        (len(light_panel_pixels) + len(dark_panel_pixels)) / len(pixels) if pixels else 0.0
+    )
     state_fraction = len(state_pixels) / len(pixels) if pixels else 0.0
     failures: list[str] = []
     warnings: list[str] = []
     if panel_fraction < 0.10:
-        failures.append(f"light overlay panel covers {panel_fraction:.1%} of sampled region")
+        failures.append(f"overlay panel covers {panel_fraction:.1%} of sampled region")
     if state_fraction < 0.005:
         failures.append(f"clearance state accent covers {state_fraction:.1%} of sampled region")
     return {
@@ -828,6 +845,7 @@ def command_for_workspace(
     screenshot_dir: Path,
     workspace: str,
     delay_ms: int,
+    theme: str = "light",
     map_cache_root: Path | None = None,
     seed_map_cache: bool = False,
 ) -> list[str]:
@@ -842,6 +860,8 @@ def command_for_workspace(
         "--mock-telemetry",
         "--capture-delay-ms",
         str(delay_ms),
+        "--theme",
+        theme,
         "--map-cache-root",
         str(map_cache_root),
         "--quit-after-capture",
@@ -1118,6 +1138,7 @@ def main() -> int:
             capture_label: str,
             output_dir: Path,
             map_cache_root: Path,
+            theme: str,
             seed_map_cache: bool = False,
         ) -> dict[str, object]:
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -1127,6 +1148,7 @@ def main() -> int:
                 output_dir,
                 workspace,
                 args.capture_delay_ms,
+                theme,
                 map_cache_root,
                 seed_map_cache,
             )
@@ -1192,6 +1214,7 @@ def main() -> int:
             capture = {
                 "workspace": capture_label,
                 "captureWorkspace": workspace,
+                "theme": theme,
                 "command": attempts[-1]["command"] if attempts else command,
                 "exitCode": completed.returncode,
                 "log": attempts[-1]["log"] if attempts else "",
@@ -1231,59 +1254,72 @@ def main() -> int:
                 capture["workspacePng"] = workspace_png
             return capture
 
-        for workspace in WORKSPACES:
-            capture = run_capture(
-                workspace,
-                workspace,
-                screenshot_dir,
-                cache_dir / "fresh",
-                seed_map_cache=False,
+        themes = ["light", "dark"] if args.theme == "both" else [args.theme]
+        manifest["themes"] = themes
+        for theme in themes:
+            theme_screenshot_dir = screenshot_dir if len(themes) == 1 else screenshot_dir / theme
+            theme_cache_dir = cache_dir if len(themes) == 1 else cache_dir / theme
+            for workspace in WORKSPACES:
+                capture = run_capture(
+                    workspace,
+                    workspace if len(themes) == 1 else f"{theme}-{workspace}",
+                    theme_screenshot_dir,
+                    theme_cache_dir / "fresh",
+                    theme,
+                    seed_map_cache=False,
+                )
+                manifest["captures"].append(capture)
+                png = capture["png"]
+                if png.get("ok"):
+                    manifest["screenshots"].append(capture["screenshot"])
+                workspace_png = capture.get("workspacePng", {})
+                if isinstance(workspace_png, dict) and workspace_png.get("ok"):
+                    manifest["screenshots"].append(capture["workspaceScreenshot"])
+                chrome_diagnostic = capture.get("chromeDiagnostic", {})
+                control_surface_diagnostic = capture.get("controlSurfaceDiagnostic", {})
+                clearance_diagnostic = capture.get("clearanceDiagnostic", {})
+                camera_diagnostic = capture.get("cameraDiagnostic", {})
+                if (
+                    capture["exitCode"] != 0
+                    or not png.get("ok")
+                    or (
+                        isinstance(chrome_diagnostic, dict)
+                        and not chrome_diagnostic.get("ok", True)
+                    )
+                    or (
+                        isinstance(control_surface_diagnostic, dict)
+                        and not control_surface_diagnostic.get("ok", True)
+                    )
+                    or (
+                        isinstance(clearance_diagnostic, dict)
+                        and not clearance_diagnostic.get("ok", True)
+                    )
+                    or (
+                        isinstance(camera_diagnostic, dict)
+                        and not camera_diagnostic.get("ok", True)
+                    )
+                    or (isinstance(workspace_png, dict) and not workspace_png.get("ok", True))
+                ):
+                    manifest["status"] = "fail"
+            seeded_capture = run_capture(
+                "map-2d",
+                "map-2d-seeded-cache" if len(themes) == 1 else f"{theme}-map-2d-seeded-cache",
+                theme_screenshot_dir / "seeded-cache",
+                theme_cache_dir / "seeded",
+                theme,
+                seed_map_cache=True,
             )
-            manifest["captures"].append(capture)
-            png = capture["png"]
-            if png.get("ok"):
-                manifest["screenshots"].append(capture["screenshot"])
-            workspace_png = capture.get("workspacePng", {})
-            if isinstance(workspace_png, dict) and workspace_png.get("ok"):
-                manifest["screenshots"].append(capture["workspaceScreenshot"])
-            chrome_diagnostic = capture.get("chromeDiagnostic", {})
-            control_surface_diagnostic = capture.get("controlSurfaceDiagnostic", {})
-            clearance_diagnostic = capture.get("clearanceDiagnostic", {})
-            camera_diagnostic = capture.get("cameraDiagnostic", {})
+            manifest["captures"].append(seeded_capture)
+            seeded_png = seeded_capture["png"]
+            if seeded_png.get("ok"):
+                manifest["screenshots"].append(seeded_capture["screenshot"])
+            seeded_chrome = seeded_capture.get("chromeDiagnostic", {})
             if (
-                capture["exitCode"] != 0
-                or not png.get("ok")
-                or (isinstance(chrome_diagnostic, dict) and not chrome_diagnostic.get("ok", True))
-                or (
-                    isinstance(control_surface_diagnostic, dict)
-                    and not control_surface_diagnostic.get("ok", True)
-                )
-                or (
-                    isinstance(clearance_diagnostic, dict)
-                    and not clearance_diagnostic.get("ok", True)
-                )
-                or (isinstance(camera_diagnostic, dict) and not camera_diagnostic.get("ok", True))
-                or (isinstance(workspace_png, dict) and not workspace_png.get("ok", True))
+                seeded_capture["exitCode"] != 0
+                or not seeded_png.get("ok")
+                or (isinstance(seeded_chrome, dict) and not seeded_chrome.get("ok", True))
             ):
                 manifest["status"] = "fail"
-        seeded_capture = run_capture(
-            "map-2d",
-            "map-2d-seeded-cache",
-            screenshot_dir / "seeded-cache",
-            cache_dir / "seeded",
-            seed_map_cache=True,
-        )
-        manifest["captures"].append(seeded_capture)
-        seeded_png = seeded_capture["png"]
-        if seeded_png.get("ok"):
-            manifest["screenshots"].append(seeded_capture["screenshot"])
-        seeded_chrome = seeded_capture.get("chromeDiagnostic", {})
-        if (
-            seeded_capture["exitCode"] != 0
-            or not seeded_png.get("ok")
-            or (isinstance(seeded_chrome, dict) and not seeded_chrome.get("ok", True))
-        ):
-            manifest["status"] = "fail"
         manifest["workspaceComparisons"] = compare_workspace_screenshots(manifest["captures"])
         for comparison in manifest["workspaceComparisons"]:
             if comparison.get("status") == "fail":

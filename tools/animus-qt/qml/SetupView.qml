@@ -4,6 +4,7 @@ import QtQuick.Layouts
 
 ScrollView {
     id: root
+    background: Rectangle { color: animusTheme.window }
 
     function ageText(ageS) {
         return ageS < 0 ? "UNK" : ageS.toFixed(ageS >= 10 ? 0 : 1) + " s"
@@ -54,55 +55,55 @@ ScrollView {
                 rowSpacing: 6
                 columnSpacing: 16
 
-                Label { text: "Endpoint"; color: "#4b5563"; font.bold: true }
+                Label { text: "Endpoint"; color: animusTheme.mutedText; font.bold: true }
                 Label {
                     text: telemetryService.udpHost + ":" + telemetryService.udpPort
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                 }
-                Label { text: "State"; color: "#4b5563"; font.bold: true }
+                Label { text: "State"; color: animusTheme.mutedText; font.bold: true }
                 Label {
                     text: (telemetryService.running ? "RUNNING" : "STOPPED") + " / " +
                           (telemetryService.linkFresh ? "FRESH" : "STALE")
-                    color: telemetryService.linkFresh ? "#0f7b43" : "#7a4b00"
+                    color: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
                     font.bold: true
                 }
 
-                Label { text: "Datagrams"; color: "#4b5563"; font.bold: true }
+                Label { text: "Datagrams"; color: animusTheme.mutedText; font.bold: true }
                 Label { text: telemetryService.datagramCount }
-                Label { text: "Decoded"; color: "#4b5563"; font.bold: true }
+                Label { text: "Decoded"; color: animusTheme.mutedText; font.bold: true }
                 Label { text: telemetryService.decodedSampleCount }
 
-                Label { text: "Decode errors"; color: "#4b5563"; font.bold: true }
+                Label { text: "Decode errors"; color: animusTheme.mutedText; font.bold: true }
                 Label {
                     text: telemetryService.decodeErrorCount
-                    color: telemetryService.decodeErrorCount > 0 ? "#7a4b00" : "#202020"
+                    color: telemetryService.decodeErrorCount > 0 ? animusTheme.warning : animusTheme.text
                 }
-                Label { text: "Ages"; color: "#4b5563"; font.bold: true }
+                Label { text: "Ages"; color: animusTheme.mutedText; font.bold: true }
                 Label {
                     text: "RX " + root.ageText(telemetryService.lastDatagramAgeS) +
                           " / decoded " + root.ageText(telemetryService.lastDecodedAgeS)
                 }
 
-                Label { text: "MAVLink ID"; color: "#4b5563"; font.bold: true }
+                Label { text: "MAVLink ID"; color: animusTheme.mutedText; font.bold: true }
                 Label {
                     text: vehicleModel.heartbeatValid || telemetryService.decodedSampleCount > 0
                           ? vehicleModel.systemId + "." + vehicleModel.componentId
                           : "UNK"
                 }
-                Label { text: "Armed"; color: "#4b5563"; font.bold: true }
+                Label { text: "Armed"; color: animusTheme.mutedText; font.bold: true }
                 Label {
                     text: root.boolState(vehicleModel.heartbeatValid, vehicleModel.armed,
                                          "ARMED", "DISARMED")
-                    color: vehicleModel.heartbeatValid && vehicleModel.armed ? "#7a2f00" : "#202020"
+                    color: vehicleModel.heartbeatValid && vehicleModel.armed ? animusTheme.warning : animusTheme.text
                 }
 
-                Label { text: "GPS"; color: "#4b5563"; font.bold: true }
+                Label { text: "GPS"; color: animusTheme.mutedText; font.bold: true }
                 Label { text: root.gpsState() }
-                Label { text: "Mission"; color: "#4b5563"; font.bold: true }
+                Label { text: "Mission"; color: animusTheme.mutedText; font.bold: true }
                 Label { text: vehicleModel.missionValid ? "SEQ " + vehicleModel.missionSeq : "UNK" }
 
-                Label { text: "Home"; color: "#4b5563"; font.bold: true }
+                Label { text: "Home"; color: animusTheme.mutedText; font.bold: true }
                 Label {
                     text: vehicleModel.homeValid
                           ? vehicleModel.homeLatitudeDeg.toFixed(5) + ", " +
@@ -111,7 +112,7 @@ ScrollView {
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                 }
-                Label { text: "Terrain"; color: "#4b5563"; font.bold: true }
+                Label { text: "Terrain"; color: animusTheme.mutedText; font.bold: true }
                 Label {
                     text: vehicleModel.terrainValid
                           ? vehicleModel.terrainCurrentHeightM.toFixed(1) + " m AGL / " +
@@ -134,7 +135,7 @@ ScrollView {
                     rowSpacing: 6
                     columnSpacing: 12
 
-                    Label { text: "Profile"; color: "#4b5563"; font.bold: true }
+                    Label { text: "Profile"; color: animusTheme.mutedText; font.bold: true }
                     ComboBox {
                         id: modelProfileSelector
                         Layout.fillWidth: true
@@ -145,14 +146,14 @@ ScrollView {
                         onActivated: vehicleModelProfiles.selectedProfileId = currentValue
                     }
 
-                    Label { text: "Profile ID"; color: "#4b5563"; font.bold: true }
+                    Label { text: "Profile ID"; color: animusTheme.mutedText; font.bold: true }
                     Label {
                         Layout.fillWidth: true
                         text: vehicleModelProfiles.selectedProfile.id
                         elide: Text.ElideRight
                     }
 
-                    Label { text: "GLB asset"; color: "#4b5563"; font.bold: true }
+                    Label { text: "GLB asset"; color: animusTheme.mutedText; font.bold: true }
                     Label {
                         Layout.fillWidth: true
                         text: vehicleModelProfiles.selectedProfile.asset
@@ -165,7 +166,7 @@ ScrollView {
                     Label {
                         Layout.fillWidth: true
                         text: vehicleModelProfiles.surfaces.length + " mapped surfaces"
-                        color: "#4b5563"
+                        color: animusTheme.mutedText
                     }
                     Button {
                         text: "Reset Profile Defaults"
@@ -177,7 +178,7 @@ ScrollView {
                 Rectangle {
                     Layout.fillWidth: true
                     height: 1
-                    color: "#d1d5db"
+                    color: animusTheme.border
                 }
 
                 Repeater {
@@ -187,7 +188,7 @@ ScrollView {
                         implicitHeight: surfaceLayout.implicitHeight + 12
                         color: "transparent"
                         border.width: 1
-                        border.color: "#d1d5db"
+                        border.color: animusTheme.border
                         radius: 4
 
                         GridLayout {
@@ -216,19 +217,19 @@ ScrollView {
 
                                 Label {
                                     text: "CH " + modelData.actuatorChannel
-                                    color: "#4b5563"
+                                    color: animusTheme.mutedText
                                 }
                                 Label {
                                     Layout.fillWidth: true
                                     text: modelData.node
-                                    color: "#4b5563"
+                                    color: animusTheme.mutedText
                                     elide: Text.ElideMiddle
                                 }
                                 Label {
                                     text: modelData.valid
                                           ? modelData.deflectionDeg.toFixed(1) + " deg"
                                           : "UNK"
-                                    color: modelData.valid ? "#202020" : "#7a4b00"
+                                    color: modelData.valid ? animusTheme.text : animusTheme.warning
                                     font.bold: true
                                 }
                             }
@@ -237,7 +238,7 @@ ScrollView {
                                 Layout.fillWidth: true
                                 text: "Profile polarity " + modelData.profilePolarity +
                                       " / active " + modelData.polarity
-                                color: "#4b5563"
+                                color: animusTheme.mutedText
                                 elide: Text.ElideRight
                             }
                             Button {
@@ -278,8 +279,8 @@ ScrollView {
                           "Active provider allowed by current policy"
                     color: mapCache.providerBlockReason(mapCache.activeProviderId,
                                                         offlineMaps.networkAllowed) === ""
-                           ? "#4b5563"
-                           : "#7a4b00"
+                           ? animusTheme.mutedText
+                           : animusTheme.warning
                 }
             }
         }
@@ -315,11 +316,11 @@ ScrollView {
                           " cached | " + mapCache.missingTileCount + " missing | " +
                           mapCache.failedTileCount + " failed | " +
                           mapCache.inFlightTileCount + " in flight"
-                    color: "#4b5563"
+                    color: animusTheme.mutedText
                 }
                 Label {
                     text: mapCache.lastError() || mapCache.activeStatus
-                    color: mapCache.lastError() ? "#7a4b00" : "#4b5563"
+                    color: mapCache.lastError() ? animusTheme.warning : animusTheme.mutedText
                 }
                 ProgressBar {
                     Layout.fillWidth: true
@@ -359,7 +360,7 @@ ScrollView {
                                           modelData.missingCount + " missing | " +
                                           modelData.failedCount + " failed | z" +
                                           modelData.minZoom + "-" + modelData.maxZoom
-                                    color: modelData.status === "complete" ? "#0f7b43" : "#7a4b00"
+                                    color: modelData.status === "complete" ? animusTheme.success : animusTheme.warning
                                     font.bold: true
                                     elide: Text.ElideRight
                                 }

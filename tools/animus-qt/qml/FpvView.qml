@@ -96,21 +96,22 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#d7e3df"
+        color: animusTheme.mapBackground
     }
 
     Canvas {
+        id: fallbackCanvas
         anchors.fill: parent
         visible: root.useFallbackScene()
         onPaint: {
             var ctx = getContext("2d")
             ctx.clearRect(0, 0, width, height)
             var sky = ctx.createLinearGradient(0, 0, 0, height * 0.58)
-            sky.addColorStop(0, "#8fb1ce")
-            sky.addColorStop(1, "#e6ece8")
+            sky.addColorStop(0, animusTheme.sceneSkyTop)
+            sky.addColorStop(1, animusTheme.sceneSkyBottom)
             ctx.fillStyle = sky
             ctx.fillRect(0, 0, width, height)
-            ctx.fillStyle = "#879a83"
+            ctx.fillStyle = animusTheme.sceneRidge
             ctx.beginPath()
             ctx.moveTo(0, height)
             ctx.lineTo(width * 0.18, height * 0.62)
@@ -121,7 +122,7 @@ Item {
             ctx.lineTo(width, height)
             ctx.closePath()
             ctx.fill()
-            ctx.fillStyle = "#5f775f"
+            ctx.fillStyle = animusTheme.sceneRidgeDark
             ctx.beginPath()
             ctx.moveTo(0, height)
             ctx.lineTo(width * 0.16, height * 0.74)
@@ -133,6 +134,10 @@ Item {
             ctx.closePath()
             ctx.fill()
         }
+    }
+    Connections {
+        target: animusTheme
+        function onThemeChanged() { fallbackCanvas.requestPaint() }
     }
 
     Loader {
@@ -176,10 +181,10 @@ Item {
         anchors.margins: 12
         text: root.statusText()
         padding: 8
-        color: "#1f2a2a"
+        color: animusTheme.text
         background: Rectangle {
-            color: "#f7f7f3"
-            border.color: "#c9c9c0"
+            color: animusTheme.overlay
+            border.color: animusTheme.border
             radius: 6
         }
     }

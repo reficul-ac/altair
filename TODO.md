@@ -155,7 +155,7 @@ Reusable Bayek framework follow-up is tracked separately in
   flag, integrate artifact manifest/report output, and warn/fail clearly when
   recording is unavailable. TODO: revisit the default save location before
   hardware use.
-- [ ] Add Animus dark/light mode switching with consistent theme behavior,
+- [x] Add Animus dark/light mode switching with consistent theme behavior,
   readable diagnostics, non-color-only safety state, persisted operator
   preference, and screenshot/manual verification.
 - [ ] Replace the Terrain 3D placeholder with a true trajectory analysis

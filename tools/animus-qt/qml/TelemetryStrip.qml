@@ -8,9 +8,9 @@ Frame {
     width: Math.min(parent ? parent.width - 24 : implicitWidth, 560)
     padding: 8
     background: Rectangle {
-        color: "#f7f7f3"
+        color: animusTheme.overlay
         opacity: 0.94
-        border.color: telemetryService.linkFresh ? "#8da56f" : "#b77a3d"
+        border.color: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
         radius: 6
     }
 
@@ -46,7 +46,7 @@ Frame {
 
         Label {
             text: "ATT"
-            color: "#4b5563"
+            color: animusTheme.mutedText
             font.pixelSize: 11
             font.bold: true
         }
@@ -55,25 +55,25 @@ Frame {
                                  vehicleModel.rollRad * 180.0 / Math.PI, " R", 0) + " " +
                   root.valueText(vehicleModel.attitudeValid,
                                  vehicleModel.pitchRad * 180.0 / Math.PI, " P", 0)
-            color: vehicleModel.attitudeValid && telemetryService.linkFresh ? "#202020" : "#7a4b00"
+            color: vehicleModel.attitudeValid && telemetryService.linkFresh ? animusTheme.text : animusTheme.warning
             font.pixelSize: 12
         }
 
         Label {
             text: "ALT"
-            color: "#4b5563"
+            color: animusTheme.mutedText
             font.pixelSize: 11
             font.bold: true
         }
         Label {
             text: root.valueText(vehicleModel.positionValid, vehicleModel.altitudeM, " m", 1)
-            color: vehicleModel.positionValid && telemetryService.linkFresh ? "#202020" : "#7a4b00"
+            color: vehicleModel.positionValid && telemetryService.linkFresh ? animusTheme.text : animusTheme.warning
             font.pixelSize: 12
         }
 
         Label {
             text: "POS"
-            color: "#4b5563"
+            color: animusTheme.mutedText
             font.pixelSize: 11
             font.bold: true
         }
@@ -82,14 +82,14 @@ Frame {
             text: telemetryService.linkFresh && vehicleModel.positionValid
                   ? vehicleModel.latitudeDeg.toFixed(5) + ", " + vehicleModel.longitudeDeg.toFixed(5)
                   : (telemetryService.linkFresh ? "UNK" : "STALE")
-            color: vehicleModel.positionValid && telemetryService.linkFresh ? "#202020" : "#7a4b00"
+            color: vehicleModel.positionValid && telemetryService.linkFresh ? animusTheme.text : animusTheme.warning
             font.pixelSize: 12
             elide: Text.ElideRight
         }
 
         Label {
             text: "VEL"
-            color: "#4b5563"
+            color: animusTheme.mutedText
             font.pixelSize: 11
             font.bold: true
         }
@@ -98,32 +98,32 @@ Frame {
                                  vehicleModel.groundspeedMps, " m/s GS", 1) + " " +
                   root.valueText(vehicleModel.velocityValid,
                                  -vehicleModel.vzDownMps, " VS", 1)
-            color: vehicleModel.velocityValid && telemetryService.linkFresh ? "#202020" : "#7a4b00"
+            color: vehicleModel.velocityValid && telemetryService.linkFresh ? animusTheme.text : animusTheme.warning
             font.pixelSize: 12
         }
 
         Label {
             text: "GPS"
-            color: "#4b5563"
+            color: animusTheme.mutedText
             font.pixelSize: 11
             font.bold: true
         }
         Label {
             text: root.gpsText()
             color: vehicleModel.gpsValid && telemetryService.linkFresh &&
-                   vehicleModel.gpsFixType >= 3 ? "#202020" : "#7a4b00"
+                   vehicleModel.gpsFixType >= 3 ? animusTheme.text : animusTheme.warning
             font.pixelSize: 12
         }
 
         Label {
             text: "LINK"
-            color: "#4b5563"
+            color: animusTheme.mutedText
             font.pixelSize: 11
             font.bold: true
         }
         Label {
             text: root.linkText()
-            color: telemetryService.linkFresh ? "#0f7b43" : "#7a4b00"
+            color: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
             font.pixelSize: 12
             font.bold: true
         }
