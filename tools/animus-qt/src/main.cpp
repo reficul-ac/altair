@@ -333,7 +333,7 @@ int main(int argc, char *argv[])
                             QCoreApplication::exit(6);
                             return;
                         }
-                        QTimer::singleShot(35000, &inspectLoop, &QEventLoop::quit);
+                        QTimer::singleShot(70000, &inspectLoop, &QEventLoop::quit);
                         inspectLoop.exec();
                         const bool inspectOk =
                             webWorkspace->property("lastControlSurfaceInspectionOk").toBool();

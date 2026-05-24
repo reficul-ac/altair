@@ -15,7 +15,8 @@ WebEngineView {
     property string pendingControlSurfaceDiagnosticPath: ""
     property string pendingControlSurfaceSnapshotJson: ""
     property int pendingControlSurfaceDiagnosticAttempts: 0
-    property int maxControlSurfaceDiagnosticAttempts: 200
+    property int maxControlSurfaceDiagnosticAttempts: 300
+    property bool pendingControlSurfaceDiagnosticInFlight: false
     property bool lastCameraInspectionOk: false
     property string lastCameraInspectionError: ""
 
@@ -52,6 +53,7 @@ WebEngineView {
         webView.pendingControlSurfaceDiagnosticPath = path
         webView.pendingControlSurfaceSnapshotJson = snapshot ? JSON.stringify(snapshot) : ""
         webView.pendingControlSurfaceDiagnosticAttempts = 0
+        webView.pendingControlSurfaceDiagnosticInFlight = false
         if (snapshot)
             runJavaScript("window.animusApplySnapshot && window.animusApplySnapshot(" +
                           webView.pendingControlSurfaceSnapshotJson + ")")
@@ -83,6 +85,8 @@ WebEngineView {
         interval: 150
         repeat: true
         onTriggered: {
+            if (webView.pendingControlSurfaceDiagnosticInFlight)
+                return
             webView.pendingControlSurfaceDiagnosticAttempts += 1
             var finalAttempt =
                     webView.pendingControlSurfaceDiagnosticAttempts >=
@@ -94,8 +98,10 @@ WebEngineView {
             }
             script += "return window.animusInspectControlSurfaces && window.animusInspectControlSurfaces();"
             script += "})()"
+            webView.pendingControlSurfaceDiagnosticInFlight = true
             runJavaScript(script,
                           function(result) {
+                              webView.pendingControlSurfaceDiagnosticInFlight = false
                               webView.finishControlSurfaceInspection(result, finalAttempt)
                           })
             if (finalAttempt)

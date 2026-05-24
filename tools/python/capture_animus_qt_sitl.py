@@ -1146,7 +1146,7 @@ def main() -> int:
                         env=attempt_env,
                         stdout=log,
                         stderr=subprocess.STDOUT,
-                        timeout=max(70, args.capture_delay_ms // 1000 + 65),
+                        timeout=max(110, args.capture_delay_ms // 1000 + 105),
                         check=False,
                     )
                 attempt = {
