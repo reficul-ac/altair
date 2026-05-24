@@ -1934,7 +1934,24 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(qml.open(QIODevice::ReadOnly));
         const QString qmlText = QString::fromUtf8(qml.readAll());
 
-        QVERIFY(qmlText.contains(QStringLiteral("Terrain 3D Vehicle Model")));
+        QFile sectionQml(QStringLiteral(ANIMUS_QT_QML_DIR) +
+                         QStringLiteral("/AnimusSetupSection.qml"));
+        QVERIFY(sectionQml.open(QIODevice::ReadOnly));
+        const QString sectionText = QString::fromUtf8(sectionQml.readAll());
+
+        QVERIFY(sectionText.contains(QStringLiteral("detailsExpanded")));
+        QVERIFY(sectionText.contains(QStringLiteral("detailsContent")));
+
+        QVERIFY(qmlText.contains(QStringLiteral("setupReadinessSection")));
+        QVERIFY(qmlText.contains(QStringLiteral("setupTelemetryLinkSection")));
+        QVERIFY(qmlText.contains(QStringLiteral("setupVehicleModelSection")));
+        QVERIFY(qmlText.contains(QStringLiteral("setupMapsTerrainSection")));
+        QVERIFY(qmlText.contains(QStringLiteral("setupLogsSection")));
+        QVERIFY(qmlText.contains(QStringLiteral("setupDiagnosticsSection")));
+        QVERIFY(qmlText.contains(QStringLiteral("setupModelProfileSelector")));
+        QVERIFY(qmlText.contains(QStringLiteral("setupSurfacePolarityButton")));
+        QVERIFY(qmlText.contains(QStringLiteral("setupTileDownloadButton")));
+        QVERIFY(qmlText.contains(QStringLiteral("setupSeedCacheButton")));
         QVERIFY(qmlText.contains(QStringLiteral("vehicleModelProfiles.profiles")));
         QVERIFY(qmlText.contains(QStringLiteral("selectedProfileId")));
         QVERIFY(qmlText.contains(QStringLiteral("selectedProfile.asset")));

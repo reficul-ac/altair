@@ -4,6 +4,8 @@ import QtQuick.Layouts
 
 ScrollView {
     id: root
+    objectName: "setupView"
+    contentWidth: availableWidth
     background: Rectangle { color: animusTheme.window }
 
     function ageText(ageS) {
@@ -43,208 +45,327 @@ ScrollView {
         return false
     }
 
+    function tileCacheSummary() {
+        return mapCache.cachedTileCount + "/" + mapCache.totalTileCount +
+               " cached, " + mapCache.missingTileCount + " missing, " +
+               mapCache.failedTileCount + " failed"
+    }
+
+    function mapPolicyText() {
+        if (offlineMaps.mode === 2)
+            return "Strict offline"
+        if (offlineMaps.mode === 1)
+            return "Cached/offline"
+        return "Online"
+    }
+
+    function providerStatusText() {
+        let blocked = mapCache.providerBlockReason(mapCache.activeProviderId,
+                                                   offlineMaps.networkAllowed)
+        return blocked || "Active provider allowed"
+    }
+
+    function readinessSummary() {
+        return "Link " + (telemetryService.linkFresh ? "fresh" : "stale") +
+               " | " + root.boolState(vehicleModel.heartbeatValid, vehicleModel.armed,
+                                       "armed", "disarmed") +
+               " | GPS " + root.gpsState() +
+               " | Mission " + (vehicleModel.missionValid ? "seq " + vehicleModel.missionSeq : "UNK") +
+               " | Home " + (vehicleModel.homeValid ? "set" : "UNK") +
+               " | Terrain " + (vehicleModel.terrainValid ? "valid" : "UNK")
+    }
+
     ColumnLayout {
-        width: parent.width
+        width: root.availableWidth
         spacing: 12
 
-        GroupBox {
-            title: "Telemetry Link"
-            Layout.fillWidth: true
+        AnimusSetupSection {
+            objectName: "setupReadinessSection"
+            title: "Readiness"
+            summary: root.readinessSummary()
+            detailsLabel: "readiness details"
+
             GridLayout {
+                Layout.fillWidth: true
                 columns: 4
-                rowSpacing: 6
-                columnSpacing: 16
+                rowSpacing: 8
+                columnSpacing: 12
 
-                Label { text: "Endpoint"; color: animusTheme.mutedText; font.bold: true }
-                Label {
-                    text: telemetryService.udpHost + ":" + telemetryService.udpPort
-                    elide: Text.ElideRight
-                    Layout.fillWidth: true
-                }
-                Label { text: "State"; color: animusTheme.mutedText; font.bold: true }
-                Label {
-                    text: (telemetryService.running ? "RUNNING" : "STOPPED") + " / " +
-                          (telemetryService.linkFresh ? "FRESH" : "STALE")
-                    color: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
-                    font.bold: true
+                Label { text: "Link"; color: animusTheme.mutedText; font.bold: true }
+                AnimusStatusBadge {
+                    objectName: "setupReadinessLinkBadge"
+                    text: telemetryService.linkFresh ? "FRESH" : "STALE"
+                    tone: telemetryService.linkFresh ? "success" : "warning"
                 }
 
-                Label { text: "Datagrams"; color: animusTheme.mutedText; font.bold: true }
-                Label { text: telemetryService.datagramCount }
-                Label { text: "Decoded"; color: animusTheme.mutedText; font.bold: true }
-                Label { text: telemetryService.decodedSampleCount }
-
-                Label { text: "Decode errors"; color: animusTheme.mutedText; font.bold: true }
-                Label {
-                    text: telemetryService.decodeErrorCount
-                    color: telemetryService.decodeErrorCount > 0 ? animusTheme.warning : animusTheme.text
-                }
-                Label { text: "Ages"; color: animusTheme.mutedText; font.bold: true }
-                Label {
-                    text: "RX " + root.ageText(telemetryService.lastDatagramAgeS) +
-                          " / decoded " + root.ageText(telemetryService.lastDecodedAgeS)
-                }
-
-                Label { text: "MAVLink ID"; color: animusTheme.mutedText; font.bold: true }
-                Label {
-                    text: vehicleModel.heartbeatValid || telemetryService.decodedSampleCount > 0
-                          ? vehicleModel.systemId + "." + vehicleModel.componentId
-                          : "UNK"
-                }
                 Label { text: "Armed"; color: animusTheme.mutedText; font.bold: true }
                 Label {
+                    objectName: "setupReadinessArmedState"
                     text: root.boolState(vehicleModel.heartbeatValid, vehicleModel.armed,
                                          "ARMED", "DISARMED")
                     color: vehicleModel.heartbeatValid && vehicleModel.armed ? animusTheme.warning : animusTheme.text
+                    font.bold: true
                 }
 
                 Label { text: "GPS"; color: animusTheme.mutedText; font.bold: true }
-                Label { text: root.gpsState() }
+                Label {
+                    objectName: "setupReadinessGpsState"
+                    text: root.gpsState()
+                    color: vehicleModel.gpsValid && vehicleModel.gpsFixType >= 3 ? animusTheme.success : animusTheme.warning
+                    font.bold: true
+                }
+
                 Label { text: "Mission"; color: animusTheme.mutedText; font.bold: true }
-                Label { text: vehicleModel.missionValid ? "SEQ " + vehicleModel.missionSeq : "UNK" }
+                Label {
+                    objectName: "setupReadinessMissionState"
+                    text: vehicleModel.missionValid ? "SEQ " + vehicleModel.missionSeq : "UNK"
+                }
 
                 Label { text: "Home"; color: animusTheme.mutedText; font.bold: true }
                 Label {
-                    text: vehicleModel.homeValid
-                          ? vehicleModel.homeLatitudeDeg.toFixed(5) + ", " +
-                            vehicleModel.homeLongitudeDeg.toFixed(5)
-                          : "UNK"
-                    elide: Text.ElideRight
+                    objectName: "setupReadinessHomeState"
                     Layout.fillWidth: true
+                    text: vehicleModel.homeValid ? "SET" : "UNK"
                 }
+
                 Label { text: "Terrain"; color: animusTheme.mutedText; font.bold: true }
                 Label {
+                    objectName: "setupReadinessTerrainState"
                     text: vehicleModel.terrainValid
-                          ? vehicleModel.terrainCurrentHeightM.toFixed(1) + " m AGL / " +
-                            vehicleModel.terrainLoaded + " loaded"
+                          ? vehicleModel.terrainCurrentHeightM.toFixed(1) + " m AGL"
                           : "UNK"
+                }
+            }
+
+            detailsContent: Component {
+                GridLayout {
+                    width: parent.width
+                    columns: 4
+                    rowSpacing: 6
+                    columnSpacing: 12
+
+                    Label { text: "Home position"; color: animusTheme.mutedText; font.bold: true }
+                    Label {
+                        Layout.fillWidth: true
+                        text: vehicleModel.homeValid
+                              ? vehicleModel.homeLatitudeDeg.toFixed(5) + ", " +
+                                vehicleModel.homeLongitudeDeg.toFixed(5)
+                              : "UNK"
+                        elide: Text.ElideRight
+                    }
+
+                    Label { text: "Terrain report"; color: animusTheme.mutedText; font.bold: true }
+                    Label {
+                        text: vehicleModel.terrainValid
+                              ? vehicleModel.terrainCurrentHeightM.toFixed(1) + " m AGL / " +
+                                vehicleModel.terrainLoaded + " loaded"
+                              : "UNK"
+                    }
                 }
             }
         }
 
-        GroupBox {
-            title: "Terrain 3D Vehicle Model"
-            Layout.fillWidth: true
-            ColumnLayout {
-                width: parent.width
+        AnimusSetupSection {
+            objectName: "setupTelemetryLinkSection"
+            title: "Telemetry Link"
+            summary: (telemetryService.running ? "Receiver running" : "Receiver stopped") +
+                     " | " + (telemetryService.linkFresh ? "fresh" : "stale") +
+                     " | RX " + root.ageText(telemetryService.lastDatagramAgeS) +
+                     " | decoded " + root.ageText(telemetryService.lastDecodedAgeS)
+            detailsLabel: "link diagnostics"
+
+            RowLayout {
+                Layout.fillWidth: true
                 spacing: 10
 
-                GridLayout {
+                AnimusStatusBadge {
+                    objectName: "setupTelemetryRunningBadge"
+                    text: telemetryService.running ? "RUNNING" : "STOPPED"
+                    tone: telemetryService.running ? "success" : "warning"
+                }
+
+                AnimusStatusBadge {
+                    objectName: "setupTelemetryFreshnessBadge"
+                    text: telemetryService.linkFresh ? "FRESH" : "STALE"
+                    tone: telemetryService.linkFresh ? "success" : "warning"
+                }
+
+                Label {
                     Layout.fillWidth: true
-                    columns: 2
+                    text: "RX " + root.ageText(telemetryService.lastDatagramAgeS) +
+                          " / decoded " + root.ageText(telemetryService.lastDecodedAgeS)
+                    color: animusTheme.mutedText
+                    elide: Text.ElideRight
+                }
+            }
+
+            detailsContent: Component {
+                GridLayout {
+                    width: parent.width
+                    columns: 4
                     rowSpacing: 6
                     columnSpacing: 12
 
-                    Label { text: "Profile"; color: animusTheme.mutedText; font.bold: true }
-                    ComboBox {
-                        id: modelProfileSelector
-                        Layout.fillWidth: true
-                        model: vehicleModelProfiles.profiles
-                        textRole: "name"
-                        valueRole: "id"
-                        currentIndex: root.profileIndex(vehicleModelProfiles.selectedProfileId)
-                        onActivated: vehicleModelProfiles.selectedProfileId = currentValue
-                    }
-
-                    Label { text: "Profile ID"; color: animusTheme.mutedText; font.bold: true }
+                    Label { text: "Endpoint"; color: animusTheme.mutedText; font.bold: true }
                     Label {
                         Layout.fillWidth: true
-                        text: vehicleModelProfiles.selectedProfile.id
+                        text: telemetryService.udpHost + ":" + telemetryService.udpPort
                         elide: Text.ElideRight
                     }
 
-                    Label { text: "GLB asset"; color: animusTheme.mutedText; font.bold: true }
+                    Label { text: "MAVLink ID"; color: animusTheme.mutedText; font.bold: true }
                     Label {
-                        Layout.fillWidth: true
-                        text: vehicleModelProfiles.selectedProfile.asset
-                        elide: Text.ElideMiddle
+                        text: vehicleModel.heartbeatValid || telemetryService.decodedSampleCount > 0
+                              ? vehicleModel.systemId + "." + vehicleModel.componentId
+                              : "UNK"
                     }
-                }
 
-                RowLayout {
-                    Layout.fillWidth: true
+                    Label { text: "Datagrams"; color: animusTheme.mutedText; font.bold: true }
+                    Label { text: telemetryService.datagramCount }
+
+                    Label { text: "Decoded"; color: animusTheme.mutedText; font.bold: true }
+                    Label { text: telemetryService.decodedSampleCount }
+
+                    Label { text: "Decode errors"; color: animusTheme.mutedText; font.bold: true }
                     Label {
-                        Layout.fillWidth: true
-                        text: vehicleModelProfiles.surfaces.length + " mapped surfaces"
-                        color: animusTheme.mutedText
-                    }
-                    Button {
-                        text: "Reset Profile Defaults"
-                        enabled: root.hasReversedSurface()
-                        onClicked: vehicleModelProfiles.resetAllSurfacePolarity()
+                        text: telemetryService.decodeErrorCount
+                        color: telemetryService.decodeErrorCount > 0 ? animusTheme.warning : animusTheme.text
                     }
                 }
+            }
+        }
 
-                Rectangle {
+        AnimusSetupSection {
+            objectName: "setupVehicleModelSection"
+            title: "Vehicle Model"
+            summary: vehicleModelProfiles.selectedProfile.name + " | " +
+                     vehicleModelProfiles.surfaces.length + " mapped surfaces" +
+                     (root.hasReversedSurface() ? " | custom polarity" : " | default polarity")
+            detailsLabel: "model diagnostics"
+
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 2
+                rowSpacing: 8
+                columnSpacing: 12
+
+                Label { text: "Profile"; color: animusTheme.mutedText; font.bold: true }
+                ComboBox {
+                    id: modelProfileSelector
+                    objectName: "setupModelProfileSelector"
                     Layout.fillWidth: true
-                    height: 1
-                    color: animusTheme.border
+                    model: vehicleModelProfiles.profiles
+                    textRole: "name"
+                    valueRole: "id"
+                    currentIndex: root.profileIndex(vehicleModelProfiles.selectedProfileId)
+                    onActivated: vehicleModelProfiles.selectedProfileId = currentValue
                 }
+            }
 
-                Repeater {
-                    model: vehicleModelProfiles.surfaces
-                    delegate: Rectangle {
+            RowLayout {
+                Layout.fillWidth: true
+                Label {
+                    objectName: "setupModelSurfaceSummary"
+                    Layout.fillWidth: true
+                    text: vehicleModelProfiles.surfaces.length + " mapped surfaces"
+                    color: animusTheme.mutedText
+                }
+                Button {
+                    objectName: "setupResetProfileDefaultsButton"
+                    text: "Reset Profile Defaults"
+                    enabled: root.hasReversedSurface()
+                    onClicked: vehicleModelProfiles.resetAllSurfacePolarity()
+                }
+            }
+
+            detailsContent: Component {
+                ColumnLayout {
+                    width: parent.width
+                    spacing: 8
+
+                    GridLayout {
                         Layout.fillWidth: true
-                        implicitHeight: surfaceLayout.implicitHeight + 12
-                        color: "transparent"
-                        border.width: 1
-                        border.color: animusTheme.border
-                        radius: 4
+                        columns: 2
+                        rowSpacing: 6
+                        columnSpacing: 12
 
-                        GridLayout {
-                            id: surfaceLayout
-                            anchors.fill: parent
-                            anchors.margins: 6
-                            columns: 2
-                            rowSpacing: 4
-                            columnSpacing: 10
+                        Label { text: "Profile ID"; color: animusTheme.mutedText; font.bold: true }
+                        Label {
+                            Layout.fillWidth: true
+                            text: vehicleModelProfiles.selectedProfile.id
+                            elide: Text.ElideRight
+                        }
 
-                            Label {
-                                Layout.fillWidth: true
-                                text: modelData.label + " (" + modelData.id + ")"
-                                font.bold: true
-                                elide: Text.ElideRight
-                            }
-                            Button {
-                                text: root.polarityText(modelData.polarity)
-                                onClicked: vehicleModelProfiles.reverseSurfacePolarity(modelData.id)
-                            }
+                        Label { text: "GLB asset"; color: animusTheme.mutedText; font.bold: true }
+                        Label {
+                            Layout.fillWidth: true
+                            text: vehicleModelProfiles.selectedProfile.asset
+                            elide: Text.ElideMiddle
+                        }
+                    }
 
-                            RowLayout {
-                                Layout.columnSpan: 2
-                                Layout.fillWidth: true
-                                spacing: 10
+                    Repeater {
+                        model: vehicleModelProfiles.surfaces
+                        delegate: Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: diagnosticSurfaceLayout.implicitHeight + 12
+                            color: "transparent"
+                            border.width: 1
+                            border.color: animusTheme.border
+                            radius: 4
 
-                                Label {
-                                    text: "CH " + modelData.actuatorChannel
-                                    color: animusTheme.mutedText
-                                }
+                            GridLayout {
+                                id: diagnosticSurfaceLayout
+                                anchors.fill: parent
+                                anchors.margins: 6
+                                columns: 2
+                                rowSpacing: 4
+                                columnSpacing: 10
+
                                 Label {
                                     Layout.fillWidth: true
-                                    text: modelData.node
-                                    color: animusTheme.mutedText
-                                    elide: Text.ElideMiddle
+                                    text: modelData.label + " (" + modelData.id + ")"
+                                    font.bold: true
+                                    elide: Text.ElideRight
                                 }
+                                Button {
+                                    objectName: "setupSurfacePolarityButton"
+                                    text: root.polarityText(modelData.polarity)
+                                    onClicked: vehicleModelProfiles.reverseSurfacePolarity(modelData.id)
+                                }
+
                                 Label {
+                                    Layout.columnSpan: 2
+                                    Layout.fillWidth: true
                                     text: modelData.valid
-                                          ? modelData.deflectionDeg.toFixed(1) + " deg"
-                                          : "UNK"
+                                          ? modelData.deflectionDeg.toFixed(1) + " deg live deflection"
+                                          : "Live deflection unknown"
                                     color: modelData.valid ? animusTheme.text : animusTheme.warning
                                     font.bold: true
                                 }
-                            }
 
-                            Label {
-                                Layout.fillWidth: true
-                                text: "Profile polarity " + modelData.profilePolarity +
-                                      " / active " + modelData.polarity
-                                color: animusTheme.mutedText
-                                elide: Text.ElideRight
-                            }
-                            Button {
-                                text: "Reset Surface"
-                                enabled: modelData.polarityReversed
-                                onClicked: vehicleModelProfiles.resetSurfacePolarity(modelData.id)
+                                Button {
+                                    Layout.columnSpan: 2
+                                    text: "Reset Surface"
+                                    enabled: modelData.polarityReversed
+                                    onClicked: vehicleModelProfiles.resetSurfacePolarity(modelData.id)
+                                }
+
+                                Label { text: "Channel"; color: animusTheme.mutedText }
+                                Label { text: "CH " + modelData.actuatorChannel }
+
+                                Label { text: "Node"; color: animusTheme.mutedText }
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: modelData.node
+                                    elide: Text.ElideMiddle
+                                }
+
+                                Label { text: "Polarity"; color: animusTheme.mutedText }
+                                Label {
+                                    text: "Profile " + modelData.profilePolarity +
+                                          " / active " + modelData.polarity
+                                }
                             }
                         }
                     }
@@ -252,46 +373,65 @@ ScrollView {
             }
         }
 
-        GroupBox {
-            title: "Map Policy"
-            Layout.fillWidth: true
+        AnimusSetupSection {
+            objectName: "setupMapsTerrainSection"
+            title: "Maps And Terrain"
+            summary: root.mapPolicyText() + " | " + root.providerStatusText() +
+                     " | " + root.tileCacheSummary()
+            detailsLabel: "map and cache diagnostics"
+
             ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Label {
+                    text: "Map Policy"
+                    color: animusTheme.mutedText
+                    font.bold: true
+                }
+
                 RowLayout {
+                    Layout.fillWidth: true
                     RadioButton {
+                        objectName: "setupStrictOfflinePolicyButton"
                         text: "Strict offline"
                         checked: offlineMaps.mode === 2
                         onClicked: offlineMaps.mode = 2
                     }
                     RadioButton {
+                        objectName: "setupCachedOfflinePolicyButton"
                         text: "Cached/offline"
                         checked: offlineMaps.mode === 1
                         onClicked: offlineMaps.mode = 1
                     }
                     RadioButton {
+                        objectName: "setupOnlinePolicyButton"
                         text: "Online"
                         checked: offlineMaps.mode === 0
                         onClicked: offlineMaps.mode = 0
                     }
                 }
+
                 Label {
-                    text: mapCache.providerBlockReason(mapCache.activeProviderId,
-                                                       offlineMaps.networkAllowed) ||
-                          "Active provider allowed by current policy"
-                    color: mapCache.providerBlockReason(mapCache.activeProviderId,
-                                                        offlineMaps.networkAllowed) === ""
+                    objectName: "setupMapProviderStatus"
+                    Layout.fillWidth: true
+                    text: root.providerStatusText()
+                    color: root.providerStatusText() === "Active provider allowed"
                            ? animusTheme.mutedText
                            : animusTheme.warning
+                    wrapMode: Text.WordWrap
                 }
-            }
-        }
 
-        GroupBox {
-            title: "Map Providers"
-            Layout.fillWidth: true
-            ColumnLayout {
+                Label {
+                    text: "Providers"
+                    color: animusTheme.mutedText
+                    font.bold: true
+                }
+
                 Repeater {
                     model: mapCache
                     RadioDelegate {
+                        objectName: "setupMapProviderButton"
                         Layout.fillWidth: true
                         text: label + " / " + typeLabel +
                               (networkRequired ? " - network" : " - local")
@@ -301,40 +441,33 @@ ScrollView {
                         onClicked: mapCache.activeProviderId = providerId
                     }
                 }
-            }
-        }
 
-        GroupBox {
-            title: "Offline Tile Cache"
-            Layout.fillWidth: true
-            ColumnLayout {
-                width: parent.width
-                Label { text: "Root: " + mapCache.rootPath }
-                Label { text: "Database: " + mapCache.cacheDatabasePath; elide: Text.ElideRight }
-                Label {
-                    text: "Tiles: " + mapCache.cachedTileCount + "/" + mapCache.totalTileCount +
-                          " cached | " + mapCache.missingTileCount + " missing | " +
-                          mapCache.failedTileCount + " failed | " +
-                          mapCache.inFlightTileCount + " in flight"
-                    color: animusTheme.mutedText
-                }
-                Label {
-                    text: mapCache.lastError() || mapCache.activeStatus
-                    color: mapCache.lastError() ? animusTheme.warning : animusTheme.mutedText
-                }
-                ProgressBar {
+                RowLayout {
                     Layout.fillWidth: true
-                    from: 0
-                    to: 100
-                    value: mapCache.progressPercent
+                    Label {
+                        objectName: "setupTileCacheStatus"
+                        Layout.fillWidth: true
+                        text: "Tile cache: " + root.tileCacheSummary()
+                        color: animusTheme.mutedText
+                        elide: Text.ElideRight
+                    }
+                    ProgressBar {
+                        objectName: "setupTileCacheProgress"
+                        Layout.preferredWidth: 160
+                        from: 0
+                        to: 100
+                        value: mapCache.progressPercent
+                    }
                 }
+
                 ListView {
+                    objectName: "setupTileSetList"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 220
+                    Layout.preferredHeight: 190
                     model: mapCache.tileSets
                     delegate: Rectangle {
                         width: ListView.view.width
-                        height: 54
+                        height: 58
                         color: "transparent"
 
                         RowLayout {
@@ -349,7 +482,7 @@ ScrollView {
 
                                 Label {
                                     Layout.fillWidth: true
-                                    text: modelData.name + " (" + modelData.id + ")"
+                                    text: modelData.name
                                     elide: Text.ElideRight
                                 }
 
@@ -358,8 +491,7 @@ ScrollView {
                                     text: modelData.status + " | " + modelData.cachedCount + "/" +
                                           modelData.tileCount + " cached | " +
                                           modelData.missingCount + " missing | " +
-                                          modelData.failedCount + " failed | z" +
-                                          modelData.minZoom + "-" + modelData.maxZoom
+                                          modelData.failedCount + " failed"
                                     color: modelData.status === "complete" ? animusTheme.success : animusTheme.warning
                                     font.bold: true
                                     elide: Text.ElideRight
@@ -367,6 +499,7 @@ ScrollView {
                             }
 
                             Button {
+                                objectName: "setupTileDownloadButton"
                                 text: "Download"
                                 enabled: modelData.status !== "downloading" &&
                                          offlineMaps.networkAllowed &&
@@ -376,32 +509,126 @@ ScrollView {
                             }
 
                             Button {
+                                objectName: "setupTileCancelButton"
                                 text: "Cancel"
                                 enabled: modelData.status === "downloading"
                                 onClicked: mapCache.cancelTileSetDownload(modelData.id)
                             }
 
                             Button {
+                                objectName: "setupTileDeleteButton"
                                 text: "Delete"
                                 onClicked: mapCache.deleteTileSet(modelData.id)
                             }
                         }
                     }
                 }
-                Button {
-                    text: "Seed Cruise 6DOF 5mi Offline Area"
-                    onClicked: mapCache.ensureDefaultCruise6DofTileSet()
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Button {
+                        objectName: "setupSeedCacheButton"
+                        text: "Seed Cruise 6DOF 5mi Offline Area"
+                        onClicked: mapCache.ensureDefaultCruise6DofTileSet()
+                    }
+                    Button {
+                        objectName: "setupCreateCacheButton"
+                        text: "Create Cruise 6DOF 5mi Bounds Set"
+                        onClicked: mapCache.createTileSet("Cruise 6DOF 5mi Origin",
+                                                          -122.2607248, 37.3552151,
+                                                          -122.0786752, 37.4997849, 12, 15)
+                    }
+                    Button {
+                        objectName: "setupReloadCacheButton"
+                        text: "Reload Cache"
+                        onClicked: mapCache.reloadTileSets()
+                    }
                 }
-                Button {
-                    text: "Create Cruise 6DOF 5mi Bounds Set"
-                    onClicked: mapCache.createTileSet("Cruise 6DOF 5mi Origin",
-                                                      -122.2607248, 37.3552151,
-                                                      -122.0786752, 37.4997849, 12, 15)
+            }
+
+            detailsContent: Component {
+                ColumnLayout {
+                    width: parent.width
+                    spacing: 8
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: 2
+                        rowSpacing: 6
+                        columnSpacing: 12
+
+                        Label { text: "Cache root"; color: animusTheme.mutedText; font.bold: true }
+                        Label {
+                            Layout.fillWidth: true
+                            text: mapCache.rootPath
+                            elide: Text.ElideMiddle
+                        }
+
+                        Label { text: "Cache DB"; color: animusTheme.mutedText; font.bold: true }
+                        Label {
+                            Layout.fillWidth: true
+                            text: mapCache.cacheDatabasePath
+                            elide: Text.ElideMiddle
+                        }
+
+                        Label { text: "Status"; color: animusTheme.mutedText; font.bold: true }
+                        Label {
+                            Layout.fillWidth: true
+                            text: mapCache.lastError() || mapCache.activeStatus
+                            color: mapCache.lastError() ? animusTheme.warning : animusTheme.mutedText
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+
+                    Repeater {
+                        model: mapCache.tileSets
+                        delegate: Label {
+                            Layout.fillWidth: true
+                            text: modelData.id + " | provider " + modelData.providerId +
+                                  " | z" + modelData.minZoom + "-" + modelData.maxZoom
+                            color: animusTheme.mutedText
+                            elide: Text.ElideRight
+                        }
+                    }
                 }
-                Button {
-                    text: "Reload Cache"
-                    onClicked: mapCache.reloadTileSets()
+            }
+        }
+
+        AnimusSetupSection {
+            objectName: "setupLogsSection"
+            title: "Logs"
+            summary: "Qt onboard-log and session recording controls are not available in this build"
+            detailsLabel: "log workflow status"
+
+            Label {
+                objectName: "setupLoggingStatus"
+                Layout.fillWidth: true
+                text: "Recording unavailable"
+                color: animusTheme.mutedText
+            }
+
+            detailsContent: Component {
+                Label {
+                    width: parent.width
+                    text: "Bridge-side .altlog recording and .tlog export are available from the Python live bridge; Qt Setup path persistence and onboard log controls remain future work."
+                    color: animusTheme.mutedText
+                    wrapMode: Text.WordWrap
                 }
+            }
+        }
+
+        AnimusSetupSection {
+            objectName: "setupDiagnosticsSection"
+            title: "Diagnostics"
+            summary: "Raw link, cache, and model identifiers are available in each section detail"
+            detailsLabel: "diagnostics index"
+
+            Label {
+                objectName: "setupDiagnosticsSummary"
+                Layout.fillWidth: true
+                text: "Expand section details for endpoint, counters, MAVLink IDs, profile IDs, GLB assets, nodes, cache paths, and tile-set IDs."
+                color: animusTheme.mutedText
+                wrapMode: Text.WordWrap
             }
         }
     }

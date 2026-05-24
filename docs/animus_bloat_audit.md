@@ -49,9 +49,9 @@ Scene debug-status cleanup:
 
 Setup rework:
 
-- [ ] Reorganize Setup into task sections: Readiness, Telemetry Link, Vehicle
+- [x] Reorganize Setup into task sections: Readiness, Telemetry Link, Vehicle
   Model, Maps And Terrain, Logs, and Diagnostics.
-- [ ] Collapse raw paths, IDs, node names, cache DB names, and polarity internals
+- [x] Collapse raw paths, IDs, node names, cache DB names, and polarity internals
   behind details by default.
 
 Visual refresh:
@@ -63,6 +63,27 @@ Visual refresh:
 
 ### Completed Work
 
+- 2026-05-24: Reworked Setup from an implementation property sheet into
+  task-oriented `Readiness`, `Telemetry Link`, `Vehicle Model`, `Maps And
+  Terrain`, `Logs`, and `Diagnostics` sections using a shared
+  `AnimusSetupSection` disclosure wrapper. First-layer summaries now emphasize
+  link freshness, armed/GPS/mission/home/terrain state, selected model health,
+  map policy, provider availability, tile-cache status, and current logging
+  availability, while endpoint details, packet counters, MAVLink IDs, profile
+  IDs, GLB paths, node names, polarity internals, cache paths, and tile-set IDs
+  stay available through collapsed details. Existing model profile, polarity,
+  map policy/provider, tile download/cancel/delete, seed/create, and reload
+  actions remain wired. Verification: `python3 tools/python/format_repo.py
+  --check`, `cmake -S . -B build-animus-qt
+  -DALTAIR_BUILD_ANIMUS_QT=ON -DCMAKE_BUILD_TYPE=Debug`, `cmake --build
+  build-animus-qt --target animus_qt animus_qt_unit_tests --parallel`, `ctest
+  --test-dir build-animus-qt --output-on-failure -R animus_qt`, and
+  `python3 tools/python/capture_animus_qt_sitl.py` passed. Screenshot artifact:
+  `artifacts/animus-qt-screenshots/20260524T195831Z/`. Compared Setup against
+  `artifacts/animus-qt-screenshots/20260524T095811Z/screenshots/setup.png`;
+  the mean pixel delta was `12.5`. No new capture failures were found; the
+  report retains existing low-diversity warnings for WebEngine/Cesium scene
+  captures and reports the simplified Setup controls region as visually flat.
 - 2026-05-24: Consolidated Terrain 3D, FPV, and Tactical scene status
   presentation behind `AnimusSceneStatus`, hiding healthy `webengine-ready`,
   `terrain-ready`, `tactical-ready`, and local fixture/provider readiness text
