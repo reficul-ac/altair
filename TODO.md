@@ -175,7 +175,7 @@ Reusable Bayek framework follow-up is tracked separately in
 
 ## Test Ownership
 
-- [ ] Keep Altair tests focused on Altair params, mixer, vehicle interface, SITL runners/cases/conditions, telemetry integration, and Animus.
-- [ ] Keep only minimal Altair-side Bayek contract coverage needed to protect integration assumptions.
+- [x] Keep Altair tests focused on Altair params, mixer, vehicle interface, SITL runners/cases/conditions, telemetry integration, and Animus.
+- [x] Keep only minimal Altair-side Bayek contract coverage needed to protect integration assumptions.
 - [ ] Build richer non-Animus visual verification reports that combine metrics,
   plots, logs, and manifests in one reviewable artifact.

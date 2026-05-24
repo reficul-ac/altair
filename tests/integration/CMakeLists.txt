@@ -342,11 +342,6 @@ set_tests_properties(
     integration_mc_runner_cli_semantics PROPERTIES DEPENDS integration_mc_runner_cli
 )
 
-add_executable(test_telemetry test_telemetry.c)
-target_link_libraries(test_telemetry PRIVATE bayek_telemetry)
-altair_enable_warnings(test_telemetry)
-add_test(NAME integration_telemetry COMMAND test_telemetry)
-
 add_executable(test_vehicle_interface test_vehicle_interface.c)
 target_link_libraries(test_vehicle_interface PRIVATE altair_vehicle bayek_common)
 altair_enable_warnings(test_vehicle_interface)

@@ -6,7 +6,10 @@ Altair tests verify vehicle-specific behavior and the integration between Altair
 
 Altair unit tests cover:
 
+- Altair parameters and vehicle interface behavior
 - Altair mixer saturation and safe outputs
+- Altair simulation parameters/model wiring
+- SITL case, condition, initial-condition, and trim policy
 
 Bayek common math and control tests should live in the Bayek repository as that test suite grows.
 
@@ -17,8 +20,7 @@ Integration tests cover:
 - deterministic replay of `altair_fsw_step()`
 - SITL smoke run with bounded actuator outputs
 - Monte Carlo smoke summary semantics and metric gates
-- telemetry encode/decode and CRC rejection
-- Bayek host SITL parsing/condition machinery without Altair symbols
+- Altair telemetry contract manifest and generator checks
 - Bayek-to-Altair vehicle interface routing through Altair mixer limits
 
 The deterministic replay test resets the core and replays the same input sequence, then checks that actuator outputs match within a tight tolerance.
