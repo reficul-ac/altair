@@ -260,87 +260,39 @@ Item {
             onCurrentIndexChanged: root.currentWorkspace = root.workspaceIds[currentIndex]
             background: Rectangle {
                 color: animusTheme.window
-                border.color: animusTheme.border
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: 1
+                    color: animusTheme.border
+                    opacity: 0.65
+                }
             }
-            TabButton {
+            AnimusWorkspaceTab {
                 id: map2DTab
                 objectName: "workspaceTabMap2D"
                 text: "Map 2D"
-                contentItem: Label {
-                    text: map2DTab.text
-                    color: map2DTab.checked ? animusTheme.text : animusTheme.mutedText
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font.bold: map2DTab.checked
-                }
-                background: Rectangle {
-                    color: map2DTab.checked ? animusTheme.surface : animusTheme.window
-                    border.color: animusTheme.border
-                }
             }
-            TabButton {
+            AnimusWorkspaceTab {
                 id: terrain3DTab
                 objectName: "workspaceTabTerrain3D"
                 text: "Terrain 3D"
-                contentItem: Label {
-                    text: terrain3DTab.text
-                    color: terrain3DTab.checked ? animusTheme.text : animusTheme.mutedText
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font.bold: terrain3DTab.checked
-                }
-                background: Rectangle {
-                    color: terrain3DTab.checked ? animusTheme.surface : animusTheme.window
-                    border.color: animusTheme.border
-                }
             }
-            TabButton {
+            AnimusWorkspaceTab {
                 id: fpvTab
                 objectName: "workspaceTabFpv"
                 text: "FPV"
-                contentItem: Label {
-                    text: fpvTab.text
-                    color: fpvTab.checked ? animusTheme.text : animusTheme.mutedText
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font.bold: fpvTab.checked
-                }
-                background: Rectangle {
-                    color: fpvTab.checked ? animusTheme.surface : animusTheme.window
-                    border.color: animusTheme.border
-                }
             }
-            TabButton {
+            AnimusWorkspaceTab {
                 id: tacticalTab
                 objectName: "workspaceTabTactical"
                 text: "Tactical"
-                contentItem: Label {
-                    text: tacticalTab.text
-                    color: tacticalTab.checked ? animusTheme.text : animusTheme.mutedText
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font.bold: tacticalTab.checked
-                }
-                background: Rectangle {
-                    color: tacticalTab.checked ? animusTheme.surface : animusTheme.window
-                    border.color: animusTheme.border
-                }
             }
-            TabButton {
+            AnimusWorkspaceTab {
                 id: setupTab
                 objectName: "workspaceTabSetup"
                 text: "Setup"
-                contentItem: Label {
-                    text: setupTab.text
-                    color: setupTab.checked ? animusTheme.text : animusTheme.mutedText
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font.bold: setupTab.checked
-                }
-                background: Rectangle {
-                    color: setupTab.checked ? animusTheme.surface : animusTheme.window
-                    border.color: animusTheme.border
-                }
             }
         }
     }

@@ -85,6 +85,7 @@ qt_add_qml_module(
     qml/AnimusSceneStatus.qml
     qml/AnimusSetupSection.qml
     qml/AnimusStatusBadge.qml
+    qml/AnimusWorkspaceTab.qml
     qml/WorkspaceShell.qml
     qml/Map2DView.qml
     qml/TelemetryStrip.qml

@@ -56,13 +56,34 @@ Setup rework:
 
 Visual refresh:
 
-- [ ] Reduce repeated borders and equal-weight panels after behavior is
+- [x] Reduce repeated borders and equal-weight panels after behavior is
   centralized.
-- [ ] Run full before/after screenshot comparison against
+- [x] Run full before/after screenshot comparison against
   `artifacts/animus-qt-screenshots/20260524T095811Z/screenshots/`.
 
 ### Completed Work
 
+- 2026-05-24: Calmed the shared Animus chrome after the behavior-preserving
+  declutter slices by moving workspace tab styling into `AnimusWorkspaceTab`
+  and refreshing `AnimusSegmentedControl`, `AnimusIconButton`,
+  `AnimusStatusBadge`, and `AnimusOverlayPanel` with quieter default borders,
+  clearer active indicators, and stable compact sizing. The header still keeps
+  link freshness and read-only command authority visible, while telemetry,
+  UDP, mock, and theme controls remain behind the existing settings
+  disclosure. Existing workspace tab object names, capture hooks, chrome
+  diagnostics, overlay diagnostics, and operator actions remain intact.
+  Verification: `python3 tools/python/format_repo.py --check`, `cmake -S . -B
+  build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON -DCMAKE_BUILD_TYPE=Debug`,
+  `cmake --build build-animus-qt --target animus_qt animus_qt_unit_tests
+  --parallel`, `ctest --test-dir build-animus-qt --output-on-failure -R
+  animus_qt`, and `python3 tools/python/capture_animus_qt_sitl.py` passed.
+  Screenshot artifact: `artifacts/animus-qt-screenshots/20260524T215243Z/`.
+  Compared against
+  `artifacts/animus-qt-screenshots/20260524T095811Z/screenshots/`; mean pixel
+  deltas were `10.1` (Map 2D), `1.0` (Terrain 3D), `7.1` (FPV), `26.8`
+  (Tactical), `12.0` (Setup), and `17.1` (seeded Map 2D). No new capture
+  failures or chrome diagnostic failures were found; the report retains the
+  existing low-diversity warnings for WebEngine/Cesium scene captures.
 - 2026-05-24: Reworked Setup from an implementation property sheet into
   task-oriented `Readiness`, `Telemetry Link`, `Vehicle Model`, `Maps And
   Terrain`, `Logs`, and `Diagnostics` sections using a shared

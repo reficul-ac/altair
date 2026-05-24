@@ -6,8 +6,8 @@ Frame {
 
     property color panelColor: animusTheme.overlay
     property color borderColor: animusTheme.border
-    property real panelOpacity: 0.94
-    property int cornerRadius: 6
+    property real panelOpacity: 0.91
+    property int cornerRadius: 4
     property int borderWidth: 1
 
     padding: 8

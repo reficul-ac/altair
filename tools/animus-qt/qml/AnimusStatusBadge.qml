@@ -5,6 +5,7 @@ Label {
     id: root
 
     property string tone: "neutral"
+    property bool emphasized: tone === "warning" || tone === "danger"
     property color toneColor: {
         if (tone === "success")
             return animusTheme.success
@@ -15,18 +16,19 @@ Label {
         return animusTheme.mutedText
     }
 
-    padding: 5
+    padding: 4
     leftPadding: 8
     rightPadding: 8
-    color: root.toneColor
+    color: root.tone === "neutral" ? animusTheme.mutedText : root.toneColor
     font.pixelSize: 11
     font.bold: true
     horizontalAlignment: Text.AlignHCenter
     verticalAlignment: Text.AlignVCenter
     background: Rectangle {
-        color: animusTheme.surface
-        opacity: 0.86
-        border.color: root.toneColor
-        radius: 6
+        color: root.emphasized ? animusTheme.surface : "transparent"
+        border.color: root.tone === "neutral" ? animusTheme.border : root.toneColor
+        border.width: root.tone === "neutral" ? 0 : 1
+        opacity: root.emphasized ? 0.92 : 1.0
+        radius: 4
     }
 }
