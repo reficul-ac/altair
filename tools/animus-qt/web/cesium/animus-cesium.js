@@ -12,6 +12,7 @@
   let homePointPrimitive = null;
   let aircraftOutlineCollection = null;
   let attitudeReferenceCollection = null;
+  let terrainReferenceCollection = null;
   let trailPolylineCollection = null;
   let trailEntities = [];
   let overlayEntities = [];
@@ -940,6 +941,7 @@
       });
       aircraftOutlineCollection = viewer.scene.primitives.add(new Cesium.PolylineCollection());
       attitudeReferenceCollection = viewer.scene.primitives.add(new Cesium.PolylineCollection());
+      terrainReferenceCollection = viewer.scene.primitives.add(new Cesium.PolylineCollection());
       trailPolylineCollection = viewer.scene.primitives.add(new Cesium.PolylineCollection());
       setSceneStatus('cesium-ready', '');
       return true;
@@ -1320,9 +1322,9 @@
       if (trailPolylineCollection) {
         trailPolylineCollection.add({
           positions: [cartesian(trail[i - 1]), cartesian(trail[i])],
-          width: 7.0 + recency * 8.0,
+          width: 9.0 + recency * 10.0,
           material: Cesium.Material.fromType('Color', {
-            color: Cesium.Color.fromCssColorString('#f0c84b').withAlpha(0.62 + recency * 0.38),
+            color: Cesium.Color.fromCssColorString('#f0c84b').withAlpha(0.68 + recency * 0.32),
           }),
         });
       }
@@ -1330,9 +1332,9 @@
         name: 'Trail segment',
         polyline: {
           positions: [cartesian(trail[i - 1]), cartesian(trail[i])],
-          width: 4.0 + recency * 5.0,
-          material: Cesium.Color.fromCssColorString('#f0c84b').withAlpha(0.38 + recency * 0.62),
-          depthFailMaterial: Cesium.Color.fromCssColorString('#f0c84b').withAlpha(0.48 + recency * 0.52),
+          width: 5.0 + recency * 6.0,
+          material: Cesium.Color.fromCssColorString('#fff2a6').withAlpha(0.48 + recency * 0.50),
+          depthFailMaterial: Cesium.Color.fromCssColorString('#fff2a6').withAlpha(0.58 + recency * 0.40),
           clampToGround: false,
         },
       }));
@@ -1489,8 +1491,43 @@
     viewer.scene.requestRender();
   }
 
+  function localOffsetPoint(position, eastM, northM, upM) {
+    const transform = Cesium.Transforms.eastNorthUpToFixedFrame(position);
+    return Cesium.Matrix4.multiplyByPoint(
+      transform,
+      new Cesium.Cartesian3(eastM, northM, upM),
+      new Cesium.Cartesian3()
+    );
+  }
+
+  function localCirclePoints(position, radiusM, upM) {
+    const points = [];
+    for (let index = 0; index <= 96; ++index) {
+      const angle = (index / 96.0) * Math.PI * 2.0;
+      points.push(localOffsetPoint(
+        position,
+        Math.sin(angle) * radiusM,
+        Math.cos(angle) * radiusM,
+        upM
+      ));
+    }
+    return points;
+  }
+
+  function addTerrainReferenceLine(positions, width, cssColor, alpha) {
+    if (!terrainReferenceCollection) return;
+    terrainReferenceCollection.add({
+      positions,
+      width,
+      material: Cesium.Material.fromType('Color', {
+        color: Cesium.Color.fromCssColorString(cssColor).withAlpha(alpha),
+      }),
+    });
+  }
+
   function updateTerrainReference() {
-    if (workspaceMode === 'tactical') return;
+    if (terrainReferenceCollection) terrainReferenceCollection.removeAll();
+    if (workspaceMode === 'tactical' || workspaceMode === 'fpv') return;
     const vehicle = state.vehicle || {};
     const home = state.home || {};
     const centerLat = numberOr(vehicle.latDeg, numberOr(home.latDeg, 37.4275));
@@ -1507,6 +1544,23 @@
         },
       });
     }
+    const center = vehicle.positionValid && validPosition(vehicle)
+      ? cartesian(vehicle)
+      : Cesium.Cartesian3.fromDegrees(centerLon, centerLat, baseAlt);
+    [100.0, 250.0, 500.0, 750.0].forEach((radius, index) => {
+      const color = index % 2 === 0 ? '#f7f7f3' : '#d59b28';
+      addTerrainReferenceLine(localCirclePoints(center, radius, 2.0), 3.0 + index * 0.5, color, 0.46);
+    });
+    [-500.0, -250.0, 0.0, 250.0, 500.0].forEach((offset) => {
+      addTerrainReferenceLine([
+        localOffsetPoint(center, -500.0, offset, 1.0),
+        localOffsetPoint(center, 500.0, offset, 1.0),
+      ], offset === 0.0 ? 5.0 : 3.0, offset === 0.0 ? '#2d3d34' : '#49624b', offset === 0.0 ? 0.72 : 0.52);
+      addTerrainReferenceLine([
+        localOffsetPoint(center, offset, -500.0, 1.0),
+        localOffsetPoint(center, offset, 500.0, 1.0),
+      ], offset === 0.0 ? 5.0 : 3.0, offset === 0.0 ? '#2d3d34' : '#49624b', offset === 0.0 ? 0.72 : 0.52);
+    });
     viewer.scene.requestRender();
   }
 

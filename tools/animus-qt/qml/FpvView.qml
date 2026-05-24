@@ -185,6 +185,26 @@ Item {
         anchors.margins: 12
     }
 
+    FpvAttitudeCue {
+        objectName: "fpvAttitudeCue"
+        anchors.centerIn: parent
+        rollRad: vehicleModel.rollRad
+        pitchRad: vehicleModel.pitchRad
+        valid: vehicleModel.attitudeValid && telemetryService.linkFresh
+    }
+
+    AnimusSceneCueOverlay {
+        objectName: "fpvSceneCueOverlay"
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.margins: 12
+        sceneMode: "fpv"
+        clearance: cesiumBridge.terrainClearance
+        cameraState: "FPV lock"
+        cameraLocked: true
+        resetAvailable: webLoader.active && webLoader.status === Loader.Ready && webLoader.item !== null
+    }
+
     AnimusIconButton {
         objectName: "fpvSnapButton"
         anchors.right: parent.right

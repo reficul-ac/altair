@@ -43,22 +43,6 @@ Item {
             webLoader.item.setCameraMode(mode)
     }
 
-    function clearanceText(value, suffix) {
-        if (cesiumBridge.terrainClearance.state === "unknown")
-            return "--"
-        return value.toFixed(1) + suffix
-    }
-
-    function clearanceColor() {
-        if (cesiumBridge.terrainClearance.state === "warning")
-            return animusTheme.danger
-        if (cesiumBridge.terrainClearance.state === "caution")
-            return animusTheme.warning
-        if (cesiumBridge.terrainClearance.state === "clear")
-            return animusTheme.success
-        return animusTheme.mutedText
-    }
-
     function useFallbackScene() {
         var status = root.localSceneStatus.status || "initializing"
         return !webLoader.active || webLoader.status === Loader.Error ||
@@ -195,62 +179,16 @@ Item {
         anchors.margins: 12
     }
 
-    AnimusOverlayPanel {
+    AnimusSceneCueOverlay {
         objectName: "terrainClearanceOverlay"
         anchors.left: parent.left
         anchors.bottom: parent.bottom
         anchors.margins: 12
-        width: Math.min(parent.width - 24, 370)
-        borderColor: root.clearanceColor()
-        borderWidth: 2
-
-        GridLayout {
-            columns: 2
-            anchors.fill: parent
-            rowSpacing: 8
-            columnSpacing: 8
-
-            Label {
-                text: "Clearance"
-                font.bold: true
-                color: root.clearanceColor()
-            }
-            AnimusStatusBadge {
-                text: cesiumBridge.terrainClearance.state || "unknown"
-                tone: cesiumBridge.terrainClearance.state === "warning" ? "danger"
-                      : cesiumBridge.terrainClearance.state === "caution" ? "warning"
-                      : cesiumBridge.terrainClearance.state === "clear" ? "success"
-                      : "neutral"
-                horizontalAlignment: Text.AlignRight
-                Layout.preferredWidth: 110
-            }
-            Label { text: "AGL"; color: animusTheme.mutedText }
-            Label {
-                text: root.clearanceText(cesiumBridge.terrainClearance.aglM, " m")
-                horizontalAlignment: Text.AlignRight
-                Layout.preferredWidth: 110
-            }
-            Label { text: "Min recent"; color: animusTheme.mutedText }
-            Label {
-                text: root.clearanceText(cesiumBridge.terrainClearance.minimumRecentClearanceM,
-                                         " m")
-                horizontalAlignment: Text.AlignRight
-                Layout.preferredWidth: 110
-            }
-            Label { text: "Trend"; color: animusTheme.mutedText }
-            Label {
-                text: root.clearanceText(cesiumBridge.terrainClearance.trendMps, " m/s")
-                horizontalAlignment: Text.AlignRight
-                Layout.preferredWidth: 110
-            }
-            Label {
-                text: cesiumBridge.terrainClearance.message || "terrain clearance unavailable"
-                color: animusTheme.mutedText
-                Layout.columnSpan: 2
-                Layout.fillWidth: true
-                elide: Text.ElideRight
-            }
-        }
+        sceneMode: "terrain"
+        clearance: cesiumBridge.terrainClearance
+        cameraState: root.cameraMode === "free" ? "camera free" : root.cameraMode + " lock"
+        cameraLocked: root.cameraMode !== "free"
+        resetAvailable: false
     }
 
     AnimusSegmentedControl {

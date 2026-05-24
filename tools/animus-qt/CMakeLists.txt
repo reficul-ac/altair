@@ -82,6 +82,7 @@ qt_add_qml_module(
     qml/AnimusIconButton.qml
     qml/AnimusOverlayPanel.qml
     qml/AnimusSegmentedControl.qml
+    qml/AnimusSceneCueOverlay.qml
     qml/AnimusSceneStatus.qml
     qml/AnimusSetupSection.qml
     qml/AnimusStatusBadge.qml
@@ -91,6 +92,7 @@ qt_add_qml_module(
     qml/TelemetryStrip.qml
     qml/Terrain3DView.qml
     qml/Terrain3DWebView.qml
+    qml/FpvAttitudeCue.qml
     qml/FpvView.qml
     qml/TacticalAttitudeView.qml
     qml/SetupView.qml
