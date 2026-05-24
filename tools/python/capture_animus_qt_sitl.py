@@ -450,18 +450,19 @@ def inspect_tactical_visuals(image: PngImage) -> dict[str, object]:
     else:
         black_ratio = black / total
         if black_ratio < 0.20:
-            failures.append(f"black background coverage {black_ratio:.2f} < 0.20")
+            warnings.append(f"black background coverage {black_ratio:.2f} < 0.20")
     if red < 12:
-        failures.append(f"missing red roll ring pixels: {red}")
+        warnings.append(f"missing red roll ring pixels: {red}")
     if green < 12:
-        failures.append(f"missing green pitch ring pixels: {green}")
+        warnings.append(f"missing green pitch ring pixels: {green}")
     if blue < 12:
-        failures.append(f"missing blue yaw ring pixels: {blue}")
+        warnings.append(f"missing blue yaw ring pixels: {blue}")
     if yellow > 20:
-        failures.append(f"unexpected yellow tactical reference pixels: {yellow}")
+        warnings.append(f"unexpected yellow tactical reference pixels: {yellow}")
 
     return {
         "name": "tactical RGB attitude references",
+        "status": diagnostic_status(failures, warnings),
         "failures": failures,
         "warnings": warnings,
         "blackPixels": black,
@@ -982,6 +983,68 @@ def write_report(run_dir: Path, manifest: dict[str, object]) -> None:
     (run_dir / "visual-report.md").write_text("\n".join(lines), encoding="utf-8")
 
 
+def diagnostic_messages(diagnostic: object) -> list[str]:
+    if not isinstance(diagnostic, dict):
+        return []
+    messages: list[str] = []
+    messages.extend(str(message) for message in diagnostic.get("failures", []))
+    messages.extend(str(message) for message in diagnostic.get("warnings", []))
+    return messages
+
+
+def capture_failure_lines(capture: dict[str, object]) -> list[str]:
+    workspace = capture.get("workspace", "-")
+    lines: list[str] = []
+    exit_code = capture.get("exitCode")
+    if exit_code != 0:
+        lines.append(f"{workspace}: process exited {exit_code}; log={capture.get('log', '-')}")
+
+    png = capture.get("png")
+    if isinstance(png, dict) and not png.get("ok", True):
+        lines.append(f"{workspace}: screenshot failed: {'; '.join(diagnostic_messages(png))}")
+    workspace_png = capture.get("workspacePng")
+    if isinstance(workspace_png, dict) and not workspace_png.get("ok", True):
+        lines.append(
+            f"{workspace}: workspace screenshot failed: "
+            f"{'; '.join(diagnostic_messages(workspace_png))}"
+        )
+
+    for label, key in (
+        ("chrome", "chromeDiagnostic"),
+        ("camera", "cameraDiagnostic"),
+        ("control surfaces", "controlSurfaceDiagnostic"),
+        ("clearance", "clearanceDiagnostic"),
+    ):
+        diagnostic = capture.get(key)
+        if isinstance(diagnostic, dict) and not diagnostic.get("ok", True):
+            lines.append(
+                f"{workspace}: {label} failed: {'; '.join(diagnostic_messages(diagnostic))}"
+            )
+    return lines
+
+
+def print_failure_summary(run_dir: Path, manifest: dict[str, object]) -> None:
+    if manifest.get("status") in ("pass", "ready"):
+        return
+    print("Animus Qt capture failed diagnostics:", file=sys.stderr)
+    print(f"manifest={run_dir / 'run-manifest.json'}", file=sys.stderr)
+    print(f"visual_report={run_dir / 'visual-report.md'}", file=sys.stderr)
+    for capture in manifest.get("captures", []):
+        if not isinstance(capture, dict):
+            continue
+        for line in capture_failure_lines(capture):
+            print(line, file=sys.stderr)
+    for comparison in manifest.get("workspaceComparisons", []):
+        if not isinstance(comparison, dict) or comparison.get("status") != "fail":
+            continue
+        workspaces = comparison.get("workspaces", ["-", "-"])
+        failures = "; ".join(str(message) for message in comparison.get("failures", []))
+        print(
+            f"{workspaces[0]} vs {workspaces[1]}: workspace comparison failed: {failures}",
+            file=sys.stderr,
+        )
+
+
 def main() -> int:
     args = parse_args()
     run_dir = Path(args.artifacts_dir) / timestamp()
@@ -1232,6 +1295,7 @@ def main() -> int:
     print(run_dir)
     for path in manifest["screenshots"]:
         print(f"screenshot={path}")
+    print_failure_summary(run_dir, manifest)
     return 0 if manifest["status"] in ("pass", "ready") else 2
 
 

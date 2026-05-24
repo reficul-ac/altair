@@ -108,3 +108,11 @@ jobs:
 
       - name: Capture screenshots
         run: python3 tools/python/capture_animus_qt_sitl.py
+
+      - name: Upload Animus capture artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: animus-qt-screenshots
+          path: artifacts/animus-qt-screenshots/**
+          if-no-files-found: ignore

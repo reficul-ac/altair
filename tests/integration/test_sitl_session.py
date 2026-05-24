@@ -13,11 +13,13 @@ from pathlib import Path
 SKIP = 77
 
 
-def run_session(repo_root, *args):
+def run_session(repo_root, build_dir, *args):
     return subprocess.run(
         [
             sys.executable,
             str(repo_root / "tools/python/run_sitl_session.py"),
+            "--build-dir",
+            str(build_dir),
             "--dry-run",
             *args,
         ],
@@ -203,6 +205,8 @@ def run_lifecycle_checks(repo_root, build_dir):
         standalone = [
             sys.executable,
             str(repo_root / "tools/python/run_sitl.py"),
+            "--build-dir",
+            str(build_dir),
             "--scenario",
             "cruise6dof",
             "--initial",
@@ -240,6 +244,8 @@ def run_lifecycle_checks(repo_root, build_dir):
         session = [
             sys.executable,
             str(repo_root / "tools/python/run_sitl_session.py"),
+            "--build-dir",
+            str(build_dir),
             "--no-qgc",
             "--bridge-port",
             str(session_bridge_port),
@@ -287,7 +293,9 @@ def main():
     build_dir = Path(sys.argv[2])
     if not build_dir.is_absolute():
         build_dir = repo_root / build_dir
-    result = run_session(repo_root, "--duration", "0.2", "--output", "sitl_live_test.csv")
+    result = run_session(
+        repo_root, build_dir, "--duration", "0.2", "--output", "sitl_live_test.csv"
+    )
     if result.returncode != 0:
         print(result.stdout, end="")
         print(result.stderr, end="", file=sys.stderr)
@@ -317,7 +325,7 @@ def main():
         )
         return 1
 
-    result = run_session(repo_root, "--no-qgc")
+    result = run_session(repo_root, build_dir, "--no-qgc")
     if result.returncode != 0:
         print(result.stdout, end="")
         print(result.stderr, end="", file=sys.stderr)
@@ -328,6 +336,7 @@ def main():
 
     result = run_session(
         repo_root,
+        build_dir,
         "--vehicles",
         "3",
         "--system-id-base",

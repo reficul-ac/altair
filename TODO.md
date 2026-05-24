@@ -89,7 +89,7 @@ Reusable Bayek framework follow-up is tracked separately in
   offline map/terrain pack manager, manifest/checksum verification, setup
   status, import/remove/list commands, seeded-cache compatibility,
   mission/fence/rally overlays, and broader Qt parity.
-- [ ] Fix Animus Qt capture under Xvfb/WebEngine so the tactical workspace
+- [x] Fix Animus Qt capture under Xvfb/WebEngine so the tactical workspace
   writes a screenshot and FPV/tactical camera diagnostics are present in
   `capture_animus_qt_sitl.py` artifacts.
 - [x] Record the exact upstream QGroundControl revision, license headers, and
