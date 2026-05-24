@@ -404,13 +404,6 @@ int main(int argc, char *argv[])
                         webWorkspace->property("lastCaptureError").toString();
                     if (!captureOk)
                     {
-                        if (tactical)
-                        {
-                            qCritical("tactical Cesium/WebEngine capture failed: %s",
-                                      qPrintable(captureError));
-                            QCoreApplication::exit(6);
-                            return;
-                        }
                         const QImage fallbackImage = window->grabWindow();
                         if (fallbackImage.isNull() || !fallbackImage.save(path, "PNG"))
                         {
