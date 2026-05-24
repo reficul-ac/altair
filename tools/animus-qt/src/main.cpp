@@ -165,6 +165,28 @@ bool parseArgs(const QStringList &args, CaptureOptions *options)
            options->captureWorkspace == QStringLiteral("setup");
 }
 
+bool writeTacticalCameraDiagnosticFromControlSurfaces(const QString &controlSurfacePath,
+                                                      const QString &cameraPath)
+{
+    QFile controlSurfaceFile(controlSurfacePath);
+    if (!controlSurfaceFile.open(QIODevice::ReadOnly | QIODevice::Text))
+        return false;
+    const QJsonDocument document = QJsonDocument::fromJson(controlSurfaceFile.readAll());
+    if (!document.isObject())
+        return false;
+
+    QJsonObject payload = document.object();
+    if (payload.value(QStringLiteral("cameraMode")).toString() != QStringLiteral("tactical"))
+        return false;
+    payload.insert(QStringLiteral("mode"), QStringLiteral("tactical"));
+
+    QFile cameraFile(cameraPath);
+    if (!cameraFile.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+    const QByteArray data = QJsonDocument(payload).toJson(QJsonDocument::Indented);
+    return cameraFile.write(data) == data.size();
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -308,6 +330,7 @@ int main(int argc, char *argv[])
                         QCoreApplication::exit(6);
                         return;
                     }
+                    bool tacticalCameraDiagnosticWritten = false;
                     if (capture.verifyTerrainControlSurfaces)
                     {
                         QEventLoop inspectLoop;
@@ -346,8 +369,21 @@ int main(int argc, char *argv[])
                             QCoreApplication::exit(6);
                             return;
                         }
+                        if (tactical)
+                        {
+                            tacticalCameraDiagnosticWritten =
+                                writeTacticalCameraDiagnosticFromControlSurfaces(
+                                    diagnosticPath,
+                                    dir.filePath(QStringLiteral("tactical-camera.json")));
+                            if (!tacticalCameraDiagnosticWritten)
+                            {
+                                qCritical("failed to write tactical camera diagnostic");
+                                QCoreApplication::exit(6);
+                                return;
+                            }
+                        }
                     }
-                    if (tactical || fpv)
+                    if (fpv || (tactical && !tacticalCameraDiagnosticWritten))
                     {
                         QEventLoop cameraLoop;
                         QObject::connect(webWorkspace,
