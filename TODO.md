@@ -176,7 +176,9 @@ Reusable Bayek framework follow-up is tracked separately in
   `docs/animus_bloat_audit.md` for the remaining non-Tactical views: shared QML
   status/overlay/control components where reused immediately, progressive
   diagnostics disclosure, less always-visible debug chrome, and before/after
-  screenshot comparison.
+  screenshot comparison. Remaining follow-up: reduce the native WebEngine scene
+  flatness/low-diversity capture warnings for FPV, Terrain 3D, and Tactical
+  without adding primary-layer debug chrome.
 
 ## Test Ownership
 

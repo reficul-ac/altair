@@ -62,14 +62,14 @@ AnimusOverlayPanel {
 
     function cameraText() {
         if (root.sceneMode === "fpv")
-            return root.cameraLocked ? "FPV locked" : "FPV unlocked"
+            return root.cameraLocked ? "FPV lock" : "FPV free"
         if (root.cameraState.length > 0)
             return root.cameraState
         return root.cameraLocked ? "camera locked" : "camera free"
     }
 
-    width: Math.min(parent ? parent.width - 24 : implicitWidth, root.sceneMode === "fpv" ? 430 : 520)
-    height: root.sceneMode === "fpv" ? 112 : 86
+    width: Math.min(parent ? parent.width - 24 : implicitWidth, root.detailsExpanded || root.isDegraded() ? 540 : 410)
+    height: root.detailsExpanded || root.isDegraded() ? 116 : 74
     borderColor: root.toneColor()
     borderWidth: root.isDegraded() ? 2 : 1
 
@@ -101,14 +101,14 @@ AnimusOverlayPanel {
             Label {
                 text: "AGL " + root.metricText("aglM", " m")
                 color: animusTheme.text
-                font.pixelSize: 12
+                font.pixelSize: 16
                 font.bold: true
             }
 
             Label {
                 text: "MIN " + root.metricText("minimumRecentClearanceM", " m")
                 color: animusTheme.text
-                font.pixelSize: 12
+                font.pixelSize: 13
             }
 
             Label {
@@ -132,7 +132,7 @@ AnimusOverlayPanel {
         RowLayout {
             Layout.fillWidth: true
             spacing: 10
-            visible: true
+            visible: root.detailsExpanded || root.isDegraded()
 
             Label {
                 text: root.sceneMode === "fpv"
@@ -161,6 +161,13 @@ AnimusOverlayPanel {
                 color: root.sceneMode === "fpv" && !root.resetAvailable
                        ? animusTheme.warning : animusTheme.mutedText
                 font.pixelSize: 12
+            }
+            Label {
+                Layout.fillWidth: true
+                text: root.cameraText()
+                color: animusTheme.mutedText
+                font.pixelSize: 12
+                elide: Text.ElideRight
             }
         }
 

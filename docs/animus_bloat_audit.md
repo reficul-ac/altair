@@ -25,7 +25,7 @@ Shared primitives:
 - [x] Migrate low-risk duplicated surfaces first: telemetry strip frame,
   terrain clearance/status overlays, Terrain 3D camera modes, and FPV/Tactical
   reset controls.
-- [ ] Add follow-up primitives only when a second concrete use exists, such as
+- [x] Add follow-up primitives only when a second concrete use exists, such as
   diagnostics drawers, setup sections, or telemetry summaries.
 
 Global chrome disclosure:
@@ -63,6 +63,34 @@ Visual refresh:
 
 ### Completed Work
 
+- 2026-05-24: Added `AnimusTelemetrySummary` and moved Map 2D, Terrain 3D, and
+  FPV onto the same glanceable telemetry overlay. The primary row now leads with
+  link, GPS/nav, MSL altitude, groundspeed, vertical speed, and attitude
+  validity, while raw position and compact heading/altitude/velocity details
+  remain available by expanding the summary. Terrain 3D and FPV now use a
+  clearance-first scene cue with AGL, recent minimum clearance, and trend as the
+  headline; camera/source/route details move behind disclosure except for
+  degraded clearance states. The header settings popup is now a right-side
+  diagnostics drawer for telemetry controls, theme, scene readiness, and
+  capture state. Terrain 3D gained reference/clearance cues above the WebEngine
+  scene, and FPV gained cockpit-style flight-path cues around the existing
+  attitude cue. Existing read-only authority, link freshness, capture hooks,
+  semantic object names, and WebEngine/Cesium diagnostics remain intact.
+  Verification: `python3 tools/python/format_repo.py --check`, `cmake -S . -B
+  build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON -DCMAKE_BUILD_TYPE=Debug`,
+  `cmake --build build-animus-qt --target animus_qt animus_qt_unit_tests
+  --parallel`, `ctest --test-dir build-animus-qt --output-on-failure -R
+  animus_qt`, and `python3 tools/python/capture_animus_qt_sitl.py` passed.
+  Screenshot artifact: `artifacts/animus-qt-screenshots/20260524T235020Z/`.
+  Compared against
+  `artifacts/animus-qt-screenshots/20260524T095811Z/screenshots/`; mean pixel
+  deltas were `7.19` (Map 2D), `3.15` (Terrain 3D), `10.23` (Terrain 3D
+  workspace), `7.74` (FPV), `7.75` (FPV workspace), `31.10` (Tactical), and
+  `29.29` (Tactical workspace). No capture or chrome diagnostic failures were
+  found. Terrain workspace diversity improved over the immediately preceding
+  run after the reference cue fix, while the report still retains WebEngine
+  native-scene flatness warnings for FPV/Tactical and low-diversity warnings for
+  Terrain/Tactical scene subregions.
 - 2026-05-24: Calmed the shared Animus chrome after the behavior-preserving
   declutter slices by moving workspace tab styling into `AnimusWorkspaceTab`
   and refreshing `AnimusSegmentedControl`, `AnimusIconButton`,

@@ -927,7 +927,12 @@ class AnimusQtMapModelTests final : public QObject
             diagnostic.value(QStringLiteral("settingsDisclosure")).toMap();
         QCOMPARE(settingsDisclosure.value(QStringLiteral("semanticallyVisible")).toBool(), true);
         QCOMPARE(settingsDisclosure.value(QStringLiteral("label")).toString(),
-                 QStringLiteral("Telemetry and display settings"));
+                 QStringLiteral("Diagnostics and settings"));
+        const QVariantMap diagnosticsDrawer =
+            diagnostic.value(QStringLiteral("diagnosticsDrawer")).toMap();
+        QCOMPARE(diagnosticsDrawer.value(QStringLiteral("label")).toString(),
+                 QStringLiteral("diagnostics drawer"));
+        QCOMPARE(diagnosticsDrawer.value(QStringLiteral("semanticallyVisible")).toBool(), false);
         const QVariantMap linkStatus = diagnostic.value(QStringLiteral("linkStatus")).toMap();
         QCOMPARE(linkStatus.value(QStringLiteral("semanticallyVisible")).toBool(), true);
         QCOMPARE(linkStatus.value(QStringLiteral("label")).toString(), QStringLiteral("Link idle"));

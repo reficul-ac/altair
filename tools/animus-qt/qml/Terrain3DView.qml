@@ -49,6 +49,22 @@ Item {
                status === "initializing" || status.indexOf("error") >= 0
     }
 
+    function clearanceState() {
+        return cesiumBridge.terrainClearance && cesiumBridge.terrainClearance.state
+               ? cesiumBridge.terrainClearance.state : "unknown"
+    }
+
+    function clearanceColor() {
+        var state = root.clearanceState()
+        if (state === "warning")
+            return animusTheme.danger
+        if (state === "caution")
+            return animusTheme.warning
+        if (state === "clear")
+            return animusTheme.success
+        return animusTheme.border
+    }
+
     Rectangle {
         anchors.fill: parent
         color: animusTheme.mapBackground
@@ -102,6 +118,45 @@ Item {
     Connections {
         target: animusTheme
         function onThemeChanged() { fallbackCanvas.requestPaint() }
+    }
+
+    Canvas {
+        id: terrainReferenceCue
+        anchors.fill: parent
+        opacity: root.useFallbackScene() ? 0.0 : 0.82
+        z: 1
+        onPaint: {
+            var ctx = getContext("2d")
+            ctx.clearRect(0, 0, width, height)
+            var cx = width * 0.5
+            var horizonY = height * 0.56
+
+            ctx.strokeStyle = animusTheme.sceneGroundLine
+            ctx.lineWidth = 1
+            for (var i = 0; i < 5; ++i) {
+                var y = horizonY + i * height * 0.07
+                var half = width * (0.12 + i * 0.09)
+                ctx.beginPath()
+                ctx.moveTo(cx - half, y)
+                ctx.lineTo(cx + half, y)
+                ctx.stroke()
+            }
+
+            ctx.strokeStyle = animusTheme.accent
+            ctx.lineWidth = 2
+            ctx.beginPath()
+            ctx.moveTo(cx, horizonY - height * 0.18)
+            ctx.lineTo(cx, horizonY + height * 0.30)
+            ctx.stroke()
+
+            ctx.strokeStyle = root.clearanceColor()
+            ctx.lineWidth = 3
+            ctx.beginPath()
+            ctx.moveTo(cx - width * 0.22, horizonY + height * 0.20)
+            ctx.quadraticCurveTo(cx, horizonY + height * 0.10,
+                                 cx + width * 0.22, horizonY + height * 0.20)
+            ctx.stroke()
+        }
     }
 
     Rectangle {
@@ -173,7 +228,7 @@ Item {
         fallbackActive: root.useFallbackScene()
     }
 
-    TelemetryStrip {
+    AnimusTelemetrySummary {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 12
@@ -202,5 +257,10 @@ Item {
         ]
         currentValue: root.cameraMode
         onSelected: function(value) { root.setCameraMode(value) }
+    }
+
+    Connections {
+        target: cesiumBridge
+        function onTerrainClearanceChanged() { terrainReferenceCue.requestPaint() }
     }
 }

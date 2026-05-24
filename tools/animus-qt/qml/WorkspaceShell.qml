@@ -8,6 +8,7 @@ Item {
 
     readonly property var workspaceIds: ["map-2d", "terrain-3d", "fpv", "tactical", "setup"]
     property string currentWorkspace: workspaceIds[tabs.currentIndex]
+    property bool diagnosticsDrawerOpen: false
 
     function selectWorkspace(workspaceId) {
         var index = workspaceIds.indexOf(workspaceId)
@@ -62,6 +63,7 @@ Item {
             "chrome": root.itemDiagnostic(chrome, "chrome"),
             "themeMode": animusTheme.mode,
             "settingsDisclosure": root.itemDiagnostic(settingsButton, settingsButton.toolTipText),
+            "diagnosticsDrawer": root.itemDiagnostic(diagnosticsDrawer, "diagnostics drawer"),
             "linkStatus": root.itemDiagnostic(linkStatusLabel, linkStatusLabel.text),
             "authority": root.itemDiagnostic(authorityLabel, authorityLabel.text),
             "tabs": [
@@ -98,6 +100,27 @@ Item {
         return source + " / " + freshness + " / decoded " + telemetryService.decodedSampleCount
     }
 
+    function currentCaptureText() {
+        var item = workspaceStack.currentItem
+        if (!item || item.lastCaptureOk === undefined)
+            return "Capture state unavailable"
+        if (item.lastCaptureOk)
+            return "Last capture OK"
+        if (item.lastCaptureError && item.lastCaptureError.length > 0)
+            return item.lastCaptureError
+        return "No capture in this session"
+    }
+
+    function currentSceneText() {
+        var item = workspaceStack.currentItem
+        if (!item || item.localSceneStatus === undefined)
+            return "Scene diagnostics unavailable"
+        var status = item.localSceneStatus.status || "unknown"
+        if (item.useFallbackScene !== undefined && item.useFallbackScene())
+            return status + " / QML fallback"
+        return status
+    }
+
     StackLayout {
         id: workspaceStack
         anchors.left: parent.left
@@ -107,11 +130,11 @@ Item {
         clip: true
         currentIndex: tabs.currentIndex
 
-        Map2DView {}
-        Terrain3DView {}
-        FpvView {}
-        TacticalAttitudeView {}
-        SetupView {}
+        Map2DView { id: map2DView }
+        Terrain3DView { id: terrain3DView }
+        FpvView { id: fpvView }
+        TacticalAttitudeView { id: tacticalView }
+        SetupView { id: setupView }
     }
 
     ColumnLayout {
@@ -158,97 +181,11 @@ Item {
                     id: settingsButton
                     objectName: "headerSettingsButton"
                     text: "..."
-                    toolTipText: "Telemetry and display settings"
+                    toolTipText: "Diagnostics and settings"
                     Layout.preferredWidth: 36
                     Layout.preferredHeight: 34
                     Layout.rightMargin: 12
-                    onClicked: settingsPopup.open()
-                }
-                Popup {
-                    id: settingsPopup
-                    objectName: "headerSettingsPopup"
-                    x: Math.max(8, settingsButton.x + settingsButton.width - width)
-                    y: settingsButton.y + settingsButton.height + 6
-                    width: 320
-                    padding: 0
-                    modal: false
-                    focus: true
-                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-                    background: Rectangle {
-                        color: animusTheme.overlay
-                        border.color: animusTheme.border
-                        radius: 6
-                    }
-                    contentItem: ColumnLayout {
-                        spacing: 10
-
-                        Label {
-                            text: "Header Settings"
-                            color: animusTheme.text
-                            font.bold: true
-                            Layout.leftMargin: 12
-                            Layout.rightMargin: 12
-                            Layout.topMargin: 12
-                        }
-                        GridLayout {
-                            columns: 2
-                            rowSpacing: 6
-                            columnSpacing: 12
-                            Layout.leftMargin: 12
-                            Layout.rightMargin: 12
-                            Layout.fillWidth: true
-
-                            Label {
-                                text: "Endpoint"
-                                color: animusTheme.mutedText
-                                font.bold: true
-                            }
-                            Label {
-                                text: telemetryService.udpHost + ":" + telemetryService.udpPort
-                                color: animusTheme.text
-                                elide: Text.ElideRight
-                                Layout.fillWidth: true
-                            }
-                            Label {
-                                text: "State"
-                                color: animusTheme.mutedText
-                                font.bold: true
-                            }
-                            Label {
-                                text: root.telemetryStatusText()
-                                color: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
-                                elide: Text.ElideRight
-                                Layout.fillWidth: true
-                            }
-                        }
-                        Button {
-                            objectName: "headerThemeToggleButton"
-                            text: "Theme: " + animusTheme.displayName
-                            Layout.leftMargin: 12
-                            Layout.rightMargin: 12
-                            Layout.fillWidth: true
-                            onClicked: animusTheme.toggleMode()
-                        }
-                        Button {
-                            objectName: "headerMockTelemetryButton"
-                            text: telemetryService.running ? "Stop Telemetry" : "Start Mock Telemetry"
-                            Layout.leftMargin: 12
-                            Layout.rightMargin: 12
-                            Layout.fillWidth: true
-                            onClicked: telemetryService.running ? telemetryService.stop()
-                                                              : telemetryService.startMockTelemetry()
-                        }
-                        Button {
-                            objectName: "headerUdpTelemetryButton"
-                            text: "Start UDP Telemetry"
-                            enabled: !telemetryService.running
-                            Layout.leftMargin: 12
-                            Layout.rightMargin: 12
-                            Layout.bottomMargin: 12
-                            Layout.fillWidth: true
-                            onClicked: telemetryService.startUdpTelemetry()
-                        }
-                    }
+                    onClicked: root.diagnosticsDrawerOpen = !root.diagnosticsDrawerOpen
                 }
             }
         }
@@ -294,6 +231,132 @@ Item {
                 objectName: "workspaceTabSetup"
                 text: "Setup"
             }
+        }
+    }
+
+    Rectangle {
+        id: diagnosticsDrawer
+        objectName: "headerDiagnosticsDrawer"
+        anchors.top: chrome.bottom
+        anchors.bottom: parent.bottom
+        anchors.right: parent.right
+        width: Math.min(parent.width - 24, 380)
+        visible: root.diagnosticsDrawerOpen
+        z: 200
+        color: animusTheme.overlay
+        border.color: animusTheme.border
+        border.width: 1
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 14
+            spacing: 12
+
+            RowLayout {
+                Layout.fillWidth: true
+                Label {
+                    text: "Diagnostics"
+                    color: animusTheme.text
+                    font.pixelSize: 16
+                    font.bold: true
+                    Layout.fillWidth: true
+                }
+                AnimusIconButton {
+                    text: "x"
+                    toolTipText: "Close diagnostics"
+                    Layout.preferredWidth: 30
+                    Layout.preferredHeight: 28
+                    onClicked: root.diagnosticsDrawerOpen = false
+                }
+            }
+
+            AnimusSetupSection {
+                title: "Telemetry"
+                Layout.fillWidth: true
+                GridLayout {
+                    columns: 2
+                    rowSpacing: 6
+                    columnSpacing: 12
+                    Layout.fillWidth: true
+                    Label { text: "Source"; color: animusTheme.mutedText; font.bold: true }
+                    Label {
+                        text: telemetryService.running ? "Active" : "Stopped"
+                        color: telemetryService.running ? animusTheme.success : animusTheme.warning
+                    }
+                    Label { text: "Link"; color: animusTheme.mutedText; font.bold: true }
+                    Label {
+                        text: root.telemetryStatusText()
+                        color: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Button {
+                        objectName: "headerMockTelemetryButton"
+                        text: telemetryService.running ? "Stop" : "Mock"
+                        Layout.fillWidth: true
+                        onClicked: telemetryService.running ? telemetryService.stop()
+                                                          : telemetryService.startMockTelemetry()
+                    }
+                    Button {
+                        objectName: "headerUdpTelemetryButton"
+                        text: "UDP"
+                        enabled: !telemetryService.running
+                        Layout.fillWidth: true
+                        onClicked: telemetryService.startUdpTelemetry()
+                    }
+                }
+            }
+
+            AnimusSetupSection {
+                title: "Display"
+                Layout.fillWidth: true
+                Button {
+                    objectName: "headerThemeToggleButton"
+                    text: "Theme: " + animusTheme.displayName
+                    Layout.fillWidth: true
+                    onClicked: animusTheme.toggleMode()
+                }
+            }
+
+            AnimusSetupSection {
+                title: "Scene"
+                Layout.fillWidth: true
+                GridLayout {
+                    columns: 2
+                    rowSpacing: 6
+                    columnSpacing: 12
+                    Layout.fillWidth: true
+                    Label { text: "WebEngine"; color: animusTheme.mutedText; font.bold: true }
+                    Label {
+                        text: webEngineTerrainEnabled ? "Enabled" : "Disabled"
+                        color: webEngineTerrainEnabled ? animusTheme.success : animusTheme.warning
+                    }
+                    Label { text: "Workspace"; color: animusTheme.mutedText; font.bold: true }
+                    Label {
+                        text: root.currentSceneText()
+                        color: animusTheme.text
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                }
+            }
+
+            AnimusSetupSection {
+                title: "Capture"
+                Layout.fillWidth: true
+                Label {
+                    Layout.fillWidth: true
+                    text: root.currentCaptureText()
+                    color: root.currentCaptureText().indexOf("OK") >= 0
+                           ? animusTheme.success : animusTheme.mutedText
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            Item { Layout.fillHeight: true }
         }
     }
 }

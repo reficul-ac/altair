@@ -610,7 +610,7 @@ Item {
         }
     }
 
-    TelemetryStrip {
+    AnimusTelemetrySummary {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 12
