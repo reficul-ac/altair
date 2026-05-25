@@ -72,7 +72,7 @@ WORKSPACE_CONTENT_REGIONS = {
     "fpv-workspace": (RegionSpec("toolbar and tabs", (0.0, 0.0, 1.0, 0.15), 7, 18.0, 0.96),),
     "tactical": (
         RegionSpec("tactical attitude canvas", (0.04, 0.08, 0.96, 0.94), 10, 28.0, 0.97),
-        RegionSpec("attitude reference and aircraft", (0.32, 0.22, 0.74, 0.72), 8, 24.0, 0.96),
+        RegionSpec("attitude axes and aircraft", (0.32, 0.22, 0.74, 0.72), 8, 24.0, 0.96),
     ),
     "tactical-workspace": (
         RegionSpec("toolbar and tabs", (0.0, 0.0, 1.0, 0.15), 7, 18.0, 0.96),
@@ -115,7 +115,7 @@ def parse_args() -> argparse.Namespace:
         help="Directory where capture artifacts are written.",
     )
     parser.add_argument(
-        "--capture-delay-ms", type=int, default=1200, help="Render delay before each screenshot."
+        "--capture-delay-ms", type=int, default=2500, help="Render delay before each screenshot."
     )
     parser.add_argument(
         "--theme",
@@ -387,11 +387,7 @@ def inspect_png(
             failures.append(
                 f"unexpected dimensions: {width}x{height}, expected {expected_size[0]}x{expected_size[1]}"
             )
-        if len(colors) <= 1 and workspace == "fpv":
-            warnings.append(
-                "FPV native camera screenshot is visually flat; relying on camera diagnostics"
-            )
-        elif len(colors) <= 1:
+        if len(colors) <= 1:
             failures.append("blank or single-color screenshot")
         elif workspace:
             minimum = WORKSPACE_COLOR_MINIMUMS.get(workspace, 6)
@@ -407,6 +403,8 @@ def inspect_png(
             diagnostics.append(inspect_region(image, spec))
         if workspace == "terrain-3d-workspace":
             diagnostics.append(inspect_clearance_overlay_panel(image))
+        if workspace == "map-2d":
+            diagnostics.append(inspect_map_operational_pixels(image))
         if workspace == "fpv":
             diagnostics.append(inspect_fpv_visuals(image))
         if workspace == "tactical":
@@ -446,8 +444,10 @@ def inspect_tactical_visuals(image: PngImage) -> dict[str, object]:
     y1 = int(image.height * 0.88)
     total = 0
     black = 0
-    yellow = 0
-    bright_reference = 0
+    red_axis = 0
+    green_axis = 0
+    blue_axis = 0
+    bright_axis = 0
     nonblack = 0
     for y in range(y0, y1, 2):
         for x in range(x0, x1, 2):
@@ -457,10 +457,14 @@ def inspect_tactical_visuals(image: PngImage) -> dict[str, object]:
                 black += 1
             else:
                 nonblack += 1
-            if r > 170 and g > 130 and b < 80:
-                yellow += 1
+            if r > 135 and g < 95 and b < 95:
+                red_axis += 1
+            if g > 120 and r < 110 and b < 120:
+                green_axis += 1
+            if b > 140 and r < 120 and g < 150:
+                blue_axis += 1
             if max(r, g, b) - min(r, g, b) > 55 and max(r, g, b) > 95:
-                bright_reference += 1
+                bright_axis += 1
 
     if total == 0:
         failures.append("empty tactical visual sample")
@@ -470,19 +474,65 @@ def inspect_tactical_visuals(image: PngImage) -> dict[str, object]:
             warnings.append(f"black background coverage {black_ratio:.2f} < 0.20")
         if black_ratio > 0.985:
             failures.append(f"tactical scene is mostly empty black: {black_ratio:.2f}")
-        if nonblack < 180:
-            failures.append(f"too few tactical scene reference pixels: {nonblack}")
-        if bright_reference < 70:
-            failures.append(f"too few bright tactical instrument pixels: {bright_reference}")
+        if nonblack < 80:
+            failures.append(f"too few tactical scene model/axis pixels: {nonblack}")
+        if red_axis < 8 or green_axis < 8 or blue_axis < 8:
+            failures.append(
+                f"missing RGB attitude axes: red={red_axis}, green={green_axis}, blue={blue_axis}"
+            )
+        if bright_axis < 40:
+            failures.append(f"too few bright tactical axis pixels: {bright_axis}")
     return {
-        "name": "tactical attitude references",
+        "name": "tactical attitude axes",
         "status": diagnostic_status(failures, warnings),
         "failures": failures,
         "warnings": warnings,
         "blackPixels": black,
         "nonblackPixels": nonblack,
-        "brightReferencePixels": bright_reference,
-        "yellowPixels": yellow,
+        "redAxisPixels": red_axis,
+        "greenAxisPixels": green_axis,
+        "blueAxisPixels": blue_axis,
+        "brightAxisPixels": bright_axis,
+    }
+
+
+def inspect_map_operational_pixels(image: PngImage) -> dict[str, object]:
+    failures: list[str] = []
+    warnings: list[str] = []
+    spec = RegionSpec("map operational overlays", (0.05, 0.18, 0.95, 0.90), 4, 8.0, 0.98)
+    pixels = sample_region(image, spec, columns=96, rows=48)
+    colors = {pixel for pixel in pixels}
+    luminance_values = [luminance(pixel) for pixel in pixels]
+    luminance_range = max(luminance_values) - min(luminance_values) if luminance_values else 0.0
+    mission_blue = 0
+    marker_green = 0
+    fence_amber = 0
+    alert_red = 0
+    for r, g, b in pixels:
+        if b > 130 and 25 <= r <= 90 and 70 <= g <= 150:
+            mission_blue += 1
+        if g > 95 and r < 80 and b < 110:
+            marker_green += 1
+        if r > 130 and 85 <= g <= 180 and b < 90:
+            fence_amber += 1
+        if r > 150 and g < 105 and b < 105:
+            alert_red += 1
+    operational = mission_blue + marker_green + fence_amber + alert_red
+    if mission_blue < 3:
+        failures.append(f"mission route/ownship blue pixels not visible: {mission_blue}")
+    if operational < 8:
+        failures.append(f"too few mission/marker/geofence pixels: {operational}")
+    return {
+        "name": spec.name,
+        "sampledColors": len(colors),
+        "luminanceRange": round(luminance_range, 1),
+        "status": diagnostic_status(failures, warnings),
+        "failures": failures,
+        "warnings": warnings,
+        "missionBluePixels": mission_blue,
+        "markerGreenPixels": marker_green,
+        "fenceAmberPixels": fence_amber,
+        "alertRedPixels": alert_red,
     }
 
 
@@ -496,6 +546,8 @@ def inspect_fpv_visuals(image: PngImage) -> dict[str, object]:
     total = 0
     aircraft_like = 0
     terrain_sky = 0
+    terrain = 0
+    sky = 0
     for y in range(y0, y1, 2):
         for x in range(x0, x1, 2):
             r, g, b = pixel_rgb(image, x, y)
@@ -504,12 +556,18 @@ def inspect_fpv_visuals(image: PngImage) -> dict[str, object]:
                 aircraft_like += 1
             if (g >= 90 and r >= 70 and b <= 210) or (b >= 125 and g >= 120):
                 terrain_sky += 1
+            if g >= 85 and r >= 65 and b <= 190:
+                terrain += 1
+            if b >= 125 and g >= 115 and r <= 170:
+                sky += 1
 
     if total == 0:
         failures.append("empty FPV center sample")
     else:
         aircraft_fraction = aircraft_like / total
         terrain_sky_fraction = terrain_sky / total
+        terrain_fraction = terrain / total
+        sky_fraction = sky / total
         if aircraft_fraction > 0.04:
             failures.append(
                 f"ownship-like blue pixels cover {aircraft_fraction:.1%} of central view"
@@ -518,6 +576,10 @@ def inspect_fpv_visuals(image: PngImage) -> dict[str, object]:
             failures.append(
                 f"terrain/sky pixels cover only {terrain_sky_fraction:.1%} of central view"
             )
+        if terrain_fraction < 0.05:
+            failures.append(f"terrain pixels cover only {terrain_fraction:.1%} of central view")
+        if sky_fraction > 0.95:
+            failures.append(f"sky pixels dominate central view: {sky_fraction:.1%}")
 
     return {
         "name": "FPV central view",
@@ -526,6 +588,8 @@ def inspect_fpv_visuals(image: PngImage) -> dict[str, object]:
         "warnings": warnings,
         "aircraftLikePixels": aircraft_like,
         "terrainSkyPixels": terrain_sky,
+        "terrainPixels": terrain,
+        "skyPixels": sky,
     }
 
 

@@ -197,14 +197,6 @@ Item {
             onCurrentIndexChanged: root.currentWorkspace = root.workspaceIds[currentIndex]
             background: Rectangle {
                 color: animusTheme.window
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    height: 1
-                    color: animusTheme.border
-                    opacity: 0.65
-                }
             }
             AnimusWorkspaceTab {
                 id: map2DTab

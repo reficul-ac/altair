@@ -1957,7 +1957,6 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(scriptText.contains(QStringLiteral("cameraMode = 'fpv';")));
         QVERIFY(scriptText.contains(QStringLiteral("function fpvCameraPose(")));
         QVERIFY(scriptText.contains(QStringLiteral("fpvNoseOffsetM.forward")));
-        QVERIFY(scriptText.contains(QStringLiteral("fpvLook.yawDeg = clamp")));
         QVERIFY(scriptText.contains(QStringLiteral("fpvLook.forwardDot")));
         QVERIFY(scriptText.contains(QStringLiteral("forwardHemisphereCompliant")));
         QVERIFY(scriptText.contains(QStringLiteral("ownshipHidden: workspaceMode === 'fpv'")));
@@ -1971,9 +1970,10 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(applyManualSection > fpvPoseSection);
         const QString fpvSection =
             scriptText.mid(fpvPoseSection, applyManualSection - fpvPoseSection);
-        QVERIFY(
-            fpvSection.contains(QStringLiteral("Cesium.Cartesian3.dot(direction, axes.forward)")));
-        QVERIFY(fpvSection.contains(QStringLiteral("Math.cos(pitchRad) * Math.cos(yawRad)")));
+        QVERIFY(fpvSection.contains(
+            QStringLiteral("Cesium.Cartesian3.dot(direction, headingForward)")));
+        QVERIFY(fpvSection.contains(QStringLiteral("const targetForwardM = 260.0;")));
+        QVERIFY(fpvSection.contains(QStringLiteral("terrainHeightM + 4.0")));
 
         QFile fpvQml(QStringLiteral(ANIMUS_QT_QML_DIR) + QStringLiteral("/FpvView.qml"));
         QVERIFY(fpvQml.open(QIODevice::ReadOnly));

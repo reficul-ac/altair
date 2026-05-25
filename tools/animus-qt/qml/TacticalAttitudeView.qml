@@ -139,22 +139,6 @@ Item {
             ctx.save()
             ctx.translate(cx, cy)
 
-            ctx.strokeStyle = animusTheme.border
-            ctx.globalAlpha = 0.42
-            ctx.lineWidth = 1
-            for (var grid = 1; grid <= 3; ++grid) {
-                ctx.beginPath()
-                ctx.arc(0, 0, outer * grid / 3.0, 0, Math.PI * 2)
-                ctx.stroke()
-            }
-            for (var spoke = 0; spoke < 8; ++spoke) {
-                var angle = spoke * Math.PI / 4.0
-                ctx.beginPath()
-                ctx.moveTo(Math.cos(angle) * outer * 0.34, Math.sin(angle) * outer * 0.34)
-                ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer)
-                ctx.stroke()
-            }
-
             var colors = [animusTheme.danger, animusTheme.success, animusTheme.accent]
             ctx.globalAlpha = 0.86
             ctx.lineWidth = 3
@@ -163,19 +147,11 @@ Item {
                 ctx.beginPath()
                 ctx.arc(0, 0, outer * (0.52 + i * 0.16), 0, Math.PI * 2)
                 ctx.stroke()
+                ctx.beginPath()
+                ctx.moveTo(0, 0)
+                ctx.lineTo(outer * (0.62 + i * 0.16), 0)
+                ctx.stroke()
             }
-
-            var headingRad = (vehicleModel.headingDeg - 90.0) * Math.PI / 180.0
-            ctx.fillStyle = animusTheme.text
-            ctx.globalAlpha = 0.88
-            ctx.beginPath()
-            ctx.moveTo(Math.cos(headingRad) * (outer + 16), Math.sin(headingRad) * (outer + 16))
-            ctx.lineTo(Math.cos(headingRad + 0.10) * (outer + 4),
-                       Math.sin(headingRad + 0.10) * (outer + 4))
-            ctx.lineTo(Math.cos(headingRad - 0.10) * (outer + 4),
-                       Math.sin(headingRad - 0.10) * (outer + 4))
-            ctx.closePath()
-            ctx.fill()
 
             ctx.globalAlpha = 1.0
             ctx.rotate(vehicleModel.rollRad)

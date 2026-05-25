@@ -279,8 +279,8 @@ void TelemetryService::publishMockSample()
     m_elapsedS += 1.0 / static_cast<double>(m_uiRateHz);
     const double radiusDeg = 0.0012;
     const double angle = m_elapsedS * 0.12;
-    const double rollAmplitude = qDegreesToRadians(18.0);
-    const double pitchAmplitude = qDegreesToRadians(7.0);
+    const double rollAmplitude = qDegreesToRadians(28.0);
+    const double pitchAmplitude = qDegreesToRadians(14.0);
     const double rollPhase = angle * 3.0;
     const double pitchPhase = angle * 2.4;
     const double lat = 37.4275 + qSin(angle) * radiusDeg;

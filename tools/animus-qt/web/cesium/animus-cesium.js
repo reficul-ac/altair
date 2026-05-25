@@ -37,8 +37,8 @@
     chase: {
       defaultHeadingDeg: 145.0,
       headingDeg: 145.0,
-      pitchDeg: -68.0,
-      rangeM: 170.0,
+      pitchDeg: -35.0,
+      rangeM: 540.0,
       followsVehicleHeading: true,
     },
     orbit: {
@@ -63,7 +63,7 @@
     right: 0.0,
     up: 1.2,
   };
-  const fpvDefaultPitchDeg = -8.0;
+  const fpvDefaultPitchDeg = 45.0;
   const fpvLook = {
     yawDeg: 0.0,
     pitchDeg: fpvDefaultPitchDeg,
@@ -190,14 +190,6 @@
     ridge([[0, 0.64], [0.12, 0.52], [0.24, 0.59], [0.38, 0.43], [0.55, 0.55], [0.72, 0.46], [1, 0.61]], '#879a83', '#61705f');
     ridge([[0, 0.79], [0.16, 0.69], [0.32, 0.73], [0.48, 0.62], [0.68, 0.70], [0.82, 0.59], [1, 0.73]], '#5f775f', '#415542');
 
-    ctx.strokeStyle = 'rgba(215, 230, 208, 0.78)';
-    ctx.lineWidth = 1;
-    for (let y = 0.68; y < 0.97; y += 0.052) {
-      ctx.beginPath();
-      ctx.moveTo(width * 0.05, height * y);
-      ctx.bezierCurveTo(width * 0.32, height * (y - 0.03), width * 0.61, height * (y + 0.04), width * 0.95, height * (y - 0.015));
-      ctx.stroke();
-    }
   }
 
   function drawFallbackMarker(point, headingDeg) {
@@ -300,8 +292,8 @@
     const offset = lockedCameraOffsets[mode];
     if (!offset) return;
     offset.headingDeg = offset.defaultHeadingDeg;
-    offset.pitchDeg = mode === 'orbit' ? -26.0 : (mode === 'tactical' ? -15.0 : -12.0);
-    offset.rangeM = mode === 'orbit' ? 520.0 : (mode === 'tactical' ? 170.0 : 260.0);
+    offset.pitchDeg = mode === 'orbit' ? -26.0 : (mode === 'tactical' ? -15.0 : -35.0);
+    offset.rangeM = mode === 'orbit' ? 520.0 : (mode === 'tactical' ? 170.0 : 540.0);
   }
 
   function resetTacticalCamera() {
@@ -452,49 +444,43 @@
   }
 
   function fpvCameraPose(vehicle, position) {
-    const axes = fpvAttitudeAxes(vehicle, position);
-    const origin = Cesium.Cartesian3.add(
-      position,
-      Cesium.Cartesian3.add(
-        Cesium.Cartesian3.multiplyByScalar(axes.forward, fpvNoseOffsetM.forward, new Cesium.Cartesian3()),
-        Cesium.Cartesian3.add(
-          Cesium.Cartesian3.multiplyByScalar(axes.right, fpvNoseOffsetM.right, new Cesium.Cartesian3()),
-          Cesium.Cartesian3.multiplyByScalar(axes.up, fpvNoseOffsetM.up, new Cesium.Cartesian3()),
-          new Cesium.Cartesian3()
-        ),
-        new Cesium.Cartesian3()
-      ),
-      new Cesium.Cartesian3()
+    const headingRad = Cesium.Math.toRadians(vehicleHeadingDeg(vehicle));
+    const latDeg = numberOr(vehicle.latDeg, 0);
+    const lonDeg = numberOr(vehicle.lonDeg, 0);
+    const altitudeM = numberOr(vehicle.altitudeM, 0);
+    const clearance = state.clearance || {};
+    const terrain = state.terrain || {};
+    const terrainHeightM = numberOr(clearance.terrainHeightM, numberOr(terrain.currentHeightM, 0));
+    const originForwardM = fpvNoseOffsetM.forward;
+    const targetForwardM = 260.0;
+    const metersPerDegLat = 111320.0;
+    const metersPerDegLon = metersPerDegLat * Math.max(0.1, Math.cos(Cesium.Math.toRadians(latDeg)));
+    const origin = Cesium.Cartesian3.fromDegrees(
+      lonDeg + Math.sin(headingRad) * originForwardM / metersPerDegLon,
+      latDeg + Math.cos(headingRad) * originForwardM / metersPerDegLat,
+      altitudeM + fpvNoseOffsetM.up
     );
-    const yawRad = Cesium.Math.toRadians(clamp(fpvLook.yawDeg, -89.9, 89.9));
-    const pitchRad = Cesium.Math.toRadians(clamp(fpvLook.pitchDeg, -89.0, 89.0));
-    const forwardScale = Math.cos(pitchRad) * Math.cos(yawRad);
-    const rightScale = Math.cos(pitchRad) * Math.sin(yawRad);
-    const upScale = Math.sin(pitchRad);
+    const target = Cesium.Cartesian3.fromDegrees(
+      lonDeg + Math.sin(headingRad) * targetForwardM / metersPerDegLon,
+      latDeg + Math.cos(headingRad) * targetForwardM / metersPerDegLat,
+      terrainHeightM + 4.0
+    );
     const direction = Cesium.Cartesian3.normalize(
-      Cesium.Cartesian3.add(
-        Cesium.Cartesian3.multiplyByScalar(axes.forward, forwardScale, new Cesium.Cartesian3()),
-        Cesium.Cartesian3.add(
-          Cesium.Cartesian3.multiplyByScalar(axes.right, rightScale, new Cesium.Cartesian3()),
-          Cesium.Cartesian3.multiplyByScalar(axes.up, upScale, new Cesium.Cartesian3()),
-          new Cesium.Cartesian3()
-        ),
-        new Cesium.Cartesian3()
-      ),
+      Cesium.Cartesian3.subtract(target, origin, new Cesium.Cartesian3()),
       new Cesium.Cartesian3()
     );
-    fpvLook.forwardDot = Cesium.Cartesian3.dot(direction, axes.forward);
-    const upProjection = Cesium.Cartesian3.multiplyByScalar(
-      direction,
-      Cesium.Cartesian3.dot(axes.up, direction),
+    const headingForward = enuVector(position, Math.sin(headingRad), Math.cos(headingRad), 0.0);
+    fpvLook.forwardDot = Cesium.Cartesian3.dot(direction, headingForward);
+    const geodeticUp = Cesium.Cartesian3.normalize(origin, new Cesium.Cartesian3());
+    const cameraRight = Cesium.Cartesian3.normalize(
+      Cesium.Cartesian3.cross(direction, geodeticUp, new Cesium.Cartesian3()),
       new Cesium.Cartesian3()
     );
-    let cameraUp = Cesium.Cartesian3.subtract(axes.up, upProjection, new Cesium.Cartesian3());
-    if (Cesium.Cartesian3.magnitude(cameraUp) < 1.0e-6) {
-      cameraUp = Cesium.Cartesian3.cross(axes.right, direction, new Cesium.Cartesian3());
-    }
-    cameraUp = Cesium.Cartesian3.normalize(cameraUp, cameraUp);
-    return {origin, direction, right: axes.right, up: cameraUp, forwardDot: fpvLook.forwardDot};
+    const cameraUp = Cesium.Cartesian3.normalize(
+      Cesium.Cartesian3.cross(cameraRight, direction, new Cesium.Cartesian3()),
+      new Cesium.Cartesian3()
+    );
+    return {origin, direction, right: cameraRight, up: cameraUp, forwardDot: fpvLook.forwardDot};
   }
 
   function applyFpvCamera() {
@@ -1174,8 +1160,8 @@
         position,
         new Cesium.HeadingPitchRange(
           Cesium.Math.toRadians(headingDeg + 85.0),
-          Cesium.Math.toRadians(-52.0),
-          500.0
+          Cesium.Math.toRadians(-35.0),
+          540.0
         )
       );
       viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
@@ -1492,122 +1478,6 @@
     viewer.scene.requestRender();
   }
 
-  function localOffsetPoint(position, eastM, northM, upM) {
-    const transform = Cesium.Transforms.eastNorthUpToFixedFrame(position);
-    return Cesium.Matrix4.multiplyByPoint(
-      transform,
-      new Cesium.Cartesian3(eastM, northM, upM),
-      new Cesium.Cartesian3()
-    );
-  }
-
-  function localCirclePoints(position, radiusM, upM) {
-    const points = [];
-    for (let index = 0; index <= 96; ++index) {
-      const angle = (index / 96.0) * Math.PI * 2.0;
-      points.push(localOffsetPoint(
-        position,
-        Math.sin(angle) * radiusM,
-        Math.cos(angle) * radiusM,
-        upM
-      ));
-    }
-    return points;
-  }
-
-  function vehicleRelativePoint(position, forwardAxis, rightAxis, upAxis, forwardM, rightM, upM) {
-    const forward = Cesium.Cartesian3.multiplyByScalar(
-      forwardAxis,
-      forwardM,
-      new Cesium.Cartesian3()
-    );
-    const right = Cesium.Cartesian3.multiplyByScalar(
-      rightAxis,
-      rightM,
-      new Cesium.Cartesian3()
-    );
-    const up = Cesium.Cartesian3.multiplyByScalar(
-      upAxis,
-      upM,
-      new Cesium.Cartesian3()
-    );
-    return Cesium.Cartesian3.add(
-      position,
-      Cesium.Cartesian3.add(forward, Cesium.Cartesian3.add(right, up, new Cesium.Cartesian3()), new Cesium.Cartesian3()),
-      new Cesium.Cartesian3()
-    );
-  }
-
-  function headingAxes(position, headingDeg) {
-    const headingRad = Cesium.Math.toRadians(headingDeg);
-    return {
-      forward: enuVector(position, Math.sin(headingRad), Math.cos(headingRad), 0.0),
-      right: enuVector(position, Math.cos(headingRad), -Math.sin(headingRad), 0.0),
-      up: enuVector(position, 0.0, 0.0, 1.0),
-    };
-  }
-
-  function addTerrainReferenceLine(positions, width, cssColor, alpha) {
-    if (!terrainReferenceCollection) return;
-    terrainReferenceCollection.add({
-      positions,
-      width,
-      material: Cesium.Material.fromType('Color', {
-        color: Cesium.Color.fromCssColorString(cssColor).withAlpha(alpha),
-      }),
-    });
-  }
-
-  function clearanceCueColor() {
-    const clearance = state.clearance || {};
-    if (clearance.state === 'warning') return '#d92626';
-    if (clearance.state === 'caution') return '#d59b28';
-    if (clearance.state === 'clear') return '#0f7b43';
-    return '#3f4a3d';
-  }
-
-  function addTerrainTrackCorridor(center, vehicle, baseAlt) {
-    if (!terrainReferenceCollection) return;
-    const axes = headingAxes(center, vehicleHeadingDeg(vehicle));
-    const clearanceColor = clearanceCueColor();
-    const terrain = state.terrain || {};
-    const clearance = state.clearance || {};
-    const terrainHeight = numberOr(clearance.terrainHeightM, numberOr(terrain.currentHeightM, baseAlt));
-    const vehicleAlt = numberOr(vehicle.altitudeM, baseAlt + 120.0);
-    const aglM = numberOr(clearance.aglM, vehicleAlt - terrainHeight);
-    const laneHalfWidthM = clamp(numberOr(vehicle.groundspeedMps, 0) * 1.3 + 32.0, 42.0, 86.0);
-    const forwardStartM = 45.0;
-    const forwardEndM = clamp(numberOr(vehicle.groundspeedMps, 0) * 12.0 + 420.0, 420.0, 900.0);
-    const centerUpM = Math.max(28.0, aglM * 0.24);
-
-    [-laneHalfWidthM, laneHalfWidthM].forEach((rightM) => {
-      addTerrainReferenceLine([
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardStartM, rightM, centerUpM),
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardEndM, rightM, centerUpM),
-      ], 4.2, clearanceColor, 0.62);
-    });
-    [120.0, 300.0, 560.0].forEach((forwardM, index) => {
-      if (forwardM > forwardEndM) return;
-      addTerrainReferenceLine([
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM, -laneHalfWidthM, centerUpM),
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM, laneHalfWidthM, centerUpM),
-      ], index === 0 ? 3.8 : 3.0, index === 0 ? '#f7f7f3' : clearanceColor, index === 0 ? 0.56 : 0.42);
-    });
-    addTerrainReferenceLine([
-      vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardStartM, 0.0, centerUpM + 10.0),
-      vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardEndM, 0.0, centerUpM + 10.0),
-    ], 3.2, '#fff2a6', 0.48);
-
-    [0.35, 0.72].forEach((fraction) => {
-      const forwardM = forwardStartM + (forwardEndM - forwardStartM) * fraction;
-      addTerrainReferenceLine([
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM, -laneHalfWidthM * 0.9, centerUpM + 16.0),
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM + 58.0, 0.0, centerUpM - 4.0),
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM, laneHalfWidthM * 0.9, centerUpM + 16.0),
-      ], 2.8, '#9ed0ff', 0.34);
-    });
-  }
-
   function updateTerrainReference() {
     if (terrainReferenceCollection) terrainReferenceCollection.removeAll();
     if (workspaceMode === 'tactical' || workspaceMode === 'fpv') return;
@@ -1626,24 +1496,6 @@
           roll: 0.0,
         },
       });
-    }
-    const center = vehicle.positionValid && validPosition(vehicle)
-      ? cartesian(vehicle)
-      : Cesium.Cartesian3.fromDegrees(centerLon, centerLat, baseAlt);
-    [-500.0, -250.0, 0.0, 250.0, 500.0].forEach((offset) => {
-      addTerrainReferenceLine([
-        localOffsetPoint(center, -760.0, offset, 1.0),
-        localOffsetPoint(center, 760.0, offset, 1.0),
-      ], offset === 0.0 ? 3.6 : 2.0, offset === 0.0 ? '#2d3d34' : '#49624b', offset === 0.0 ? 0.54 : 0.32);
-      addTerrainReferenceLine([
-        localOffsetPoint(center, offset, -760.0, 1.0),
-        localOffsetPoint(center, offset, 760.0, 1.0),
-      ], offset === 0.0 ? 3.6 : 2.0, offset === 0.0 ? '#2d3d34' : '#49624b', offset === 0.0 ? 0.54 : 0.32);
-    });
-    addTerrainReferenceLine(localCirclePoints(center, 250.0, 2.0), 2.2, '#f7f7f3', 0.30);
-    addTerrainReferenceLine(localCirclePoints(center, 500.0, 2.0), 1.8, '#49624b', 0.24);
-    if (vehicle.positionValid && validPosition(vehicle)) {
-      addTerrainTrackCorridor(center, vehicle, baseAlt);
     }
     viewer.scene.requestRender();
   }
@@ -1668,27 +1520,6 @@
     return points;
   }
 
-  function addAttitudeReferenceLine(positions, width, cssColor, alpha) {
-    if (!attitudeReferenceCollection) return;
-    attitudeReferenceCollection.add({
-      positions,
-      width,
-      material: Cesium.Material.fromType('Color', {
-        color: Cesium.Color.fromCssColorString(cssColor).withAlpha(alpha),
-      }),
-    });
-  }
-
-  function addTacticalHeadingArrow(position, axes, forwardM, halfWidthM, color, alpha) {
-    addAttitudeReferenceLine([
-      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, 0.0, 1.5),
-      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM - 18.0, -halfWidthM, 1.5),
-      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM - 11.0, 0.0, 1.5),
-      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM - 18.0, halfWidthM, 1.5),
-      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, 0.0, 1.5),
-    ], 2.8, color, alpha);
-  }
-
   function updateTacticalReferences(vehicle, position) {
     const attitude = Cesium.Matrix3.fromQuaternion(
       orientationFor(vehicle, position),
@@ -1709,28 +1540,6 @@
       Cesium.Cartesian3.UNIT_Z,
       new Cesium.Cartesian3()
     );
-    const heading = headingAxes(position, vehicleHeadingDeg(vehicle));
-
-    [36.0, 72.0].forEach((radius, index) => {
-      addAttitudeReferenceLine(
-        localCirclePoints(position, radius, -3.0),
-        index === 0 ? 1.9 : 1.3,
-        index === 0 ? '#4d5f61' : '#293b3d',
-        index === 0 ? 0.44 : 0.30
-      );
-    });
-    [-72.0, 0.0, 72.0].forEach((offset) => {
-      const major = offset === 0.0 || Math.abs(offset) === 72.0;
-      addAttitudeReferenceLine([
-        localOffsetPoint(position, -86.0, offset, -3.0),
-        localOffsetPoint(position, 86.0, offset, -3.0),
-      ], major ? 1.9 : 1.2, major ? '#344d4f' : '#243337', major ? 0.34 : 0.24);
-      addAttitudeReferenceLine([
-        localOffsetPoint(position, offset, -86.0, -3.0),
-        localOffsetPoint(position, offset, 86.0, -3.0),
-      ], major ? 1.9 : 1.2, major ? '#3f444f' : '#2a3038', major ? 0.32 : 0.22);
-    });
-
     [
       {
         positions: attitudeAxisRingPoints(position, tacticalRingRadiusM, rightAxis, upAxis),
@@ -1776,81 +1585,11 @@
         }),
       });
     });
-
-    addAttitudeReferenceLine([
-      vehicleRelativePoint(position, heading.forward, heading.right, heading.up, -58.0, 0.0, 1.0),
-      vehicleRelativePoint(position, heading.forward, heading.right, heading.up, 104.0, 0.0, 1.0),
-    ], 2.6, '#f7f7f3', 0.62);
-    addTacticalHeadingArrow(position, heading, 118.0, 10.0, '#f7f7f3', 0.66);
-
-    const trackLeadM = Math.max(62.0, Math.min(130.0, numberOr(vehicle.groundspeedMps, 0.0) * 5.0));
-    addAttitudeReferenceLine([
-      vehicleRelativePoint(position, heading.forward, heading.right, heading.up, 0.0, -16.0, 2.0),
-      vehicleRelativePoint(position, heading.forward, heading.right, heading.up, trackLeadM, -16.0, 2.0),
-    ], 2.0, '#d59b28', 0.54);
-    addTacticalHeadingArrow(position, heading, trackLeadM + 10.0, 6.5, '#d59b28', 0.58);
-
-    for (let index = 0; index < 12; ++index) {
-      const angle = (index / 12.0) * Math.PI * 2.0;
-      const major = index % 6 === 0;
-      const radius = tacticalRingRadiusM * 1.42;
-      const tickM = major ? 4.4 : 2.5;
-      const first = Cesium.Cartesian3.multiplyByScalar(rightAxis, Math.cos(angle), new Cesium.Cartesian3());
-      const second = Cesium.Cartesian3.multiplyByScalar(upAxis, Math.sin(angle), new Cesium.Cartesian3());
-      const radial = Cesium.Cartesian3.normalize(
-        Cesium.Cartesian3.add(first, second, new Cesium.Cartesian3()),
-        new Cesium.Cartesian3()
-      );
-      attitudeReferenceCollection.add({
-        positions: [
-          Cesium.Cartesian3.add(
-            position,
-            Cesium.Cartesian3.multiplyByScalar(radial, radius - tickM, new Cesium.Cartesian3()),
-            new Cesium.Cartesian3()
-          ),
-          Cesium.Cartesian3.add(
-            position,
-            Cesium.Cartesian3.multiplyByScalar(radial, radius + tickM, new Cesium.Cartesian3()),
-            new Cesium.Cartesian3()
-          ),
-        ],
-        width: major ? 2.8 : 1.6,
-        material: Cesium.Material.fromType('Color', {
-          color: Cesium.Color.fromCssColorString(major ? '#f7f7f3' : '#9fb0a1').withAlpha(major ? 0.62 : 0.36),
-        }),
-      });
-    }
   }
 
   function updateFpvReferences(vehicle, position) {
-    const axes = fpvAttitudeAxes(vehicle, position);
-    const horizonWidthM = 58.0;
-    const pitchLadderWidthM = 32.0;
-    [110.0, 240.0].forEach((forwardM, index) => {
-      addAttitudeReferenceLine([
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -horizonWidthM, 0.0),
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -14.0, 0.0),
-      ], index === 0 ? 4.4 : 2.8, '#f7f7f3', index === 0 ? 0.58 : 0.38);
-      addAttitudeReferenceLine([
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, 14.0, 0.0),
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, horizonWidthM, 0.0),
-      ], index === 0 ? 4.4 : 2.8, '#f7f7f3', index === 0 ? 0.58 : 0.38);
-      [-16.0, 16.0].forEach((upM) => {
-        addAttitudeReferenceLine([
-          vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -pitchLadderWidthM, upM),
-          vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -10.0, upM),
-        ], 2.4, upM > 0 ? '#9ed0ff' : '#fff2a6', 0.34);
-        addAttitudeReferenceLine([
-          vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, 10.0, upM),
-          vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, pitchLadderWidthM, upM),
-        ], 2.4, upM > 0 ? '#9ed0ff' : '#fff2a6', 0.34);
-      });
-    });
-    addAttitudeReferenceLine([
-      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, 80.0, -8.0, -8.0),
-      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, 120.0, 0.0, -14.0),
-      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, 80.0, 8.0, -8.0),
-    ], 3.0, clearanceCueColor(), 0.54);
+    void vehicle;
+    void position;
     viewer.scene.requestRender();
   }
 

@@ -149,7 +149,7 @@ AnimusOverlayPanel {
                       ? "PITCH " + (vehicleModel.attitudeValid
                                      ? (vehicleModel.pitchRad * 180.0 / Math.PI).toFixed(0) + " deg"
                                      : "--")
-                      : "rings 100/250/500 m"
+                      : "clearance status"
                 color: vehicleModel.attitudeValid && telemetryService.linkFresh
                        ? animusTheme.text : animusTheme.warning
                 font.pixelSize: 12

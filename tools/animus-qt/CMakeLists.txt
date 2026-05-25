@@ -93,7 +93,6 @@ qt_add_qml_module(
     qml/TelemetryStrip.qml
     qml/Terrain3DView.qml
     qml/Terrain3DWebView.qml
-    qml/FpvAttitudeCue.qml
     qml/FpvView.qml
     qml/TacticalAttitudeView.qml
     qml/SetupView.qml

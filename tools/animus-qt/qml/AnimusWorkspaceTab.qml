@@ -21,16 +21,6 @@ TabButton {
         color: root.checked ? animusTheme.surface
               : root.hovered ? animusTheme.overlay
               : animusTheme.window
-        border.color: root.checked ? animusTheme.accent : "transparent"
-        border.width: root.checked ? 1 : 0
-
-        Rectangle {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            height: root.checked ? 2 : 1
-            color: root.checked ? animusTheme.accent : animusTheme.border
-            opacity: root.checked ? 1.0 : 0.55
-        }
+        radius: 4
     }
 }

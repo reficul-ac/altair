@@ -185,61 +185,6 @@ Item {
         anchors.margins: 12
     }
 
-    Canvas {
-        id: fpvFlightPathCue
-        width: 360
-        height: 250
-        anchors.centerIn: parent
-        opacity: vehicleModel.attitudeValid && telemetryService.linkFresh ? 0.78 : 0.38
-        onPaint: {
-            var ctx = getContext("2d")
-            ctx.clearRect(0, 0, width, height)
-            var cx = width * 0.5
-            var cy = height * 0.5
-
-            ctx.strokeStyle = animusTheme.surface
-            ctx.lineWidth = 5
-            ctx.beginPath()
-            ctx.arc(cx, cy, 92, Math.PI * 1.08, Math.PI * 1.92)
-            ctx.stroke()
-
-            ctx.strokeStyle = vehicleModel.attitudeValid && telemetryService.linkFresh
-                              ? animusTheme.accent : animusTheme.warning
-            ctx.lineWidth = 2
-            ctx.beginPath()
-            ctx.arc(cx, cy, 92, Math.PI * 1.08, Math.PI * 1.92)
-            ctx.stroke()
-
-            ctx.strokeStyle = animusTheme.sceneGroundLine
-            ctx.lineWidth = 1
-            for (var i = 0; i < 4; ++i) {
-                var offset = 32 + i * 30
-                ctx.beginPath()
-                ctx.moveTo(cx - 128 + i * 12, cy + offset)
-                ctx.lineTo(cx - 38, cy + offset)
-                ctx.moveTo(cx + 38, cy + offset)
-                ctx.lineTo(cx + 128 - i * 12, cy + offset)
-                ctx.stroke()
-            }
-
-            ctx.strokeStyle = animusTheme.success
-            ctx.lineWidth = 2
-            ctx.beginPath()
-            ctx.moveTo(cx - 22, cy - 34)
-            ctx.lineTo(cx, cy - 50)
-            ctx.lineTo(cx + 22, cy - 34)
-            ctx.stroke()
-        }
-    }
-
-    FpvAttitudeCue {
-        objectName: "fpvAttitudeCue"
-        anchors.centerIn: parent
-        rollRad: vehicleModel.rollRad
-        pitchRad: vehicleModel.pitchRad
-        valid: vehicleModel.attitudeValid && telemetryService.linkFresh
-    }
-
     AnimusSceneCueOverlay {
         objectName: "fpvSceneCueOverlay"
         anchors.left: parent.left
@@ -262,16 +207,4 @@ Item {
         onClicked: root.resetCamera()
     }
 
-    Connections {
-        target: animusTheme
-        function onThemeChanged() { fpvFlightPathCue.requestPaint() }
-    }
-    Connections {
-        target: vehicleModel
-        function onAttitudeChanged() { fpvFlightPathCue.requestPaint() }
-    }
-    Connections {
-        target: telemetryService
-        function onFreshnessChanged() { fpvFlightPathCue.requestPaint() }
-    }
 }

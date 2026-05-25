@@ -103,60 +103,11 @@ Item {
             ridge([[0, 0.78], [0.16, 0.69], [0.32, 0.73], [0.48, 0.62], [0.68, 0.7], [0.82, 0.59], [1, 0.73]],
                   animusTheme.sceneRidgeDark, animusTheme.border)
 
-            ctx.strokeStyle = animusTheme.sceneGroundLine
-            ctx.lineWidth = 1
-            for (var y = 0.68; y < 0.96; y += 0.055) {
-                ctx.beginPath()
-                ctx.moveTo(width * 0.05, height * y)
-                ctx.bezierCurveTo(width * 0.32, height * (y - 0.03),
-                                  width * 0.61, height * (y + 0.04),
-                                  width * 0.95, height * (y - 0.015))
-                ctx.stroke()
-            }
         }
     }
     Connections {
         target: animusTheme
         function onThemeChanged() { fallbackCanvas.requestPaint() }
-    }
-
-    Canvas {
-        id: terrainReferenceCue
-        anchors.fill: parent
-        opacity: root.useFallbackScene() ? 0.0 : 0.82
-        z: 1
-        onPaint: {
-            var ctx = getContext("2d")
-            ctx.clearRect(0, 0, width, height)
-            var cx = width * 0.5
-            var horizonY = height * 0.56
-
-            ctx.strokeStyle = animusTheme.sceneGroundLine
-            ctx.lineWidth = 1
-            for (var i = 0; i < 5; ++i) {
-                var y = horizonY + i * height * 0.07
-                var half = width * (0.12 + i * 0.09)
-                ctx.beginPath()
-                ctx.moveTo(cx - half, y)
-                ctx.lineTo(cx + half, y)
-                ctx.stroke()
-            }
-
-            ctx.strokeStyle = animusTheme.accent
-            ctx.lineWidth = 2
-            ctx.beginPath()
-            ctx.moveTo(cx, horizonY - height * 0.18)
-            ctx.lineTo(cx, horizonY + height * 0.30)
-            ctx.stroke()
-
-            ctx.strokeStyle = root.clearanceColor()
-            ctx.lineWidth = 3
-            ctx.beginPath()
-            ctx.moveTo(cx - width * 0.22, horizonY + height * 0.20)
-            ctx.quadraticCurveTo(cx, horizonY + height * 0.10,
-                                 cx + width * 0.22, horizonY + height * 0.20)
-            ctx.stroke()
-        }
     }
 
     Rectangle {
@@ -257,10 +208,5 @@ Item {
         ]
         currentValue: root.cameraMode
         onSelected: function(value) { root.setCameraMode(value) }
-    }
-
-    Connections {
-        target: cesiumBridge
-        function onTerrainClearanceChanged() { terrainReferenceCue.requestPaint() }
     }
 }

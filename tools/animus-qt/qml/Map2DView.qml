@@ -227,48 +227,6 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: animusTheme.mapBackground
-
-        Repeater {
-            model: 16
-            Rectangle {
-                width: parent.width
-                height: 1
-                y: index * parent.height / 15
-                color: animusTheme.mapGrid
-            }
-        }
-
-        Repeater {
-            model: 24
-            Rectangle {
-                width: 1
-                height: parent.height
-                x: index * parent.width / 23
-                color: animusTheme.mapGrid
-            }
-        }
-
-        Rectangle {
-            x: parent.width * 0.08
-            y: parent.height * 0.58
-            width: parent.width * 0.84
-            height: 28
-            radius: 14
-            rotation: -11
-            color: animusTheme.mapLand
-            opacity: 0.85
-        }
-
-        Rectangle {
-            x: parent.width * 0.2
-            y: parent.height * 0.22
-            width: parent.width * 0.44
-            height: 22
-            radius: 11
-            rotation: 31
-            color: animusTheme.mapLandAlt
-            opacity: 0.8
-        }
     }
 
     Repeater {
