@@ -32,6 +32,9 @@
 namespace
 {
 
+constexpr const char *kDefaultWebEngineChromiumFlags =
+    "--ignore-gpu-blocklist --enable-webgl --enable-webgl2 --use-gl=egl --disable-gpu-sandbox";
+
 class CaptureWriter final : public QObject
 {
     Q_OBJECT
@@ -198,6 +201,12 @@ bool writeTacticalCameraDiagnosticFromControlSurfaces(const QString &controlSurf
     return cameraFile.write(data) == data.size();
 }
 
+void applyDefaultWebEngineChromiumFlags()
+{
+    if (!qEnvironmentVariableIsSet("QTWEBENGINE_CHROMIUM_FLAGS"))
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", QByteArray(kDefaultWebEngineChromiumFlags));
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -218,7 +227,10 @@ int main(int argc, char *argv[])
         capture.captureWorkspace == QStringLiteral("fpv") ||
         capture.captureWorkspace == QStringLiteral("tactical") || capture.captureTerrainWebEngine;
     if (webEngineTerrainEnabled)
+    {
+        applyDefaultWebEngineChromiumFlags();
         QtWebEngineQuick::initialize();
+    }
 
     QGuiApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("Altair"));

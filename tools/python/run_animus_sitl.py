@@ -13,6 +13,10 @@ import subprocess
 import sys
 import time
 
+DEFAULT_WEBENGINE_CHROMIUM_FLAGS = (
+    "--ignore-gpu-blocklist --enable-webgl --enable-webgl2 " "--use-gl=egl --disable-gpu-sandbox"
+)
+
 
 @dataclass
 class ManagedProcess:
@@ -175,8 +179,14 @@ def run_checked(command: list[str]) -> None:
     subprocess.run(command, cwd=repo_root(), check=True)
 
 
-def start_process(command: list[str]) -> subprocess.Popen:
-    return subprocess.Popen(command, cwd=repo_root(), text=True, start_new_session=True)
+def animus_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
+    env = (base_env or os.environ).copy()
+    env.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", DEFAULT_WEBENGINE_CHROMIUM_FLAGS)
+    return env
+
+
+def start_process(command: list[str], env: dict[str, str] | None = None) -> subprocess.Popen:
+    return subprocess.Popen(command, cwd=repo_root(), env=env, text=True, start_new_session=True)
 
 
 def process_state(pid: int) -> str | None:
@@ -346,7 +356,7 @@ def run(args: argparse.Namespace) -> int:
 
         print(f"animus_udp=udp://{args.udp_host}:{args.udp_port}", flush=True)
         print(f"\n== Start Animus ==\n{quote_command(animus_command(args))}", flush=True)
-        animus = start_process(animus_command(args))
+        animus = start_process(animus_command(args), env=animus_env())
         processes.append(ManagedProcess("animus", animus))
         time.sleep(args.animus_start_delay)
         if animus.poll() is not None:

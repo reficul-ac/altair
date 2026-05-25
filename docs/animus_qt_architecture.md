@@ -81,6 +81,9 @@ Implemented now:
   quantized-mesh terrain selected from `map_cache/terrain/quantized-mesh` when
   `layer.json` is present and a deterministic Stanford/cruise6dof heightmap
   plus multi-level raster imagery fixture used as the fresh-checkout fallback.
+- Animus sets local Qt WebEngine Chromium defaults for WebGL/Cesium rendering
+  before WebEngine initialization when `QTWEBENGINE_CHROMIUM_FLAGS` is unset,
+  while preserving explicit operator or CI environment overrides.
 - Terrain 3D vehicle rendering uses a bundled generic fixed-wing glTF model,
   altitude-aware trail segments, home marker primitives, and chase/orbit/free
   camera modes exposed through QML controls.

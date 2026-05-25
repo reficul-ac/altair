@@ -2,6 +2,7 @@
 
 import os
 import pty
+import importlib.util
 import selectors
 import socket
 import subprocess
@@ -11,6 +12,17 @@ import time
 from pathlib import Path
 
 SKIP = 77
+
+
+def load_launcher_module(repo_root):
+    path = repo_root / "tools/python/run_animus_sitl.py"
+    spec = importlib.util.spec_from_file_location("run_animus_sitl", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"failed to load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def run_launcher(repo_root, *args):
@@ -287,6 +299,19 @@ def main():
             print(message, file=sys.stderr)
             print(result.stdout, end="")
             return 1
+
+    module = load_launcher_module(repo_root)
+    default_env = module.animus_env({"PATH": "/usr/bin"})
+    default_flags = default_env.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
+    if "--enable-webgl2" not in default_flags or "--ignore-gpu-blocklist" not in default_flags:
+        print("launcher did not provide default Qt WebEngine Chromium flags", file=sys.stderr)
+        print(default_env, file=sys.stderr)
+        return 1
+    explicit_env = module.animus_env({"QTWEBENGINE_CHROMIUM_FLAGS": "--operator-flags"})
+    if explicit_env.get("QTWEBENGINE_CHROMIUM_FLAGS") != "--operator-flags":
+        print("launcher did not preserve explicit Qt WebEngine Chromium flags", file=sys.stderr)
+        print(explicit_env, file=sys.stderr)
+        return 1
 
     result = run_launcher(repo_root, "--skip-build", "--udp-port", "27551", "--case", "case.ini")
     if result.returncode != 0:

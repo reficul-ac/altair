@@ -95,6 +95,10 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Feed Animus capture bundles into the standard artifact report path with
   manifest metadata, screenshot links, scene diagnostics, and ignored output
   roots shared with SITL/replay/agent verification reports.
+- [ ] Add a dedicated live SITL WebEngine capture regression that drives
+  Terrain 3D, FPV, and Tactical through UDP telemetry and fails on WebGL
+  blocklist fallback, missing native `cesium-webengine` diagnostics, or absent
+  live trail/model updates.
 - [ ] Add QtLocation-backed Animus Qt map rendering once CI and operator
   installs have a portable runtime package strategy; Ubuntu 24.04 repositories
   available on this host do not provide Qt 6 Location.

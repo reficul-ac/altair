@@ -19,6 +19,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKSPACES = ("map-2d", "terrain-3d", "fpv", "tactical", "setup")
 XVFB_SCREEN = "1280x820x24"
 EXPECTED_CAPTURE_SIZE = (1280, 820)
+DEFAULT_WEBENGINE_CHROMIUM_FLAGS = (
+    "--ignore-gpu-blocklist --enable-webgl --enable-webgl2 " "--use-gl=egl --disable-gpu-sandbox"
+)
 
 
 @dataclass(frozen=True)
@@ -910,7 +913,7 @@ def offscreen_env(base_env: dict[str, str]) -> dict[str, str]:
     env["QT_QPA_PLATFORM"] = "offscreen"
     env["QT_QUICK_BACKEND"] = "software"
     env["QT_OPENGL"] = "software"
-    env.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-software-rasterizer")
+    env.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", DEFAULT_WEBENGINE_CHROMIUM_FLAGS)
     return env
 
 
@@ -1121,11 +1124,7 @@ def main() -> int:
         if xvfb_run is not None:
             virtual_display = "xvfb-run"
             xvfb_executable = xvfb_run
-            env.setdefault(
-                "QTWEBENGINE_CHROMIUM_FLAGS",
-                "--ignore-gpu-blocklist --enable-webgl --enable-webgl2 "
-                "--use-gl=egl --disable-gpu-sandbox",
-            )
+            env.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", DEFAULT_WEBENGINE_CHROMIUM_FLAGS)
             command_prefix = [xvfb_run, "-a"]
         else:
             virtual_display = "offscreen"

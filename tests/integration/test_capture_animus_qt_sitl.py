@@ -428,8 +428,9 @@ def main():
 
         default_offscreen = module.offscreen_env({})
         status |= expect(
-            "--disable-gpu" in default_offscreen.get("QTWEBENGINE_CHROMIUM_FLAGS", ""),
-            f"offscreen env missing default software Chromium flags: {default_offscreen}",
+            "--enable-webgl2" in default_offscreen.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
+            and "--ignore-gpu-blocklist" in default_offscreen.get("QTWEBENGINE_CHROMIUM_FLAGS", ""),
+            f"offscreen env missing default WebEngine Chromium flags: {default_offscreen}",
         )
 
         status |= expect(
