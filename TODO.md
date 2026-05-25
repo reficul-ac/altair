@@ -178,7 +178,7 @@ Reusable Bayek framework follow-up is tracked separately in
   diagnostics disclosure, less always-visible debug chrome, and before/after
   screenshot comparison. Tactical now has focused instrument chrome plus
   stricter empty-scene capture checks without adding primary-layer debug chrome.
-- [ ] Reduce the remaining Terrain 3D workspace low-diversity capture warning
+- [x] Reduce the remaining Terrain 3D workspace low-diversity capture warning
   without adding primary-layer debug chrome; the 20260525T010820Z Animus Qt
   visual report still flags the workspace scene subregion.
 

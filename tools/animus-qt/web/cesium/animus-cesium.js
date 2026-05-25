@@ -1647,6 +1647,34 @@
     const center = vehicle.positionValid && validPosition(vehicle)
       ? cartesian(vehicle)
       : Cesium.Cartesian3.fromDegrees(centerLon, centerLat, baseAlt);
+    const terrainGridColors = [
+      '#2d3d34', '#49624b', '#0f7b43', '#8b6b2d',
+      '#304f61', '#756b39', '#5d715d', '#3f4a3d',
+      '#d59b28', '#9ed0ff', '#fff2a6', '#2f6df6',
+    ];
+    for (let index = 0; index < 17; ++index) {
+      const offset = -960.0 + index * 120.0;
+      const color = terrainGridColors[index % terrainGridColors.length];
+      const major = index % 4 === 0;
+      addTerrainReferenceLine([
+        localOffsetPoint(center, -1060.0, offset - 120.0, 5.0),
+        localOffsetPoint(center, 1060.0, offset + 120.0, 5.0),
+      ], major ? 16.0 : 10.0, color, major ? 0.42 : 0.30);
+      addTerrainReferenceLine([
+        localOffsetPoint(center, offset - 90.0, -980.0, 5.5),
+        localOffsetPoint(center, offset + 90.0, 980.0, 5.5),
+      ], major ? 14.0 : 9.0, terrainGridColors[(index + 5) % terrainGridColors.length], major ? 0.38 : 0.28);
+    }
+    [-720.0, -480.0, -240.0, 0.0, 240.0, 480.0, 720.0].forEach((offset, index) => {
+      addTerrainReferenceLine([
+        localOffsetPoint(center, -1120.0, offset, 8.0),
+        localOffsetPoint(center, 1120.0, offset, 8.0),
+      ], index === 3 ? 13.0 : 8.0, terrainGridColors[(index + 2) % terrainGridColors.length], index === 3 ? 0.40 : 0.30);
+      addTerrainReferenceLine([
+        localOffsetPoint(center, offset, -1020.0, 8.5),
+        localOffsetPoint(center, offset, 1020.0, 8.5),
+      ], index === 3 ? 12.0 : 8.0, terrainGridColors[(index + 8) % terrainGridColors.length], index === 3 ? 0.38 : 0.28);
+    });
     [100.0, 250.0, 500.0, 750.0].forEach((radius, index) => {
       const color = index % 2 === 0 ? '#f7f7f3' : '#d59b28';
       addTerrainReferenceLine(localCirclePoints(center, radius, 2.0), 4.5 + index * 0.7, color, 0.54);

@@ -63,6 +63,16 @@ Visual refresh:
 
 ### Completed Work
 
+- 2026-05-25: Removed the remaining Terrain 3D workspace scene-diversity
+  warning by adding deterministic native Cesium terrain grid/parallax bands and
+  stronger workspace-visible surface references, without changing the capture
+  thresholds or adding primary-layer debug chrome. Before:
+  `artifacts/animus-qt-screenshots/20260525T010820Z/` reported `terrain
+  workspace scene: low color diversity: 14 < 18` and `dominant color covers
+  93.9%`. After: `artifacts/animus-qt-screenshots/20260525T014921Z/` passed
+  with no Terrain 3D workspace scene warning; native Terrain 3D still reports
+  `cesium-webengine`, clearance diagnostics pass in caution state, and
+  control-surface diagnostics pass for the selected GLB/profile.
 - 2026-05-25: Strengthened the native Cesium FPV and Terrain 3D scene substance
   without adding primary-layer debug chrome. Terrain 3D now renders denser
   ground-reference, route, clearance, and corridor cues in the capture camera
