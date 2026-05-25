@@ -11,6 +11,7 @@ struct MavlinkTelemetrySample
     static constexpr int MaxServoOutputs = 16;
 
     bool hasHeartbeat = false;
+    bool hasSysStatus = false;
     bool hasAttitude = false;
     bool hasGlobalPosition = false;
     bool hasGpsRaw = false;
@@ -25,8 +26,16 @@ struct MavlinkTelemetrySample
     int vehicleType = 0;
     int autopilot = 0;
     int baseMode = 0;
+    quint32 customMode = 0U;
     int systemStatus = 0;
     bool armed = false;
+
+    double batteryVoltageV = 0.0;
+    double batteryCurrentA = 0.0;
+    int batteryRemainingPct = -1;
+    bool batteryVoltageValid = false;
+    bool batteryCurrentValid = false;
+    bool batteryRemainingValid = false;
 
     double rollRad = 0.0;
     double pitchRad = 0.0;

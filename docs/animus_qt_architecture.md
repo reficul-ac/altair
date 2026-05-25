@@ -98,7 +98,7 @@ Implemented now:
 - Terrain 3D exports passive terrain-clearance analysis with current AGL,
   home-relative altitude, recent minimum/trend, terrain-report validity, and
   centralized `unknown`/`clear`/`caution`/`warning` thresholds.
-- C++ MAVLink v1/v2 frame decode for heartbeat, attitude, global position, GPS raw, mission current, home position, and terrain report.
+- C++ MAVLink v1/v2 frame decode for heartbeat, system status battery, attitude, global position, GPS raw, mission current, home position, and terrain report.
 - UDP telemetry ingest with latest-value UI publication throttled to 1-30 Hz.
 - Unit-test target for map policy, cache behavior, bounded trails, MAVLink decode, and telemetry publication throttling when Qt is available.
 

@@ -208,15 +208,30 @@ attitudeFrame(float roll, float pitch, float yaw, float rollspeed, float pitchsp
     return mavlinkV1Frame(30, payload, 39);
 }
 
-QByteArray heartbeatFrame()
+QByteArray heartbeatFrame(quint32 customMode = 0U,
+                          quint8 vehicleType = 1U,
+                          quint8 autopilot = 0U,
+                          quint8 baseMode = 0x80U,
+                          quint8 systemStatus = 4U)
 {
     QByteArray payload(9, '\0');
-    payload[4] = 1;
-    payload[5] = 0;
-    payload[6] = static_cast<char>(0x80U);
-    payload[7] = 4;
+    writeLe32(&payload, 0, customMode);
+    payload[4] = static_cast<char>(vehicleType);
+    payload[5] = static_cast<char>(autopilot);
+    payload[6] = static_cast<char>(baseMode);
+    payload[7] = static_cast<char>(systemStatus);
     payload[8] = 3;
     return mavlinkV1Frame(0, payload, 50);
+}
+
+QByteArray
+sysStatusFrame(quint16 voltageMv = 12150U, qint16 currentCa = 345, qint8 remainingPct = 73)
+{
+    QByteArray payload(31, '\0');
+    writeLe16(&payload, 14, voltageMv);
+    writeLe16(&payload, 16, static_cast<quint16>(currentCa));
+    payload[30] = static_cast<char>(remainingPct);
+    return mavlinkV1Frame(1, payload, 124);
 }
 
 QByteArray vfrHudFrame(float airspeed,
@@ -1089,6 +1104,49 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(qAbs(sample.climbMps - 0.2) < 1.0e-6);
     }
 
+    void mavlinkDecoderParsesHeartbeatIdentityAndCustomMode()
+    {
+        animus::MavlinkDecoder decoder;
+        const QVector<animus::MavlinkTelemetrySample> samples =
+            decoder.decodeDatagram(heartbeatFrame(0x12345678U, 2U, 12U, 0xc1U, 3U));
+
+        QCOMPARE(samples.size(), 1);
+        const animus::MavlinkTelemetrySample sample = samples.constFirst();
+        QCOMPARE(sample.hasHeartbeat, true);
+        QCOMPARE(sample.customMode, 0x12345678U);
+        QCOMPARE(sample.vehicleType, 2);
+        QCOMPARE(sample.autopilot, 12);
+        QCOMPARE(sample.baseMode, 0xc1);
+        QCOMPARE(sample.systemStatus, 3);
+        QCOMPARE(sample.armed, true);
+    }
+
+    void mavlinkDecoderParsesSysStatusBatteryFields()
+    {
+        animus::MavlinkDecoder decoder;
+        const QVector<animus::MavlinkTelemetrySample> samples =
+            decoder.decodeDatagram(sysStatusFrame(12150U, -230, 67));
+
+        QCOMPARE(samples.size(), 1);
+        const animus::MavlinkTelemetrySample sample = samples.constFirst();
+        QCOMPARE(sample.hasSysStatus, true);
+        QCOMPARE(sample.batteryVoltageValid, true);
+        QCOMPARE(sample.batteryCurrentValid, true);
+        QCOMPARE(sample.batteryRemainingValid, true);
+        QVERIFY(qAbs(sample.batteryVoltageV - 12.15) < 1.0e-6);
+        QVERIFY(qAbs(sample.batteryCurrentA + 2.3) < 1.0e-6);
+        QCOMPARE(sample.batteryRemainingPct, 67);
+
+        const QVector<animus::MavlinkTelemetrySample> unknownSamples =
+            decoder.decodeDatagram(sysStatusFrame(65535U, -1, -1));
+        QCOMPARE(unknownSamples.size(), 1);
+        const animus::MavlinkTelemetrySample unknown = unknownSamples.constFirst();
+        QCOMPARE(unknown.hasSysStatus, true);
+        QCOMPARE(unknown.batteryVoltageValid, false);
+        QCOMPARE(unknown.batteryCurrentValid, false);
+        QCOMPARE(unknown.batteryRemainingValid, false);
+    }
+
     void telemetryServiceAppliesServoOutputRaw()
     {
         animus::VehicleModel vehicle;
@@ -1111,6 +1169,43 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(actuatorSpy.count() >= 3);
     }
 
+    void telemetryServiceAppliesHeartbeatBatteryAndDiagnosticStates()
+    {
+        animus::VehicleModel vehicle;
+        animus::BreadcrumbPathModel breadcrumbs;
+        animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
+        QByteArray datagram;
+        datagram.append(heartbeatFrame(42U, 1U, 12U, 0xc1U, 4U));
+        datagram.append(sysStatusFrame(11800U, 250, 81));
+
+        QVERIFY(telemetry.ingestDatagram(datagram));
+        QVERIFY(
+            QMetaObject::invokeMethod(&telemetry, "publishPendingSample", Qt::DirectConnection));
+
+        QCOMPARE(vehicle.heartbeatValid(), true);
+        QCOMPARE(vehicle.customMode(), 42U);
+        QCOMPARE(vehicle.autopilotLabel(), QStringLiteral("PX4"));
+        QCOMPARE(vehicle.vehicleTypeLabel(), QStringLiteral("Fixed wing"));
+        QVERIFY(vehicle.baseModeSummary().contains(QStringLiteral("armed")));
+        QVERIFY(vehicle.baseModeSummary().contains(QStringLiteral("custom")));
+        QCOMPARE(vehicle.systemStatusLabel(), QStringLiteral("Active"));
+        QCOMPARE(vehicle.batteryValid(), true);
+        QCOMPARE(vehicle.batteryRemainingValid(), true);
+        QCOMPARE(vehicle.batteryRemainingPct(), 81);
+        QVERIFY(qAbs(vehicle.batteryVoltageV() - 11.8) < 1.0e-6);
+        QVERIFY(qAbs(vehicle.batteryCurrentA() - 2.5) < 1.0e-6);
+        QCOMPARE(telemetry.firmwareModeFieldState(), QStringLiteral("fresh"));
+        QCOMPARE(telemetry.batteryFieldState(), QStringLiteral("fresh"));
+        QCOMPARE(telemetry.fieldState(QStringLiteral("firmwareMode")), QStringLiteral("fresh"));
+        QCOMPARE(telemetry.fieldState(QStringLiteral("battery")), QStringLiteral("fresh"));
+        QVERIFY(telemetry.datagramRateHz() > 0.0);
+        QVERIFY(telemetry.decodedRateHz() > 0.0);
+
+        telemetry.updateFreshnessForElapsedMs(3000);
+        QCOMPARE(telemetry.firmwareModeFieldState(), QStringLiteral("stale"));
+        QCOMPARE(telemetry.batteryFieldState(), QStringLiteral("stale"));
+    }
+
     void telemetryServiceAppliesRequiredSitlMavlinkSet()
     {
         animus::VehicleModel vehicle;
@@ -1118,6 +1213,7 @@ class AnimusQtMapModelTests final : public QObject
         animus::TelemetryService telemetry(&vehicle, &breadcrumbs);
         QByteArray datagram;
         datagram.append(heartbeatFrame());
+        datagram.append(sysStatusFrame());
         datagram.append(attitudeFrame(0.1F, -0.2F, 0.3F, 0.4F, -0.5F, 0.6F));
         datagram.append(globalPositionFrame());
         datagram.append(gpsRawIntFrame());
@@ -1134,6 +1230,8 @@ class AnimusQtMapModelTests final : public QObject
         QCOMPARE(vehicle.attitudeValid(), true);
         QCOMPARE(vehicle.heartbeatValid(), true);
         QCOMPARE(vehicle.armed(), true);
+        QCOMPARE(vehicle.batteryValid(), true);
+        QCOMPARE(vehicle.batteryRemainingPct(), 73);
         QCOMPARE(vehicle.positionValid(), true);
         QCOMPARE(vehicle.velocityValid(), true);
         QCOMPARE(vehicle.gpsValid(), true);

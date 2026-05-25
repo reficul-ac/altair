@@ -16,6 +16,30 @@ ScrollView {
         return valid ? (value ? trueText : falseText) : "UNK"
     }
 
+    function fieldStateText(state) {
+        if (state === "fresh")
+            return "FRESH"
+        if (state === "stale")
+            return "STALE"
+        if (state === "unsupported")
+            return "UNSUPPORTED"
+        return "UNK"
+    }
+
+    function batteryText() {
+        if (vehicleModel.batteryRemainingValid)
+            return vehicleModel.batteryRemainingPct + "%"
+        if (vehicleModel.batteryVoltageValid)
+            return vehicleModel.batteryVoltageV.toFixed(1) + " V"
+        return root.fieldStateText(telemetryService.batteryFieldState)
+    }
+
+    function firmwareModeText() {
+        if (!vehicleModel.heartbeatValid)
+            return "UNK"
+        return vehicleModel.autopilotLabel + " / " + vehicleModel.baseModeSummary
+    }
+
     function gpsState() {
         if (!vehicleModel.gpsValid)
             return "UNK"
@@ -67,8 +91,10 @@ ScrollView {
 
     function readinessSummary() {
         return "Link " + (telemetryService.linkFresh ? "fresh" : "stale") +
-               " | " + root.boolState(vehicleModel.heartbeatValid, vehicleModel.armed,
-                                       "armed", "disarmed") +
+               " | Firmware " + root.firmwareModeText() +
+               " | Battery " + root.batteryText() +
+               " | Armed " + root.boolState(vehicleModel.heartbeatValid, vehicleModel.armed,
+                                             "armed", "disarmed") +
                " | GPS " + root.gpsState() +
                " | Mission " + (vehicleModel.missionValid ? "seq " + vehicleModel.missionSeq : "UNK") +
                " | Home " + (vehicleModel.homeValid ? "set" : "UNK") +
@@ -112,6 +138,26 @@ ScrollView {
                     objectName: "setupReadinessGpsState"
                     text: root.gpsState()
                     color: vehicleModel.gpsValid && vehicleModel.gpsFixType >= 3 ? animusTheme.success : animusTheme.warning
+                    font.bold: true
+                }
+
+                Label { text: "Firmware"; color: animusTheme.mutedText; font.bold: true }
+                Label {
+                    objectName: "setupReadinessFirmwareModeState"
+                    Layout.fillWidth: true
+                    text: root.firmwareModeText()
+                    color: telemetryService.firmwareModeFieldState === "fresh"
+                           ? animusTheme.text : animusTheme.warning
+                    font.bold: true
+                    elide: Text.ElideRight
+                }
+
+                Label { text: "Battery"; color: animusTheme.mutedText; font.bold: true }
+                Label {
+                    objectName: "setupReadinessBatteryState"
+                    text: root.batteryText()
+                    color: telemetryService.batteryFieldState === "fresh"
+                           ? animusTheme.text : animusTheme.warning
                     font.bold: true
                 }
 
@@ -160,6 +206,23 @@ ScrollView {
                               ? vehicleModel.terrainCurrentHeightM.toFixed(1) + " m AGL / " +
                                 vehicleModel.terrainLoaded + " loaded"
                               : "UNK"
+                    }
+
+                    Label { text: "Firmware mode"; color: animusTheme.mutedText; font.bold: true }
+                    Label {
+                        Layout.fillWidth: true
+                        text: root.firmwareModeText()
+                        elide: Text.ElideRight
+                    }
+
+                    Label { text: "Battery"; color: animusTheme.mutedText; font.bold: true }
+                    Label {
+                        text: vehicleModel.batteryValid
+                              ? root.batteryText() +
+                                (vehicleModel.batteryCurrentValid
+                                 ? " / " + vehicleModel.batteryCurrentA.toFixed(1) + " A"
+                                 : "")
+                              : root.fieldStateText(telemetryService.batteryFieldState)
                     }
                 }
             }
@@ -220,6 +283,18 @@ ScrollView {
                               : "UNK"
                     }
 
+                    Label { text: "Packet age"; color: animusTheme.mutedText; font.bold: true }
+                    Label {
+                        text: "RX " + root.ageText(telemetryService.lastDatagramAgeS) +
+                              " / decoded " + root.ageText(telemetryService.lastDecodedAgeS)
+                    }
+
+                    Label { text: "Rates"; color: animusTheme.mutedText; font.bold: true }
+                    Label {
+                        text: "RX " + telemetryService.datagramRateHz.toFixed(1) +
+                              " Hz / decoded " + telemetryService.decodedRateHz.toFixed(1) + " Hz"
+                    }
+
                     Label { text: "Datagrams"; color: animusTheme.mutedText; font.bold: true }
                     Label { text: telemetryService.datagramCount }
 
@@ -230,6 +305,36 @@ ScrollView {
                     Label {
                         text: telemetryService.decodeErrorCount
                         color: telemetryService.decodeErrorCount > 0 ? animusTheme.warning : animusTheme.text
+                    }
+
+                    Label { text: "Identity"; color: animusTheme.mutedText; font.bold: true }
+                    Label {
+                        Layout.fillWidth: true
+                        text: vehicleModel.heartbeatValid
+                              ? vehicleModel.vehicleTypeLabel + " / " + vehicleModel.autopilotLabel
+                              : "UNK"
+                        elide: Text.ElideRight
+                    }
+
+                    Label { text: "Field states"; color: animusTheme.mutedText; font.bold: true }
+                    Label {
+                        Layout.fillWidth: true
+                        text: "Firmware " + telemetryService.firmwareModeFieldState +
+                              " / battery " + telemetryService.batteryFieldState
+                        elide: Text.ElideRight
+                    }
+
+                    Label { text: "Custom mode"; color: animusTheme.mutedText; font.bold: true }
+                    Label { text: vehicleModel.heartbeatValid ? vehicleModel.customMode : "UNK" }
+
+                    Label { text: "Base mode"; color: animusTheme.mutedText; font.bold: true }
+                    Label { text: vehicleModel.heartbeatValid ? vehicleModel.baseMode : "UNK" }
+
+                    Label { text: "MAV state"; color: animusTheme.mutedText; font.bold: true }
+                    Label {
+                        text: vehicleModel.heartbeatValid
+                              ? vehicleModel.systemStatusLabel + " (" + vehicleModel.systemStatus + ")"
+                              : "UNK"
                     }
                 }
             }

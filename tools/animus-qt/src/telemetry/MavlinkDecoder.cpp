@@ -28,6 +28,9 @@ bool crcExtra(unsigned int msgId, unsigned char *extra)
     case 0:
         *extra = 50U;
         return true;
+    case 1:
+        *extra = 124U;
+        return true;
     case 24:
         *extra = 24U;
         return true;
@@ -70,6 +73,11 @@ uint16_t readU16(const unsigned char *payload, int offset)
 int16_t readI16(const unsigned char *payload, int offset)
 {
     return static_cast<int16_t>(qFromLittleEndian<uint16_t>(payload + offset));
+}
+
+uint32_t readU32(const unsigned char *payload, int offset)
+{
+    return qFromLittleEndian<uint32_t>(payload + offset);
 }
 
 int32_t readI32(const unsigned char *payload, int offset)
@@ -188,12 +196,31 @@ bool MavlinkDecoder::decodeFrame(const unsigned char *frame,
         if (payloadLength < 9)
             return false;
         sample->hasHeartbeat = true;
+        sample->customMode = readU32(payload, 0);
         sample->vehicleType = readU8(payload, 4);
         sample->autopilot = readU8(payload, 5);
         sample->baseMode = readU8(payload, 6);
         sample->systemStatus = readU8(payload, 7);
         sample->armed = (sample->baseMode & ArmedFlag) != 0;
         return true;
+    case 1:
+    {
+        if (payloadLength < 31)
+            return false;
+        sample->hasSysStatus = true;
+        const uint16_t voltageMv = readU16(payload, 14);
+        const int16_t currentCa = readI16(payload, 16);
+        const int remainingPct = static_cast<int8_t>(readU8(payload, 30));
+        sample->batteryVoltageValid = voltageMv != 65535U;
+        sample->batteryVoltageV =
+            sample->batteryVoltageValid ? static_cast<double>(voltageMv) / 1000.0 : 0.0;
+        sample->batteryCurrentValid = currentCa != -1;
+        sample->batteryCurrentA =
+            sample->batteryCurrentValid ? static_cast<double>(currentCa) / 100.0 : 0.0;
+        sample->batteryRemainingValid = remainingPct >= 0;
+        sample->batteryRemainingPct = sample->batteryRemainingValid ? remainingPct : -1;
+        return true;
+    }
     case 24:
         if (payloadLength < 30)
             return false;

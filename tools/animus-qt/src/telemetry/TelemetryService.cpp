@@ -17,8 +17,8 @@ TelemetryService::TelemetryService(VehicleModel *vehicle,
                                    QObject *parent)
     : QObject(parent), m_vehicle(vehicle), m_trail(trail), m_socket(nullptr), m_running(false),
       m_mockRunning(false), m_hasPendingSample(false), m_hasDatagramTime(false),
-      m_hasDecodedTime(false), m_linkFresh(false), m_uiRateHz(20), m_datagramCount(0),
-      m_decodedSampleCount(0), m_decodeErrorCount(0), m_udpPort(14551),
+      m_hasDecodedTime(false), m_hasSysStatus(false), m_linkFresh(false), m_uiRateHz(20),
+      m_datagramCount(0), m_decodedSampleCount(0), m_decodeErrorCount(0), m_udpPort(14551),
       m_udpHost(QStringLiteral("127.0.0.1")), m_elapsedS(0.0), m_lastDatagramMs(0),
       m_lastDecodedMs(0), m_freshnessTimeoutMs(2500)
 {
@@ -90,6 +90,22 @@ int TelemetryService::decodeErrorCount() const
     return m_decodeErrorCount;
 }
 
+double TelemetryService::datagramRateHz() const
+{
+    const double seconds = static_cast<double>(elapsedMs()) / 1000.0;
+    if (seconds <= 0.0)
+        return m_datagramCount > 0 ? static_cast<double>(m_datagramCount) : 0.0;
+    return static_cast<double>(m_datagramCount) / seconds;
+}
+
+double TelemetryService::decodedRateHz() const
+{
+    const double seconds = static_cast<double>(elapsedMs()) / 1000.0;
+    if (seconds <= 0.0)
+        return m_decodedSampleCount > 0 ? static_cast<double>(m_decodedSampleCount) : 0.0;
+    return static_cast<double>(m_decodedSampleCount) / seconds;
+}
+
 double TelemetryService::lastDatagramAgeS() const
 {
     if (!m_hasDatagramTime || !m_clock.isValid())
@@ -130,6 +146,18 @@ QString TelemetryService::statusFieldState() const
                             m_vehicle->missionValid());
 }
 
+QString TelemetryService::firmwareModeFieldState() const
+{
+    return stateForValidity(m_vehicle->heartbeatValid());
+}
+
+QString TelemetryService::batteryFieldState() const
+{
+    if (m_vehicle->batteryValid())
+        return stateForValidity(true);
+    return m_hasSysStatus ? QStringLiteral("unsupported") : QStringLiteral("unknown");
+}
+
 QString TelemetryService::terrainFieldState() const
 {
     return stateForValidity(m_vehicle->terrainValid());
@@ -147,10 +175,13 @@ QString TelemetryService::fieldState(const QString &group) const
     if (group == QStringLiteral("status") || group == QStringLiteral("gps") ||
         group == QStringLiteral("mission"))
         return statusFieldState();
+    if (group == QStringLiteral("firmware") || group == QStringLiteral("mode") ||
+        group == QStringLiteral("firmwareMode"))
+        return firmwareModeFieldState();
     if (group == QStringLiteral("terrain"))
         return terrainFieldState();
     if (group == QStringLiteral("battery"))
-        return QStringLiteral("unsupported");
+        return batteryFieldState();
     return QStringLiteral("unknown");
 }
 
@@ -318,9 +349,22 @@ void TelemetryService::applySample(const MavlinkTelemetrySample &sample)
         m_vehicle->setVehicleType(sample.vehicleType);
         m_vehicle->setAutopilot(sample.autopilot);
         m_vehicle->setBaseMode(sample.baseMode);
+        m_vehicle->setCustomMode(sample.customMode);
         m_vehicle->setSystemStatus(sample.systemStatus);
         m_vehicle->setArmed(sample.armed);
         m_vehicle->setHeartbeatValid(true);
+    }
+    if (sample.hasSysStatus)
+    {
+        m_hasSysStatus = true;
+        m_vehicle->setBatteryVoltageV(sample.batteryVoltageV);
+        m_vehicle->setBatteryCurrentA(sample.batteryCurrentA);
+        m_vehicle->setBatteryRemainingPct(sample.batteryRemainingPct);
+        m_vehicle->setBatteryVoltageValid(sample.batteryVoltageValid);
+        m_vehicle->setBatteryCurrentValid(sample.batteryCurrentValid);
+        m_vehicle->setBatteryRemainingValid(sample.batteryRemainingValid);
+        m_vehicle->setBatteryValid(sample.batteryVoltageValid || sample.batteryCurrentValid ||
+                                   sample.batteryRemainingValid);
     }
     if (sample.hasAttitude)
     {
@@ -414,8 +458,19 @@ void TelemetryService::mergePendingSample(const MavlinkTelemetrySample &sample)
         m_pendingSample.vehicleType = sample.vehicleType;
         m_pendingSample.autopilot = sample.autopilot;
         m_pendingSample.baseMode = sample.baseMode;
+        m_pendingSample.customMode = sample.customMode;
         m_pendingSample.systemStatus = sample.systemStatus;
         m_pendingSample.armed = sample.armed;
+    }
+    if (sample.hasSysStatus)
+    {
+        m_pendingSample.hasSysStatus = true;
+        m_pendingSample.batteryVoltageV = sample.batteryVoltageV;
+        m_pendingSample.batteryCurrentA = sample.batteryCurrentA;
+        m_pendingSample.batteryRemainingPct = sample.batteryRemainingPct;
+        m_pendingSample.batteryVoltageValid = sample.batteryVoltageValid;
+        m_pendingSample.batteryCurrentValid = sample.batteryCurrentValid;
+        m_pendingSample.batteryRemainingValid = sample.batteryRemainingValid;
     }
     if (sample.hasAttitude)
     {

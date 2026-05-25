@@ -26,6 +26,8 @@ class TelemetryService final : public QObject
     Q_PROPERTY(int datagramCount READ datagramCount NOTIFY countersChanged)
     Q_PROPERTY(int decodedSampleCount READ decodedSampleCount NOTIFY countersChanged)
     Q_PROPERTY(int decodeErrorCount READ decodeErrorCount NOTIFY countersChanged)
+    Q_PROPERTY(double datagramRateHz READ datagramRateHz NOTIFY countersChanged)
+    Q_PROPERTY(double decodedRateHz READ decodedRateHz NOTIFY countersChanged)
     Q_PROPERTY(double lastDatagramAgeS READ lastDatagramAgeS NOTIFY freshnessChanged)
     Q_PROPERTY(double lastDecodedAgeS READ lastDecodedAgeS NOTIFY freshnessChanged)
     Q_PROPERTY(bool linkFresh READ linkFresh NOTIFY freshnessChanged)
@@ -33,6 +35,8 @@ class TelemetryService final : public QObject
     Q_PROPERTY(QString positionFieldState READ positionFieldState NOTIFY freshnessChanged)
     Q_PROPERTY(QString velocityFieldState READ velocityFieldState NOTIFY freshnessChanged)
     Q_PROPERTY(QString statusFieldState READ statusFieldState NOTIFY freshnessChanged)
+    Q_PROPERTY(QString firmwareModeFieldState READ firmwareModeFieldState NOTIFY freshnessChanged)
+    Q_PROPERTY(QString batteryFieldState READ batteryFieldState NOTIFY freshnessChanged)
     Q_PROPERTY(QString terrainFieldState READ terrainFieldState NOTIFY freshnessChanged)
 
   public:
@@ -51,6 +55,8 @@ class TelemetryService final : public QObject
     int datagramCount() const;
     int decodedSampleCount() const;
     int decodeErrorCount() const;
+    double datagramRateHz() const;
+    double decodedRateHz() const;
     double lastDatagramAgeS() const;
     double lastDecodedAgeS() const;
     bool linkFresh() const;
@@ -58,6 +64,8 @@ class TelemetryService final : public QObject
     QString positionFieldState() const;
     QString velocityFieldState() const;
     QString statusFieldState() const;
+    QString firmwareModeFieldState() const;
+    QString batteryFieldState() const;
     QString terrainFieldState() const;
 
     Q_INVOKABLE void startMockTelemetry();
@@ -101,6 +109,7 @@ class TelemetryService final : public QObject
     bool m_hasPendingSample;
     bool m_hasDatagramTime;
     bool m_hasDecodedTime;
+    bool m_hasSysStatus;
     bool m_linkFresh;
     int m_uiRateHz;
     int m_datagramCount;

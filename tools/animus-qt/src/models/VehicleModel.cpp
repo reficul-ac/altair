@@ -1,9 +1,81 @@
 #include "models/VehicleModel.h"
 
+#include <QStringList>
 #include <QtGlobal>
 
 namespace animus
 {
+namespace
+{
+
+QString autopilotLabelFor(int autopilot)
+{
+    switch (autopilot)
+    {
+    case 0:
+        return QStringLiteral("Generic");
+    case 3:
+        return QStringLiteral("ArduPilot");
+    case 12:
+        return QStringLiteral("PX4");
+    case 8:
+        return QStringLiteral("Invalid");
+    default:
+        return QStringLiteral("MAV_AUTOPILOT ") + QString::number(autopilot);
+    }
+}
+
+QString vehicleTypeLabelFor(int vehicleType)
+{
+    switch (vehicleType)
+    {
+    case 0:
+        return QStringLiteral("Generic");
+    case 1:
+        return QStringLiteral("Fixed wing");
+    case 2:
+        return QStringLiteral("Quadrotor");
+    case 13:
+        return QStringLiteral("Hexarotor");
+    case 14:
+        return QStringLiteral("Octorotor");
+    case 15:
+        return QStringLiteral("Tricopter");
+    case 19:
+        return QStringLiteral("VTOL quadrotor");
+    default:
+        return QStringLiteral("MAV_TYPE ") + QString::number(vehicleType);
+    }
+}
+
+QString systemStatusLabelFor(int systemStatus)
+{
+    switch (systemStatus)
+    {
+    case 0:
+        return QStringLiteral("Uninitialized");
+    case 1:
+        return QStringLiteral("Boot");
+    case 2:
+        return QStringLiteral("Calibrating");
+    case 3:
+        return QStringLiteral("Standby");
+    case 4:
+        return QStringLiteral("Active");
+    case 5:
+        return QStringLiteral("Critical");
+    case 6:
+        return QStringLiteral("Emergency");
+    case 7:
+        return QStringLiteral("Poweroff");
+    case 8:
+        return QStringLiteral("Flight termination");
+    default:
+        return QStringLiteral("MAV_STATE ") + QString::number(systemStatus);
+    }
+}
+
+} // namespace
 
 VehicleModel::VehicleModel(QObject *parent)
     : QObject(parent), m_vehicleId(QStringLiteral("vehicle-1")), m_connected(false),
@@ -11,14 +83,16 @@ VehicleModel::VehicleModel(QObject *parent)
       m_rollRad(0.0), m_pitchRad(0.0), m_yawRad(0.0), m_rollRateRps(0.0), m_pitchRateRps(0.0),
       m_yawRateRps(0.0), m_groundspeedMps(0.0), m_airspeedMps(0.0), m_climbMps(0.0),
       m_throttlePct(0), m_vxNorthMps(0.0), m_vyEastMps(0.0), m_vzDownMps(0.0), m_systemId(0),
-      m_componentId(0), m_autopilot(0), m_vehicleType(0), m_baseMode(0), m_systemStatus(0),
-      m_armed(false), m_gpsFixType(0), m_satellitesVisible(-1), m_missionSeq(-1),
-      m_homeLatitudeDeg(37.4275), m_homeLongitudeDeg(-122.1697), m_homeAltitudeM(0.0),
-      m_terrainLatitudeDeg(0.0), m_terrainLongitudeDeg(0.0), m_terrainHeightM(0.0),
-      m_terrainCurrentHeightM(0.0), m_terrainPending(0), m_terrainLoaded(0),
-      m_heartbeatValid(false), m_attitudeValid(false), m_positionValid(false),
-      m_velocityValid(false), m_gpsValid(false), m_missionValid(false), m_homeValid(false),
-      m_terrainValid(false), m_servoOutputPwm{}, m_servoOutputValid{}
+      m_componentId(0), m_autopilot(0), m_vehicleType(0), m_baseMode(0), m_customMode(0U),
+      m_systemStatus(0), m_armed(false), m_batteryVoltageV(0.0), m_batteryCurrentA(0.0),
+      m_batteryRemainingPct(-1), m_batteryVoltageValid(false), m_batteryCurrentValid(false),
+      m_batteryRemainingValid(false), m_batteryValid(false), m_gpsFixType(0),
+      m_satellitesVisible(-1), m_missionSeq(-1), m_homeLatitudeDeg(37.4275),
+      m_homeLongitudeDeg(-122.1697), m_homeAltitudeM(0.0), m_terrainLatitudeDeg(0.0),
+      m_terrainLongitudeDeg(0.0), m_terrainHeightM(0.0), m_terrainCurrentHeightM(0.0),
+      m_terrainPending(0), m_terrainLoaded(0), m_heartbeatValid(false), m_attitudeValid(false),
+      m_positionValid(false), m_velocityValid(false), m_gpsValid(false), m_missionValid(false),
+      m_homeValid(false), m_terrainValid(false), m_servoOutputPwm{}, m_servoOutputValid{}
 {
 }
 
@@ -334,6 +408,19 @@ void VehicleModel::setBaseMode(int baseMode)
     emit statusChanged();
 }
 
+quint32 VehicleModel::customMode() const
+{
+    return m_customMode;
+}
+
+void VehicleModel::setCustomMode(quint32 customMode)
+{
+    if (m_customMode == customMode)
+        return;
+    m_customMode = customMode;
+    emit statusChanged();
+}
+
 int VehicleModel::systemStatus() const
 {
     return m_systemStatus;
@@ -358,6 +445,136 @@ void VehicleModel::setArmed(bool armed)
         return;
     m_armed = armed;
     emit statusChanged();
+}
+
+QString VehicleModel::autopilotLabel() const
+{
+    return autopilotLabelFor(m_autopilot);
+}
+
+QString VehicleModel::vehicleTypeLabel() const
+{
+    return vehicleTypeLabelFor(m_vehicleType);
+}
+
+QString VehicleModel::baseModeSummary() const
+{
+    QStringList modes;
+    if ((m_baseMode & 0x80) != 0)
+        modes.append(QStringLiteral("armed"));
+    else
+        modes.append(QStringLiteral("disarmed"));
+    if ((m_baseMode & 0x40) != 0)
+        modes.append(QStringLiteral("manual"));
+    if ((m_baseMode & 0x10) != 0)
+        modes.append(QStringLiteral("stabilized"));
+    if ((m_baseMode & 0x08) != 0)
+        modes.append(QStringLiteral("guided"));
+    if ((m_baseMode & 0x04) != 0)
+        modes.append(QStringLiteral("auto"));
+    if ((m_baseMode & 0x20) != 0)
+        modes.append(QStringLiteral("HIL"));
+    if ((m_baseMode & 0x02) != 0)
+        modes.append(QStringLiteral("test"));
+    if ((m_baseMode & 0x01) != 0)
+        modes.append(QStringLiteral("custom"));
+    return modes.join(QStringLiteral(", "));
+}
+
+QString VehicleModel::systemStatusLabel() const
+{
+    return systemStatusLabelFor(m_systemStatus);
+}
+
+double VehicleModel::batteryVoltageV() const
+{
+    return m_batteryVoltageV;
+}
+
+void VehicleModel::setBatteryVoltageV(double batteryVoltageV)
+{
+    if (qFuzzyCompare(m_batteryVoltageV, batteryVoltageV))
+        return;
+    m_batteryVoltageV = batteryVoltageV;
+    emit batteryChanged();
+}
+
+double VehicleModel::batteryCurrentA() const
+{
+    return m_batteryCurrentA;
+}
+
+void VehicleModel::setBatteryCurrentA(double batteryCurrentA)
+{
+    if (qFuzzyCompare(m_batteryCurrentA, batteryCurrentA))
+        return;
+    m_batteryCurrentA = batteryCurrentA;
+    emit batteryChanged();
+}
+
+int VehicleModel::batteryRemainingPct() const
+{
+    return m_batteryRemainingPct;
+}
+
+void VehicleModel::setBatteryRemainingPct(int batteryRemainingPct)
+{
+    if (m_batteryRemainingPct == batteryRemainingPct)
+        return;
+    m_batteryRemainingPct = batteryRemainingPct;
+    emit batteryChanged();
+}
+
+bool VehicleModel::batteryVoltageValid() const
+{
+    return m_batteryVoltageValid;
+}
+
+void VehicleModel::setBatteryVoltageValid(bool batteryVoltageValid)
+{
+    if (m_batteryVoltageValid == batteryVoltageValid)
+        return;
+    m_batteryVoltageValid = batteryVoltageValid;
+    emit batteryChanged();
+}
+
+bool VehicleModel::batteryCurrentValid() const
+{
+    return m_batteryCurrentValid;
+}
+
+void VehicleModel::setBatteryCurrentValid(bool batteryCurrentValid)
+{
+    if (m_batteryCurrentValid == batteryCurrentValid)
+        return;
+    m_batteryCurrentValid = batteryCurrentValid;
+    emit batteryChanged();
+}
+
+bool VehicleModel::batteryRemainingValid() const
+{
+    return m_batteryRemainingValid;
+}
+
+void VehicleModel::setBatteryRemainingValid(bool batteryRemainingValid)
+{
+    if (m_batteryRemainingValid == batteryRemainingValid)
+        return;
+    m_batteryRemainingValid = batteryRemainingValid;
+    emit batteryChanged();
+}
+
+bool VehicleModel::batteryValid() const
+{
+    return m_batteryValid;
+}
+
+void VehicleModel::setBatteryValid(bool batteryValid)
+{
+    if (m_batteryValid == batteryValid)
+        return;
+    m_batteryValid = batteryValid;
+    emit batteryChanged();
 }
 
 int VehicleModel::gpsFixType() const

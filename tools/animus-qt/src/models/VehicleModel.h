@@ -36,8 +36,26 @@ class VehicleModel final : public QObject
     Q_PROPERTY(int autopilot READ autopilot WRITE setAutopilot NOTIFY statusChanged)
     Q_PROPERTY(int vehicleType READ vehicleType WRITE setVehicleType NOTIFY statusChanged)
     Q_PROPERTY(int baseMode READ baseMode WRITE setBaseMode NOTIFY statusChanged)
+    Q_PROPERTY(quint32 customMode READ customMode WRITE setCustomMode NOTIFY statusChanged)
     Q_PROPERTY(int systemStatus READ systemStatus WRITE setSystemStatus NOTIFY statusChanged)
     Q_PROPERTY(bool armed READ armed WRITE setArmed NOTIFY statusChanged)
+    Q_PROPERTY(QString autopilotLabel READ autopilotLabel NOTIFY statusChanged)
+    Q_PROPERTY(QString vehicleTypeLabel READ vehicleTypeLabel NOTIFY statusChanged)
+    Q_PROPERTY(QString baseModeSummary READ baseModeSummary NOTIFY statusChanged)
+    Q_PROPERTY(QString systemStatusLabel READ systemStatusLabel NOTIFY statusChanged)
+    Q_PROPERTY(
+        double batteryVoltageV READ batteryVoltageV WRITE setBatteryVoltageV NOTIFY batteryChanged)
+    Q_PROPERTY(
+        double batteryCurrentA READ batteryCurrentA WRITE setBatteryCurrentA NOTIFY batteryChanged)
+    Q_PROPERTY(int batteryRemainingPct READ batteryRemainingPct WRITE setBatteryRemainingPct NOTIFY
+                   batteryChanged)
+    Q_PROPERTY(bool batteryVoltageValid READ batteryVoltageValid WRITE setBatteryVoltageValid NOTIFY
+                   batteryChanged)
+    Q_PROPERTY(bool batteryCurrentValid READ batteryCurrentValid WRITE setBatteryCurrentValid NOTIFY
+                   batteryChanged)
+    Q_PROPERTY(bool batteryRemainingValid READ batteryRemainingValid WRITE setBatteryRemainingValid
+                   NOTIFY batteryChanged)
+    Q_PROPERTY(bool batteryValid READ batteryValid WRITE setBatteryValid NOTIFY batteryChanged)
     Q_PROPERTY(int gpsFixType READ gpsFixType WRITE setGpsFixType NOTIFY gpsChanged)
     Q_PROPERTY(
         int satellitesVisible READ satellitesVisible WRITE setSatellitesVisible NOTIFY gpsChanged)
@@ -143,11 +161,40 @@ class VehicleModel final : public QObject
     int baseMode() const;
     void setBaseMode(int baseMode);
 
+    quint32 customMode() const;
+    void setCustomMode(quint32 customMode);
+
     int systemStatus() const;
     void setSystemStatus(int systemStatus);
 
     bool armed() const;
     void setArmed(bool armed);
+
+    QString autopilotLabel() const;
+    QString vehicleTypeLabel() const;
+    QString baseModeSummary() const;
+    QString systemStatusLabel() const;
+
+    double batteryVoltageV() const;
+    void setBatteryVoltageV(double batteryVoltageV);
+
+    double batteryCurrentA() const;
+    void setBatteryCurrentA(double batteryCurrentA);
+
+    int batteryRemainingPct() const;
+    void setBatteryRemainingPct(int batteryRemainingPct);
+
+    bool batteryVoltageValid() const;
+    void setBatteryVoltageValid(bool batteryVoltageValid);
+
+    bool batteryCurrentValid() const;
+    void setBatteryCurrentValid(bool batteryCurrentValid);
+
+    bool batteryRemainingValid() const;
+    void setBatteryRemainingValid(bool batteryRemainingValid);
+
+    bool batteryValid() const;
+    void setBatteryValid(bool batteryValid);
 
     int gpsFixType() const;
     void setGpsFixType(int gpsFixType);
@@ -219,6 +266,7 @@ class VehicleModel final : public QObject
     void attitudeChanged();
     void velocityChanged();
     void statusChanged();
+    void batteryChanged();
     void gpsChanged();
     void missionChanged();
     void homeChanged();
@@ -250,8 +298,16 @@ class VehicleModel final : public QObject
     int m_autopilot;
     int m_vehicleType;
     int m_baseMode;
+    quint32 m_customMode;
     int m_systemStatus;
     bool m_armed;
+    double m_batteryVoltageV;
+    double m_batteryCurrentA;
+    int m_batteryRemainingPct;
+    bool m_batteryVoltageValid;
+    bool m_batteryCurrentValid;
+    bool m_batteryRemainingValid;
+    bool m_batteryValid;
     int m_gpsFixType;
     int m_satellitesVisible;
     int m_missionSeq;

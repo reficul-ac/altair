@@ -84,14 +84,11 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Build Qt-native Flight, Dashboard, Inspector, Replay, Plan, Setup
   readiness, and guarded-command workflows only for features still wanted from
   the retired UI, with capture/test coverage for each workspace.
-- [ ] Extend the first-pass Animus telemetry/link diagnostics beyond packet
-  counters, decode errors, link freshness, MAVLink system/component identity,
-  armed state, GPS, mission, home, and terrain summaries: add firmware/mode
-  labels, readiness panel fields, battery/readiness summaries, packet age by
-  message family, update rates, jitter, dropped/decoded counts,
+- [ ] Extend Animus telemetry/link diagnostics beyond the Setup readiness slice:
+  add packet age by message family, jitter, dropped-message estimates,
   clock/source timestamps where available, sim metadata, model credibility tier,
-  per-field fresh/stale/unsupported/unknown states, Qt tests, screenshots, and
-  docs.
+  broader per-message fresh/stale/unsupported/unknown states, `BATTERY_STATUS`
+  support, Qt tests, screenshots, and docs.
 - [ ] Move UDP receive/decode, map tile IO, and terrain/cache work
   behind explicit worker boundaries so rendering, synchronous tile reads,
   and map loading cannot contend with telemetry ingestion.
