@@ -46,8 +46,8 @@ WORKSPACE_COLOR_MINIMUMS = {
     "terrain-3d-workspace": 18,
     "fpv": 18,
     "fpv-workspace": 18,
-    "tactical": 8,
-    "tactical-workspace": 8,
+    "tactical": 12,
+    "tactical-workspace": 10,
     "setup": 7,
 }
 
@@ -68,12 +68,12 @@ WORKSPACE_CONTENT_REGIONS = {
     "fpv": (),
     "fpv-workspace": (RegionSpec("toolbar and tabs", (0.0, 0.0, 1.0, 0.15), 7, 18.0, 0.96),),
     "tactical": (
-        RegionSpec("tactical attitude canvas", (0.04, 0.08, 0.96, 0.94), 6, 24.0, 0.99),
-        RegionSpec("attitude reference and aircraft", (0.34, 0.24, 0.72, 0.70), 5, 20.0, 0.98),
+        RegionSpec("tactical attitude canvas", (0.04, 0.08, 0.96, 0.94), 10, 28.0, 0.97),
+        RegionSpec("attitude reference and aircraft", (0.32, 0.22, 0.74, 0.72), 8, 24.0, 0.96),
     ),
     "tactical-workspace": (
         RegionSpec("toolbar and tabs", (0.0, 0.0, 1.0, 0.15), 7, 18.0, 0.96),
-        RegionSpec("tactical workspace scene", (0.04, 0.18, 0.96, 0.84), 6, 24.0, 0.99),
+        RegionSpec("tactical workspace scene", (0.04, 0.18, 0.96, 0.84), 10, 28.0, 0.97),
         RegionSpec("attitude overlay", (0.01, 0.14, 0.34, 0.58), 3, 3.0, 0.995),
     ),
     "setup": (
@@ -447,12 +447,16 @@ def inspect_tactical_visuals(image: PngImage) -> dict[str, object]:
     green = 0
     blue = 0
     yellow = 0
+    bright_reference = 0
+    nonblack = 0
     for y in range(y0, y1, 2):
         for x in range(x0, x1, 2):
             r, g, b = pixel_rgb(image, x, y)
             total += 1
             if r < 24 and g < 24 and b < 24:
                 black += 1
+            else:
+                nonblack += 1
             if r > 140 and g < 95 and b < 95:
                 red += 1
             if g > 115 and r < 110 and b < 125:
@@ -461,6 +465,8 @@ def inspect_tactical_visuals(image: PngImage) -> dict[str, object]:
                 blue += 1
             if r > 170 and g > 130 and b < 80:
                 yellow += 1
+            if max(r, g, b) - min(r, g, b) > 55 and max(r, g, b) > 95:
+                bright_reference += 1
 
     if total == 0:
         failures.append("empty tactical visual sample")
@@ -468,6 +474,12 @@ def inspect_tactical_visuals(image: PngImage) -> dict[str, object]:
         black_ratio = black / total
         if black_ratio < 0.20:
             warnings.append(f"black background coverage {black_ratio:.2f} < 0.20")
+        if black_ratio > 0.94:
+            failures.append(f"tactical scene is mostly empty black: {black_ratio:.2f}")
+        if nonblack < 180:
+            failures.append(f"too few tactical scene reference pixels: {nonblack}")
+        if bright_reference < 120:
+            failures.append(f"too few bright tactical instrument pixels: {bright_reference}")
     if red < 12:
         warnings.append(f"missing red roll ring pixels: {red}")
     if green < 12:
@@ -483,6 +495,8 @@ def inspect_tactical_visuals(image: PngImage) -> dict[str, object]:
         "failures": failures,
         "warnings": warnings,
         "blackPixels": black,
+        "nonblackPixels": nonblack,
+        "brightReferencePixels": bright_reference,
         "redPixels": red,
         "greenPixels": green,
         "bluePixels": blue,

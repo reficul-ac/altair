@@ -14,6 +14,7 @@ Item {
     property string lastCameraInspectionError: ""
     property var localSceneStatus: ({ "status": "initializing", "error": "" })
     property bool workspaceCurrent: StackLayout.isCurrentItem
+    property bool tacticalDetailsExpanded: false
 
     signal captureFinished(bool ok, string error)
     signal controlSurfaceInspectionFinished(bool ok, string error)
@@ -262,23 +263,24 @@ Item {
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.margins: 12
-        width: Math.min(parent.width - 24, 390)
+        width: Math.min(parent.width - 24, root.tacticalDetailsExpanded ? 430 : 390)
         padding: 12
         panelOpacity: 0.94
         borderColor: telemetryService.linkFresh ? animusTheme.success : animusTheme.warning
+        borderWidth: telemetryService.linkFresh ? 1 : 2
 
         ColumnLayout {
             anchors.fill: parent
-            spacing: 9
+            spacing: 8
 
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
 
                 Label {
-                    text: "TACTICAL"
-                    color: animusTheme.mutedText
-                    font.pixelSize: 11
+                    text: "TACTICAL ATTITUDE"
+                    color: animusTheme.text
+                    font.pixelSize: 12
                     font.bold: true
                 }
 
@@ -302,6 +304,17 @@ Item {
                     text: root.linkText()
                     tone: telemetryService.linkFresh ? "success" : "warning"
                 }
+
+                AnimusIconButton {
+                    id: tacticalSnapButton
+                    objectName: "tacticalSnapButton"
+                    width: 30
+                    height: 28
+                    text: "\u21ba"
+                    font.pixelSize: 15
+                    toolTipText: "Reset tactical camera"
+                    onClicked: root.resetCamera()
+                }
             }
 
             RowLayout {
@@ -316,7 +329,7 @@ Item {
                                              vehicleModel.rollRad * 180.0 / Math.PI, "", 1)
                         color: vehicleModel.attitudeValid && telemetryService.linkFresh
                                ? animusTheme.text : animusTheme.warning
-                        font.pixelSize: 28
+                        font.pixelSize: 30
                         font.bold: true
                     }
                     Label {
@@ -335,7 +348,7 @@ Item {
                                              vehicleModel.pitchRad * 180.0 / Math.PI, "", 1)
                         color: vehicleModel.attitudeValid && telemetryService.linkFresh
                                ? animusTheme.text : animusTheme.warning
-                        font.pixelSize: 28
+                        font.pixelSize: 30
                         font.bold: true
                     }
                     Label {
@@ -353,7 +366,7 @@ Item {
                         text: root.headingText()
                         color: vehicleModel.attitudeValid && telemetryService.linkFresh
                                ? animusTheme.text : animusTheme.warning
-                        font.pixelSize: 20
+                        font.pixelSize: 22
                         font.bold: true
                     }
                     Label {
@@ -365,11 +378,43 @@ Item {
                 }
             }
 
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Label {
+                    text: "CAMERA VEHICLE LOCKED"
+                    color: animusTheme.mutedText
+                    font.pixelSize: 10
+                    font.bold: true
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Label {
+                    text: root.tacticalDetailsExpanded ? "HIDE RATES" : "SHOW RATES"
+                    color: root.tacticalDetailsExpanded ? animusTheme.text : animusTheme.mutedText
+                    font.pixelSize: 10
+                    font.bold: true
+                }
+
+                AnimusIconButton {
+                    width: 26
+                    height: 24
+                    text: root.tacticalDetailsExpanded ? "^" : "v"
+                    font.pixelSize: 12
+                    toolTipText: root.tacticalDetailsExpanded ? "Hide tactical details"
+                                                             : "Show tactical details"
+                    onClicked: root.tacticalDetailsExpanded = !root.tacticalDetailsExpanded
+                }
+            }
+
             GridLayout {
                 Layout.fillWidth: true
+                visible: root.tacticalDetailsExpanded
                 columns: 3
                 columnSpacing: 10
-                rowSpacing: 4
+                rowSpacing: 6
 
                 Repeater {
                     model: [
@@ -417,20 +462,6 @@ Item {
                         }
                     }
                 }
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
-                height: 1
-                color: animusTheme.border
-                opacity: 0.65
-            }
-
-            GridLayout {
-                Layout.fillWidth: true
-                columns: 2
-                rowSpacing: 4
-                columnSpacing: 12
 
                 Label {
                     text: "YAW"
@@ -439,25 +470,13 @@ Item {
                     font.bold: true
                 }
                 Label {
+                    Layout.columnSpan: 2
                     Layout.fillWidth: true
                     text: root.valueText(vehicleModel.attitudeValid,
                                          vehicleModel.yawRad * 180.0 / Math.PI, " deg", 1)
                     color: vehicleModel.attitudeValid && telemetryService.linkFresh
                            ? animusTheme.text : animusTheme.warning
                     font.pixelSize: 12
-                }
-                Label {
-                    text: "CAMERA"
-                    color: animusTheme.mutedText
-                    font.pixelSize: 10
-                    font.bold: true
-                }
-                Label {
-                    Layout.fillWidth: true
-                    text: "VEHICLE LOCKED"
-                    color: animusTheme.text
-                    font.pixelSize: 12
-                    font.bold: true
                 }
             }
         }
@@ -474,26 +493,5 @@ Item {
         webSceneReady: webLoader.status === Loader.Ready && webLoader.item !== null
         webSceneError: webLoader.status === Loader.Error
         fallbackActive: root.useFallbackScene()
-    }
-
-    AnimusIconButton {
-        id: tacticalSnapButton
-        objectName: "tacticalSnapButton"
-        anchors.left: tacticalAttitudeOverlay.right
-        anchors.top: tacticalAttitudeOverlay.top
-        anchors.leftMargin: 8
-        width: 32
-        height: 30
-        text: "\u21ba"
-        toolTipText: "Reset tactical camera"
-        onClicked: root.resetCamera()
-
-        background: Rectangle {
-            color: tacticalSnapButton.down ? animusTheme.surface : animusTheme.overlay
-            border.color: tacticalSnapButton.hovered ? animusTheme.accent : animusTheme.border
-            border.width: 1
-            opacity: 0.94
-            radius: 4
-        }
     }
 }

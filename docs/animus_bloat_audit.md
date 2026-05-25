@@ -79,6 +79,28 @@ Visual refresh:
   `cesium-webengine` rendering for FPV and Terrain 3D control-surface
   diagnostics, FPV camera diagnostics passed with `cesium-webengine/fpv`, and the
   prior FPV/Terrain native low-diversity warnings were removed.
+- 2026-05-25: Reworked Tactical into a focused attitude instrument. The
+  overlay now keeps roll, pitch, heading/track, link freshness, and
+  vehicle-lock state in one compact panel; reset-camera moved into that header,
+  while yaw and body-rate details are behind a local disclosure. The native
+  Tactical Cesium scene gained deterministic instrument references: muted
+  range/grid marks, stronger RGB attitude axes, pitch ticks, and heading/track
+  cueing around the vehicle-locked ownship. Capture checks now fail overly empty
+  Tactical scenes without depending on debug labels, while preserving the
+  existing camera, GLB/profile, and control-surface diagnostics. Verification:
+  `python3 tools/python/format_repo.py --check`, `cmake -S . -B
+  build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON -DCMAKE_BUILD_TYPE=Debug`,
+  `cmake --build build-animus-qt --target animus_qt animus_qt_unit_tests
+  --parallel`, `ctest --test-dir build-animus-qt --output-on-failure -R
+  animus_qt`, and `python3 tools/python/capture_animus_qt_sitl.py` passed.
+  Screenshot artifact: `artifacts/animus-qt-screenshots/20260525T010820Z/`.
+  Tactical capture diagnostics passed with `cesium-webengine/tactical`; the
+  report still carries the pre-existing Terrain 3D workspace scene-diversity
+  warning, now tracked in `TODO.md`. Mean pixel deltas against
+  `artifacts/animus-qt-screenshots/20260524T095811Z/screenshots/` were `40.82`
+  (Tactical) and `34.33` (Tactical workspace); against
+  `artifacts/animus-qt-screenshots/20260525T004244Z/screenshots/` they were
+  `13.89` and `17.25`.
 - 2026-05-24: Added `AnimusTelemetrySummary` and moved Map 2D, Terrain 3D, and
   FPV onto the same glanceable telemetry overlay. The primary row now leads with
   link, GPS/nav, MSL altitude, groundspeed, vertical speed, and attitude

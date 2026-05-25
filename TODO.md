@@ -176,9 +176,11 @@ Reusable Bayek framework follow-up is tracked separately in
   `docs/animus_bloat_audit.md` for the remaining non-Tactical views: shared QML
   status/overlay/control components where reused immediately, progressive
   diagnostics disclosure, less always-visible debug chrome, and before/after
-  screenshot comparison. Remaining follow-up: further reduce the remaining
-  native WebEngine low-diversity capture warnings for FPV and Terrain 3D without
-  adding primary-layer debug chrome.
+  screenshot comparison. Tactical now has focused instrument chrome plus
+  stricter empty-scene capture checks without adding primary-layer debug chrome.
+- [ ] Reduce the remaining Terrain 3D workspace low-diversity capture warning
+  without adding primary-layer debug chrome; the 20260525T010820Z Animus Qt
+  visual report still flags the workspace scene subregion.
 
 ## Test Ownership
 

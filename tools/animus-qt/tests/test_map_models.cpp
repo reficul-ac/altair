@@ -1784,7 +1784,7 @@ class AnimusQtMapModelTests final : public QObject
         QVERIFY(scriptText.contains(QStringLiteral("function applyWorkspaceSceneStyle()")));
         QVERIFY(scriptText.contains(
             QStringLiteral("viewer.scene.backgroundColor = "
-                           "Cesium.Color.fromCssColorString(tactical ? '#000000'")));
+                           "Cesium.Color.fromCssColorString(tactical ? '#050b0f'")));
 
         QFile vehicleModelScript(cesiumDir.filePath(QStringLiteral("vehicleModel.js")));
         QVERIFY(vehicleModelScript.open(QIODevice::ReadOnly));

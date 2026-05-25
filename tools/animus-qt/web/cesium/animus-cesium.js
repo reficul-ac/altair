@@ -843,8 +843,8 @@
   function applyWorkspaceSceneStyle() {
     if (!viewer || !viewer.scene || !viewer.scene.globe) return;
     const tactical = workspaceMode === 'tactical';
-    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString(tactical ? '#000000' : '#8fb1ce');
-    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString(tactical ? '#000000' : '#d4dfd7');
+    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString(tactical ? '#050b0f' : '#8fb1ce');
+    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString(tactical ? '#050b0f' : '#d4dfd7');
     viewer.scene.globe.show = !tactical;
     if (headingEntity) headingEntity.show = false;
   }
@@ -1709,6 +1709,162 @@
     });
   }
 
+  function addTacticalHeadingArrow(position, axes, forwardM, halfWidthM, color, alpha) {
+    addAttitudeReferenceLine([
+      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, 0.0, 1.5),
+      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM - 18.0, -halfWidthM, 1.5),
+      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM - 11.0, 0.0, 1.5),
+      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM - 18.0, halfWidthM, 1.5),
+      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, 0.0, 1.5),
+    ], 4.2, color, alpha);
+  }
+
+  function updateTacticalReferences(vehicle, position) {
+    const attitude = Cesium.Matrix3.fromQuaternion(
+      orientationFor(vehicle, position),
+      new Cesium.Matrix3()
+    );
+    const forwardAxis = Cesium.Matrix3.multiplyByVector(
+      attitude,
+      Cesium.Cartesian3.UNIT_X,
+      new Cesium.Cartesian3()
+    );
+    const rightAxis = Cesium.Matrix3.multiplyByVector(
+      attitude,
+      Cesium.Cartesian3.UNIT_Y,
+      new Cesium.Cartesian3()
+    );
+    const upAxis = Cesium.Matrix3.multiplyByVector(
+      attitude,
+      Cesium.Cartesian3.UNIT_Z,
+      new Cesium.Cartesian3()
+    );
+    const heading = headingAxes(position, vehicleHeadingDeg(vehicle));
+
+    [28.0, 52.0, 78.0].forEach((radius, index) => {
+      addAttitudeReferenceLine(
+        localCirclePoints(position, radius, -3.0),
+        index === 0 ? 2.5 : 1.6,
+        index === 0 ? '#4d5f61' : '#293b3d',
+        index === 0 ? 0.64 : 0.42
+      );
+    });
+    [-72.0, -48.0, -24.0, 0.0, 24.0, 48.0, 72.0].forEach((offset) => {
+      const major = offset === 0.0 || Math.abs(offset) === 72.0;
+      addAttitudeReferenceLine([
+        localOffsetPoint(position, -86.0, offset, -3.0),
+        localOffsetPoint(position, 86.0, offset, -3.0),
+      ], major ? 2.7 : 1.5, major ? '#344d4f' : '#243337', major ? 0.56 : 0.34);
+      addAttitudeReferenceLine([
+        localOffsetPoint(position, offset, -86.0, -3.0),
+        localOffsetPoint(position, offset, 86.0, -3.0),
+      ], major ? 2.7 : 1.5, major ? '#3f444f' : '#2a3038', major ? 0.52 : 0.32);
+    });
+
+    [
+      {
+        positions: attitudeAxisRingPoints(position, tacticalRingRadiusM, rightAxis, upAxis),
+        color: '#d92626',
+        width: 4.4,
+      },
+      {
+        positions: attitudeAxisRingPoints(position, tacticalRingRadiusM * 1.12, forwardAxis, upAxis),
+        color: '#2fbf5b',
+        width: 3.8,
+      },
+      {
+        positions: attitudeAxisRingPoints(position, tacticalRingRadiusM * 1.24, forwardAxis, rightAxis),
+        color: '#2f6df6',
+        width: 3.8,
+      },
+    ].forEach((ring) => {
+      attitudeReferenceCollection.add({
+        positions: ring.positions,
+        width: ring.width,
+        material: Cesium.Material.fromType('Color', {
+          color: Cesium.Color.fromCssColorString(ring.color).withAlpha(0.92),
+        }),
+      });
+    });
+    [
+      {axis: forwardAxis, color: '#2fbf5b', length: 20.0},
+      {axis: rightAxis, color: '#d92626', length: 18.0},
+      {axis: upAxis, color: '#2f6df6', length: 16.0},
+    ].forEach((spoke) => {
+      attitudeReferenceCollection.add({
+        positions: [
+          position,
+          Cesium.Cartesian3.add(
+            position,
+            Cesium.Cartesian3.multiplyByScalar(spoke.axis, spoke.length, new Cesium.Cartesian3()),
+            new Cesium.Cartesian3()
+          ),
+        ],
+        width: 5.2,
+        material: Cesium.Material.fromType('Color', {
+          color: Cesium.Color.fromCssColorString(spoke.color).withAlpha(0.96),
+        }),
+      });
+    });
+
+    [-30.0, -20.0, -10.0, 10.0, 20.0, 30.0].forEach((pitchOffset) => {
+      const color = pitchOffset > 0.0 ? '#9ed0ff' : '#fff2a6';
+      const alpha = Math.abs(pitchOffset) === 10.0 ? 0.76 : 0.56;
+      addAttitudeReferenceLine([
+        vehicleRelativePoint(position, forwardAxis, rightAxis, upAxis, 0.0, -38.0, pitchOffset),
+        vehicleRelativePoint(position, forwardAxis, rightAxis, upAxis, 0.0, -12.0, pitchOffset),
+      ], 2.8, color, alpha);
+      addAttitudeReferenceLine([
+        vehicleRelativePoint(position, forwardAxis, rightAxis, upAxis, 0.0, 12.0, pitchOffset),
+        vehicleRelativePoint(position, forwardAxis, rightAxis, upAxis, 0.0, 38.0, pitchOffset),
+      ], 2.8, color, alpha);
+    });
+
+    addAttitudeReferenceLine([
+      vehicleRelativePoint(position, heading.forward, heading.right, heading.up, -58.0, 0.0, 1.0),
+      vehicleRelativePoint(position, heading.forward, heading.right, heading.up, 104.0, 0.0, 1.0),
+    ], 3.8, '#f7f7f3', 0.76);
+    addTacticalHeadingArrow(position, heading, 118.0, 12.0, '#f7f7f3', 0.86);
+
+    const trackLeadM = Math.max(62.0, Math.min(130.0, numberOr(vehicle.groundspeedMps, 0.0) * 5.0));
+    addAttitudeReferenceLine([
+      vehicleRelativePoint(position, heading.forward, heading.right, heading.up, 0.0, -16.0, 2.0),
+      vehicleRelativePoint(position, heading.forward, heading.right, heading.up, trackLeadM, -16.0, 2.0),
+    ], 2.6, '#d59b28', 0.72);
+    addTacticalHeadingArrow(position, heading, trackLeadM + 10.0, 7.5, '#d59b28', 0.78);
+
+    for (let index = 0; index < 24; ++index) {
+      const angle = (index / 24.0) * Math.PI * 2.0;
+      const major = index % 6 === 0;
+      const radius = tacticalRingRadiusM * 1.42;
+      const tickM = major ? 4.4 : 2.5;
+      const first = Cesium.Cartesian3.multiplyByScalar(rightAxis, Math.cos(angle), new Cesium.Cartesian3());
+      const second = Cesium.Cartesian3.multiplyByScalar(upAxis, Math.sin(angle), new Cesium.Cartesian3());
+      const radial = Cesium.Cartesian3.normalize(
+        Cesium.Cartesian3.add(first, second, new Cesium.Cartesian3()),
+        new Cesium.Cartesian3()
+      );
+      attitudeReferenceCollection.add({
+        positions: [
+          Cesium.Cartesian3.add(
+            position,
+            Cesium.Cartesian3.multiplyByScalar(radial, radius - tickM, new Cesium.Cartesian3()),
+            new Cesium.Cartesian3()
+          ),
+          Cesium.Cartesian3.add(
+            position,
+            Cesium.Cartesian3.multiplyByScalar(radial, radius + tickM, new Cesium.Cartesian3()),
+            new Cesium.Cartesian3()
+          ),
+        ],
+        width: major ? 4.2 : 2.3,
+        material: Cesium.Material.fromType('Color', {
+          color: Cesium.Color.fromCssColorString(major ? '#f7f7f3' : '#9fb0a1').withAlpha(major ? 0.86 : 0.58),
+        }),
+      });
+    }
+  }
+
   function updateFpvReferences(vehicle, position) {
     const axes = fpvAttitudeAxes(vehicle, position);
     const horizonWidthM = 84.0;
@@ -1804,112 +1960,7 @@
       updateFpvReferences(vehicle, position);
       return;
     }
-    const attitude = Cesium.Matrix3.fromQuaternion(
-      orientationFor(vehicle, position),
-      new Cesium.Matrix3()
-    );
-    const forwardAxis = Cesium.Matrix3.multiplyByVector(
-      attitude,
-      Cesium.Cartesian3.UNIT_X,
-      new Cesium.Cartesian3()
-    );
-    const rightAxis = Cesium.Matrix3.multiplyByVector(
-      attitude,
-      Cesium.Cartesian3.UNIT_Y,
-      new Cesium.Cartesian3()
-    );
-    const upAxis = Cesium.Matrix3.multiplyByVector(
-      attitude,
-      Cesium.Cartesian3.UNIT_Z,
-      new Cesium.Cartesian3()
-    );
-    [
-      {
-        positions: attitudeAxisRingPoints(position, tacticalRingRadiusM, rightAxis, upAxis),
-        color: '#d92626',
-        width: 4.0,
-      },
-      {
-        positions: attitudeAxisRingPoints(position, tacticalRingRadiusM * 1.08, forwardAxis, upAxis),
-        color: '#2fbf5b',
-        width: 3.5,
-      },
-      {
-        positions: attitudeAxisRingPoints(position, tacticalRingRadiusM * 1.16, forwardAxis, rightAxis),
-        color: '#2f6df6',
-        width: 3.5,
-      },
-    ].forEach((ring) => {
-      attitudeReferenceCollection.add({
-        positions: ring.positions,
-        width: ring.width,
-        material: Cesium.Material.fromType('Color', {
-          color: Cesium.Color.fromCssColorString(ring.color).withAlpha(0.92),
-        }),
-      });
-    });
-    [
-      {axis: forwardAxis, color: '#2fbf5b', length: 18.0},
-      {axis: rightAxis, color: '#d92626', length: 16.0},
-      {axis: upAxis, color: '#2f6df6', length: 14.0},
-    ].forEach((spoke) => {
-      attitudeReferenceCollection.add({
-        positions: [
-          position,
-          Cesium.Cartesian3.add(
-            position,
-            Cesium.Cartesian3.multiplyByScalar(spoke.axis, spoke.length, new Cesium.Cartesian3()),
-            new Cesium.Cartesian3()
-          ),
-        ],
-        width: 5.0,
-        material: Cesium.Material.fromType('Color', {
-          color: Cesium.Color.fromCssColorString(spoke.color).withAlpha(0.96),
-        }),
-      });
-    });
-    [-72.0, -48.0, -24.0, 0.0, 24.0, 48.0, 72.0].forEach((offset, index) => {
-      const major = offset === 0.0 || Math.abs(offset) === 72.0;
-      const color = index % 2 === 0 ? '#274b52' : '#364a3c';
-      addAttitudeReferenceLine([
-        vehicleRelativePoint(position, rightAxis, upAxis, forwardAxis, -86.0, offset, -8.0),
-        vehicleRelativePoint(position, rightAxis, upAxis, forwardAxis, 86.0, offset, -8.0),
-      ], major ? 3.2 : 2.0, color, major ? 0.76 : 0.48);
-      addAttitudeReferenceLine([
-        vehicleRelativePoint(position, rightAxis, upAxis, forwardAxis, offset, -86.0, -8.0),
-        vehicleRelativePoint(position, rightAxis, upAxis, forwardAxis, offset, 86.0, -8.0),
-      ], major ? 3.2 : 2.0, index % 2 === 0 ? '#433f52' : '#4a4236', major ? 0.68 : 0.44);
-    });
-    for (let index = 0; index < 24; ++index) {
-      const angle = (index / 24.0) * Math.PI * 2.0;
-      const major = index % 6 === 0;
-      const radius = tacticalRingRadiusM * 1.32;
-      const tickM = major ? 4.0 : 2.4;
-      const first = Cesium.Cartesian3.multiplyByScalar(rightAxis, Math.cos(angle), new Cesium.Cartesian3());
-      const second = Cesium.Cartesian3.multiplyByScalar(upAxis, Math.sin(angle), new Cesium.Cartesian3());
-      const radial = Cesium.Cartesian3.normalize(
-        Cesium.Cartesian3.add(first, second, new Cesium.Cartesian3()),
-        new Cesium.Cartesian3()
-      );
-      attitudeReferenceCollection.add({
-        positions: [
-          Cesium.Cartesian3.add(
-            position,
-            Cesium.Cartesian3.multiplyByScalar(radial, radius - tickM, new Cesium.Cartesian3()),
-            new Cesium.Cartesian3()
-          ),
-          Cesium.Cartesian3.add(
-            position,
-            Cesium.Cartesian3.multiplyByScalar(radial, radius + tickM, new Cesium.Cartesian3()),
-            new Cesium.Cartesian3()
-          ),
-        ],
-        width: major ? 4.0 : 2.2,
-        material: Cesium.Material.fromType('Color', {
-          color: Cesium.Color.fromCssColorString(major ? '#f7f7f3' : '#9fb0a1').withAlpha(major ? 0.86 : 0.58),
-        }),
-      });
-    }
+    updateTacticalReferences(vehicle, position);
     viewer.scene.requestRender();
   }
 
