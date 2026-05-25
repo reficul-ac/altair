@@ -1570,10 +1570,10 @@
     if (!terrainReferenceCollection) return;
     const axes = headingAxes(center, vehicleHeadingDeg(vehicle));
     const clearanceColor = clearanceCueColor();
-    const vehicleAlt = numberOr(vehicle.altitudeM, baseAlt + 120.0);
     const terrain = state.terrain || {};
     const clearance = state.clearance || {};
     const terrainHeight = numberOr(clearance.terrainHeightM, numberOr(terrain.currentHeightM, baseAlt));
+    const vehicleAlt = numberOr(vehicle.altitudeM, baseAlt + 120.0);
     const aglM = numberOr(clearance.aglM, vehicleAlt - terrainHeight);
     const laneHalfWidthM = clamp(numberOr(vehicle.groundspeedMps, 0) * 1.3 + 32.0, 42.0, 86.0);
     const forwardStartM = 45.0;
@@ -1584,44 +1584,27 @@
       addTerrainReferenceLine([
         vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardStartM, rightM, centerUpM),
         vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardEndM, rightM, centerUpM),
-      ], 8.0, clearanceColor, 0.88);
+      ], 4.2, clearanceColor, 0.62);
     });
-    [80.0, 150.0, 240.0, 360.0, 520.0, 700.0].forEach((forwardM, index) => {
+    [120.0, 300.0, 560.0].forEach((forwardM, index) => {
       if (forwardM > forwardEndM) return;
       addTerrainReferenceLine([
         vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM, -laneHalfWidthM, centerUpM),
         vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM, laneHalfWidthM, centerUpM),
-      ], index === 0 ? 7.0 : 5.0, index === 0 ? '#f7f7f3' : clearanceColor, index === 0 ? 0.86 : 0.66);
+      ], index === 0 ? 3.8 : 3.0, index === 0 ? '#f7f7f3' : clearanceColor, index === 0 ? 0.56 : 0.42);
     });
     addTerrainReferenceLine([
       vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardStartM, 0.0, centerUpM + 10.0),
       vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardEndM, 0.0, centerUpM + 10.0),
-    ], 6.0, '#fff2a6', 0.82);
+    ], 3.2, '#fff2a6', 0.48);
 
-    [
-      {offsetM: Math.max(12.0, terrainHeight + 20.0 - vehicleAlt), color: '#d92626', width: 4.5, alpha: 0.54},
-      {offsetM: Math.max(24.0, terrainHeight + 50.0 - vehicleAlt), color: '#d59b28', width: 5.0, alpha: 0.58},
-      {offsetM: Math.max(42.0, numberOr(clearance.homeRelativeAltitudeM, 0) * 0.18), color: '#f7f7f3', width: 4.0, alpha: 0.50},
-    ].forEach((band) => {
-      const aftM = -80.0;
-      const fwdM = Math.min(forwardEndM, 560.0);
-      addTerrainReferenceLine([
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, aftM, -laneHalfWidthM * 1.5, band.offsetM),
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, fwdM, -laneHalfWidthM * 1.5, band.offsetM),
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, fwdM, laneHalfWidthM * 1.5, band.offsetM),
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, aftM, laneHalfWidthM * 1.5, band.offsetM),
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, aftM, -laneHalfWidthM * 1.5, band.offsetM),
-      ], band.width, band.color, band.alpha);
-    });
-    [0.32, 0.58, 0.82].forEach((fraction, index) => {
+    [0.35, 0.72].forEach((fraction) => {
       const forwardM = forwardStartM + (forwardEndM - forwardStartM) * fraction;
-      const color = index === 0 ? '#9ed0ff' : (index === 1 ? '#0f7b43' : '#2f6df6');
       addTerrainReferenceLine([
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM, -laneHalfWidthM * 1.8, centerUpM + 28.0),
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM + 80.0, -laneHalfWidthM * 0.8, centerUpM - 8.0),
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM + 80.0, laneHalfWidthM * 0.8, centerUpM - 8.0),
-        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM, laneHalfWidthM * 1.8, centerUpM + 28.0),
-      ], 5.0, color, 0.56);
+        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM, -laneHalfWidthM * 0.9, centerUpM + 16.0),
+        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM + 58.0, 0.0, centerUpM - 4.0),
+        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM, laneHalfWidthM * 0.9, centerUpM + 16.0),
+      ], 2.8, '#9ed0ff', 0.34);
     });
   }
 
@@ -1647,59 +1630,18 @@
     const center = vehicle.positionValid && validPosition(vehicle)
       ? cartesian(vehicle)
       : Cesium.Cartesian3.fromDegrees(centerLon, centerLat, baseAlt);
-    const terrainGridColors = [
-      '#2d3d34', '#49624b', '#0f7b43', '#8b6b2d',
-      '#304f61', '#756b39', '#5d715d', '#3f4a3d',
-      '#d59b28', '#9ed0ff', '#fff2a6', '#2f6df6',
-    ];
-    for (let index = 0; index < 17; ++index) {
-      const offset = -960.0 + index * 120.0;
-      const color = terrainGridColors[index % terrainGridColors.length];
-      const major = index % 4 === 0;
-      addTerrainReferenceLine([
-        localOffsetPoint(center, -1060.0, offset - 120.0, 5.0),
-        localOffsetPoint(center, 1060.0, offset + 120.0, 5.0),
-      ], major ? 16.0 : 10.0, color, major ? 0.42 : 0.30);
-      addTerrainReferenceLine([
-        localOffsetPoint(center, offset - 90.0, -980.0, 5.5),
-        localOffsetPoint(center, offset + 90.0, 980.0, 5.5),
-      ], major ? 14.0 : 9.0, terrainGridColors[(index + 5) % terrainGridColors.length], major ? 0.38 : 0.28);
-    }
-    [-720.0, -480.0, -240.0, 0.0, 240.0, 480.0, 720.0].forEach((offset, index) => {
-      addTerrainReferenceLine([
-        localOffsetPoint(center, -1120.0, offset, 8.0),
-        localOffsetPoint(center, 1120.0, offset, 8.0),
-      ], index === 3 ? 13.0 : 8.0, terrainGridColors[(index + 2) % terrainGridColors.length], index === 3 ? 0.40 : 0.30);
-      addTerrainReferenceLine([
-        localOffsetPoint(center, offset, -1020.0, 8.5),
-        localOffsetPoint(center, offset, 1020.0, 8.5),
-      ], index === 3 ? 12.0 : 8.0, terrainGridColors[(index + 8) % terrainGridColors.length], index === 3 ? 0.38 : 0.28);
-    });
-    [100.0, 250.0, 500.0, 750.0].forEach((radius, index) => {
-      const color = index % 2 === 0 ? '#f7f7f3' : '#d59b28';
-      addTerrainReferenceLine(localCirclePoints(center, radius, 2.0), 4.5 + index * 0.7, color, 0.54);
-    });
-    [-750.0, -500.0, -250.0, 0.0, 250.0, 500.0, 750.0].forEach((offset) => {
+    [-500.0, -250.0, 0.0, 250.0, 500.0].forEach((offset) => {
       addTerrainReferenceLine([
         localOffsetPoint(center, -760.0, offset, 1.0),
         localOffsetPoint(center, 760.0, offset, 1.0),
-      ], offset === 0.0 ? 7.0 : 4.5, offset === 0.0 ? '#2d3d34' : '#49624b', offset === 0.0 ? 0.82 : 0.60);
+      ], offset === 0.0 ? 3.6 : 2.0, offset === 0.0 ? '#2d3d34' : '#49624b', offset === 0.0 ? 0.54 : 0.32);
       addTerrainReferenceLine([
         localOffsetPoint(center, offset, -760.0, 1.0),
         localOffsetPoint(center, offset, 760.0, 1.0),
-      ], offset === 0.0 ? 7.0 : 4.5, offset === 0.0 ? '#2d3d34' : '#49624b', offset === 0.0 ? 0.82 : 0.60);
+      ], offset === 0.0 ? 3.6 : 2.0, offset === 0.0 ? '#2d3d34' : '#49624b', offset === 0.0 ? 0.54 : 0.32);
     });
-    [-620.0, -360.0, -120.0, 120.0, 360.0, 620.0].forEach((offset, index) => {
-      const color = index % 3 === 0 ? '#9ed0ff' : (index % 3 === 1 ? '#fff2a6' : '#0f7b43');
-      addTerrainReferenceLine([
-        localOffsetPoint(center, -760.0, offset - 180.0, 3.0),
-        localOffsetPoint(center, 760.0, offset + 180.0, 3.0),
-      ], 3.8, color, 0.42);
-      addTerrainReferenceLine([
-        localOffsetPoint(center, -760.0, offset + 180.0, 4.0),
-        localOffsetPoint(center, 760.0, offset - 180.0, 4.0),
-      ], 3.4, index % 2 === 0 ? '#d59b28' : '#f7f7f3', 0.38);
-    });
+    addTerrainReferenceLine(localCirclePoints(center, 250.0, 2.0), 2.2, '#f7f7f3', 0.30);
+    addTerrainReferenceLine(localCirclePoints(center, 500.0, 2.0), 1.8, '#49624b', 0.24);
     if (vehicle.positionValid && validPosition(vehicle)) {
       addTerrainTrackCorridor(center, vehicle, baseAlt);
     }
@@ -1744,7 +1686,7 @@
       vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM - 11.0, 0.0, 1.5),
       vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM - 18.0, halfWidthM, 1.5),
       vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, 0.0, 1.5),
-    ], 4.2, color, alpha);
+    ], 2.8, color, alpha);
   }
 
   function updateTacticalReferences(vehicle, position) {
@@ -1769,24 +1711,24 @@
     );
     const heading = headingAxes(position, vehicleHeadingDeg(vehicle));
 
-    [28.0, 52.0, 78.0].forEach((radius, index) => {
+    [36.0, 72.0].forEach((radius, index) => {
       addAttitudeReferenceLine(
         localCirclePoints(position, radius, -3.0),
-        index === 0 ? 2.5 : 1.6,
+        index === 0 ? 1.9 : 1.3,
         index === 0 ? '#4d5f61' : '#293b3d',
-        index === 0 ? 0.64 : 0.42
+        index === 0 ? 0.44 : 0.30
       );
     });
-    [-72.0, -48.0, -24.0, 0.0, 24.0, 48.0, 72.0].forEach((offset) => {
+    [-72.0, 0.0, 72.0].forEach((offset) => {
       const major = offset === 0.0 || Math.abs(offset) === 72.0;
       addAttitudeReferenceLine([
         localOffsetPoint(position, -86.0, offset, -3.0),
         localOffsetPoint(position, 86.0, offset, -3.0),
-      ], major ? 2.7 : 1.5, major ? '#344d4f' : '#243337', major ? 0.56 : 0.34);
+      ], major ? 1.9 : 1.2, major ? '#344d4f' : '#243337', major ? 0.34 : 0.24);
       addAttitudeReferenceLine([
         localOffsetPoint(position, offset, -86.0, -3.0),
         localOffsetPoint(position, offset, 86.0, -3.0),
-      ], major ? 2.7 : 1.5, major ? '#3f444f' : '#2a3038', major ? 0.52 : 0.32);
+      ], major ? 1.9 : 1.2, major ? '#3f444f' : '#2a3038', major ? 0.32 : 0.22);
     });
 
     [
@@ -1810,14 +1752,14 @@
         positions: ring.positions,
         width: ring.width,
         material: Cesium.Material.fromType('Color', {
-          color: Cesium.Color.fromCssColorString(ring.color).withAlpha(0.92),
+          color: Cesium.Color.fromCssColorString(ring.color).withAlpha(0.58),
         }),
       });
     });
     [
-      {axis: forwardAxis, color: '#2fbf5b', length: 20.0},
-      {axis: rightAxis, color: '#d92626', length: 18.0},
-      {axis: upAxis, color: '#2f6df6', length: 16.0},
+      {axis: forwardAxis, color: '#2fbf5b', length: 18.0},
+      {axis: rightAxis, color: '#d92626', length: 15.0},
+      {axis: upAxis, color: '#2f6df6', length: 13.0},
     ].forEach((spoke) => {
       attitudeReferenceCollection.add({
         positions: [
@@ -1828,41 +1770,28 @@
             new Cesium.Cartesian3()
           ),
         ],
-        width: 5.2,
+        width: 3.6,
         material: Cesium.Material.fromType('Color', {
-          color: Cesium.Color.fromCssColorString(spoke.color).withAlpha(0.96),
+          color: Cesium.Color.fromCssColorString(spoke.color).withAlpha(0.70),
         }),
       });
-    });
-
-    [-30.0, -20.0, -10.0, 10.0, 20.0, 30.0].forEach((pitchOffset) => {
-      const color = pitchOffset > 0.0 ? '#9ed0ff' : '#fff2a6';
-      const alpha = Math.abs(pitchOffset) === 10.0 ? 0.76 : 0.56;
-      addAttitudeReferenceLine([
-        vehicleRelativePoint(position, forwardAxis, rightAxis, upAxis, 0.0, -38.0, pitchOffset),
-        vehicleRelativePoint(position, forwardAxis, rightAxis, upAxis, 0.0, -12.0, pitchOffset),
-      ], 2.8, color, alpha);
-      addAttitudeReferenceLine([
-        vehicleRelativePoint(position, forwardAxis, rightAxis, upAxis, 0.0, 12.0, pitchOffset),
-        vehicleRelativePoint(position, forwardAxis, rightAxis, upAxis, 0.0, 38.0, pitchOffset),
-      ], 2.8, color, alpha);
     });
 
     addAttitudeReferenceLine([
       vehicleRelativePoint(position, heading.forward, heading.right, heading.up, -58.0, 0.0, 1.0),
       vehicleRelativePoint(position, heading.forward, heading.right, heading.up, 104.0, 0.0, 1.0),
-    ], 3.8, '#f7f7f3', 0.76);
-    addTacticalHeadingArrow(position, heading, 118.0, 12.0, '#f7f7f3', 0.86);
+    ], 2.6, '#f7f7f3', 0.62);
+    addTacticalHeadingArrow(position, heading, 118.0, 10.0, '#f7f7f3', 0.66);
 
     const trackLeadM = Math.max(62.0, Math.min(130.0, numberOr(vehicle.groundspeedMps, 0.0) * 5.0));
     addAttitudeReferenceLine([
       vehicleRelativePoint(position, heading.forward, heading.right, heading.up, 0.0, -16.0, 2.0),
       vehicleRelativePoint(position, heading.forward, heading.right, heading.up, trackLeadM, -16.0, 2.0),
-    ], 2.6, '#d59b28', 0.72);
-    addTacticalHeadingArrow(position, heading, trackLeadM + 10.0, 7.5, '#d59b28', 0.78);
+    ], 2.0, '#d59b28', 0.54);
+    addTacticalHeadingArrow(position, heading, trackLeadM + 10.0, 6.5, '#d59b28', 0.58);
 
-    for (let index = 0; index < 24; ++index) {
-      const angle = (index / 24.0) * Math.PI * 2.0;
+    for (let index = 0; index < 12; ++index) {
+      const angle = (index / 12.0) * Math.PI * 2.0;
       const major = index % 6 === 0;
       const radius = tacticalRingRadiusM * 1.42;
       const tickM = major ? 4.4 : 2.5;
@@ -1885,9 +1814,9 @@
             new Cesium.Cartesian3()
           ),
         ],
-        width: major ? 4.2 : 2.3,
+        width: major ? 2.8 : 1.6,
         material: Cesium.Material.fromType('Color', {
-          color: Cesium.Color.fromCssColorString(major ? '#f7f7f3' : '#9fb0a1').withAlpha(major ? 0.86 : 0.58),
+          color: Cesium.Color.fromCssColorString(major ? '#f7f7f3' : '#9fb0a1').withAlpha(major ? 0.62 : 0.36),
         }),
       });
     }
@@ -1895,85 +1824,33 @@
 
   function updateFpvReferences(vehicle, position) {
     const axes = fpvAttitudeAxes(vehicle, position);
-    const horizonWidthM = 84.0;
-    const pitchLadderWidthM = 46.0;
-    const gateColor = clearanceCueColor();
-    const referenceColors = [
-      '#f7f7f3', '#9ed0ff', '#fff2a6', '#d59b28',
-      '#0f7b43', '#2f6df6', '#d92626', '#8fb1ce',
-    ];
-    [90.0, 170.0, 285.0].forEach((forwardM, index) => {
-      const halfWidth = 28.0 + index * 14.0;
-      const halfHeight = 10.0 + index * 5.0;
-      const centerUp = index === 0 ? -1.5 : index * 4.0;
-      const corners = [
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -halfWidth, centerUp - halfHeight),
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, halfWidth, centerUp - halfHeight),
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, halfWidth, centerUp + halfHeight),
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -halfWidth, centerUp + halfHeight),
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -halfWidth, centerUp - halfHeight),
-      ];
-      addAttitudeReferenceLine(corners, index === 0 ? 7.0 : 4.6, gateColor, index === 0 ? 0.94 : 0.66);
-    });
-    [100.0, 170.0, 270.0, 410.0].forEach((forwardM, index) => {
+    const horizonWidthM = 58.0;
+    const pitchLadderWidthM = 32.0;
+    [110.0, 240.0].forEach((forwardM, index) => {
       addAttitudeReferenceLine([
         vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -horizonWidthM, 0.0),
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -18.0, 0.0),
-      ], index === 0 ? 7.0 : 4.0, '#f7f7f3', index === 0 ? 0.88 : 0.62);
+        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -14.0, 0.0),
+      ], index === 0 ? 4.4 : 2.8, '#f7f7f3', index === 0 ? 0.58 : 0.38);
       addAttitudeReferenceLine([
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, 18.0, 0.0),
+        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, 14.0, 0.0),
         vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, horizonWidthM, 0.0),
-      ], index === 0 ? 7.0 : 4.0, '#f7f7f3', index === 0 ? 0.88 : 0.62);
-      [-24.0, -12.0, 12.0, 24.0].forEach((upM) => {
+      ], index === 0 ? 4.4 : 2.8, '#f7f7f3', index === 0 ? 0.58 : 0.38);
+      [-16.0, 16.0].forEach((upM) => {
         addAttitudeReferenceLine([
           vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -pitchLadderWidthM, upM),
           vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -10.0, upM),
-          vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -4.0, upM + Math.sign(upM) * 3.0),
-        ], 3.5, upM > 0 ? '#9ed0ff' : '#fff2a6', 0.64);
+        ], 2.4, upM > 0 ? '#9ed0ff' : '#fff2a6', 0.34);
         addAttitudeReferenceLine([
-          vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, 4.0, upM + Math.sign(upM) * 3.0),
           vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, 10.0, upM),
           vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, pitchLadderWidthM, upM),
-        ], 3.5, upM > 0 ? '#9ed0ff' : '#fff2a6', 0.64);
+        ], 2.4, upM > 0 ? '#9ed0ff' : '#fff2a6', 0.34);
       });
-    });
-    [115.0, 185.0, 275.0, 390.0].forEach((forwardM, forwardIndex) => {
-      [-74.0, 74.0].forEach((rightM, sideIndex) => {
-        [-32.0, -16.0, 16.0, 32.0].forEach((upM, upIndex) => {
-          const color = referenceColors[
-            (forwardIndex * 2 + sideIndex + upIndex) % referenceColors.length
-          ];
-          addAttitudeReferenceLine([
-            vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, rightM, upM - 5.0),
-            vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, rightM, upM + 5.0),
-          ], 4.0, color, 0.66);
-        });
-      });
-    });
-    [
-      '#49624b', '#0f7b43', '#d59b28', '#2d3d34',
-      '#9ed0ff', '#fff2a6', '#2f6df6',
-    ].forEach((color, index) => {
-      const forwardM = 88.0 + index * 72.0;
-      const halfWidth = 42.0 + index * 18.0;
-      const upM = -20.0 - index * 8.0;
-      addAttitudeReferenceLine([
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -halfWidth, upM),
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM + 48.0, 0.0, upM - 10.0),
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, halfWidth, upM),
-      ], Math.max(4.4, 8.8 - index * 0.6), color, 0.64);
-    });
-    [-140.0, -95.0, -50.0, 50.0, 95.0, 140.0].forEach((rightM, index) => {
-      const color = ['#d59b28', '#fff2a6', '#0f7b43', '#9ed0ff', '#2f6df6', '#d92626'][index];
-      addAttitudeReferenceLine([
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, 80.0, rightM, -30.0),
-        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, 500.0, rightM * 1.9, -84.0),
-      ], 6.0, color, 0.60);
     });
     addAttitudeReferenceLine([
-      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, 70.0, 0.0, -16.0),
-      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, 410.0, 0.0, -22.0),
-    ], 6.0, gateColor, 0.82);
+      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, 80.0, -8.0, -8.0),
+      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, 120.0, 0.0, -14.0),
+      vehicleRelativePoint(position, axes.forward, axes.right, axes.up, 80.0, 8.0, -8.0),
+    ], 3.0, clearanceCueColor(), 0.54);
     viewer.scene.requestRender();
   }
 
