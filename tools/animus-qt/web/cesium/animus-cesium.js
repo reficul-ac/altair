@@ -63,7 +63,7 @@
     right: 0.0,
     up: 1.2,
   };
-  const fpvDefaultPitchDeg = 18.0;
+  const fpvDefaultPitchDeg = -8.0;
   const fpvLook = {
     yawDeg: 0.0,
     pitchDeg: fpvDefaultPitchDeg,
@@ -1584,24 +1584,24 @@
       addTerrainReferenceLine([
         vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardStartM, rightM, centerUpM),
         vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardEndM, rightM, centerUpM),
-      ], 6.0, clearanceColor, 0.82);
+      ], 8.0, clearanceColor, 0.88);
     });
-    [120.0, 240.0, 360.0, 520.0, 700.0].forEach((forwardM, index) => {
+    [80.0, 150.0, 240.0, 360.0, 520.0, 700.0].forEach((forwardM, index) => {
       if (forwardM > forwardEndM) return;
       addTerrainReferenceLine([
         vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM, -laneHalfWidthM, centerUpM),
         vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM, laneHalfWidthM, centerUpM),
-      ], index === 0 ? 5.0 : 3.5, index === 0 ? '#f7f7f3' : clearanceColor, index === 0 ? 0.82 : 0.58);
+      ], index === 0 ? 7.0 : 5.0, index === 0 ? '#f7f7f3' : clearanceColor, index === 0 ? 0.86 : 0.66);
     });
     addTerrainReferenceLine([
       vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardStartM, 0.0, centerUpM + 10.0),
       vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardEndM, 0.0, centerUpM + 10.0),
-    ], 4.0, '#fff2a6', 0.74);
+    ], 6.0, '#fff2a6', 0.82);
 
     [
-      {offsetM: Math.max(12.0, terrainHeight + 20.0 - vehicleAlt), color: '#d92626', width: 3.0, alpha: 0.44},
-      {offsetM: Math.max(24.0, terrainHeight + 50.0 - vehicleAlt), color: '#d59b28', width: 3.5, alpha: 0.48},
-      {offsetM: Math.max(42.0, numberOr(clearance.homeRelativeAltitudeM, 0) * 0.18), color: '#f7f7f3', width: 2.5, alpha: 0.42},
+      {offsetM: Math.max(12.0, terrainHeight + 20.0 - vehicleAlt), color: '#d92626', width: 4.5, alpha: 0.54},
+      {offsetM: Math.max(24.0, terrainHeight + 50.0 - vehicleAlt), color: '#d59b28', width: 5.0, alpha: 0.58},
+      {offsetM: Math.max(42.0, numberOr(clearance.homeRelativeAltitudeM, 0) * 0.18), color: '#f7f7f3', width: 4.0, alpha: 0.50},
     ].forEach((band) => {
       const aftM = -80.0;
       const fwdM = Math.min(forwardEndM, 560.0);
@@ -1612,6 +1612,16 @@
         vehicleRelativePoint(center, axes.forward, axes.right, axes.up, aftM, laneHalfWidthM * 1.5, band.offsetM),
         vehicleRelativePoint(center, axes.forward, axes.right, axes.up, aftM, -laneHalfWidthM * 1.5, band.offsetM),
       ], band.width, band.color, band.alpha);
+    });
+    [0.32, 0.58, 0.82].forEach((fraction, index) => {
+      const forwardM = forwardStartM + (forwardEndM - forwardStartM) * fraction;
+      const color = index === 0 ? '#9ed0ff' : (index === 1 ? '#0f7b43' : '#2f6df6');
+      addTerrainReferenceLine([
+        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM, -laneHalfWidthM * 1.8, centerUpM + 28.0),
+        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM + 80.0, -laneHalfWidthM * 0.8, centerUpM - 8.0),
+        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM + 80.0, laneHalfWidthM * 0.8, centerUpM - 8.0),
+        vehicleRelativePoint(center, axes.forward, axes.right, axes.up, forwardM, laneHalfWidthM * 1.8, centerUpM + 28.0),
+      ], 5.0, color, 0.56);
     });
   }
 
@@ -1639,17 +1649,28 @@
       : Cesium.Cartesian3.fromDegrees(centerLon, centerLat, baseAlt);
     [100.0, 250.0, 500.0, 750.0].forEach((radius, index) => {
       const color = index % 2 === 0 ? '#f7f7f3' : '#d59b28';
-      addTerrainReferenceLine(localCirclePoints(center, radius, 2.0), 3.0 + index * 0.5, color, 0.46);
+      addTerrainReferenceLine(localCirclePoints(center, radius, 2.0), 4.5 + index * 0.7, color, 0.54);
     });
-    [-500.0, -250.0, 0.0, 250.0, 500.0].forEach((offset) => {
+    [-750.0, -500.0, -250.0, 0.0, 250.0, 500.0, 750.0].forEach((offset) => {
       addTerrainReferenceLine([
-        localOffsetPoint(center, -500.0, offset, 1.0),
-        localOffsetPoint(center, 500.0, offset, 1.0),
-      ], offset === 0.0 ? 5.0 : 3.0, offset === 0.0 ? '#2d3d34' : '#49624b', offset === 0.0 ? 0.72 : 0.52);
+        localOffsetPoint(center, -760.0, offset, 1.0),
+        localOffsetPoint(center, 760.0, offset, 1.0),
+      ], offset === 0.0 ? 7.0 : 4.5, offset === 0.0 ? '#2d3d34' : '#49624b', offset === 0.0 ? 0.82 : 0.60);
       addTerrainReferenceLine([
-        localOffsetPoint(center, offset, -500.0, 1.0),
-        localOffsetPoint(center, offset, 500.0, 1.0),
-      ], offset === 0.0 ? 5.0 : 3.0, offset === 0.0 ? '#2d3d34' : '#49624b', offset === 0.0 ? 0.72 : 0.52);
+        localOffsetPoint(center, offset, -760.0, 1.0),
+        localOffsetPoint(center, offset, 760.0, 1.0),
+      ], offset === 0.0 ? 7.0 : 4.5, offset === 0.0 ? '#2d3d34' : '#49624b', offset === 0.0 ? 0.82 : 0.60);
+    });
+    [-620.0, -360.0, -120.0, 120.0, 360.0, 620.0].forEach((offset, index) => {
+      const color = index % 3 === 0 ? '#9ed0ff' : (index % 3 === 1 ? '#fff2a6' : '#0f7b43');
+      addTerrainReferenceLine([
+        localOffsetPoint(center, -760.0, offset - 180.0, 3.0),
+        localOffsetPoint(center, 760.0, offset + 180.0, 3.0),
+      ], 3.8, color, 0.42);
+      addTerrainReferenceLine([
+        localOffsetPoint(center, -760.0, offset + 180.0, 4.0),
+        localOffsetPoint(center, 760.0, offset - 180.0, 4.0),
+      ], 3.4, index % 2 === 0 ? '#d59b28' : '#f7f7f3', 0.38);
     });
     if (vehicle.positionValid && validPosition(vehicle)) {
       addTerrainTrackCorridor(center, vehicle, baseAlt);
@@ -1690,8 +1711,8 @@
 
   function updateFpvReferences(vehicle, position) {
     const axes = fpvAttitudeAxes(vehicle, position);
-    const horizonWidthM = 62.0;
-    const pitchLadderWidthM = 34.0;
+    const horizonWidthM = 84.0;
+    const pitchLadderWidthM = 46.0;
     const gateColor = clearanceCueColor();
     const referenceColors = [
       '#f7f7f3', '#9ed0ff', '#fff2a6', '#d59b28',
@@ -1708,28 +1729,28 @@
         vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -halfWidth, centerUp + halfHeight),
         vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -halfWidth, centerUp - halfHeight),
       ];
-      addAttitudeReferenceLine(corners, index === 0 ? 5.0 : 3.4, gateColor, index === 0 ? 0.92 : 0.58);
+      addAttitudeReferenceLine(corners, index === 0 ? 7.0 : 4.6, gateColor, index === 0 ? 0.94 : 0.66);
     });
-    [130.0, 230.0, 360.0].forEach((forwardM, index) => {
+    [100.0, 170.0, 270.0, 410.0].forEach((forwardM, index) => {
       addAttitudeReferenceLine([
         vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -horizonWidthM, 0.0),
         vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -18.0, 0.0),
-      ], index === 0 ? 5.0 : 3.0, '#f7f7f3', index === 0 ? 0.86 : 0.54);
+      ], index === 0 ? 7.0 : 4.0, '#f7f7f3', index === 0 ? 0.88 : 0.62);
       addAttitudeReferenceLine([
         vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, 18.0, 0.0),
         vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, horizonWidthM, 0.0),
-      ], index === 0 ? 5.0 : 3.0, '#f7f7f3', index === 0 ? 0.86 : 0.54);
+      ], index === 0 ? 7.0 : 4.0, '#f7f7f3', index === 0 ? 0.88 : 0.62);
       [-24.0, -12.0, 12.0, 24.0].forEach((upM) => {
         addAttitudeReferenceLine([
           vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -pitchLadderWidthM, upM),
           vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -10.0, upM),
           vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -4.0, upM + Math.sign(upM) * 3.0),
-        ], 2.3, upM > 0 ? '#9ed0ff' : '#fff2a6', 0.54);
+        ], 3.5, upM > 0 ? '#9ed0ff' : '#fff2a6', 0.64);
         addAttitudeReferenceLine([
           vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, 4.0, upM + Math.sign(upM) * 3.0),
           vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, 10.0, upM),
           vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, pitchLadderWidthM, upM),
-        ], 2.3, upM > 0 ? '#9ed0ff' : '#fff2a6', 0.54);
+        ], 3.5, upM > 0 ? '#9ed0ff' : '#fff2a6', 0.64);
       });
     });
     [115.0, 185.0, 275.0, 390.0].forEach((forwardM, forwardIndex) => {
@@ -1741,14 +1762,34 @@
           addAttitudeReferenceLine([
             vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, rightM, upM - 5.0),
             vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, rightM, upM + 5.0),
-          ], 2.8, color, 0.58);
+          ], 4.0, color, 0.66);
         });
       });
+    });
+    [
+      '#49624b', '#0f7b43', '#d59b28', '#2d3d34',
+      '#9ed0ff', '#fff2a6', '#2f6df6',
+    ].forEach((color, index) => {
+      const forwardM = 88.0 + index * 72.0;
+      const halfWidth = 42.0 + index * 18.0;
+      const upM = -20.0 - index * 8.0;
+      addAttitudeReferenceLine([
+        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, -halfWidth, upM),
+        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM + 48.0, 0.0, upM - 10.0),
+        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, forwardM, halfWidth, upM),
+      ], Math.max(4.4, 8.8 - index * 0.6), color, 0.64);
+    });
+    [-140.0, -95.0, -50.0, 50.0, 95.0, 140.0].forEach((rightM, index) => {
+      const color = ['#d59b28', '#fff2a6', '#0f7b43', '#9ed0ff', '#2f6df6', '#d92626'][index];
+      addAttitudeReferenceLine([
+        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, 80.0, rightM, -30.0),
+        vehicleRelativePoint(position, axes.forward, axes.right, axes.up, 500.0, rightM * 1.9, -84.0),
+      ], 6.0, color, 0.60);
     });
     addAttitudeReferenceLine([
       vehicleRelativePoint(position, axes.forward, axes.right, axes.up, 70.0, 0.0, -16.0),
       vehicleRelativePoint(position, axes.forward, axes.right, axes.up, 410.0, 0.0, -22.0),
-    ], 4.0, gateColor, 0.74);
+    ], 6.0, gateColor, 0.82);
     viewer.scene.requestRender();
   }
 
@@ -1967,6 +2008,11 @@
       requestedModelUri: aircraftModelRequestedUri || '',
       modelLoaded: !!aircraftModelPrimitive,
       modelMatchesProfileAsset: !!profileAssetUri && aircraftModelUri === profileAssetUri,
+      sceneCueCounts: {
+        attitudeReferences: attitudeReferenceCollection ? attitudeReferenceCollection.length : 0,
+        terrainReferences: terrainReferenceCollection ? terrainReferenceCollection.length : 0,
+        trailSegments: trailPolylineCollection ? trailPolylineCollection.length : 0,
+      },
     };
   }
 
@@ -2108,6 +2154,11 @@
       terrainEnabled: workspaceMode !== 'tactical',
       forwardHemisphereDot: workspaceMode === 'fpv' ? fpvLook.forwardDot : null,
       forwardHemisphereCompliant: workspaceMode !== 'fpv' || fpvLook.forwardDot >= -1.0e-6,
+      sceneCueCounts: {
+        attitudeReferences: attitudeReferenceCollection ? attitudeReferenceCollection.length : 0,
+        terrainReferences: terrainReferenceCollection ? terrainReferenceCollection.length : 0,
+        trailSegments: trailPolylineCollection ? trailPolylineCollection.length : 0,
+      },
     };
   }
 

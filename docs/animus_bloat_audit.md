@@ -63,6 +63,22 @@ Visual refresh:
 
 ### Completed Work
 
+- 2026-05-25: Strengthened the native Cesium FPV and Terrain 3D scene substance
+  without adding primary-layer debug chrome. Terrain 3D now renders denser
+  ground-reference, route, clearance, and corridor cues in the capture camera
+  pose, while FPV renders a forward-locked horizon/gate/clearance/track reference
+  set with a slightly lowered default sightline. Capture-only native metadata now
+  records scene cue counts so diagnostics can confirm content without showing
+  renderer/debug text in the UI. Verification: `python3
+  tools/python/format_repo.py --check`, `cmake -S . -B build-animus-qt
+  -DALTAIR_BUILD_ANIMUS_QT=ON -DCMAKE_BUILD_TYPE=Debug`, `cmake --build
+  build-animus-qt --target animus_qt animus_qt_unit_tests --parallel`, `ctest
+  --test-dir build-animus-qt --output-on-failure -R animus_qt`, and `python3
+  tools/python/capture_animus_qt_sitl.py` passed. Screenshot artifact:
+  `artifacts/animus-qt-screenshots/20260525T004244Z/`. The report shows native
+  `cesium-webengine` rendering for FPV and Terrain 3D control-surface
+  diagnostics, FPV camera diagnostics passed with `cesium-webengine/fpv`, and the
+  prior FPV/Terrain native low-diversity warnings were removed.
 - 2026-05-24: Added `AnimusTelemetrySummary` and moved Map 2D, Terrain 3D, and
   FPV onto the same glanceable telemetry overlay. The primary row now leads with
   link, GPS/nav, MSL altitude, groundspeed, vertical speed, and attitude
