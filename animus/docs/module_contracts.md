@@ -1,0 +1,41 @@
+# Animus Module Contracts
+
+Phase B defines contracts before rendering code exists. Public headers live
+under `animus/libs/<module>/include/animus/<module>/` and use
+`animus::<module>` namespaces.
+
+## Dependency Direction
+
+- `geo_core` owns vehicle-agnostic geographic types and math. It must not
+  depend on rendering, terrain loading, telemetry, Altair, or Bayek.
+- `terrain_core` owns terrain-facing models such as layers, rasters, tile
+  state, cache identity inputs, and later mesh/tile scheduling interfaces. It
+  may depend on `geo_core` after Phase C.
+- `data_core` owns generic cache/path helpers and later compression/archive or
+  SQLite/MBTiles utilities. It may consume terrain model contracts when forming
+  cache keys.
+- `render_core` owns native rendering primitives and future OpenGL resource
+  boundaries. It must not own tile loading policy or telemetry models.
+- `telemetry_core` is delayed. When added, it may query terrain height through
+  narrow interfaces but must not drive terrain cache or renderer ownership.
+
+## Public Header Policy
+
+Headers should expose small data contracts before implementation-heavy classes.
+Use snake_case for C++ data members and lower-case stable strings for serialized
+or logged contract names. Do not expose Altair or Bayek headers from Animus
+public interfaces.
+
+## Current Phase B Contracts
+
+`terrain_core` defines:
+
+- `LayerType`
+- `LayerSpec`
+- `RasterFormat`
+- `SamplingMode`
+- `Raster`
+- `TileState`
+
+`data_core` defines layer-level cache prefix helpers. Tile-coordinate cache keys
+remain Phase C work, after `geo_core::TileCoord` exists.

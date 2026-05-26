@@ -14,6 +14,42 @@ Reusable Bayek framework follow-up is tracked separately in
 
 - [ ] Keep CI green for formatting, Debug/Release CMake, and CTest.
 
+## Animus
+
+Detailed architecture and phase checklist:
+[`docs/animus_architecture.md`](docs/animus_architecture.md#25-actionable-design-checklist).
+
+- [x] Phase A: create the self-contained `animus/` future repo root with
+  independent CMake/Conan build files and generated-data ignore policy.
+- [x] Phase B: define Animus module ownership, public header layout, core data
+  contracts, cache keys, and error-reporting conventions.
+- [x] Phase C: implement `geo_core` tile math and Web Mercator tests.
+- [x] Phase D: define sample terrain data, local XYZ tile layout, and offline
+  tile preparation/validation tools.
+- [x] Prepare or download a real Lake Tahoe Phase D tile pack under ignored
+  Animus data paths and validate it with `validate_tile_pyramid.py`.
+- [x] Phase E: build the native `terrain_lab` OpenGL/GLFW/GLEW render
+  foundation without coupling it to Altair, Bayek, telemetry, or the final app.
+- [x] Run the Phase E `terrain_lab` native-window manual check on a workstation
+  with a real display and confirm the clear color and triangle are visible.
+  In the Codex/tmux shell, export `DISPLAY=:0` and
+  `XAUTHORITY=/run/user/1000/.mutter-Xwaylandauth.17JVP3`; with those values,
+  `terrain_lab --frames 600` opens on the native Intel GPU and exits cleanly.
+- [x] Phase F: render local imagery/elevation terrain from one tile through a
+  seamless fixed 3x3 same-LOD patch.
+- [ ] Phase G: extract reusable terrain systems from `terrain_lab` into
+  `terrain_core` while preserving `terrain_lab` as the regression harness.
+- [ ] Phase H: add async terrain streaming, tile state debug visualization, GPU
+  upload budgets, camera tile wishlist, and no-holes parent fallback.
+- [ ] Phase I: add bounded cache hierarchy, LRU eviction, tile synthesis,
+  GeoTIFF extraction, and elevation/bathymetry merge.
+- [ ] Phase J: create the full native `apps/animus` shell only after
+  `terrain_core` is stable.
+- [ ] Phase K: add delayed telemetry playback with CSV/JSON first, then
+  MCAP/Protobuf/HDF5 after the simple path works.
+- [ ] Phase L: add advanced overlays, remote tile providers, MBTiles/SQLite
+  cache metadata, cache prewarming, datum correction, and export workflows.
+
 ## Vehicle And SITL
 
 - [ ] Replace placeholder Altair parameters with a documented first-pass airframe model.

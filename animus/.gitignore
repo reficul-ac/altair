@@ -1,0 +1,50 @@
+# CMake and build directories
+/build/
+/build-*/
+/cmake-build-*/
+/CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Testing/
+
+# Conan generated files and local dependency state
+/conanbuild/
+/conanbuildinfo.*
+/conaninfo.*
+/conan.lock
+/generators/
+/graph_info.json
+
+# Runtime caches and generated data
+/cache/*
+!/cache/.gitkeep
+/data/generated/
+/data/downloaded/
+/data/tiles/
+/data/**/*.png
+/data/**/*.jpg
+/data/**/*.jpeg
+/data/**/*.tif
+/data/**/*.tiff
+/data/**/*.f32
+/data/**/*.bin
+
+# Rendered artifacts and logs
+/artifacts/
+/captures/
+/plots/
+/renders/
+/screenshots/
+/logs/
+*.log
+
+# Python
+.conan2/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
