@@ -10,7 +10,7 @@ Work directly on `main` during development. Do not create branches or pull
 requests unless the user explicitly asks for them.
 
 Before changing behavior, read the nearby code and the relevant docs under
-`docs/` and `bayek/docs/`. Prefer the existing CMake, C99, Python, and Animus
+`docs/` and `bayek/docs/`. Prefer the existing CMake, C99, and Python
 patterns over new local conventions.
 
 Keep changes simple, deterministic, centralized where policy belongs, and
@@ -41,7 +41,7 @@ Altair owns vehicle-specific integration:
 - the `altair_vehicle_interface()` implementation and Altair FSW facade
 - SITL scenarios, case files, CSV schemas, runner defaults, and guardrail policy
 - Monte Carlo runner policy and summary CSV semantics
-- Animus operator UI, live workflow presentation, and vehicle-facing tests
+- live workflow presentation and vehicle-facing tests
 
 Bayek owns reusable framework code:
 
@@ -80,8 +80,7 @@ python3 tools/python/verify_agent_work.py --all
 
 The wrapper writes logs, generated SITL CSVs, plots, Monte Carlo output, and a
 JSON manifest under `artifacts/agent-verification/<timestamp>/`. It wraps the
-existing tools only; it does not replace direct CTest, Animus Qt, SITL, or
-capture workflows.
+existing tools only; it does not replace direct CTest, SITL, or capture workflows.
 
 Run a Release warnings-as-errors configure/build/test when touching shared C,
 build settings, or code likely to surface compiler diagnostics:
@@ -95,35 +94,3 @@ ctest --test-dir build-release --output-on-failure
 Run SITL plots for flight, simulation, telemetry CSV, or runner behavior changes.
 Run the Monte Carlo smoke for runner, dispersions, guardrail, or summary CSV
 changes.
-
-## Animus UI Verification
-
-Agents modifying `tools/animus-qt/src/**`, `tools/animus-qt/qml/**`,
-`tools/animus-qt/web/**`, or Animus shell/layout behavior must run the Animus Qt
-verification workflow before finalizing:
-
-```bash
-cmake -S . -B build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-animus-qt --target animus_qt animus_qt_unit_tests --parallel
-ctest --test-dir build-animus-qt --output-on-failure -R animus_qt
-python3 tools/python/capture_animus_qt_sitl.py
-```
-
-Inspect the generated screenshots under
-`artifacts/animus-qt-screenshots/<timestamp>/` before reporting the work
-complete. Treat this capture workflow like a pre-merge check for Animus UI
-changes even when it is not represented as a GitHub Actions status check.
-
-For deeper interaction changes, run:
-
-```bash
-./build-animus-qt/tools/animus-qt/animus_qt
-```
-
-Use `capture_animus_qt_sitl.py` for broad workspace screenshot verification.
-For direct interaction, launch the built Qt shell from `build-animus-qt` and keep
-any manual notes with the capture artifact bundle.
-
-Final responses for Animus UI changes must mention the screenshot artifact
-directory and any visual issues found. If the capture workflow cannot run, say
-why and describe the remaining visual risk.

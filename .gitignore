@@ -7,6 +7,3 @@ plots/
 /sitl_3d.html
 __pycache__/
 *.py[cod]
-tools/animus/dist/
-tools/animus/dist-electron/
-tools/animus/node_modules/

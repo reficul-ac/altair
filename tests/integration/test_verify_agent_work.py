@@ -39,13 +39,8 @@ def main():
         (["vehicle/altair_fsw.c"], ["format", "cmake", "release"]),
         (["tests/integration/cruise6dof_case_initial.ini"], ["cmake", "sitl_plots"]),
         (["vehicle/mc_runner.c"], ["format", "cmake", "release", "mc"]),
-        (["tools/animus-qt/qml/Main.qml"], ["animus_qt"]),
-        (["tools/python/run_animus_sitl.py"], ["format", "cmake", "sitl_plots", "animus_qt"]),
         (["docs/testing.md"], ["format"]),
-        (
-            ["docs/testing.md", "tools/animus-qt/src/main.cpp", "mixer/altair_mixer.c"],
-            ["format", "cmake", "release", "animus_qt"],
-        ),
+        (["docs/testing.md", "mixer/altair_mixer.c"], ["format", "cmake", "release"]),
     )
     status = 0
     for paths, expected in cases:

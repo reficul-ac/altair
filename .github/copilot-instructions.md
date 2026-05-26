@@ -41,7 +41,7 @@ python3 tools/python/format_repo.py --fix   # to rewrite tracked files locally
 
 What to read first (high-signal files & dirs):
 
-- `AGENTS.md` (root): repository-wide agent guidance, verification commands, Animus UI rules.
+- `AGENTS.md` (root): repository-wide agent guidance and verification commands.
 - `bayek/AGENTS.md`: Bayek-specific guidance and portability constraints (no Altair assumptions).
 - `README.md` and `docs/README.md`: overall architecture, targets, and common runner commands.
 - `vehicle/altair_fsw.c`, `vehicle/altair_vehicle.c`: where vehicle orchestration and the `altair_vehicle_interface()` binding live.
@@ -71,8 +71,6 @@ python3 tools/python/verify_agent_work.py --sitl-plots
 python3 tools/python/verify_agent_work.py --all
 ```
 
-- When modifying Animus UI or `tools/animus-qt/**`, run the Animus Qt verification workflow from `AGENTS.md` (build-animus-qt, capture screenshots, inspect `artifacts/animus-qt-screenshots/`).
-
 Integration points & external behaviors to watch for:
 
 - MAVLink / QGC bridging is exercised by `tools/python/run_sitl_session.py`. SITL telemetry is forwarded to `127.0.0.1:14550` by default.
@@ -92,6 +90,6 @@ Examples from the codebase (patterns to follow):
 When to ask for clarification:
 
 - If a requested change affects Bayek's API surface, ask whether the change belongs in Bayek or Altair (Bayek must stay vehicle-agnostic).
-- If a requested verification step requires hardware or an external service not available in CI, report the limitation and suggest the closest local checks (SITL, Animator capture, or unit tests).
+- If a requested verification step requires hardware or an external service not available in CI, report the limitation and suggest the closest local checks (SITL, logs, or unit tests).
 
-If anything here is unclear or you'd like a different level of detail (more examples, expanded Animus UI checklist, or a longer build matrix), tell me which sections to expand.
+If anything here is unclear or you'd like a different level of detail (more examples or a longer build matrix), tell me which sections to expand.

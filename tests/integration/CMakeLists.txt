@@ -422,23 +422,11 @@ if(Python3_Interpreter_FOUND)
             "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/clean_generated_artifacts"
     )
 
-    add_test(
-        NAME integration_capture_animus_qt_sitl_png_checks
-        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_capture_animus_qt_sitl.py"
-                "${CMAKE_SOURCE_DIR}"
-    )
-
     add_test(NAME integration_sitl_session
              COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_sitl_session.py"
                      "${CMAKE_SOURCE_DIR}" "${CMAKE_BINARY_DIR}"
     )
     set_tests_properties(integration_sitl_session PROPERTIES SKIP_RETURN_CODE 77)
-
-    add_test(NAME integration_run_animus_sitl_launcher
-             COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_run_animus_sitl.py"
-                     "${CMAKE_SOURCE_DIR}" "${CMAKE_BINARY_DIR}"
-    )
-    set_tests_properties(integration_run_animus_sitl_launcher PROPERTIES SKIP_RETURN_CODE 77)
 
     add_test(NAME integration_plot_sitl_velocities
              COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_plot_sitl.py"

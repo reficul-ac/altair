@@ -78,8 +78,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=14600,
         help="first per-vehicle MAVLink UDP source port for swarm launches",
     )
-    parser.add_argument("--ws-host", default="127.0.0.1", help="viewer WebSocket host")
-    parser.add_argument("--ws-port", type=int, default=8765, help="viewer WebSocket port")
+    parser.add_argument("--ws-host", default="127.0.0.1", help="live-link WebSocket host")
+    parser.add_argument("--ws-port", type=int, default=8765, help="live-link WebSocket port")
     parser.add_argument(
         "--qgc",
         dest="qgc",
@@ -96,9 +96,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="QGC MAVLink UDP endpoint as host:port; repeatable",
     )
     parser.add_argument(
-        "--writable-animus",
+        "--writable-link",
         action="store_true",
-        help="enable guarded SITL-only write controls in Animus; disabled by default",
+        help="advertise guarded SITL-only write controls on the live link; disabled by default",
     )
     parser.add_argument(
         "--record-altlog",
@@ -147,8 +147,8 @@ def bridge_command(args: argparse.Namespace) -> list[str]:
             command.extend(["--forward", f"{host}:{port}"])
     else:
         command.append("--no-forward")
-    if args.writable_animus:
-        command.append("--writable-animus")
+    if args.writable_link:
+        command.append("--writable-link")
     if args.record_altlog:
         command.extend(["--record-altlog", args.record_altlog])
     return command
@@ -276,7 +276,15 @@ def run(args: argparse.Namespace) -> int:
         label = "sitl" if args.vehicles == 1 else f"sitl sys{args.system_id_base + index}"
         commands.append((label, sitl_command(args, index), None))
 
+    qgc_text = "disabled"
+    if args.qgc:
+        qgc_targets = args.qgc_endpoint or [("127.0.0.1", 14550)]
+        qgc_text = ", ".join(f"{host}:{port}" for host, port in qgc_targets)
+
     if args.dry_run:
+        print(f"bridge=udp://{args.bridge_host}:{args.bridge_port}")
+        print(f"ws=ws://{args.ws_host}:{args.ws_port}")
+        print(f"qgc={qgc_text}")
         for label, command, cwd in commands:
             prefix = f"(cd {cwd} && " if cwd is not None else ""
             suffix = ")" if cwd is not None else ""
@@ -292,12 +300,8 @@ def run(args: argparse.Namespace) -> int:
     signal.signal(signal.SIGTERM, stop)
     try:
         print(f"bridge=udp://{args.bridge_host}:{args.bridge_port}", flush=True)
-        print(f"animus_ws=ws://{args.ws_host}:{args.ws_port}", flush=True)
-        if args.qgc:
-            qgc_targets = args.qgc_endpoint or [("127.0.0.1", 14550)]
-            print(f"qgc={', '.join(f'{host}:{port}' for host, port in qgc_targets)}", flush=True)
-        else:
-            print("qgc=disabled", flush=True)
+        print(f"ws=ws://{args.ws_host}:{args.ws_port}", flush=True)
+        print(f"qgc={qgc_text}", flush=True)
 
         for label, command, cwd in commands[:-1]:
             print(f"\n== Start {label} ==", flush=True)

@@ -57,15 +57,13 @@ python3 tools/python/run_sitl.py --scenario cruise6dof --initial tests/integrati
 ```
 
 `run_sitl.py` wraps the compiled runner, writes `sitl_cruise6dof.csv`, prints stable summary metrics, and can save static plots under `plots/sitl`.
-For live QGroundControl and browser visualization, run a session:
+For live QGroundControl forwarding and WebSocket telemetry, run a session:
 
 ```sh
 tools/python/run_sitl_session.py
 ```
 
-The session launcher starts the MAVLink bridge, forwards telemetry to QGroundControl at `127.0.0.1:14550`, starts Animus at `http://127.0.0.1:5173`, and runs realtime `cruise6dof` SITL through the bridge. If `tools/animus/node_modules` is missing, rerun with `--install-viewer-deps`.
-
-Animus is also the supported offline playback UI. Start `tools/animus` and use `Import` to load SITL CSV logs for replay analysis.
+The session launcher starts the MAVLink bridge, forwards telemetry to QGroundControl at `127.0.0.1:14550`, publishes decoded state on `ws://127.0.0.1:8765`, and runs realtime `cruise6dof` SITL through the bridge. Use `--record-altlog` to capture bridge-received packets to an `.altlog` bundle.
 
 `run_sitl.py` prints summary metrics such as `rows`, `final_airspeed_mps`, `final_altitude_m`, `finite`, `max_abs_roll_rad`, and motor command bounds.
 For `cruise6dof`, `--profile` can select `cruise`, `takeoff`, `turn`, `descent`, `failsafe`, or `mission` command profiles.

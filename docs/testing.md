@@ -42,10 +42,6 @@ python3 tools/python/format_repo.py --check
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
-cmake -S . -B build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-animus-qt --target animus_qt animus_qt_unit_tests --parallel
-ctest --test-dir build-animus-qt --output-on-failure -R animus_qt
-python3 tools/python/capture_animus_qt_sitl.py
 ```
 
 The formatting check requires `clang-format`, `black`, and `cmake-format`. Use check mode in CI
@@ -61,7 +57,7 @@ Use fix mode for local rewrites:
 python3 tools/python/format_repo.py --fix
 ```
 
-To block merges on GitHub, configure a branch protection rule or repository ruleset for the default branch and require the `format-check`, `cmake-test`, and `animus-qt` status checks to pass before merging.
+To block merges on GitHub, configure a branch protection rule or repository ruleset for the default branch and require the `format-check` and `cmake-test` status checks to pass before merging.
 
 Optional later checks:
 
@@ -71,24 +67,9 @@ Optional later checks:
 - PlatformIO compile check
 - static analysis
 
-## Animus UI Verification
-
-Animus UI and layout changes require Qt build, unit, and screenshot verification:
-
-```sh
-cmake -S . -B build-animus-qt -DALTAIR_BUILD_ANIMUS_QT=ON -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-animus-qt --target animus_qt animus_qt_unit_tests --parallel
-ctest --test-dir build-animus-qt --output-on-failure -R animus_qt
-python3 tools/python/capture_animus_qt_sitl.py
-```
-
-The Qt capture launches the built `animus_qt` executable once per workspace. If `DISPLAY` is already set, the capture uses that display unchanged. If no display is present, the helper uses `xvfb-run`; Qt/xcb startup failures are retried once with Qt offscreen software rendering, and the manifest records every attempt. It captures `map-2d`, `terrain-3d`, `fpv`, `tactical`, and `setup` with deterministic mock telemetry plus a second `map-2d-seeded-cache` pass that uses a temporary deterministic raster tile cache. The helper writes PNGs under `artifacts/animus-qt-screenshots/<timestamp>/screenshots/`, records per-workspace logs, and fails when a PNG is missing, zero-sized, visually blank, the wrong size, too similar to another workspace capture, missing expected workspace tabs in semantic chrome diagnostics, or missing seeded raster tiles in the seeded capture. The helper uses Animus' default Qt WebEngine Chromium flags unless `QTWEBENGINE_CHROMIUM_FLAGS` is already set, so `terrain-3d`, `fpv`, and `tactical` exercise the real bundled Cesium path and write native Cesium canvas PNGs. Terrain 3D, FPV, and Tactical captures inject a known deflected control-surface snapshot. Their diagnostics must report `renderer=cesium-webengine`, selected profile/model URIs, a loaded GLB matching the selected profile asset, and moved pivot-node matrices for the known deflected surfaces. Terrain 3D records clearance diagnostics, FPV records fixed-FOV and forward-hemisphere camera diagnostics, and Tactical records camera diagnostics that fail if free roam is exposed, the view is not vehicle locked, or a QML fallback is active. `visual-report.md` and `run-manifest.json` include display attempts, chrome/tab diagnostics, seeded raster diagnostics, clearance diagnostics, camera diagnostics, control-surface diagnostics, workspace content variation, and color diversity warnings. The `--no-run` flag remains available for dependency-light readiness checks only.
-
-Use `python3 tools/python/verify_agent_work.py --animus-qt` for the same local bundle. The deprecated `--animus` flag is an alias for `--animus-qt`; `--all` includes the Qt Animus lane only.
-
 ## Generated Artifact Cleanup
 
-Builds, SITL runs, map cache operations, and Animus captures intentionally write
+Builds, SITL runs, map cache operations, and verification helpers intentionally write
 ignored artifacts under repo-local paths such as `build/`, `build-*`,
 `artifacts/`, `plots/`, `map_cache/`, root `*.csv`, `sitl_3d.html`, and
 `__pycache__/` trees. Preview the cleanup before deleting anything:

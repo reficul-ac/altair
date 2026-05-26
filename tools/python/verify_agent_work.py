@@ -11,7 +11,7 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 RECOMMENDATION_ARTIFACT_DIR = pathlib.Path("artifacts/agent-verification/<timestamp>")
-CHECK_ORDER = ("format", "cmake", "release", "sitl_plots", "mc", "animus_qt")
+CHECK_ORDER = ("format", "cmake", "release", "sitl_plots", "mc")
 
 
 def parse_args():
@@ -29,16 +29,6 @@ def parse_args():
     )
     parser.add_argument("--sitl-plots", action="store_true", help="run cruise6dof SITL and plots")
     parser.add_argument("--mc", action="store_true", help="run Monte Carlo smoke summary")
-    parser.add_argument(
-        "--animus",
-        action="store_true",
-        help="deprecated alias for --animus-qt",
-    )
-    parser.add_argument(
-        "--animus-qt",
-        action="store_true",
-        help="configure, build, test, and run the Qt Animus screenshot workflow",
-    )
     parser.add_argument("--all", action="store_true", help="run every verification check")
     parser.add_argument(
         "--recommend",
@@ -63,18 +53,6 @@ def normalize_repo_path(path):
 
 def is_doc_path(path):
     return path.endswith(".md") or path.startswith("docs/") or path.startswith("bayek/docs/")
-
-
-def is_animus_qt_path(path):
-    return (
-        path.startswith("tools/animus-qt/")
-        or path == "tools/python/capture_animus_qt_sitl.py"
-        or path == "tools/python/run_animus_sitl.py"
-        or path == "docs/animus_qt_architecture.md"
-        or path == "docs/animus_qgc_map_audit.md"
-        or path == "docs/animus_operator_controls.md"
-        or path == "CMakeLists.txt"
-    )
 
 
 def is_c_or_build_path(path):
@@ -153,12 +131,6 @@ def select_verification_for_paths(paths):
             if is_doc_path(path):
                 add_reason(reasons, "format", "documentation changed alongside code")
                 continue
-            if is_animus_qt_path(path):
-                add_reason(
-                    reasons,
-                    "animus_qt",
-                    "Animus Qt source, capture helper, docs, or top-level Qt CMake wiring changed",
-                )
             if pathlib.PurePosixPath(path).suffix in {".c", ".h", ".py", ".cmake"} or (
                 pathlib.PurePosixPath(path).name == "CMakeLists.txt"
             ):
@@ -348,40 +320,6 @@ def selected_checks_for_flags(flags, artifact_dir=RECOMMENDATION_ARTIFACT_DIR):
             ],
             [mc_csv],
         )
-    if "all" in requested or "animus_qt" in requested or "animus" in requested:
-        add_check(
-            checks,
-            "animus_qt",
-            [
-                [
-                    "cmake",
-                    "-S",
-                    ".",
-                    "-B",
-                    "build-animus-qt",
-                    "-DALTAIR_BUILD_ANIMUS_QT=ON",
-                    "-DCMAKE_BUILD_TYPE=Debug",
-                ],
-                [
-                    "cmake",
-                    "--build",
-                    "build-animus-qt",
-                    "--target",
-                    "animus_qt",
-                    "animus_qt_unit_tests",
-                    "--parallel",
-                ],
-                [
-                    "ctest",
-                    "--test-dir",
-                    "build-animus-qt",
-                    "--output-on-failure",
-                    "-R",
-                    "animus_qt",
-                ],
-                [sys.executable, "tools/python/capture_animus_qt_sitl.py"],
-            ],
-        )
     return checks
 
 
@@ -391,8 +329,6 @@ def selected_checks(args, artifact_dir):
         attr = "sitl_plots" if flag == "sitl_plots" else flag
         if getattr(args, attr, False):
             flags.append(flag)
-    if args.animus:
-        flags.append("animus")
     if args.all:
         flags.append("all")
     return selected_checks_for_flags(flags, artifact_dir)
@@ -422,16 +358,7 @@ def write_manifest(manifest_path, manifest):
 
 
 def has_execution_flag(args):
-    return (
-        args.all
-        or args.format
-        or args.cmake
-        or args.release
-        or args.sitl_plots
-        or args.mc
-        or args.animus
-        or args.animus_qt
-    )
+    return args.all or args.format or args.cmake or args.release or args.sitl_plots or args.mc
 
 
 def print_recommendations(changed_files, recommendations):

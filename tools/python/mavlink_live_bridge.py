@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bridge MAVLink UDP telemetry to QGroundControl and a browser WebSocket UI."""
+"""Bridge MAVLink UDP telemetry to QGroundControl and live-link WebSocket clients."""
 
 from __future__ import annotations
 
@@ -202,7 +202,7 @@ class LiveVehicleState:
     origin_lat_deg: float | None = None
     origin_lon_deg: float | None = None
     origin_altitude_m: float | None = None
-    writable_animus: bool = False
+    writable_link: bool = False
     trail: list[dict[str, float]] = field(default_factory=list)
 
     def apply(self, message: MavlinkMessage, now: float | None = None) -> None:
@@ -414,8 +414,8 @@ class LiveVehicleState:
             "trail": self.trail,
             "commandCapabilities": {
                 "liveLink": self.connected and (packet_age is None or packet_age < 2.0),
-                "writableLink": self.writable_animus,
-                "authority": "sitl-writable" if self.writable_animus else "read-only",
+                "writableLink": self.writable_link,
+                "authority": "sitl-writable" if self.writable_link else "read-only",
                 "stale": packet_age is not None and packet_age >= 2.0,
                 "supported": (
                     [
@@ -431,17 +431,17 @@ class LiveVehicleState:
                         "mission-continue",
                         "mission-resume",
                     ]
-                    if self.writable_animus
+                    if self.writable_link
                     and self.connected
                     and (packet_age is None or packet_age < 2.0)
                     else []
                 ),
                 "blockedReason": (
                     None
-                    if self.writable_animus
+                    if self.writable_link
                     and self.connected
                     and (packet_age is None or packet_age < 2.0)
-                    else "Animus writes require a SITL session started with --writable-animus."
+                    else "Live-link writes require a SITL session started with --writable-link."
                 ),
             },
         }
@@ -893,9 +893,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ws-host", default="127.0.0.1")
     parser.add_argument("--ws-port", type=int, default=8765)
     parser.add_argument(
-        "--writable-animus",
+        "--writable-link",
         action="store_true",
-        help="advertise guarded SITL-only write support to Animus clients",
+        help="advertise guarded SITL-only write support to live-link clients",
     )
     parser.add_argument(
         "--record-altlog",
@@ -911,7 +911,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 async def serve(args: argparse.Namespace) -> None:
     parser = MavlinkV1Parser()
-    state = LiveVehicleState(writable_animus=args.writable_animus)
+    state = LiveVehicleState(writable_link=args.writable_link)
     snapshot = LiveSessionSnapshot(state)
     forwarder = UdpForwarder(args.forward)
     recorder = AltlogRecorder(Path(args.record_altlog)) if args.record_altlog else None

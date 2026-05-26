@@ -96,34 +96,13 @@ Use `--mavlink-host` and `--mavlink-port` for a remote endpoint or a non-default
 ./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --mavlink --mavlink-host 127.0.0.1 --mavlink-port 14551
 ```
 
-For simultaneous Qt Animus telemetry and QGroundControl monitoring, use the live session launcher:
+For live QGroundControl monitoring and WebSocket telemetry, use the live session launcher:
 
 ```sh
 tools/python/run_sitl_session.py
 ```
 
-The launcher starts `mavlink_live_bridge.py`, forwards raw packets to QGroundControl at `127.0.0.1:14550`, publishes decoded state on `ws://127.0.0.1:8765` for Animus clients, and runs realtime `cruise6dof` SITL pointed at bridge UDP port `14551`. Use `--no-qgc` to disable QGroundControl forwarding.
-
-For the direct Qt Animus workflow, use:
-
-```sh
-tools/python/run_animus_sitl.py
-```
-
-That launcher builds `sitl_runner` and `animus_qt`, opens Animus already
-listening on UDP `127.0.0.1:14551`, and runs realtime `cruise6dof` SITL pointed
-at that endpoint. Pass `--skip-build` to reuse existing binaries. Animus enables
-local Qt WebEngine Chromium flags for WebGL/Cesium 3D rendering by default when
-`QTWEBENGINE_CHROMIUM_FLAGS` is unset; set that environment variable before
-launch to override the local default.
-
-To capture required Qt Animus UI verification screenshots, run:
-
-```sh
-python3 tools/python/capture_animus_qt_sitl.py
-```
-
-Screenshots, logs, manifests, and `visual-report.md` are written under `artifacts/animus-qt-screenshots/<timestamp>/`. The default capture covers `map-2d`, `terrain-3d`, `fpv`, `tactical`, and `setup`.
+The launcher starts `mavlink_live_bridge.py`, forwards raw packets to QGroundControl at `127.0.0.1:14550`, publishes decoded state on `ws://127.0.0.1:8765`, and runs realtime `cruise6dof` SITL pointed at bridge UDP port `14551`. Use `--no-qgc` to disable QGroundControl forwarding and `--record-altlog` to capture bridge-received packets to an `.altlog` bundle.
 
 Latitude, longitude, and altitude in `cruise6dof` logs are derived from the spherical-Earth ECEF truth state in ECEF mode. The local `pos_n_m`, `pos_e_m`, `pos_d_m`, `vel_n_mps`, `vel_e_mps`, and `vel_d_mps` columns remain available as derived compatibility outputs relative to the configured initial origin. The appended `pos_ecef_x_m`, `pos_ecef_y_m`, `pos_ecef_z_m`, `vel_ecef_x_mps`, `vel_ecef_y_mps`, and `vel_ecef_z_mps` columns expose the ECEF truth state directly.
 
@@ -245,7 +224,7 @@ python3 tools/python/compare_sitl_replay.py --expected tests/integration/fixture
 
 `--plot` accepts `velocities`, `attitudes`, `rates`, `position`, `ecef`, or `all`. Static plots are saved to `--plots-dir`, which defaults to `plots/sitl` when plotting is requested.
 
-Offline trajectory playback and CSV import are future Qt Animus work. Keep SITL CSV logs as deterministic artifacts for now.
+Keep SITL CSV logs as deterministic artifacts for offline trajectory review and replay comparisons.
 
 For a live bridge session with QGroundControl forwarding:
 
@@ -253,7 +232,7 @@ For a live bridge session with QGroundControl forwarding:
 tools/python/run_sitl_session.py
 tools/python/run_sitl_session.py --profile turn --duration 30
 tools/python/run_sitl_session.py --no-qgc
-tools/python/run_animus_sitl.py --profile turn --duration 30
+tools/python/run_sitl_session.py --record-altlog live.altlog
 ```
 
 Case files are an Altair one-time setup layer for initial conditions, run configuration,
@@ -353,7 +332,7 @@ Python scripts in `tools/python` are orchestration helpers only:
 
 - `run_sitl.py` invokes the compiled SITL runner, prints summary metrics, and can save static plots.
 - `run_sitl_session.py` runs the live workflow: MAVLink bridge, optional QGroundControl forwarding, and realtime SITL.
-- `mavlink_live_bridge.py` listens for MAVLink v1 UDP packets, forwards raw packets to one or more UDP endpoints such as QGroundControl, and publishes decoded live state over WebSocket for Animus clients.
+- `mavlink_live_bridge.py` listens for MAVLink v1 UDP packets, forwards raw packets to one or more UDP endpoints such as QGroundControl, publishes decoded live state over WebSocket, and can record bridge-received packets to `.altlog`.
 - `compare_sitl_replay.py` compares two replay CSV files with identical headers, identical row counts, and numeric tolerances.
 - `plot_sitl.py` plots selected `cruise6dof` trajectory views from a SITL CSV.
 

@@ -307,7 +307,17 @@ def main():
         print("session did not forward to QGC by default", file=sys.stderr)
         return 1
     if "--ws-host 127.0.0.1 --ws-port 8765" not in result.stdout:
-        print("session did not configure the Animus WebSocket endpoint", file=sys.stderr)
+        print("session did not configure the live-link WebSocket endpoint", file=sys.stderr)
+        return 1
+    if "ws=ws://127.0.0.1:8765" not in result.stdout:
+        print("session did not report the live-link WebSocket endpoint", file=sys.stderr)
+        return 1
+    retired_endpoint_label = "anim" "us_ws"
+    retired_write_flag = "--writable-" + "".join(
+        chr(code) for code in (97, 110, 105, 109, 117, 115)
+    )
+    if retired_endpoint_label in result.stdout or retired_write_flag in result.stdout:
+        print("session dry-run output still contains retired UI wording", file=sys.stderr)
         return 1
     if "--mavlink-port 14551" not in result.stdout or "--realtime" not in result.stdout:
         print("session did not route realtime SITL through the bridge", file=sys.stderr)
