@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "layer": "elevation/local_xyz/terrain_rgb/_/256/11-13",
+  "coord": {"z": 12, "x": 681, "y": 1562},
+  "format": "float32",
+  "synthetic": false,
+  "synthesis_depth": 0,
+  "min": 1897.9,
+  "max": 2563.4,
+  "source_coords": []
+}

@@ -1,10 +1,13 @@
 #include "animus/terrain_core/terrain_data.hpp"
 
+#include <jpeglib.h>
 #include <png.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <csetjmp>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -25,6 +28,35 @@ struct FileCloser
         }
     }
 };
+
+struct PngMemoryReader
+{
+    std::span<const std::uint8_t> bytes;
+    std::size_t offset = 0;
+};
+
+void read_png_memory(png_structp png, png_bytep out, const png_size_t byte_count)
+{
+    auto *reader = static_cast<PngMemoryReader *>(png_get_io_ptr(png));
+    if (reader == nullptr || reader->offset + byte_count > reader->bytes.size())
+    {
+        png_error(png, "PNG input is truncated");
+    }
+    std::memcpy(out, reader->bytes.data() + reader->offset, byte_count);
+    reader->offset += byte_count;
+}
+
+struct JpegErrorManager
+{
+    jpeg_error_mgr pub;
+    jmp_buf jump;
+};
+
+void jpeg_error_exit(j_common_ptr cinfo)
+{
+    auto *manager = reinterpret_cast<JpegErrorManager *>(cinfo->err);
+    longjmp(manager->jump, 1);
+}
 
 void add_quad(std::vector<std::uint32_t> &indices,
               const std::uint32_t a,
@@ -67,12 +99,20 @@ Raster load_png_rgba(const std::filesystem::path &path)
     {
         throw std::runtime_error("Failed to open PNG: " + path.string());
     }
-
-    png_byte signature[8] = {};
-    if (std::fread(signature, 1, sizeof(signature), file.get()) != sizeof(signature) ||
-        png_sig_cmp(signature, 0, sizeof(signature)) != 0)
+    std::vector<std::uint8_t> bytes;
+    std::uint8_t buffer[4096] = {};
+    while (const std::size_t read = std::fread(buffer, 1, sizeof(buffer), file.get()))
     {
-        throw std::runtime_error("File is not a PNG: " + path.string());
+        bytes.insert(bytes.end(), buffer, buffer + read);
+    }
+    return decode_png_rgba(bytes);
+}
+
+Raster decode_png_rgba(std::span<const std::uint8_t> bytes)
+{
+    if (bytes.size() < 8U || png_sig_cmp(const_cast<png_bytep>(bytes.data()), 0, 8) != 0)
+    {
+        throw std::runtime_error("Byte buffer is not a PNG");
     }
 
     png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
@@ -91,11 +131,11 @@ Raster load_png_rgba(const std::filesystem::path &path)
     if (setjmp(png_jmpbuf(png)) != 0)
     {
         png_destroy_read_struct(&png, &info, nullptr);
-        throw std::runtime_error("Failed to decode PNG: " + path.string());
+        throw std::runtime_error("Failed to decode PNG");
     }
 
-    png_init_io(png, file.get());
-    png_set_sig_bytes(png, sizeof(signature));
+    PngMemoryReader reader{bytes, 0U};
+    png_set_read_fn(png, &reader, read_png_memory);
     png_read_info(png, info);
 
     png_uint_32 width = 0;
@@ -149,6 +189,72 @@ Raster load_png_rgba(const std::filesystem::path &path)
     png_read_end(png, nullptr);
     png_destroy_read_struct(&png, &info, nullptr);
     return raster;
+}
+
+Raster decode_jpeg_rgba(std::span<const std::uint8_t> bytes)
+{
+    if (bytes.size() < 4U || bytes[0] != 0xFFU || bytes[1] != 0xD8U)
+    {
+        throw std::runtime_error("Byte buffer is not a JPEG");
+    }
+
+    jpeg_decompress_struct cinfo{};
+    JpegErrorManager error{};
+    cinfo.err = jpeg_std_error(&error.pub);
+    error.pub.error_exit = jpeg_error_exit;
+    if (setjmp(error.jump) != 0)
+    {
+        jpeg_destroy_decompress(&cinfo);
+        throw std::runtime_error("Failed to decode JPEG");
+    }
+
+    jpeg_create_decompress(&cinfo);
+    jpeg_mem_src(&cinfo, bytes.data(), static_cast<unsigned long>(bytes.size()));
+    jpeg_read_header(&cinfo, TRUE);
+    cinfo.out_color_space = JCS_RGB;
+    jpeg_start_decompress(&cinfo);
+
+    Raster raster;
+    raster.width = static_cast<int>(cinfo.output_width);
+    raster.height = static_cast<int>(cinfo.output_height);
+    raster.channels = 4;
+    raster.format = RasterFormat::UInt8RGBA;
+    raster.sampling_mode = SamplingMode::Center;
+    raster.byte_data.resize(static_cast<std::size_t>(raster.width * raster.height * 4));
+
+    std::vector<std::uint8_t> row(static_cast<std::size_t>(raster.width * 3));
+    while (cinfo.output_scanline < cinfo.output_height)
+    {
+        JSAMPROW row_ptr = row.data();
+        const int dst_row = static_cast<int>(cinfo.output_scanline);
+        jpeg_read_scanlines(&cinfo, &row_ptr, 1);
+        for (int col = 0; col < raster.width; ++col)
+        {
+            const auto src = static_cast<std::size_t>(col * 3);
+            const auto dst = static_cast<std::size_t>((dst_row * raster.width + col) * 4);
+            raster.byte_data[dst] = row[src];
+            raster.byte_data[dst + 1U] = row[src + 1U];
+            raster.byte_data[dst + 2U] = row[src + 2U];
+            raster.byte_data[dst + 3U] = 255U;
+        }
+    }
+
+    jpeg_finish_decompress(&cinfo);
+    jpeg_destroy_decompress(&cinfo);
+    return raster;
+}
+
+Raster decode_image_rgba(std::span<const std::uint8_t> bytes)
+{
+    if (bytes.size() >= 8U && png_sig_cmp(const_cast<png_bytep>(bytes.data()), 0, 8) == 0)
+    {
+        return decode_png_rgba(bytes);
+    }
+    if (bytes.size() >= 4U && bytes[0] == 0xFFU && bytes[1] == 0xD8U)
+    {
+        return decode_jpeg_rgba(bytes);
+    }
+    throw std::runtime_error("Unsupported image byte format");
 }
 
 float terrain_rgb_to_meters(const std::uint8_t red,
@@ -256,6 +362,22 @@ RasterSample sample_float_raster_bilinear(const Raster &raster, const double u, 
     const double top = static_cast<double>(h00) + (static_cast<double>(h10) - h00) * fx;
     const double bottom = static_cast<double>(h01) + (static_cast<double>(h11) - h01) * fx;
     return {true, static_cast<float>(top + (bottom - top) * fy)};
+}
+
+RasterSample sample_geoid_grid(const GeoidGrid &grid, const double lat_deg, const double lon_deg)
+{
+    if (grid.north_deg <= grid.south_deg || grid.east_deg <= grid.west_deg)
+    {
+        throw std::invalid_argument("Geoid grid bounds are invalid");
+    }
+    if (lat_deg < grid.south_deg || lat_deg > grid.north_deg || lon_deg < grid.west_deg ||
+        lon_deg > grid.east_deg)
+    {
+        return {};
+    }
+    const double u = (lon_deg - grid.west_deg) / (grid.east_deg - grid.west_deg);
+    const double v = (grid.north_deg - lat_deg) / (grid.north_deg - grid.south_deg);
+    return sample_float_raster_bilinear(grid.offsets_m, u, v);
 }
 
 TerrainMeshCpu build_terrain_mesh(const Raster &heights, const TerrainMeshOptions &options)

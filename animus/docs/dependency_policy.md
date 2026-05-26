@@ -11,17 +11,24 @@ uses them:
 - GLFW for native Linux window and OpenGL context creation.
 - GLEW for OpenGL loading.
 - GDAL for GeoTIFF, raster, and geospatial input.
-- libpng for imagery and Terrain-RGB-style decoding.
+- libpng for imagery and Terrain-RGB-style decoding, and for app-local PNG
+  framebuffer capture artifacts.
+- libjpeg-turbo for MBTiles JPEG tile payload decoding.
+- libcurl for explicitly configured runtime remote tile providers. Animus must
+  not perform network access unless a provider URL or prewarm/download command
+  is supplied by the user.
+- SQLite for MBTiles input and cache metadata.
+- PROJ for explicit vertical grid shift datum correction.
 - GoogleTest for unit tests.
 - zlib, zstd, or lz4 for cache/data compression when cache formats need them.
-- SQLite for MBTiles or cache metadata once that storage model exists.
+- FFmpeg as an optional tool/runtime dependency for explicit MP4 export
+  workflows. Default build and test must not require building FFmpeg.
 
 ## Delayed Dependencies
 
 These dependencies should wait until their phase has a direct requirement:
 
 - MCAP, Protobuf, and HDF5/HighFive for telemetry import and structured logs.
-- FFmpeg and libaom-av1 for video/export workflows.
 - yaml-cpp, tinyxml2, libkml, libarchive, and libcurl for richer config,
   import, archive, and remote-source workflows.
 - Sol2 for scripting after the core terrain and app shell are stable.

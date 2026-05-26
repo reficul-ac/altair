@@ -35,6 +35,8 @@ enum class TileSourceType
     LocalXyz,
     DiskCache,
     GeoTiff,
+    Mbtiles,
+    RemoteHttp,
     Synthetic,
 };
 
@@ -155,6 +157,7 @@ class GdalGeoTiffTileSource
 
     [[nodiscard]] bool available() const;
     [[nodiscard]] Raster load_tile(geo_core::TileCoord coord, int resolution) const;
+    [[nodiscard]] Raster load_tile_rgba(geo_core::TileCoord coord, int resolution) const;
 
   private:
     std::filesystem::path path_;

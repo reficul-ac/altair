@@ -375,6 +375,10 @@ std::string_view to_string(const TileSourceType source_type)
         return "disk-cache";
     case TileSourceType::GeoTiff:
         return "geotiff";
+    case TileSourceType::Mbtiles:
+        return "mbtiles";
+    case TileSourceType::RemoteHttp:
+        return "remote-http";
     case TileSourceType::Synthetic:
         return "synthetic";
     }
@@ -825,6 +829,106 @@ Raster GdalGeoTiffTileSource::load_tile(const geo_core::TileCoord coord, const i
     if (has_no_data != 0)
     {
         raster.no_data_value = static_cast<float>(no_data);
+    }
+    return raster;
+#else
+    (void)coord;
+    (void)resolution;
+    throw std::runtime_error("terrain_core was built without GDAL support");
+#endif
+}
+
+Raster GdalGeoTiffTileSource::load_tile_rgba(const geo_core::TileCoord coord,
+                                             const int resolution) const
+{
+    if (path_.empty())
+    {
+        throw std::runtime_error("GeoTIFF path is empty");
+    }
+#if defined(ANIMUS_TERRAIN_CORE_HAS_GDAL)
+    GDALAllRegister();
+    GDALDatasetUniquePtr dataset(static_cast<GDALDataset *>(
+        GDALOpenEx(path_.string().c_str(), GDAL_OF_RASTER, nullptr, nullptr, nullptr)));
+    if (!dataset)
+    {
+        throw std::runtime_error("Failed to open GeoTIFF: " + path_.string());
+    }
+
+    double transform[6] = {};
+    int src_x = 0;
+    int src_y = 0;
+    int src_width = dataset->GetRasterXSize();
+    int src_height = dataset->GetRasterYSize();
+    if (dataset->GetGeoTransform(transform) == CE_None && transform[1] != 0.0 &&
+        transform[5] != 0.0)
+    {
+        const auto bounds = geo_core::tile_to_bounds(coord);
+        const double x0 = (bounds.west_deg - transform[0]) / transform[1];
+        const double x1 = (bounds.east_deg - transform[0]) / transform[1];
+        const double y0 = (bounds.north_deg - transform[3]) / transform[5];
+        const double y1 = (bounds.south_deg - transform[3]) / transform[5];
+        src_x = std::clamp(
+            static_cast<int>(std::floor(std::min(x0, x1))), 0, dataset->GetRasterXSize() - 1);
+        src_y = std::clamp(
+            static_cast<int>(std::floor(std::min(y0, y1))), 0, dataset->GetRasterYSize() - 1);
+        const int x_end = std::clamp(
+            static_cast<int>(std::ceil(std::max(x0, x1))), src_x + 1, dataset->GetRasterXSize());
+        const int y_end = std::clamp(
+            static_cast<int>(std::ceil(std::max(y0, y1))), src_y + 1, dataset->GetRasterYSize());
+        src_width = x_end - src_x;
+        src_height = y_end - src_y;
+    }
+
+    const int band_count = dataset->GetRasterCount();
+    if (band_count <= 0)
+    {
+        throw std::runtime_error("GeoTIFF has no raster bands: " + path_.string());
+    }
+    Raster raster;
+    raster.width = resolution;
+    raster.height = resolution;
+    raster.channels = 4;
+    raster.format = RasterFormat::UInt8RGBA;
+    raster.byte_data.resize(static_cast<std::size_t>(resolution * resolution * 4), 255U);
+
+    const int read_bands = std::min(4, band_count);
+    for (int band_index = 1; band_index <= read_bands; ++band_index)
+    {
+        GDALRasterBand *band = dataset->GetRasterBand(band_index);
+        if (band == nullptr)
+        {
+            continue;
+        }
+        std::vector<std::uint8_t> channel(static_cast<std::size_t>(resolution * resolution));
+        if (band->RasterIO(GF_Read,
+                           src_x,
+                           src_y,
+                           src_width,
+                           src_height,
+                           channel.data(),
+                           resolution,
+                           resolution,
+                           GDT_Byte,
+                           0,
+                           0) != CE_None)
+        {
+            throw std::runtime_error("Failed to read GeoTIFF overlay: " + path_.string());
+        }
+        const int channel_index = read_bands == 1 ? 0 : band_index - 1;
+        for (int pixel = 0; pixel < resolution * resolution; ++pixel)
+        {
+            raster.byte_data[static_cast<std::size_t>(pixel * 4 + channel_index)] =
+                channel[static_cast<std::size_t>(pixel)];
+        }
+    }
+    if (read_bands == 1)
+    {
+        for (int pixel = 0; pixel < resolution * resolution; ++pixel)
+        {
+            const std::uint8_t value = raster.byte_data[static_cast<std::size_t>(pixel * 4)];
+            raster.byte_data[static_cast<std::size_t>(pixel * 4 + 1)] = value;
+            raster.byte_data[static_cast<std::size_t>(pixel * 4 + 2)] = value;
+        }
     }
     return raster;
 #else

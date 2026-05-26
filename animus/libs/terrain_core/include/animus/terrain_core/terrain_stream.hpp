@@ -56,6 +56,11 @@ struct TileLoadRequest
     std::filesystem::path cache_root = "animus/cache/terrain";
     std::filesystem::path elevation_geotiff;
     std::filesystem::path bathymetry_geotiff;
+    std::filesystem::path imagery_mbtiles;
+    std::string remote_imagery_url_template;
+    std::string remote_imagery_cache_identity;
+    std::string remote_imagery_user_agent = "Animus/0.1";
+    int remote_imagery_timeout_ms = 5000;
     bool use_bathymetry = false;
     bool persist_cache = true;
     int max_synthesis_depth = 1;

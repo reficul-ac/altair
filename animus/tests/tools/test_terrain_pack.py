@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import json
 import struct
 import sys
 import tempfile
@@ -33,6 +34,7 @@ from download_lake_tahoe_pack import (  # noqa: E402
     terrain_rgb_triplet,
     tile_bounds_epsg3857,
 )
+from prewarm_cache import main as prewarm_main, tiles_for_bbox  # noqa: E402
 
 try:
     from PIL import Image
@@ -215,6 +217,51 @@ class TerrainPackTests(unittest.TestCase):
             IMAGERY_TILE_URL_TEMPLATE,
         )
         self.assertEqual(provenance["sources"]["elevation"]["url"], ELEVATION_EXPORT_URL)
+
+    def test_prewarm_selects_bbox_tiles_and_writes_summary(self) -> None:
+        bbox = (-120.1, 39.0, -120.0, 39.1)
+        coords = tiles_for_bbox(bbox, 12, 12)
+
+        self.assertTrue(coords)
+        self.assertTrue(all(coord.z == 12 for coord in coords))
+
+    def test_prewarm_local_xyz_is_offline_and_summarizes_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pack = root / "pack"
+            cache = root / "cache"
+            summary_dir = root / "summary"
+            imagery = pack / "imagery" / "0" / "0"
+            imagery.mkdir(parents=True)
+            Image.new("RGB", (1, 1), (1, 2, 3)).save(imagery / "0.png")
+
+            code = prewarm_main(
+                [
+                    "--bbox",
+                    "0,0,1,1",
+                    "--min-z",
+                    "0",
+                    "--max-z",
+                    "0",
+                    "--pack-root",
+                    str(pack),
+                    "--cache-root",
+                    str(cache),
+                    "--layers",
+                    "imagery,elevation",
+                    "--summary-dir",
+                    str(summary_dir),
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            self.assertTrue((cache / "imagery" / "0" / "0" / "0.png").exists())
+            summaries = list(summary_dir.glob("prewarm-*.json"))
+            self.assertEqual(len(summaries), 1)
+            summary = json.loads(summaries[0].read_text(encoding="utf-8"))
+            self.assertEqual(summary["schema"], "animus.cache_prewarm.v1")
+            self.assertEqual(summary["sources"][0]["copied"], 1)
+            self.assertEqual(summary["sources"][0]["missing"], 1)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,14 @@
 namespace animus::telemetry_core
 {
 
+enum class AltitudeDatum
+{
+    Unknown,
+    MslOrthometric,
+    Ellipsoid,
+    TerrainRelative,
+};
+
 struct EntityId
 {
     std::uint8_t system_id = 0;
@@ -42,6 +50,7 @@ struct TelemetrySample
     std::optional<double> ground_speed_mps;
     std::optional<double> climb_rate_mps;
     std::optional<double> heading_deg;
+    AltitudeDatum altitude_datum = AltitudeDatum::Unknown;
     SourceFields fields;
 };
 

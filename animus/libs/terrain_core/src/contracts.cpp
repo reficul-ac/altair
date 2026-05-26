@@ -48,6 +48,23 @@ std::string_view to_string(const SamplingMode mode)
     return "unknown";
 }
 
+std::string_view to_string(const AltitudeDatum datum)
+{
+    switch (datum)
+    {
+    case AltitudeDatum::Unknown:
+        return "unknown";
+    case AltitudeDatum::MslOrthometric:
+        return "msl_orthometric";
+    case AltitudeDatum::Ellipsoid:
+        return "ellipsoid";
+    case AltitudeDatum::TerrainRelative:
+        return "terrain_relative";
+    }
+
+    return "unknown";
+}
+
 std::string_view to_string(const TileState state)
 {
     switch (state)

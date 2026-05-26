@@ -66,15 +66,20 @@ Detailed architecture and phase checklist:
   playback path by moving telemetry state, UI panels, and rendering helpers into
   dedicated app modules.
 - [ ] Continue splitting the new Animus app runtime translation unit into
-  smaller files for CLI/options, terrain orchestration, telemetry overlay, UI
-  panels, and capture helpers.
-- [ ] Phase L: add advanced overlays, remote tile providers, MBTiles/SQLite
+  smaller files for terrain orchestration, telemetry overlay, UI panels, and
+  rendering helpers; CLI/options and capture helpers are split out.
+- [x] Phase L: add advanced overlays, remote tile providers, MBTiles/SQLite
   cache metadata, cache prewarming, datum correction, and export workflows.
-- [ ] During Phase L, add persisted UI/app config only after there are real
+- [x] Finish Phase L export scope with video/export workflows after terrain,
+  overlays, and telemetry playback are stable.
+- [x] Expand Phase L terrain/data regression coverage for JPEG MBTiles payloads.
+- [x] Replace Phase L datum metadata warnings with real geoid/datum correction
+  once an EGM or project-specific correction grid is selected.
+- [x] During Phase L, add persisted UI/app config only after there are real
   preferences, recent files, layer presets, or project/session concepts.
-- [ ] During Phase L, add visual regression artifact bundles or HTML reports
+- [x] During Phase L, add visual regression artifact bundles or HTML reports
   once telemetry overlays, tracks, and events exist.
-- [ ] During Phase L, add PNG or export-friendly screenshot formats if captures
+- [x] During Phase L, add PNG or export-friendly screenshot formats if captures
   become review artifacts; keep PPM for deterministic smoke checks.
 
 ## Vehicle And SITL

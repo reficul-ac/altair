@@ -30,6 +30,14 @@ enum class SamplingMode
     Corner,
 };
 
+enum class AltitudeDatum
+{
+    Unknown,
+    MslOrthometric,
+    Ellipsoid,
+    TerrainRelative,
+};
+
 enum class TileState
 {
     Missing,
@@ -73,6 +81,7 @@ struct Raster
 std::string_view to_string(LayerType type);
 std::string_view to_string(RasterFormat format);
 std::string_view to_string(SamplingMode mode);
+std::string_view to_string(AltitudeDatum datum);
 std::string_view to_string(TileState state);
 
 } // namespace animus::terrain_core

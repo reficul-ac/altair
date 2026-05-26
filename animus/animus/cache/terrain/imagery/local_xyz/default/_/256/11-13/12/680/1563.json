@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "layer": "imagery/local_xyz/default/_/256/11-13",
+  "coord": {"z": 12, "x": 680, "y": 1563},
+  "format": "uint8_rgba",
+  "synthetic": false,
+  "synthesis_depth": 0,
+  "min": 0,
+  "max": 255,
+  "source_coords": []
+}

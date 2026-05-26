@@ -46,12 +46,16 @@ Terrain packs use:
 ```
 
 Supported Phase D layers are `imagery`, `elevation`, and `bathymetry`.
+Phase L also accepts MBTiles imagery with standard `tiles` and `metadata`
+tables. MBTiles rows are treated as TMS by default and y-flipped into the XYZ
+tile convention used by the renderer.
 
 ## Early Formats
 
 - imagery: PNG RGB/RGBA tiles
 - elevation: Terrain-RGB-compatible PNG tiles, decoded as meters
 - bathymetry/elevation: little-endian raw float32 `.f32` tiles in meters
+- MBTiles imagery payloads: PNG or JPEG decoded to RGBA
 
 Each manifest layer declares tile size, sampling mode, no-data policy, source,
 and format. Validators reject missing required tiles, unsupported formats,
@@ -75,6 +79,7 @@ python3 animus/tools/download_lake_tahoe_pack.py --manifest animus/data/sample_a
 python3 animus/tools/download_lake_tahoe_pack.py
 python3 animus/tools/inspect_tile.py --pack-root animus/data/tiles/lake_tahoe imagery/12/682/1563.png
 python3 animus/tools/validate_tile_pyramid.py --pack-root animus/data/tiles/lake_tahoe --manifest animus/data/sample_areas/lake_tahoe_phase_d.json
+python3 animus/tools/prewarm_cache.py --bbox=-120.1,39.0,-120.0,39.1 --min-z 12 --max-z 12 --pack-root animus/data/tiles/lake_tahoe --cache-root artifacts/animus/prewarm-cache
 ```
 
 `download_lake_tahoe_pack.py` prepares the 18 required local artifacts for the

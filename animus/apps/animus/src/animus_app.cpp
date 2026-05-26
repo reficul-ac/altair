@@ -1,3 +1,6 @@
+#include "capture.hpp"
+#include "options.hpp"
+
 #include "animus/render_core/gl_info.hpp"
 #include "animus/render_core/imgui_layer.hpp"
 #include "animus/render_core/mesh.hpp"
@@ -6,6 +9,7 @@
 #include "animus/render_core/texture.hpp"
 #include "animus/render_core/window.hpp"
 #include "animus/telemetry_core/telemetry.hpp"
+#include "animus/terrain_core/datum.hpp"
 #include "animus/terrain_core/terrain_data.hpp"
 #include "animus/terrain_core/terrain_stream.hpp"
 
@@ -17,10 +21,9 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
-#include <cstdlib>
+#include <cstdio>
 #include <exception>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -35,42 +38,10 @@
 namespace
 {
 
+using animus::app::Options;
 using animus::geo_core::TileCoord;
 using animus::terrain_core::Raster;
 using animus::terrain_core::TerrainStreamer;
-
-struct Options
-{
-    bool smoke = false;
-    int frames = 0;
-    int width = 1280;
-    int height = 720;
-    std::filesystem::path pack_root = "animus/data/tiles/lake_tahoe";
-    std::filesystem::path cache_root = "animus/cache/terrain";
-    std::filesystem::path elevation_geotiff;
-    std::filesystem::path bathymetry_geotiff;
-    std::filesystem::path capture_ppm;
-    int z = 12;
-    int min_z = 11;
-    int max_z = 13;
-    int center_x = 682;
-    int center_y = 1563;
-    int patch_radius = 1;
-    float height_scale = 0.0015F;
-    bool debug_overlay = true;
-    int worker_count = 2;
-    std::size_t tile_budget = 25;
-    std::size_t resident_tile_cap = 64;
-    std::size_t max_outstanding_jobs = 16;
-    int max_texture_uploads = 2;
-    int max_mesh_uploads = 2;
-    std::size_t max_upload_bytes = 32U * 1024U * 1024U;
-    int simulate_slow_load_ms = 0;
-    bool use_bathymetry = false;
-    std::filesystem::path telemetry_tlog;
-    float playback_rate = 1.0F;
-    bool playback_start_paused = false;
-};
 
 struct Vec3
 {
@@ -103,12 +74,38 @@ struct InputState
     double pending_scroll_y = 0.0;
 };
 
+struct ScreenshotToolState
+{
+    std::array<char, 512> png_path{};
+    bool pending_png = false;
+    std::string status = "ready";
+};
+
+struct Mp4RecorderState
+{
+    std::array<char, 512> mp4_path{};
+    int fps = 30;
+    bool recording = false;
+    bool pending_stop = false;
+    int frame_count = 0;
+    std::filesystem::path sequence_dir;
+    std::string status = "ready";
+};
+
 struct TerrainTileGpu
 {
     TileCoord coord;
     animus::render_core::IndexedMesh mesh;
     animus::render_core::Texture2D imagery;
     animus::render_core::Texture2D height_texture;
+    struct OverlayTexture
+    {
+        int draw_order = 0;
+        float opacity = 1.0F;
+        std::string cache_identity;
+        animus::render_core::Texture2D texture;
+    };
+    std::vector<OverlayTexture> overlay_textures;
     Raster heights;
     float min_height_m = 0.0F;
     float max_height_m = 0.0F;
@@ -118,13 +115,15 @@ struct TerrainTileGpu
                    animus::render_core::IndexedMesh tile_mesh,
                    animus::render_core::Texture2D imagery_texture,
                    animus::render_core::Texture2D height_values,
+                   std::vector<OverlayTexture> overlay_values,
                    Raster height_raster,
                    float min_height,
                    float max_height,
                    std::size_t estimated_bytes)
         : coord(tile_coord), mesh(std::move(tile_mesh)), imagery(std::move(imagery_texture)),
-          height_texture(std::move(height_values)), heights(std::move(height_raster)),
-          min_height_m(min_height), max_height_m(max_height), estimated_gpu_bytes(estimated_bytes)
+          height_texture(std::move(height_values)), overlay_textures(std::move(overlay_values)),
+          heights(std::move(height_raster)), min_height_m(min_height), max_height_m(max_height),
+          estimated_gpu_bytes(estimated_bytes)
     {
     }
 };
@@ -178,219 +177,21 @@ void main()
 }
 )glsl";
 
-int parse_positive_int(std::string_view name, std::string_view value)
+constexpr std::string_view overlay_fragment_shader = R"glsl(
+#version 330 core
+in vec2 uv;
+
+uniform sampler2D overlay_tex;
+uniform float opacity;
+
+out vec4 color;
+
+void main()
 {
-    std::size_t consumed = 0;
-    const int parsed = std::stoi(std::string(value), &consumed);
-    if (consumed != value.size() || parsed <= 0)
-    {
-        throw std::invalid_argument(std::string("Expected positive integer for ") +
-                                    std::string(name));
-    }
-    return parsed;
+    vec4 sample = texture(overlay_tex, uv);
+    color = vec4(sample.rgb, sample.a * opacity);
 }
-
-int parse_int(std::string_view name, std::string_view value)
-{
-    std::size_t consumed = 0;
-    const int parsed = std::stoi(std::string(value), &consumed);
-    if (consumed != value.size())
-    {
-        throw std::invalid_argument("Expected integer for " + std::string(name));
-    }
-    return parsed;
-}
-
-float parse_positive_float(std::string_view name, std::string_view value)
-{
-    std::size_t consumed = 0;
-    const float parsed = std::stof(std::string(value), &consumed);
-    if (consumed != value.size() || parsed <= 0.0F)
-    {
-        throw std::invalid_argument(std::string("Expected positive float for ") +
-                                    std::string(name));
-    }
-    return parsed;
-}
-
-std::size_t parse_positive_size(std::string_view name, std::string_view value)
-{
-    std::size_t consumed = 0;
-    const auto parsed = static_cast<std::size_t>(std::stoull(std::string(value), &consumed));
-    if (consumed != value.size() || parsed == 0U)
-    {
-        throw std::invalid_argument(std::string("Expected positive integer for ") +
-                                    std::string(name));
-    }
-    return parsed;
-}
-
-std::string_view next_arg(int argc, char **argv, int &index, std::string_view option)
-{
-    if (++index >= argc)
-    {
-        throw std::invalid_argument("Missing value for " + std::string(option));
-    }
-    return argv[index];
-}
-
-Options parse_options(int argc, char **argv)
-{
-    Options options;
-
-    for (int index = 1; index < argc; ++index)
-    {
-        const std::string_view arg = argv[index];
-        if (arg == "--smoke")
-        {
-            options.smoke = true;
-        }
-        else if (arg == "--frames")
-        {
-            options.frames = parse_positive_int(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--width")
-        {
-            options.width = parse_positive_int(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--height")
-        {
-            options.height = parse_positive_int(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--pack-root")
-        {
-            options.pack_root = std::string(next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--cache-root")
-        {
-            options.cache_root = std::string(next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--elevation-geotiff")
-        {
-            options.elevation_geotiff = std::string(next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--bathymetry-geotiff")
-        {
-            options.bathymetry_geotiff = std::string(next_arg(argc, argv, index, arg));
-            options.use_bathymetry = true;
-        }
-        else if (arg == "--z")
-        {
-            options.z = parse_int(arg, next_arg(argc, argv, index, arg));
-            options.min_z = options.z;
-            options.max_z = options.z;
-        }
-        else if (arg == "--min-z")
-        {
-            options.min_z = parse_int(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--max-z")
-        {
-            options.max_z = parse_int(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--center-x")
-        {
-            options.center_x = parse_int(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--center-y")
-        {
-            options.center_y = parse_int(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--height-scale")
-        {
-            options.height_scale = parse_positive_float(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--capture-ppm")
-        {
-            options.capture_ppm = std::string(next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--debug-overlay")
-        {
-            options.debug_overlay = true;
-        }
-        else if (arg == "--no-debug-overlay")
-        {
-            options.debug_overlay = false;
-        }
-        else if (arg == "--worker-count")
-        {
-            options.worker_count = parse_positive_int(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--tile-budget")
-        {
-            options.tile_budget = parse_positive_size(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--resident-tile-cap")
-        {
-            options.resident_tile_cap = parse_positive_size(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--max-outstanding-jobs")
-        {
-            options.max_outstanding_jobs =
-                parse_positive_size(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--max-texture-uploads")
-        {
-            options.max_texture_uploads = parse_positive_int(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--max-mesh-uploads")
-        {
-            options.max_mesh_uploads = parse_positive_int(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--max-upload-bytes")
-        {
-            options.max_upload_bytes = parse_positive_size(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--simulate-slow-load-ms")
-        {
-            options.simulate_slow_load_ms = parse_int(arg, next_arg(argc, argv, index, arg));
-            if (options.simulate_slow_load_ms < 0)
-            {
-                throw std::invalid_argument("--simulate-slow-load-ms must be non-negative");
-            }
-        }
-        else if (arg == "--telemetry-tlog")
-        {
-            options.telemetry_tlog = std::string(next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--playback-rate")
-        {
-            options.playback_rate = parse_positive_float(arg, next_arg(argc, argv, index, arg));
-        }
-        else if (arg == "--playback-start-paused")
-        {
-            options.playback_start_paused = true;
-        }
-        else if (arg == "--help" || arg == "-h")
-        {
-            std::cout << "usage: animus [--pack-root PATH] [--z N] [--center-x N]\n"
-                      << "                   [--center-y N] [--frames N] [--width PX]\n"
-                      << "                   [--height PX] [--height-scale F] [--smoke]\n"
-                      << "                   [--capture-ppm PATH] [--debug-overlay]\n"
-                      << "                   [--no-debug-overlay]\n"
-                      << "                   [--min-z N] [--max-z N] [--tile-budget N]\n"
-                      << "                   [--cache-root PATH] [--elevation-geotiff PATH]\n"
-                      << "                   [--bathymetry-geotiff PATH]\n"
-                      << "                   [--telemetry-tlog PATH] [--playback-rate F]\n"
-                      << "                   [--playback-start-paused]\n";
-            std::exit(0);
-        }
-        else
-        {
-            throw std::invalid_argument("Unknown argument: " + std::string(arg));
-        }
-    }
-
-    if (options.smoke && options.frames == 0)
-    {
-        options.frames = 1;
-    }
-    if (options.min_z > options.max_z)
-    {
-        throw std::invalid_argument("--min-z must be <= --max-z");
-    }
-    return options;
-}
+)glsl";
 
 std::filesystem::path resolve_pack_root(const std::filesystem::path &requested)
 {
@@ -667,6 +468,69 @@ bool contains_visible_tile(
                        [coord](const auto &decision) { return decision.coord == coord; });
 }
 
+std::filesystem::path screenshot_path(const ScreenshotToolState &tool)
+{
+    const std::string path(tool.png_path.data());
+    if (path.empty())
+    {
+        return "artifacts/animus/screenshots/manual_screenshot.png";
+    }
+    return path;
+}
+
+std::filesystem::path recorder_output_path(const Mp4RecorderState &recorder)
+{
+    const std::string path(recorder.mp4_path.data());
+    if (path.empty())
+    {
+        return "artifacts/animus/videos/manual_recording.mp4";
+    }
+    return path;
+}
+
+std::filesystem::path recorder_sequence_dir(const std::filesystem::path &output_path)
+{
+    const std::filesystem::path parent =
+        output_path.has_parent_path() ? output_path.parent_path() : std::filesystem::path(".");
+    const std::string stem =
+        output_path.stem().empty() ? "manual_recording" : output_path.stem().string();
+    return parent / (stem + "_frames");
+}
+
+void start_mp4_recording(Mp4RecorderState &recorder)
+{
+    const std::filesystem::path output_path = recorder_output_path(recorder);
+    recorder.sequence_dir = recorder_sequence_dir(output_path);
+    if (std::filesystem::exists(recorder.sequence_dir))
+    {
+        std::filesystem::remove_all(recorder.sequence_dir);
+    }
+    std::filesystem::create_directories(recorder.sequence_dir);
+    recorder.frame_count = 0;
+    recorder.pending_stop = false;
+    recorder.recording = true;
+    recorder.status = "recording to " + output_path.string();
+}
+
+void finish_mp4_recording(Mp4RecorderState &recorder)
+{
+    const std::filesystem::path output_path = recorder_output_path(recorder);
+    if (recorder.frame_count <= 0)
+    {
+        recorder.status = "recording stopped with no frames";
+        recorder.pending_stop = false;
+        recorder.recording = false;
+        return;
+    }
+    recorder.status = "encoding " + output_path.string();
+    animus::app::encode_mp4_from_png_sequence(recorder.sequence_dir, recorder.fps, output_path);
+    std::filesystem::remove_all(recorder.sequence_dir);
+    recorder.status =
+        "saved " + output_path.string() + " (" + std::to_string(recorder.frame_count) + " frames)";
+    recorder.pending_stop = false;
+    recorder.recording = false;
+}
+
 std::vector<TileCoord> add_parent_fallback_requests(std::vector<TileCoord> desired, int min_zoom)
 {
     std::vector<TileCoord> requests = desired;
@@ -723,6 +587,11 @@ build_load_requests(const Options &options,
         request.cache_root = options.cache_root;
         request.elevation_geotiff = options.elevation_geotiff;
         request.bathymetry_geotiff = options.bathymetry_geotiff;
+        request.imagery_mbtiles = options.imagery_mbtiles;
+        request.remote_imagery_url_template = options.remote_imagery_url_template;
+        request.remote_imagery_cache_identity = options.remote_imagery_cache_identity;
+        request.remote_imagery_user_agent = options.remote_imagery_user_agent;
+        request.remote_imagery_timeout_ms = options.remote_imagery_timeout_ms;
         request.use_bathymetry = options.use_bathymetry;
         request.imagery_spec.resolution = 256;
         request.imagery_spec.min_zoom = options.min_z;
@@ -738,7 +607,8 @@ build_load_requests(const Options &options,
     return requests;
 }
 
-TerrainTileGpu upload_tile(animus::terrain_core::PreparedTile prepared)
+TerrainTileGpu upload_tile(const std::vector<animus::app::OverlayLayerConfig> &overlays,
+                           animus::terrain_core::PreparedTile prepared)
 {
     const auto render_vertices = to_render_vertices(prepared.mesh);
     animus::render_core::IndexedMesh gpu_mesh(render_vertices, prepared.mesh.indices);
@@ -748,6 +618,37 @@ TerrainTileGpu upload_tile(animus::terrain_core::PreparedTile prepared)
     animus::render_core::Texture2D height_texture;
     height_texture.upload_r32f(
         prepared.heights.width, prepared.heights.height, prepared.heights.float_data);
+    std::vector<TerrainTileGpu::OverlayTexture> overlay_textures;
+    for (const auto &layer : overlays)
+    {
+        if (!layer.enabled || layer.path.empty())
+        {
+            continue;
+        }
+        try
+        {
+            const Raster overlay = animus::terrain_core::GdalGeoTiffTileSource(layer.path)
+                                       .load_tile_rgba(prepared.coord, prepared.imagery.width);
+            animus::render_core::Texture2D texture;
+            texture.upload_rgba8(overlay.width, overlay.height, overlay.byte_data);
+            overlay_textures.push_back(TerrainTileGpu::OverlayTexture{
+                layer.draw_order,
+                layer.opacity,
+                layer.cache_identity,
+                std::move(texture),
+            });
+        }
+        catch (const std::exception &error)
+        {
+            std::cerr << "overlay tile failed " << animus::geo_core::tile_key(prepared.coord) << " "
+                      << layer.path << ": " << error.what() << '\n';
+        }
+    }
+    std::stable_sort(
+        overlay_textures.begin(),
+        overlay_textures.end(),
+        [](const TerrainTileGpu::OverlayTexture &a, const TerrainTileGpu::OverlayTexture &b)
+        { return a.draw_order < b.draw_order; });
     const std::size_t gpu_bytes =
         prepared.imagery.byte_data.size() + prepared.heights.float_data.size() * sizeof(float) +
         prepared.mesh.vertices.size() * sizeof(animus::render_core::TerrainVertex) +
@@ -756,6 +657,7 @@ TerrainTileGpu upload_tile(animus::terrain_core::PreparedTile prepared)
                           std::move(gpu_mesh),
                           std::move(imagery_texture),
                           std::move(height_texture),
+                          std::move(overlay_textures),
                           std::move(prepared.heights),
                           prepared.min_height_m,
                           prepared.max_height_m,
@@ -768,6 +670,8 @@ struct TelemetryPlaybackState
     animus::telemetry_core::PlaybackClock clock;
     bool loaded = false;
     bool terrain_height_unavailable = false;
+    bool unknown_datum_relative_fallback = false;
+    bool geoid_correction_unavailable = false;
     animus::telemetry_core::EntityId selected_entity;
 };
 
@@ -824,10 +728,30 @@ sample_resident_terrain_height_m(const Options &options,
     return std::nullopt;
 }
 
+animus::terrain_core::AltitudeReference
+altitude_reference(animus::telemetry_core::AltitudeDatum datum)
+{
+    switch (datum)
+    {
+    case animus::telemetry_core::AltitudeDatum::MslOrthometric:
+        return animus::terrain_core::AltitudeReference::MslOrthometric;
+    case animus::telemetry_core::AltitudeDatum::Ellipsoid:
+        return animus::terrain_core::AltitudeReference::Ellipsoid;
+    case animus::telemetry_core::AltitudeDatum::TerrainRelative:
+        return animus::terrain_core::AltitudeReference::TerrainRelative;
+    case animus::telemetry_core::AltitudeDatum::Unknown:
+        return animus::terrain_core::AltitudeReference::Unknown;
+    }
+    return animus::terrain_core::AltitudeReference::Unknown;
+}
+
 Vec3 telemetry_world_position(const Options &options,
                               const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                              const animus::terrain_core::GeoidCorrectionGrid &geoid_grid,
                               const animus::telemetry_core::TelemetrySample &sample,
-                              bool &terrain_height_unavailable)
+                              bool &terrain_height_unavailable,
+                              bool &unknown_datum_relative_fallback,
+                              bool &geoid_correction_unavailable)
 {
     const TileCoord coord =
         animus::geo_core::lat_lon_to_tile(sample.lat_deg, sample.lon_deg, options.z);
@@ -842,7 +766,36 @@ Vec3 telemetry_world_position(const Options &options,
         y = *terrain_m * options.height_scale;
         if (sample.altitude_relative_m)
         {
+            if (sample.altitude_datum == animus::telemetry_core::AltitudeDatum::Unknown)
+            {
+                unknown_datum_relative_fallback = true;
+            }
             y += static_cast<float>(*sample.altitude_relative_m) * options.height_scale;
+        }
+        else if (sample.altitude_msl_m)
+        {
+            try
+            {
+                const auto above_terrain = animus::terrain_core::height_above_terrain_m(
+                    altitude_reference(sample.altitude_datum),
+                    *sample.altitude_msl_m,
+                    *terrain_m,
+                    sample.lat_deg,
+                    sample.lon_deg,
+                    geoid_grid);
+                if (above_terrain)
+                {
+                    y += static_cast<float>(*above_terrain) * options.height_scale;
+                }
+                else if (sample.altitude_datum == animus::telemetry_core::AltitudeDatum::Ellipsoid)
+                {
+                    geoid_correction_unavailable = true;
+                }
+            }
+            catch (const std::exception &)
+            {
+                geoid_correction_unavailable = true;
+            }
         }
     }
     else
@@ -883,12 +836,15 @@ project_to_screen(const Mat4 &mvp, const Vec3 world, const int width, const int 
 
 void draw_telemetry_overlay(const Options &options,
                             const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                            const animus::terrain_core::GeoidCorrectionGrid &geoid_grid,
                             TelemetryPlaybackState &playback,
                             const Camera &camera,
                             const int framebuffer_width,
                             const int framebuffer_height)
 {
     playback.terrain_height_unavailable = false;
+    playback.unknown_datum_relative_fallback = false;
+    playback.geoid_correction_unavailable = false;
     if (!playback.loaded || playback.timeline.entities.empty())
     {
         return;
@@ -909,7 +865,14 @@ void draw_telemetry_overlay(const Options &options,
         for (const auto &sample : track->samples)
         {
             bool unavailable = false;
-            const Vec3 world = telemetry_world_position(options, tiles, sample, unavailable);
+            bool unknown_datum = false;
+            const Vec3 world = telemetry_world_position(options,
+                                                        tiles,
+                                                        geoid_grid,
+                                                        sample,
+                                                        unavailable,
+                                                        unknown_datum,
+                                                        playback.geoid_correction_unavailable);
             const ProjectedPoint point =
                 project_to_screen(mvp, world, framebuffer_width, framebuffer_height);
             if (point.visible && previous)
@@ -932,8 +895,14 @@ void draw_telemetry_overlay(const Options &options,
             continue;
         }
         bool unavailable = false;
-        const Vec3 event_world =
-            telemetry_world_position(options, tiles, *event_sample, unavailable);
+        bool unknown_datum = false;
+        const Vec3 event_world = telemetry_world_position(options,
+                                                          tiles,
+                                                          geoid_grid,
+                                                          *event_sample,
+                                                          unavailable,
+                                                          unknown_datum,
+                                                          playback.geoid_correction_unavailable);
         const ProjectedPoint event_point =
             project_to_screen(mvp, event_world, framebuffer_width, framebuffer_height);
         if (event_point.visible)
@@ -946,8 +915,13 @@ void draw_telemetry_overlay(const Options &options,
         }
     }
 
-    const Vec3 world =
-        telemetry_world_position(options, tiles, *current, playback.terrain_height_unavailable);
+    const Vec3 world = telemetry_world_position(options,
+                                                tiles,
+                                                geoid_grid,
+                                                *current,
+                                                playback.terrain_height_unavailable,
+                                                playback.unknown_datum_relative_fallback,
+                                                playback.geoid_correction_unavailable);
     const ProjectedPoint point =
         project_to_screen(mvp, world, framebuffer_width, framebuffer_height);
     if (point.visible)
@@ -957,31 +931,9 @@ void draw_telemetry_overlay(const Options &options,
     }
 }
 
-void write_ppm_capture(const std::filesystem::path &path, int width, int height)
-{
-    std::vector<std::uint8_t> pixels(static_cast<std::size_t>(width * height * 3));
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
-
-    if (path.has_parent_path())
-    {
-        std::filesystem::create_directories(path.parent_path());
-    }
-    std::ofstream out(path, std::ios::binary);
-    if (!out)
-    {
-        throw std::runtime_error("Failed to open capture path: " + path.string());
-    }
-    out << "P6\n" << width << ' ' << height << "\n255\n";
-    for (int row = height - 1; row >= 0; --row)
-    {
-        const auto offset = static_cast<std::size_t>(row * width * 3);
-        out.write(reinterpret_cast<const char *>(pixels.data() + offset), width * 3);
-    }
-}
-
 void render_frame(const animus::render_core::GlfwWindow &window,
                   const animus::render_core::ShaderProgram &program,
+                  const animus::render_core::ShaderProgram &overlay_program,
                   const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
                   const std::vector<animus::terrain_core::TileRenderDecision> &visible_tiles,
                   const Camera &camera,
@@ -1020,6 +972,51 @@ void render_frame(const animus::render_core::GlfwWindow &window,
         tile.height_texture.bind_to_unit(1);
         tile.mesh.draw();
     }
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_FALSE);
+    overlay_program.use();
+    glUniformMatrix4fv(
+        glGetUniformLocation(overlay_program.id(), "mvp"), 1, GL_FALSE, mvp.data.data());
+    glUniform1i(glGetUniformLocation(overlay_program.id(), "overlay_tex"), 0);
+    std::vector<int> overlay_orders;
+    for (const auto &[coord, tile] : tiles)
+    {
+        (void)coord;
+        for (const auto &overlay : tile.overlay_textures)
+        {
+            overlay_orders.push_back(overlay.draw_order);
+        }
+    }
+    std::sort(overlay_orders.begin(), overlay_orders.end());
+    overlay_orders.erase(std::unique(overlay_orders.begin(), overlay_orders.end()),
+                         overlay_orders.end());
+    for (const int order : overlay_orders)
+    {
+        for (const auto &decision : visible_tiles)
+        {
+            const auto it = tiles.find(decision.coord);
+            if (it == tiles.end())
+            {
+                continue;
+            }
+            for (const auto &overlay : it->second.overlay_textures)
+            {
+                if (overlay.draw_order != order)
+                {
+                    continue;
+                }
+                glUniform1f(glGetUniformLocation(overlay_program.id(), "opacity"), overlay.opacity);
+                overlay.texture.bind_to_unit(0);
+                it->second.mesh.draw();
+            }
+        }
+    }
+    glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LESS);
+    glDisable(GL_BLEND);
 }
 
 void draw_developer_workspace(
@@ -1036,8 +1033,12 @@ void draw_developer_workspace(
     int mesh_uploads_used,
     std::size_t resident_gpu_bytes,
     TelemetryPlaybackState &playback,
+    ScreenshotToolState &screenshot_tool,
+    Mp4RecorderState &mp4_recorder,
     bool &state_colors,
-    bool &highlight_fallback)
+    bool &highlight_fallback,
+    bool &overlay_enabled,
+    float &overlay_opacity)
 {
     ImGui::SetNextWindowPos(ImVec2(16.0F, 16.0F), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(680.0F, 520.0F), ImGuiCond_FirstUseEver);
@@ -1069,6 +1070,24 @@ void draw_developer_workspace(
                             ? "not set"
                             : (std::filesystem::exists(options.bathymetry_geotiff) ? "available"
                                                                                    : "missing"));
+            ImGui::Separator();
+            ImGui::Text(
+                "imagery MBTiles %s",
+                options.imagery_mbtiles.empty()
+                    ? "not set"
+                    : (std::filesystem::exists(options.imagery_mbtiles) ? "available" : "missing"));
+            ImGui::Text("remote imagery %s",
+                        options.remote_imagery_url_template.empty() ? "not set" : "configured");
+            ImGui::Separator();
+            ImGui::Checkbox("Overlay enabled", &overlay_enabled);
+            ImGui::SliderFloat("Overlay opacity", &overlay_opacity, 0.0F, 1.0F, "%.2f");
+            ImGui::Text("overlay order %d", options.overlay_order);
+            ImGui::Text("overlay layers %zu", options.overlays.size());
+            ImGui::Text(
+                "overlay GeoTIFF %s",
+                options.overlay_geotiff.empty()
+                    ? "not set"
+                    : (std::filesystem::exists(options.overlay_geotiff) ? "available" : "missing"));
             ImGui::Separator();
             ImGui::Checkbox("State colors", &state_colors);
             ImGui::SameLine();
@@ -1104,6 +1123,68 @@ void draw_developer_workspace(
             ImGui::Text("GL vendor %s", gl_info.vendor.c_str());
             ImGui::Text("GL renderer %s", gl_info.renderer.c_str());
             ImGui::Text("GL version %s", gl_info.version.c_str());
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Capture"))
+        {
+            ImGui::InputText(
+                "PNG path", screenshot_tool.png_path.data(), screenshot_tool.png_path.size());
+            if (ImGui::Button("Save PNG"))
+            {
+                screenshot_tool.pending_png = true;
+                screenshot_tool.status = "saving after this frame";
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Use default"))
+            {
+                constexpr std::string_view default_path =
+                    "artifacts/animus/screenshots/manual_screenshot.png";
+                std::snprintf(screenshot_tool.png_path.data(),
+                              screenshot_tool.png_path.size(),
+                              "%s",
+                              default_path.data());
+            }
+            ImGui::TextWrapped("%s", screenshot_tool.status.c_str());
+            ImGui::Separator();
+            ImGui::InputText(
+                "MP4 path", mp4_recorder.mp4_path.data(), mp4_recorder.mp4_path.size());
+            ImGui::InputInt("FPS", &mp4_recorder.fps);
+            mp4_recorder.fps = std::clamp(mp4_recorder.fps, 1, 240);
+            bool record = mp4_recorder.recording;
+            if (ImGui::Checkbox("Record MP4", &record))
+            {
+                try
+                {
+                    if (record)
+                    {
+                        start_mp4_recording(mp4_recorder);
+                    }
+                    else
+                    {
+                        mp4_recorder.pending_stop = true;
+                        mp4_recorder.status = "finishing recording";
+                    }
+                }
+                catch (const std::exception &error)
+                {
+                    mp4_recorder.recording = false;
+                    mp4_recorder.pending_stop = false;
+                    mp4_recorder.status = std::string("recording failed: ") + error.what();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Use video default"))
+            {
+                constexpr std::string_view default_path =
+                    "artifacts/animus/videos/manual_recording.mp4";
+                std::snprintf(mp4_recorder.mp4_path.data(),
+                              mp4_recorder.mp4_path.size(),
+                              "%s",
+                              default_path.data());
+            }
+            ImGui::Text("recorded frames %d", mp4_recorder.frame_count);
+            ImGui::TextWrapped("%s", mp4_recorder.status.c_str());
             ImGui::EndTabItem();
         }
 
@@ -1210,6 +1291,16 @@ void draw_developer_workspace(
             ImGui::Text("terrain height %s",
                         playback.terrain_height_unavailable ? "unavailable for some samples"
                                                             : "available");
+            if (playback.unknown_datum_relative_fallback)
+            {
+                ImGui::TextWrapped(
+                    "warning: telemetry relative altitude used with unknown altitude datum");
+            }
+            if (playback.geoid_correction_unavailable)
+            {
+                ImGui::TextWrapped(
+                    "warning: ellipsoid altitude datum needs a configured geoid grid");
+            }
             if (!playback.timeline.events.empty())
             {
                 ImGui::Separator();
@@ -1345,6 +1436,7 @@ void draw_developer_workspace(
 int run(const Options &options)
 {
     const std::filesystem::path pack_root = resolve_pack_root(options.pack_root);
+    const animus::terrain_core::GeoidCorrectionGrid geoid_grid(options.geoid_grid);
     TelemetryPlaybackState telemetry;
     if (!options.telemetry_tlog.empty())
     {
@@ -1383,6 +1475,8 @@ int run(const Options &options)
     glfwSetScrollCallback(window.native_handle(), scroll_callback);
 
     const animus::render_core::ShaderProgram program(vertex_shader, fragment_shader);
+    const animus::render_core::ShaderProgram overlay_program(vertex_shader,
+                                                             overlay_fragment_shader);
     TerrainStreamer streamer({
         options.min_z,
         options.max_z,
@@ -1401,17 +1495,47 @@ int run(const Options &options)
     std::vector<animus::terrain_core::TileRenderDecision> visible_tiles;
     bool state_colors = false;
     bool highlight_fallback = false;
+    bool overlay_enabled = options.overlay_enabled;
+    float overlay_opacity = options.overlay_opacity;
+    std::vector<animus::app::OverlayLayerConfig> active_overlays = options.overlays;
+    for (auto &layer : active_overlays)
+    {
+        if (layer.path == options.overlay_geotiff)
+        {
+            layer.enabled = overlay_enabled;
+            layer.opacity = overlay_opacity;
+        }
+    }
     auto debug_layer =
         options.debug_overlay
             ? std::make_unique<animus::render_core::ImGuiLayer>(window.native_handle())
             : nullptr;
     animus::render_core::RenderStats stats;
     bool captured = false;
+    ScreenshotToolState screenshot_tool;
+    Mp4RecorderState mp4_recorder;
+    std::snprintf(screenshot_tool.png_path.data(),
+                  screenshot_tool.png_path.size(),
+                  "%s",
+                  "artifacts/animus/screenshots/manual_screenshot.png");
+    std::snprintf(mp4_recorder.mp4_path.data(),
+                  mp4_recorder.mp4_path.size(),
+                  "%s",
+                  "artifacts/animus/videos/manual_recording.mp4");
 
     while (!window.should_close())
     {
         window.poll_events();
         stats.frame_started();
+        active_overlays = options.overlays;
+        for (auto &layer : active_overlays)
+        {
+            if (layer.path == options.overlay_geotiff)
+            {
+                layer.enabled = overlay_enabled;
+                layer.opacity = overlay_opacity;
+            }
+        }
         streamer.begin_frame();
         if (debug_layer != nullptr)
         {
@@ -1445,7 +1569,7 @@ int run(const Options &options)
         {
             upload_bytes_used += prepared.estimated_cpu_bytes;
             streamer.mark_upload_queued(prepared.coord);
-            TerrainTileGpu gpu_tile = upload_tile(std::move(prepared));
+            TerrainTileGpu gpu_tile = upload_tile(active_overlays, std::move(prepared));
             texture_uploads_used += 2;
             mesh_uploads_used += 1;
             const TileCoord coord = gpu_tile.coord;
@@ -1486,6 +1610,7 @@ int run(const Options &options)
 
         render_frame(window,
                      program,
+                     overlay_program,
                      tiles,
                      visible_tiles,
                      input.camera,
@@ -1496,6 +1621,7 @@ int run(const Options &options)
         {
             draw_telemetry_overlay(options,
                                    tiles,
+                                   geoid_grid,
                                    telemetry,
                                    input.camera,
                                    window.framebuffer_width(),
@@ -1513,18 +1639,85 @@ int run(const Options &options)
                                      mesh_uploads_used,
                                      resident_gpu_bytes,
                                      telemetry,
+                                     screenshot_tool,
+                                     mp4_recorder,
                                      state_colors,
-                                     highlight_fallback);
+                                     highlight_fallback,
+                                     overlay_enabled,
+                                     overlay_opacity);
             debug_layer->end_frame();
         }
+        if (screenshot_tool.pending_png)
+        {
+            const std::filesystem::path path = screenshot_path(screenshot_tool);
+            try
+            {
+                animus::app::write_png_capture(
+                    path, window.framebuffer_width(), window.framebuffer_height());
+                screenshot_tool.status = "saved " + path.string();
+            }
+            catch (const std::exception &error)
+            {
+                screenshot_tool.status = std::string("save failed: ") + error.what();
+            }
+            screenshot_tool.pending_png = false;
+        }
+        if (mp4_recorder.recording)
+        {
+            char name[64] = {};
+            std::snprintf(name, sizeof(name), "frame_%06d.png", mp4_recorder.frame_count);
+            try
+            {
+                animus::app::write_png_capture(mp4_recorder.sequence_dir / name,
+                                               window.framebuffer_width(),
+                                               window.framebuffer_height());
+                ++mp4_recorder.frame_count;
+            }
+            catch (const std::exception &error)
+            {
+                mp4_recorder.recording = false;
+                mp4_recorder.pending_stop = false;
+                mp4_recorder.status = std::string("recording failed: ") + error.what();
+            }
+        }
+        if (mp4_recorder.pending_stop)
+        {
+            try
+            {
+                finish_mp4_recording(mp4_recorder);
+            }
+            catch (const std::exception &error)
+            {
+                mp4_recorder.recording = false;
+                mp4_recorder.pending_stop = false;
+                mp4_recorder.status = std::string("encode failed: ") + error.what();
+            }
+        }
         const bool should_capture =
-            !captured && !options.capture_ppm.empty() &&
+            !captured && (!options.capture_ppm.empty() || !options.capture_png.empty()) &&
             (options.frames == 0 || stats.frame_count() + 1 >= options.frames);
         if (should_capture)
         {
-            write_ppm_capture(
-                options.capture_ppm, window.framebuffer_width(), window.framebuffer_height());
+            if (!options.capture_ppm.empty())
+            {
+                animus::app::write_ppm_capture(
+                    options.capture_ppm, window.framebuffer_width(), window.framebuffer_height());
+            }
+            if (!options.capture_png.empty())
+            {
+                animus::app::write_png_capture(
+                    options.capture_png, window.framebuffer_width(), window.framebuffer_height());
+            }
             captured = true;
+        }
+        if (!options.capture_sequence_dir.empty())
+        {
+            const int frame_number = stats.frame_count();
+            char name[64] = {};
+            std::snprintf(name, sizeof(name), "frame_%06d.png", frame_number);
+            animus::app::write_png_capture(options.capture_sequence_dir / name,
+                                           window.framebuffer_width(),
+                                           window.framebuffer_height());
         }
         window.swap_buffers();
         stats.frame_finished();
@@ -1539,9 +1732,23 @@ int run(const Options &options)
         }
     }
 
+    if (mp4_recorder.recording && !mp4_recorder.pending_stop)
+    {
+        try
+        {
+            finish_mp4_recording(mp4_recorder);
+            std::cout << "MP4 recording " << mp4_recorder.status << '\n';
+        }
+        catch (const std::exception &error)
+        {
+            std::cerr << "MP4 recording encode failed: " << error.what() << '\n';
+        }
+    }
+
     std::cout << "Rendered frames: " << stats.frame_count()
               << "\nLast frame seconds: " << stats.last_frame_seconds()
               << "\nTotal render seconds: " << stats.total_seconds() << '\n';
+    animus::app::save_app_config(options);
     return 0;
 }
 
@@ -1549,5 +1756,5 @@ int run(const Options &options)
 
 int animus_app_main(int argc, char **argv)
 {
-    return run(parse_options(argc, argv));
+    return run(animus::app::parse_options(argc, argv));
 }

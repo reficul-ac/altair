@@ -89,6 +89,7 @@ Run the native executable directly with:
 ```bash
 animus/build/apps/animus/animus
 animus/build/apps/animus/animus --smoke --frames 120 --capture-ppm /tmp/animus_smoke.ppm
+animus/build/apps/animus/animus --smoke --frames 120 --capture-png /tmp/animus_smoke.png
 ```
 
 Normal mode opens a GLFW window with the terrain developer console and exits on
@@ -100,13 +101,15 @@ setup fails.
 
 ## Screenshot Capture
 
-Use Animus' built-in framebuffer capture for repeatable smoke screenshots. The
-capture is written as binary PPM after the requested frame has been rendered and
-before the buffer swap:
+Use Animus' built-in framebuffer capture for repeatable smoke screenshots.
+Binary PPM is the deterministic smoke format. PNG is available for
+review-friendly artifacts. Captures are written after the requested frame has
+been rendered and before the buffer swap:
 
 ```bash
 xvfb-run -a animus/build/apps/animus/animus --smoke --frames 120 \
-  --capture-ppm artifacts/animus/screenshots/animus_smoke.ppm
+  --capture-ppm artifacts/animus/screenshots/animus_smoke.ppm \
+  --capture-png artifacts/animus/screenshots/animus_smoke.png
 ```
 
 For pixel-stable terrain-only comparisons, disable the developer console so
@@ -127,3 +130,45 @@ The unique-value count should be greater than one and the min/max values should
 not be identical. Store captures under ignored artifact paths such as
 `artifacts/animus/screenshots/` unless a future test promotes a small fixture
 into source control.
+
+For review bundles, `verify_animus.py` can generate a deterministic telemetry
+log, PPM capture, PNG capture, JSON manifest, and tiny HTML report:
+
+```bash
+python3 animus/tools/verify_animus.py --screenshot-smoke --artifact-bundle
+python3 animus/tools/verify_animus.py --skip-build --artifact-bundle --overlay-smoke
+```
+
+When running interactively with the developer workspace enabled, use the
+`Capture` tab to edit a PNG output path and press `Save PNG`. The default manual
+path is `artifacts/animus/screenshots/manual_screenshot.png`.
+
+## Overlays, Datum, And Export
+
+GeoTIFF overlays are explicit app inputs. `--overlay-geotiff` remains the
+compatibility flag for the first overlay; repeat `--overlay PATH` for additional
+layers. `--overlay-opacity` and `--overlay-order` configure the compatibility
+overlay, and the app persists the overlay list in its JSON config.
+
+Telemetry ellipsoid altitude correction is also explicit. Download or provide a
+PROJ vertical grid under an ignored data path, then pass it with
+`--geoid-grid PATH`. The helper below performs the network action only when run:
+
+```bash
+python3 animus/tools/download_geoid_grid.py --dry-run
+python3 animus/tools/download_geoid_grid.py --output-dir animus/data/geoid
+```
+
+Video export is available from both the CLI and the in-app `Capture` tab. The
+CLI writes a deterministic PNG sequence, then `ffmpeg` encodes MP4.
+H.264/yuv420p is the default review-compatible output; AV1 is opt-in when the
+installed FFmpeg supports `libaom-av1`.
+
+```bash
+python3 animus/tools/export_video.py --frames 180 --fps 30 \
+  --output artifacts/animus/export/smoke.mp4
+```
+
+When running the app interactively, use the `Capture` tab to edit the MP4 path
+and toggle `Record MP4`. The app records PNG frames during capture and encodes
+the configured MP4 path when recording stops.

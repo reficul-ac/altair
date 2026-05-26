@@ -1,4 +1,5 @@
 #include "animus/terrain_core/terrain_stream.hpp"
+#include "animus/terrain_core/tile_source.hpp"
 
 #include <algorithm>
 #include <array>
@@ -664,10 +665,66 @@ TerrainStreamer::load_raster(TileLoadRequest request, LayerSpec layer, const boo
         Raster raster;
         if (!height_layer)
         {
-            raster = load_png_rgba(local_xyz_tile_path(request.pack_root,
-                                                       request.imagery_layer,
-                                                       request.coord,
-                                                       request.imagery_extension));
+            RasterCacheEntry source_entry;
+            bool found = false;
+            if (!request.imagery_mbtiles.empty())
+            {
+                if (auto result =
+                        MbtilesTileSource(request.imagery_mbtiles).load_tile(request.coord, layer))
+                {
+                    source_entry = RasterCacheEntry{std::move(result->raster),
+                                                    CacheTier::LocalXyz,
+                                                    result->source_type,
+                                                    false,
+                                                    0,
+                                                    {}};
+                    found = true;
+                }
+            }
+            if (!found && !request.remote_imagery_url_template.empty())
+            {
+                RemoteHttpTileProvider provider;
+                provider.url_template = request.remote_imagery_url_template;
+                provider.cache_identity = request.remote_imagery_cache_identity;
+                provider.user_agent = request.remote_imagery_user_agent;
+                provider.timeout =
+                    std::chrono::milliseconds(std::max(1, request.remote_imagery_timeout_ms));
+                if (auto result = RemoteHttpTileSource(provider).load_tile(request.coord, layer))
+                {
+                    source_entry = RasterCacheEntry{std::move(result->raster),
+                                                    CacheTier::LocalXyz,
+                                                    result->source_type,
+                                                    false,
+                                                    0,
+                                                    {}};
+                    found = true;
+                }
+            }
+            if (!found)
+            {
+                raster = load_png_rgba(local_xyz_tile_path(request.pack_root,
+                                                           request.imagery_layer,
+                                                           request.coord,
+                                                           request.imagery_extension));
+                source_entry = RasterCacheEntry{
+                    std::move(raster), CacheTier::LocalXyz, TileSourceType::LocalXyz, false, 0, {}};
+            }
+            RasterCacheEntry entry = std::move(source_entry);
+            if (request.persist_cache && !request.cache_root.empty())
+            {
+                store_l3_raster(request.cache_root,
+                                key,
+                                entry.raster,
+                                PersistedTileInfo{false, {}, 0.0F, 255.0F, 0});
+                std::lock_guard<std::mutex> lock(mutex_);
+                ++cache_stats_.persisted_tiles;
+                ++l3_counters_.stores;
+            }
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                l2_rasters_.put(key_string, entry);
+            }
+            return entry;
         }
         else if (layer.type == LayerType::Bathymetry)
         {

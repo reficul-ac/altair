@@ -1,7 +1,14 @@
-add_executable(animus src/main.cpp src/animus_app.cpp)
+find_package(PNG REQUIRED)
+
+add_executable(animus src/main.cpp src/animus_app.cpp src/capture.cpp src/options.cpp)
 
 target_link_libraries(
-    animus PRIVATE animus_geo_core animus_render_core animus_terrain_core animus_telemetry_core
+    animus
+    PRIVATE animus_geo_core
+            animus_render_core
+            animus_terrain_core
+            animus_telemetry_core
+            PNG::PNG
 )
 
 target_compile_definitions(animus PRIVATE ANIMUS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")

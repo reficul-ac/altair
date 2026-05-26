@@ -18,6 +18,10 @@ under `animus/libs/<module>/include/animus/<module>/` and use
   boundaries. It must not own tile loading policy or telemetry models.
 - `telemetry_core` is delayed. When added, it may query terrain height through
   narrow interfaces but must not drive terrain cache or renderer ownership.
+- `apps/animus` owns UI, CLI parsing, runtime state, capture/export commands,
+  and developer panels. App modules may compose the core libraries, but
+  `terrain_core`, `telemetry_core`, `render_core`, and `data_core` must remain
+  independent of app UI and command-line policy.
 
 ## Public Header Policy
 
@@ -39,3 +43,8 @@ public interfaces.
 
 `data_core` defines layer-level cache prefix helpers. Tile-coordinate cache keys
 remain Phase C work, after `geo_core::TileCoord` exists.
+
+`apps/animus` keeps `main.cpp` as the exception-handling entrypoint. CLI options
+live in `options.cpp`, framebuffer capture helpers live in `capture.cpp`, and
+the remaining runtime orchestration stays in `animus_app.cpp` until terrain,
+telemetry, rendering, and workspace panels are split into dedicated app modules.

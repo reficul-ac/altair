@@ -1088,19 +1088,19 @@ Phase K, delayed telemetry:
 
 Phase L, advanced terrain/data features:
 
-- [ ] Add persisted UI/app config only after there are real preferences, recent
+- [x] Add persisted UI/app config only after there are real preferences, recent
   files, layer presets, or project/session concepts.
-- [ ] Add GeoTIFF overlays draped onto terrain with opacity and draw order.
-- [ ] Add remote tile providers after local cache behavior is stable.
-- [ ] Add SQLite/MBTiles metadata and cache indexing.
-- [ ] Add cache prewarming tools for offline workflows.
-- [ ] Add vertical datum/geoid correction metadata before mixing telemetry
+- [x] Add GeoTIFF overlays draped onto terrain with opacity and draw order.
+- [x] Add remote tile providers after local cache behavior is stable.
+- [x] Add SQLite/MBTiles metadata and cache indexing.
+- [x] Add cache prewarming tools for offline workflows.
+- [x] Add vertical datum/geoid correction metadata before mixing telemetry
   altitude and terrain height.
-- [ ] Add visual regression artifact bundles or HTML reports once telemetry
+- [x] Add visual regression artifact bundles or HTML reports once telemetry
   overlays, tracks, and events exist.
-- [ ] Add PNG or export-friendly screenshot formats if captures become review
+- [x] Add PNG or export-friendly screenshot formats if captures become review
   artifacts; keep PPM for deterministic smoke checks.
-- [ ] Add video/export workflows only after terrain and telemetry playback are
+- [x] Add video/export workflows only after terrain and telemetry playback are
   stable.
 
 Definition of fully designed:
