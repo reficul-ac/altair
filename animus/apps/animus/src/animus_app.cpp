@@ -777,13 +777,14 @@ struct ProjectedPoint
     ImVec2 screen;
 };
 
-std::optional<float> sample_resident_terrain_height_m(
-    const Options &options,
-    const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
-    const double lat_deg,
-    const double lon_deg)
+std::optional<float>
+sample_resident_terrain_height_m(const Options &options,
+                                 const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                                 const double lat_deg,
+                                 const double lon_deg)
 {
-    const auto try_zoom = [&](const int zoom) -> std::optional<float> {
+    const auto try_zoom = [&](const int zoom) -> std::optional<float>
+    {
         TileCoord coord;
         try
         {
@@ -856,14 +857,15 @@ Vec3 telemetry_world_position(const Options &options,
     return {x, y, z};
 }
 
-ProjectedPoint project_to_screen(const Mat4 &mvp, const Vec3 world, const int width, const int height)
+ProjectedPoint
+project_to_screen(const Mat4 &mvp, const Vec3 world, const int width, const int height)
 {
-    const float x = mvp.data[0] * world.x + mvp.data[4] * world.y + mvp.data[8] * world.z +
-                    mvp.data[12];
-    const float y = mvp.data[1] * world.x + mvp.data[5] * world.y + mvp.data[9] * world.z +
-                    mvp.data[13];
-    const float w = mvp.data[3] * world.x + mvp.data[7] * world.y + mvp.data[11] * world.z +
-                    mvp.data[15];
+    const float x =
+        mvp.data[0] * world.x + mvp.data[4] * world.y + mvp.data[8] * world.z + mvp.data[12];
+    const float y =
+        mvp.data[1] * world.x + mvp.data[5] * world.y + mvp.data[9] * world.z + mvp.data[13];
+    const float w =
+        mvp.data[3] * world.x + mvp.data[7] * world.y + mvp.data[11] * world.z + mvp.data[15];
     if (w <= 0.0F)
     {
         return {};
@@ -891,7 +893,8 @@ void draw_telemetry_overlay(const Options &options,
     {
         return;
     }
-    const auto current = playback.timeline.sample_at(playback.selected_entity, playback.clock.time_s());
+    const auto current =
+        playback.timeline.sample_at(playback.selected_entity, playback.clock.time_s());
     if (!current)
     {
         return;
@@ -929,23 +932,24 @@ void draw_telemetry_overlay(const Options &options,
             continue;
         }
         bool unavailable = false;
-        const Vec3 event_world = telemetry_world_position(options, tiles, *event_sample, unavailable);
+        const Vec3 event_world =
+            telemetry_world_position(options, tiles, *event_sample, unavailable);
         const ProjectedPoint event_point =
             project_to_screen(mvp, event_world, framebuffer_width, framebuffer_height);
         if (event_point.visible)
         {
-            draw->AddTriangleFilled(ImVec2(event_point.screen.x, event_point.screen.y - 10.0F),
-                                    ImVec2(event_point.screen.x - 6.0F,
-                                           event_point.screen.y + 2.0F),
-                                    ImVec2(event_point.screen.x + 6.0F,
-                                           event_point.screen.y + 2.0F),
-                                    IM_COL32(96, 220, 255, 235));
+            draw->AddTriangleFilled(
+                ImVec2(event_point.screen.x, event_point.screen.y - 10.0F),
+                ImVec2(event_point.screen.x - 6.0F, event_point.screen.y + 2.0F),
+                ImVec2(event_point.screen.x + 6.0F, event_point.screen.y + 2.0F),
+                IM_COL32(96, 220, 255, 235));
         }
     }
 
     const Vec3 world =
         telemetry_world_position(options, tiles, *current, playback.terrain_height_unavailable);
-    const ProjectedPoint point = project_to_screen(mvp, world, framebuffer_width, framebuffer_height);
+    const ProjectedPoint point =
+        project_to_screen(mvp, world, framebuffer_width, framebuffer_height);
     if (point.visible)
     {
         draw->AddCircleFilled(point.screen, 7.0F, IM_COL32(255, 80, 64, 255), 18);
@@ -1048,7 +1052,8 @@ void draw_developer_workspace(
             ImGui::Text("cache root");
             ImGui::TextWrapped("%s", options.cache_root.string().c_str());
             ImGui::Separator();
-            ImGui::Text("zoom range %d..%d selected %d", options.min_z, options.max_z, selected_zoom);
+            ImGui::Text(
+                "zoom range %d..%d selected %d", options.min_z, options.max_z, selected_zoom);
             ImGui::Text("center %d/%d height scale %.6f",
                         options.center_x,
                         options.center_y,
@@ -1307,9 +1312,8 @@ void draw_developer_workspace(
             {
                 ImGui::Text("lat/lon %.7f %.7f", sample->lat_deg, sample->lon_deg);
                 ImGui::Text("alt msl %s rel %s",
-                            sample->altitude_msl_m
-                                ? std::to_string(*sample->altitude_msl_m).c_str()
-                                : "n/a",
+                            sample->altitude_msl_m ? std::to_string(*sample->altitude_msl_m).c_str()
+                                                   : "n/a",
                             sample->altitude_relative_m
                                 ? std::to_string(*sample->altitude_relative_m).c_str()
                                 : "n/a");
@@ -1317,16 +1321,15 @@ void draw_developer_workspace(
                             sample->roll_rad ? std::to_string(*sample->roll_rad).c_str() : "n/a",
                             sample->pitch_rad ? std::to_string(*sample->pitch_rad).c_str() : "n/a",
                             sample->yaw_rad ? std::to_string(*sample->yaw_rad).c_str() : "n/a");
-                ImGui::Text("speed %s heading %s",
-                            sample->ground_speed_mps
-                                ? std::to_string(*sample->ground_speed_mps).c_str()
-                                : "n/a",
-                            sample->heading_deg ? std::to_string(*sample->heading_deg).c_str()
-                                                : "n/a");
+                ImGui::Text(
+                    "speed %s heading %s",
+                    sample->ground_speed_mps ? std::to_string(*sample->ground_speed_mps).c_str()
+                                             : "n/a",
+                    sample->heading_deg ? std::to_string(*sample->heading_deg).c_str() : "n/a");
                 ImGui::Text("fields pos %s alt %s att %s vel %s hdg %s",
                             sample->fields.position ? "yes" : "no",
                             sample->fields.altitude_msl || sample->fields.altitude_relative ? "yes"
-                                                                                             : "no",
+                                                                                            : "no",
                             sample->fields.attitude ? "yes" : "no",
                             sample->fields.velocity ? "yes" : "no",
                             sample->fields.heading ? "yes" : "no");

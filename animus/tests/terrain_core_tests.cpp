@@ -29,10 +29,10 @@ using animus::terrain_core::build_terrain_mesh;
 using animus::terrain_core::cache_key_string;
 using animus::terrain_core::decode_terrain_rgb;
 using animus::terrain_core::float_raster_min_max;
+using animus::terrain_core::GdalGeoTiffTileSource;
 using animus::terrain_core::load_l3_raster;
 using animus::terrain_core::load_png_rgba;
 using animus::terrain_core::local_xyz_tile_path;
-using animus::terrain_core::GdalGeoTiffTileSource;
 using animus::terrain_core::merge_elevation_bathymetry;
 using animus::terrain_core::PersistedTileInfo;
 using animus::terrain_core::PreparedTile;
@@ -40,8 +40,8 @@ using animus::terrain_core::Raster;
 using animus::terrain_core::RasterCacheEntry;
 using animus::terrain_core::RasterFormat;
 using animus::terrain_core::RasterLruCache;
-using animus::terrain_core::save_png_rgba;
 using animus::terrain_core::sample_float_raster_bilinear;
+using animus::terrain_core::save_png_rgba;
 using animus::terrain_core::store_l3_raster;
 using animus::terrain_core::synthesize_child_from_parent;
 using animus::terrain_core::synthesize_parent_from_children;
@@ -257,7 +257,7 @@ TEST(TerrainCoreData, MeshGenerationRejectsInvalidHeightRaster)
         (void)build_terrain_mesh(
             float_raster(2, 2, {1.0F, std::numeric_limits<float>::quiet_NaN(), 3.0F, 4.0F}),
             TerrainMeshOptions{}),
-                 std::invalid_argument);
+        std::invalid_argument);
 }
 
 TEST(TerrainCoreData, FloatRasterBilinearSamplesEdgesAndInterior)
@@ -471,15 +471,16 @@ TEST(TerrainCoreSynthesis, SynthesizesChildRastersFromExactParentQuadrants)
                                        });
     const Raster southwest =
         synthesize_child_from_parent(parent, TileCoord{1, 1, 1}, TileCoord{2, 2, 3});
-    EXPECT_EQ(southwest.float_data, (std::vector<float>{3.0F, 3.5F, 4.0F, 4.5F, 5.0F, 5.5F, 6.0F, 6.5F, 7.0F}));
+    EXPECT_EQ(southwest.float_data,
+              (std::vector<float>{3.0F, 3.5F, 4.0F, 4.5F, 5.0F, 5.5F, 6.0F, 6.5F, 7.0F}));
 
-    const Raster rgba_parent = rgba_raster(3,
-                                           3,
-                                           {
-                                               0, 0, 0, 255,       10, 0, 0, 255,     20, 0, 0, 255,
-                                               30, 0, 0, 255,      40, 0, 0, 255,     50, 0, 0, 255,
-                                               60, 0, 0, 255,      70, 0, 0, 255,     80, 0, 0, 255,
-                                           });
+    const Raster rgba_parent =
+        rgba_raster(3,
+                    3,
+                    {
+                        0,  0, 0, 255, 10, 0, 0, 255, 20, 0, 0, 255, 30, 0, 0, 255, 40, 0, 0, 255,
+                        50, 0, 0, 255, 60, 0, 0, 255, 70, 0, 0, 255, 80, 0, 0, 255,
+                    });
     const Raster northeast =
         synthesize_child_from_parent(rgba_parent, TileCoord{1, 1, 1}, TileCoord{2, 3, 2});
     ASSERT_EQ(northeast.byte_data.size(), 36U);
@@ -558,15 +559,8 @@ TEST(TerrainCoreData, MergesElevationAndBathymetryAtSeaLevel)
 {
     const Raster elevation = float_raster(
         6, 1, {10.0F, 0.0F, -1.0F, -2.0F, std::numeric_limits<float>::quiet_NaN(), -3.0F});
-    Raster bathymetry =
-        float_raster(6,
-                     1,
-                     {-100.0F,
-                      -20.0F,
-                      -30.0F,
-                      std::numeric_limits<float>::quiet_NaN(),
-                      -40.0F,
-                      -9999.0F});
+    Raster bathymetry = float_raster(
+        6, 1, {-100.0F, -20.0F, -30.0F, std::numeric_limits<float>::quiet_NaN(), -40.0F, -9999.0F});
     bathymetry.no_data_value = -9999.0F;
 
     const Raster merged = merge_elevation_bathymetry(elevation, bathymetry);
@@ -591,21 +585,27 @@ TEST(TerrainCoreGeoTiff, ExtractsGeneratedFloat32TileThroughGdal)
     GDALDataset *dataset = driver->Create(path.string().c_str(), 4, 4, 1, GDT_Float32, nullptr);
     ASSERT_NE(dataset, nullptr);
     const std::vector<float> values{
-        1.0F, 2.0F, 3.0F, 4.0F, 5.0F, 6.0F, 7.0F, 8.0F,
-        9.0F, 10.0F, 11.0F, 12.0F, 13.0F, 14.0F, 15.0F, 16.0F,
+        1.0F,
+        2.0F,
+        3.0F,
+        4.0F,
+        5.0F,
+        6.0F,
+        7.0F,
+        8.0F,
+        9.0F,
+        10.0F,
+        11.0F,
+        12.0F,
+        13.0F,
+        14.0F,
+        15.0F,
+        16.0F,
     };
-    ASSERT_EQ(dataset->GetRasterBand(1)->RasterIO(GF_Write,
-                                                  0,
-                                                  0,
-                                                  4,
-                                                  4,
-                                                  const_cast<float *>(values.data()),
-                                                  4,
-                                                  4,
-                                                  GDT_Float32,
-                                                  0,
-                                                  0),
-              CE_None);
+    ASSERT_EQ(
+        dataset->GetRasterBand(1)->RasterIO(
+            GF_Write, 0, 0, 4, 4, const_cast<float *>(values.data()), 4, 4, GDT_Float32, 0, 0),
+        CE_None);
     GDALClose(dataset);
 
     const Raster tile = GdalGeoTiffTileSource(path).load_tile(TileCoord{0, 0, 0}, 256);

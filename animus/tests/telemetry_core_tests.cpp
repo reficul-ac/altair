@@ -63,9 +63,8 @@ std::vector<std::uint8_t> frame_v1(const std::uint8_t sequence,
                                     component_id,
                                     message_id};
     frame.insert(frame.end(), payload.begin(), payload.end());
-    const std::uint16_t crc =
-        mavlink_crc_x25(std::span<const std::uint8_t>(frame).subspan(1U),
-                        mavlink_crc_extra(message_id).value_or(0U));
+    const std::uint16_t crc = mavlink_crc_x25(std::span<const std::uint8_t>(frame).subspan(1U),
+                                              mavlink_crc_extra(message_id).value_or(0U));
     push_u16(frame, crc);
     return frame;
 }
@@ -87,9 +86,8 @@ std::vector<std::uint8_t> frame_v2(const std::uint8_t sequence,
                                     static_cast<std::uint8_t>((message_id >> 8U) & 0xFFU),
                                     static_cast<std::uint8_t>((message_id >> 16U) & 0xFFU)};
     frame.insert(frame.end(), payload.begin(), payload.end());
-    const std::uint16_t crc =
-        mavlink_crc_x25(std::span<const std::uint8_t>(frame).subspan(1U),
-                        mavlink_crc_extra(message_id).value_or(0U));
+    const std::uint16_t crc = mavlink_crc_x25(std::span<const std::uint8_t>(frame).subspan(1U),
+                                              mavlink_crc_extra(message_id).value_or(0U));
     push_u16(frame, crc);
     return frame;
 }
@@ -167,10 +165,8 @@ std::vector<std::uint8_t> global_position_payload(const std::uint32_t time_ms,
     return payload;
 }
 
-std::vector<std::uint8_t> attitude_payload(const std::uint32_t time_ms,
-                                           const float roll,
-                                           const float pitch,
-                                           const float yaw)
+std::vector<std::uint8_t>
+attitude_payload(const std::uint32_t time_ms, const float roll, const float pitch, const float yaw)
 {
     std::vector<std::uint8_t> payload;
     push_u32(payload, time_ms);
@@ -183,9 +179,8 @@ std::vector<std::uint8_t> attitude_payload(const std::uint32_t time_ms,
     return payload;
 }
 
-std::vector<std::uint8_t> vfr_hud_payload(const float ground_speed,
-                                          const std::int16_t heading_deg,
-                                          const float climb_mps)
+std::vector<std::uint8_t>
+vfr_hud_payload(const float ground_speed, const std::int16_t heading_deg, const float climb_mps)
 {
     std::vector<std::uint8_t> payload;
     push_f32(payload, 17.0F);
@@ -212,7 +207,8 @@ TEST(TelemetryCoreTlog, EmptyLogProducesEmptyTimeline)
 
 TEST(TelemetryCoreMavlink, DecodesValidV1Frame)
 {
-    const auto frame = frame_v1(7, 1, 2, 33, global_position_payload(1000, 39.1, -120.2, 1500, 400));
+    const auto frame =
+        frame_v1(7, 1, 2, 33, global_position_payload(1000, 39.1, -120.2, 1500, 400));
 
     const auto parsed = parse_mavlink_stream(frame);
     ASSERT_EQ(parsed.messages.size(), 1U);

@@ -91,8 +91,8 @@ MavlinkParseResult parse_mavlink_stream(const std::span<const std::uint8_t> byte
             ++result.diagnostics.truncated_frames;
             break;
         }
-        if (is_v2 && (bytes[offset + 2U] & static_cast<std::uint8_t>(~mavlink_v2_signed_flag)) !=
-                         0U)
+        if (is_v2 &&
+            (bytes[offset + 2U] & static_cast<std::uint8_t>(~mavlink_v2_signed_flag)) != 0U)
         {
             ++result.diagnostics.malformed_frames;
             offset += frame_len;
@@ -106,8 +106,7 @@ MavlinkParseResult parse_mavlink_stream(const std::span<const std::uint8_t> byte
         }
 
         const std::uint8_t sequence = bytes[offset + (is_v2 ? 4U : 2U)];
-        const EntityId entity{bytes[offset + (is_v2 ? 5U : 3U)],
-                              bytes[offset + (is_v2 ? 6U : 4U)]};
+        const EntityId entity{bytes[offset + (is_v2 ? 5U : 3U)], bytes[offset + (is_v2 ? 6U : 4U)]};
         const std::uint32_t message_id =
             is_v2 ? (static_cast<std::uint32_t>(bytes[offset + 7U]) |
                      (static_cast<std::uint32_t>(bytes[offset + 8U]) << 8U) |
@@ -122,9 +121,9 @@ MavlinkParseResult parse_mavlink_stream(const std::span<const std::uint8_t> byte
             message.sequence = sequence;
             message.entity_id = entity;
             message.message_id = message_id;
-            message.payload.assign(bytes.begin() + static_cast<std::ptrdiff_t>(offset + header_len),
-                                   bytes.begin() + static_cast<std::ptrdiff_t>(
-                                                     offset + header_len + payload_len));
+            message.payload.assign(
+                bytes.begin() + static_cast<std::ptrdiff_t>(offset + header_len),
+                bytes.begin() + static_cast<std::ptrdiff_t>(offset + header_len + payload_len));
             result.messages.push_back(std::move(message));
             ++result.diagnostics.frames_decoded;
             offset += frame_len;
@@ -133,8 +132,7 @@ MavlinkParseResult parse_mavlink_stream(const std::span<const std::uint8_t> byte
 
         const std::size_t crc_begin = offset + 1U;
         const std::size_t crc_size = header_len - 1U + payload_len;
-        const std::uint16_t expected_crc =
-            little_u16(bytes, offset + header_len + payload_len);
+        const std::uint16_t expected_crc = little_u16(bytes, offset + header_len + payload_len);
         const std::uint16_t actual_crc =
             mavlink_crc_x25(bytes.subspan(crc_begin, crc_size), *crc_extra);
         if (actual_crc != expected_crc)
@@ -150,8 +148,8 @@ MavlinkParseResult parse_mavlink_stream(const std::span<const std::uint8_t> byte
         message.entity_id = entity;
         message.message_id = message_id;
         message.payload.assign(bytes.begin() + static_cast<std::ptrdiff_t>(offset + header_len),
-                               bytes.begin() + static_cast<std::ptrdiff_t>(
-                                                 offset + header_len + payload_len));
+                               bytes.begin() +
+                                   static_cast<std::ptrdiff_t>(offset + header_len + payload_len));
         result.messages.push_back(std::move(message));
         ++result.diagnostics.frames_decoded;
         offset += frame_len;

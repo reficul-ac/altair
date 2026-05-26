@@ -234,15 +234,13 @@ RasterSample sample_float_raster_bilinear(const Raster &raster, const double u, 
     const double fx = x - static_cast<double>(x0);
     const double fy = y - static_cast<double>(y0);
 
-    const auto at = [&raster](const int col, const int row) {
-        return raster.float_data[static_cast<std::size_t>(row * raster.width + col)];
-    };
+    const auto at = [&raster](const int col, const int row)
+    { return raster.float_data[static_cast<std::size_t>(row * raster.width + col)]; };
     const float h00 = at(x0, y0);
     const float h10 = at(x1, y0);
     const float h01 = at(x0, y1);
     const float h11 = at(x1, y1);
-    if (!std::isfinite(h00) || !std::isfinite(h10) || !std::isfinite(h01) ||
-        !std::isfinite(h11))
+    if (!std::isfinite(h00) || !std::isfinite(h10) || !std::isfinite(h01) || !std::isfinite(h11))
     {
         return {};
     }

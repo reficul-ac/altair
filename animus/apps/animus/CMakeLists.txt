@@ -1,7 +1,4 @@
-add_executable(animus
-    src/main.cpp
-    src/animus_app.cpp
-)
+add_executable(animus src/main.cpp src/animus_app.cpp)
 
 target_link_libraries(
     animus PRIVATE animus_geo_core animus_render_core animus_terrain_core animus_telemetry_core

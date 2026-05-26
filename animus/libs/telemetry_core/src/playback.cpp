@@ -14,9 +14,8 @@ bool same_entity(const EntityId a, const EntityId b)
     return a.system_id == b.system_id && a.component_id == b.component_id;
 }
 
-std::optional<double> lerp_optional(const std::optional<double> a,
-                                    const std::optional<double> b,
-                                    const double factor)
+std::optional<double>
+lerp_optional(const std::optional<double> a, const std::optional<double> b, const double factor)
 {
     if (!a && !b)
     {
@@ -63,9 +62,10 @@ TelemetrySample interpolate(const TelemetrySample &a, const TelemetrySample &b, 
 
 const Track *Timeline::track_for(const EntityId id) const
 {
-    const auto it = std::find_if(tracks.begin(), tracks.end(), [id](const Track &track) {
-        return same_entity(track.entity_id, id);
-    });
+    const auto it =
+        std::find_if(tracks.begin(),
+                     tracks.end(),
+                     [id](const Track &track) { return same_entity(track.entity_id, id); });
     return it == tracks.end() ? nullptr : &*it;
 }
 
@@ -85,13 +85,11 @@ std::optional<TelemetrySample> Timeline::sample_at(const EntityId id, const doub
     {
         return track_samples.back();
     }
-    const auto upper =
-        std::upper_bound(track_samples.begin(),
-                         track_samples.end(),
-                         time_s,
-                         [](const double value, const TelemetrySample &sample) {
-                             return value < sample.time_s;
-                         });
+    const auto upper = std::upper_bound(track_samples.begin(),
+                                        track_samples.end(),
+                                        time_s,
+                                        [](const double value, const TelemetrySample &sample)
+                                        { return value < sample.time_s; });
     if (upper == track_samples.begin())
     {
         return *upper;
@@ -149,7 +147,8 @@ void PlaybackClock::advance(const double delta_wall_s)
     {
         if (looping_ && end_time_s_ > start_time_s_)
         {
-            time_s_ = start_time_s_ + std::fmod(time_s_ - start_time_s_, end_time_s_ - start_time_s_);
+            time_s_ =
+                start_time_s_ + std::fmod(time_s_ - start_time_s_, end_time_s_ - start_time_s_);
         }
         else
         {

@@ -199,8 +199,8 @@ std::optional<std::string> read_text_file(const std::filesystem::path &path)
     return std::string((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
 }
 
-std::optional<std::string_view>
-field_value_after(const std::string_view text, const std::string_view field)
+std::optional<std::string_view> field_value_after(const std::string_view text,
+                                                  const std::string_view field)
 {
     const std::string quoted_field = "\"" + std::string(field) + "\"";
     const std::size_t field_pos = text.find(quoted_field);

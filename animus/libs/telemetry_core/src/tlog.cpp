@@ -162,8 +162,12 @@ Timeline load_tlog_bytes(const std::vector<std::uint8_t> &bytes)
         switch (message.message_id)
         {
         case 0:
-            add_event(timeline, have_active_time ? active_time_s : 0.0, message.entity_id, 0U,
-                      EventSeverity::Info, "HEARTBEAT");
+            add_event(timeline,
+                      have_active_time ? active_time_s : 0.0,
+                      message.entity_id,
+                      0U,
+                      EventSeverity::Info,
+                      "HEARTBEAT");
             break;
         case 24:
             if (message.payload.size() >= 30U)
@@ -192,8 +196,7 @@ Timeline load_tlog_bytes(const std::vector<std::uint8_t> &bytes)
                 state.lat_deg = static_cast<double>(i32(message.payload, 4U)) * 1.0e-7;
                 state.lon_deg = static_cast<double>(i32(message.payload, 8U)) * 1.0e-7;
                 state.altitude_msl_m = static_cast<double>(i32(message.payload, 12U)) * 0.001;
-                state.altitude_relative_m =
-                    static_cast<double>(i32(message.payload, 16U)) * 0.001;
+                state.altitude_relative_m = static_cast<double>(i32(message.payload, 16U)) * 0.001;
                 const double vx = static_cast<double>(i16(message.payload, 20U)) * 0.01;
                 const double vy = static_cast<double>(i16(message.payload, 22U)) * 0.01;
                 state.ground_speed_mps = std::sqrt(vx * vx + vy * vy);
@@ -240,7 +243,8 @@ Timeline load_tlog_bytes(const std::vector<std::uint8_t> &bytes)
 
     std::sort(timeline.samples.begin(),
               timeline.samples.end(),
-              [](const TelemetrySample &a, const TelemetrySample &b) {
+              [](const TelemetrySample &a, const TelemetrySample &b)
+              {
                   if (a.time_s != b.time_s)
                   {
                       return a.time_s < b.time_s;
@@ -251,24 +255,21 @@ Timeline load_tlog_bytes(const std::vector<std::uint8_t> &bytes)
                   }
                   return a.entity_id.component_id < b.entity_id.component_id;
               });
-    timeline.samples.erase(std::unique(timeline.samples.begin(),
-                                       timeline.samples.end(),
-                                       [](const TelemetrySample &a, const TelemetrySample &b) {
-                                           return a.time_s == b.time_s &&
-                                                  a.entity_id == b.entity_id &&
-                                                  a.lat_deg == b.lat_deg &&
-                                                  a.lon_deg == b.lon_deg &&
-                                                  a.altitude_msl_m == b.altitude_msl_m &&
-                                                  a.altitude_relative_m ==
-                                                      b.altitude_relative_m &&
-                                                  a.roll_rad == b.roll_rad &&
-                                                  a.pitch_rad == b.pitch_rad &&
-                                                  a.yaw_rad == b.yaw_rad &&
-                                                  a.ground_speed_mps == b.ground_speed_mps &&
-                                                  a.climb_rate_mps == b.climb_rate_mps &&
-                                                  a.heading_deg == b.heading_deg;
-                                       }),
-                           timeline.samples.end());
+    timeline.samples.erase(
+        std::unique(timeline.samples.begin(),
+                    timeline.samples.end(),
+                    [](const TelemetrySample &a, const TelemetrySample &b)
+                    {
+                        return a.time_s == b.time_s && a.entity_id == b.entity_id &&
+                               a.lat_deg == b.lat_deg && a.lon_deg == b.lon_deg &&
+                               a.altitude_msl_m == b.altitude_msl_m &&
+                               a.altitude_relative_m == b.altitude_relative_m &&
+                               a.roll_rad == b.roll_rad && a.pitch_rad == b.pitch_rad &&
+                               a.yaw_rad == b.yaw_rad && a.ground_speed_mps == b.ground_speed_mps &&
+                               a.climb_rate_mps == b.climb_rate_mps &&
+                               a.heading_deg == b.heading_deg;
+                    }),
+        timeline.samples.end());
 
     std::map<EntityId, std::vector<TelemetrySample>, decltype(&entity_less)> by_entity(entity_less);
     for (const TelemetrySample &sample : timeline.samples)
@@ -287,7 +288,8 @@ Timeline load_tlog_bytes(const std::vector<std::uint8_t> &bytes)
     }
     std::sort(timeline.events.begin(),
               timeline.events.end(),
-              [](const Event &a, const Event &b) {
+              [](const Event &a, const Event &b)
+              {
                   if (a.time_s != b.time_s)
                   {
                       return a.time_s < b.time_s;
