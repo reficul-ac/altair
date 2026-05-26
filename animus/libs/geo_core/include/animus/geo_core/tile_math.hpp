@@ -6,24 +6,28 @@
 #include <functional>
 #include <string>
 
-namespace animus::geo_core {
+namespace animus::geo_core
+{
 
-struct TileCoord {
+struct TileCoord
+{
     int z = 0;
     int x = 0;
     int y = 0;
 
-    auto operator<=>(const TileCoord&) const = default;
+    auto operator<=>(const TileCoord &) const = default;
 };
 
-struct GeoBounds {
+struct GeoBounds
+{
     double south_deg = 0.0;
     double west_deg = 0.0;
     double north_deg = 0.0;
     double east_deg = 0.0;
 };
 
-struct Vec2 {
+struct Vec2
+{
     double u = 0.0;
     double v = 0.0;
 };
@@ -46,8 +50,8 @@ std::size_t hash_value(TileCoord coord);
 
 } // namespace animus::geo_core
 
-template <>
-struct std::hash<animus::geo_core::TileCoord> {
+template <> struct std::hash<animus::geo_core::TileCoord>
+{
     std::size_t operator()(animus::geo_core::TileCoord coord) const
     {
         return animus::geo_core::hash_value(coord);

@@ -9,15 +9,14 @@
 
 #include <gtest/gtest.h>
 
-namespace {
+namespace
+{
 
 using animus::data_core::cache_component;
 using animus::data_core::layer_cache_prefix;
 using animus::data_core::tile_cache_key;
-using animus::geo_core::GeoBounds;
-using animus::geo_core::TileCoord;
-using animus::geo_core::Vec2;
 using animus::geo_core::children;
+using animus::geo_core::GeoBounds;
 using animus::geo_core::hash_value;
 using animus::geo_core::is_valid;
 using animus::geo_core::lat_lon_to_tile;
@@ -26,7 +25,9 @@ using animus::geo_core::max_tile_zoom;
 using animus::geo_core::parent;
 using animus::geo_core::tile_key;
 using animus::geo_core::tile_to_bounds;
+using animus::geo_core::TileCoord;
 using animus::geo_core::tiles_per_axis;
+using animus::geo_core::Vec2;
 using animus::geo_core::web_mercator_max_latitude_deg;
 using animus::terrain_core::LayerSpec;
 using animus::terrain_core::LayerType;
@@ -80,9 +81,7 @@ TEST(DataContracts, LayerCachePrefixIncludesLayerIdentity)
     spec.min_zoom = 3;
     spec.max_zoom = 12;
 
-    EXPECT_EQ(
-        layer_cache_prefix(spec),
-        "elevation/local_dem/terrain_rgb/meters/512/3-12");
+    EXPECT_EQ(layer_cache_prefix(spec), "elevation/local_dem/terrain_rgb/meters/512/3-12");
 }
 
 TEST(GeoCore, TileCoordEqualityOrderingValidityKeyAndHashAreStable)
@@ -113,16 +112,11 @@ TEST(GeoCore, LatLonToTileUsesXyzWebMercatorClampRules)
     EXPECT_EQ(lat_lon_to_tile(0.0, -180.0, 2), (TileCoord{2, 0, 2}));
     EXPECT_EQ(lat_lon_to_tile(0.0, 180.0, 2), (TileCoord{2, 3, 2}));
     EXPECT_EQ(lat_lon_to_tile(0.0, 181.0, 2), (TileCoord{2, 3, 2}));
-    EXPECT_EQ(
-        lat_lon_to_tile(web_mercator_max_latitude_deg + 10.0, 0.0, 3),
-        (TileCoord{3, 4, 0}));
-    EXPECT_EQ(
-        lat_lon_to_tile(-web_mercator_max_latitude_deg - 10.0, 0.0, 3),
-        (TileCoord{3, 4, 7}));
+    EXPECT_EQ(lat_lon_to_tile(web_mercator_max_latitude_deg + 10.0, 0.0, 3), (TileCoord{3, 4, 0}));
+    EXPECT_EQ(lat_lon_to_tile(-web_mercator_max_latitude_deg - 10.0, 0.0, 3), (TileCoord{3, 4, 7}));
 
     EXPECT_THROW((void)lat_lon_to_tile(0.0, 0.0, -1), std::invalid_argument);
-    EXPECT_THROW(
-        (void)lat_lon_to_tile(0.0, 0.0, max_tile_zoom + 1), std::invalid_argument);
+    EXPECT_THROW((void)lat_lon_to_tile(0.0, 0.0, max_tile_zoom + 1), std::invalid_argument);
 }
 
 TEST(GeoCore, TileToBoundsReturnsKnownLowZoomBounds)
@@ -167,8 +161,7 @@ TEST(GeoCore, LatLonToTileUvUsesTopLeftOrigin)
     EXPECT_NEAR(southeast.u, 1.0, 1e-12);
     EXPECT_NEAR(southeast.v, 1.0, 1e-12);
 
-    EXPECT_THROW(
-        (void)lat_lon_to_tile_uv(0.0, 0.0, TileCoord{2, 4, 0}), std::invalid_argument);
+    EXPECT_THROW((void)lat_lon_to_tile_uv(0.0, 0.0, TileCoord{2, 4, 0}), std::invalid_argument);
 }
 
 TEST(GeoCore, ParentAndChildrenFollowXyzQuadtree)
@@ -185,8 +178,7 @@ TEST(GeoCore, ParentAndChildrenFollowXyzQuadtree)
     EXPECT_EQ(children(TileCoord{2, 2, 3}), expected);
 
     EXPECT_THROW((void)parent(TileCoord{2, 4, 0}), std::invalid_argument);
-    EXPECT_THROW(
-        (void)children(TileCoord{max_tile_zoom, 0, 0}), std::invalid_argument);
+    EXPECT_THROW((void)children(TileCoord{max_tile_zoom, 0, 0}), std::invalid_argument);
 }
 
 TEST(DataContracts, TileCacheKeyAppendsStableTileKey)
@@ -200,9 +192,8 @@ TEST(DataContracts, TileCacheKeyAppendsStableTileKey)
     spec.min_zoom = 0;
     spec.max_zoom = 14;
 
-    EXPECT_EQ(
-        tile_cache_key(spec, TileCoord{6, 10, 22}),
-        "imagery/local_pack/natural_color/v1/256/0-14/6/10/22");
+    EXPECT_EQ(tile_cache_key(spec, TileCoord{6, 10, 22}),
+              "imagery/local_pack/natural_color/v1/256/0-14/6/10/22");
 }
 
 TEST(TerrainContracts, TileStateStringsCoverAllDeclaredStates)
@@ -223,7 +214,8 @@ TEST(TerrainContracts, TileStateStringsCoverAllDeclaredStates)
         TileState::Retiring,
     };
 
-    for (const TileState state : states) {
+    for (const TileState state : states)
+    {
         EXPECT_NE(to_string(state), std::string_view("unknown"));
         EXPECT_FALSE(to_string(state).empty());
     }

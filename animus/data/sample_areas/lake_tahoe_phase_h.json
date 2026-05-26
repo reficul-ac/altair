@@ -1,0 +1,70 @@
+{
+  "center": {
+    "lat_deg": 39.0968,
+    "lon_deg": -120.0324
+  },
+  "description": "Lake Tahoe multi-zoom XYZ tile ranges for Phase H terrain streaming.",
+  "layers": {
+    "bathymetry": {
+      "extension": "f32",
+      "format": "float32_le",
+      "height_units": "meters",
+      "no_data": -9999.0,
+      "required": false,
+      "sampling_mode": "center",
+      "source": "optional local bathymetry tile set",
+      "tile_size": 256
+    },
+    "elevation": {
+      "extension": "png",
+      "format": "terrain_rgb_png",
+      "height_units": "meters",
+      "no_data": null,
+      "required": true,
+      "sampling_mode": "center",
+      "source": "USGS 3DEP Elevation ImageServer exported as Terrain-RGB: https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer",
+      "tile_size": 256
+    },
+    "imagery": {
+      "extension": "png",
+      "format": "png",
+      "no_data": null,
+      "required": true,
+      "sampling_mode": "center",
+      "source": "USGSImageryOnly cached Web Mercator orthoimagery: https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer",
+      "tile_size": 256
+    }
+  },
+  "name": "lake_tahoe_phase_h",
+  "schema": "animus.terrain_pack.v1",
+  "tile_set": {
+    "x_max": 683,
+    "x_min": 681,
+    "y_max": 1564,
+    "y_min": 1562,
+    "zoom": 12
+  },
+  "tile_sets": [
+    {
+      "x_max": 342,
+      "x_min": 340,
+      "y_max": 782,
+      "y_min": 780,
+      "zoom": 11
+    },
+    {
+      "x_max": 684,
+      "x_min": 680,
+      "y_max": 1565,
+      "y_min": 1561,
+      "zoom": 12
+    },
+    {
+      "x_max": 1366,
+      "x_min": 1361,
+      "y_max": 3128,
+      "y_min": 3123,
+      "zoom": 13
+    }
+  ]
+}

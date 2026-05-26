@@ -2,9 +2,11 @@
 
 #include <string>
 
-namespace animus::render_core {
+namespace animus::render_core
+{
 
-struct GlInfo {
+struct GlInfo
+{
     std::string vendor;
     std::string renderer;
     std::string version;
@@ -12,7 +14,7 @@ struct GlInfo {
 };
 
 GlInfo query_gl_info();
-std::string format_gl_info(const GlInfo& info);
+std::string format_gl_info(const GlInfo &info);
 void enable_debug_callback();
 
 } // namespace animus::render_core

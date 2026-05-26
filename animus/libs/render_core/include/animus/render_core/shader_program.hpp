@@ -2,22 +2,24 @@
 
 #include <string_view>
 
-namespace animus::render_core {
+namespace animus::render_core
+{
 
-class ShaderProgram {
-public:
+class ShaderProgram
+{
+  public:
     ShaderProgram(std::string_view vertex_source, std::string_view fragment_source);
     ~ShaderProgram();
 
-    ShaderProgram(const ShaderProgram&) = delete;
-    ShaderProgram& operator=(const ShaderProgram&) = delete;
-    ShaderProgram(ShaderProgram&& other) noexcept;
-    ShaderProgram& operator=(ShaderProgram&& other) noexcept;
+    ShaderProgram(const ShaderProgram &) = delete;
+    ShaderProgram &operator=(const ShaderProgram &) = delete;
+    ShaderProgram(ShaderProgram &&other) noexcept;
+    ShaderProgram &operator=(ShaderProgram &&other) noexcept;
 
     void use() const;
     [[nodiscard]] unsigned int id() const;
 
-private:
+  private:
     unsigned int program_ = 0;
 };
 

@@ -28,27 +28,54 @@ Detailed architecture and phase checklist:
   tile preparation/validation tools.
 - [x] Prepare or download a real Lake Tahoe Phase D tile pack under ignored
   Animus data paths and validate it with `validate_tile_pyramid.py`.
-- [x] Phase E: build the native `terrain_lab` OpenGL/GLFW/GLEW render
-  foundation without coupling it to Altair, Bayek, telemetry, or the final app.
-- [x] Run the Phase E `terrain_lab` native-window manual check on a workstation
+- [x] Phase E: build the native Animus OpenGL/GLFW/GLEW render foundation
+  without coupling it to Altair, Bayek, or telemetry.
+- [x] Run the Phase E Animus native-window manual check on a workstation
   with a real display and confirm the clear color and triangle are visible.
   In the Codex/tmux shell, export `DISPLAY=:0` and
   `XAUTHORITY=/run/user/1000/.mutter-Xwaylandauth.17JVP3`; with those values,
-  `terrain_lab --frames 600` opens on the native Intel GPU and exits cleanly.
+  `animus --frames 600` opens on the native Intel GPU and exits cleanly.
 - [x] Phase F: render local imagery/elevation terrain from one tile through a
   seamless fixed 3x3 same-LOD patch.
-- [ ] Phase G: extract reusable terrain systems from `terrain_lab` into
-  `terrain_core` while preserving `terrain_lab` as the regression harness.
-- [ ] Phase H: add async terrain streaming, tile state debug visualization, GPU
+- [x] Phase G: extract reusable terrain systems into `terrain_core` while
+  preserving `apps/animus` as the regression harness.
+- [x] Phase H: add async terrain streaming, tile state debug visualization, GPU
   upload budgets, camera tile wishlist, and no-holes parent fallback.
-- [ ] Phase I: add bounded cache hierarchy, LRU eviction, tile synthesis,
+- [x] Download and validate the real Lake Tahoe Phase H multi-zoom tile pack
+  under ignored Animus data paths for native visual/manual validation.
+- [x] Phase I: add bounded cache hierarchy, LRU eviction, tile synthesis,
   GeoTIFF extraction, and elevation/bathymetry merge.
-- [ ] Phase J: create the full native `apps/animus` shell only after
+- [x] Add generated GeoTIFF extraction fixture coverage once the GDAL Conan
+  dependency is available as a normal local verification dependency instead of
+  requiring a long source build.
+- [x] Phase J: create the full native `apps/animus` shell only after
   `terrain_core` is stable.
-- [ ] Phase K: add delayed telemetry playback with CSV/JSON first, then
-  MCAP/Protobuf/HDF5 after the simple path works.
+- [x] Add an optional Animus screenshot smoke to `verify_animus.py` that runs
+  `--capture-ppm` under Xvfb and validates nonblank pixels.
+- [x] Phase K: add standalone MAVLink `.tlog` telemetry playback first, keeping
+  CSV/JSON as debug/export helpers and deferring live UDP plus
+  MCAP/Protobuf/HDF5 until playback is solid.
+- [x] During Phase K, split `apps/animus/src/main.cpp` into app state,
+  UI/debug panels, terrain rendering orchestration, and telemetry playback
+  modules before adding more runtime complexity.
+- [x] During Phase K, introduce app-level state for layers, playback, selected
+  entity/tile, and diagnostics without making `terrain_core` depend on UI.
+- [x] During Phase K, reorganize developer panels into terrain, cache, render,
+  telemetry, timeline, and entity inspection surfaces as telemetry arrives.
+- [ ] Continue splitting `apps/animus/src/main.cpp` after the first `.tlog`
+  playback path by moving telemetry state, UI panels, and rendering helpers into
+  dedicated app modules.
+- [ ] Continue splitting the new Animus app runtime translation unit into
+  smaller files for CLI/options, terrain orchestration, telemetry overlay, UI
+  panels, and capture helpers.
 - [ ] Phase L: add advanced overlays, remote tile providers, MBTiles/SQLite
   cache metadata, cache prewarming, datum correction, and export workflows.
+- [ ] During Phase L, add persisted UI/app config only after there are real
+  preferences, recent files, layer presets, or project/session concepts.
+- [ ] During Phase L, add visual regression artifact bundles or HTML reports
+  once telemetry overlays, tracks, and events exist.
+- [ ] During Phase L, add PNG or export-friendly screenshot formats if captures
+  become review artifacts; keep PPM for deterministic smoke checks.
 
 ## Vehicle And SITL
 

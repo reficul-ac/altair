@@ -7,26 +7,28 @@
 #include <sstream>
 #include <string_view>
 
-namespace animus::render_core {
-namespace {
+namespace animus::render_core
+{
+namespace
+{
 
 std::string gl_string(GLenum name)
 {
-    const auto* value = glGetString(name);
-    if (value == nullptr) {
+    const auto *value = glGetString(name);
+    if (value == nullptr)
+    {
         return "unavailable";
     }
-    return reinterpret_cast<const char*>(value);
+    return reinterpret_cast<const char *>(value);
 }
 
-void GLAPIENTRY debug_message_callback(
-    GLenum source,
-    GLenum type,
-    GLuint id,
-    GLenum severity,
-    GLsizei length,
-    const GLchar* message,
-    const void* user_param)
+void GLAPIENTRY debug_message_callback(GLenum source,
+                                       GLenum type,
+                                       GLuint id,
+                                       GLenum severity,
+                                       GLsizei length,
+                                       const GLchar *message,
+                                       const void *user_param)
 {
     (void)source;
     (void)id;
@@ -34,11 +36,11 @@ void GLAPIENTRY debug_message_callback(
 
     std::string_view text{message, static_cast<std::size_t>(length)};
     std::cerr << "OpenGL debug";
-    if (type == GL_DEBUG_TYPE_ERROR) {
+    if (type == GL_DEBUG_TYPE_ERROR)
+    {
         std::cerr << " error";
     }
-    std::cerr << " severity=0x" << std::hex << severity << std::dec << ": " << text
-              << '\n';
+    std::cerr << " severity=0x" << std::hex << severity << std::dec << ": " << text << '\n';
 }
 
 } // namespace
@@ -53,7 +55,7 @@ GlInfo query_gl_info()
     };
 }
 
-std::string format_gl_info(const GlInfo& info)
+std::string format_gl_info(const GlInfo &info)
 {
     std::ostringstream out;
     out << "OpenGL vendor: " << info.vendor << '\n'
@@ -65,17 +67,12 @@ std::string format_gl_info(const GlInfo& info)
 
 void enable_debug_callback()
 {
-    if (GLEW_VERSION_4_3 || GLEW_KHR_debug) {
+    if (GLEW_VERSION_4_3 || GLEW_KHR_debug)
+    {
         glEnable(GL_DEBUG_OUTPUT);
         glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
         glDebugMessageCallback(debug_message_callback, nullptr);
-        glDebugMessageControl(
-            GL_DONT_CARE,
-            GL_DONT_CARE,
-            GL_DONT_CARE,
-            0,
-            nullptr,
-            GL_TRUE);
+        glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
     }
 }
 

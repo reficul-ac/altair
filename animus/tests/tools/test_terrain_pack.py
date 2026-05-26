@@ -34,7 +34,6 @@ from download_lake_tahoe_pack import (  # noqa: E402
     tile_bounds_epsg3857,
 )
 
-
 try:
     from PIL import Image
 except ImportError:  # pragma: no cover - verification environment should install Pillow.
@@ -183,7 +182,9 @@ class TerrainPackTests(unittest.TestCase):
 
             errors = validate_pack(root / "pack", manifest)
 
-            self.assertTrue(any("sample count 4 does not match 256x256" in error for error in errors))
+            self.assertTrue(
+                any("sample count 4 does not match 256x256" in error for error in errors)
+            )
 
     def test_download_dry_run_plan_reports_expected_outputs(self) -> None:
         root = Path("animus/data/tiles/lake_tahoe")

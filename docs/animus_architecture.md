@@ -115,16 +115,6 @@ animus/
     terrain_pipeline.md
     telemetry_pipeline.md
   apps/
-    terrain_lab/
-      CMakeLists.txt
-      src/
-        main.cpp
-      shaders/
-        terrain.vert
-        terrain.frag
-        terrain_debug.frag
-      maps/
-      data/
     animus/
       CMakeLists.txt
       src/
@@ -166,14 +156,10 @@ animus/
     .gitkeep
 ```
 
-`apps/terrain_lab` is the first executable. It is terrain-only: no telemetry,
-no timeline, and no final app UI. It exists to prove terrain rendering,
-streaming, caching, LOD, stitching, and shading.
-
-`apps/animus` is the eventual full desktop application. It should depend on
-`terrain_core`, `render_core`, `geo_core`, `data_core`, and later
-`telemetry_core`. It should not become complicated until `terrain_lab` proves
-the terrain system.
+`apps/animus` is the native desktop application and terrain regression harness.
+It is terrain-first for now: no telemetry or timeline until the terrain runtime
+is stable. It depends on `terrain_core`, `render_core`, `geo_core`,
+`data_core`, and later `telemetry_core`.
 
 `libs/render_core` owns GLFW window wrapping, OpenGL context/debug setup, GLEW
 initialization, shader wrappers, texture wrappers, mesh/VBO/IBO/VAO wrappers,
@@ -201,22 +187,20 @@ timeline interpolation, and terrain-relative placement.
 
 Animus should be developed in this order:
 
-Stage 1: `terrain_lab`
+Stage 1: native terrain runtime
 
 - build a standalone native terrain testbed
 - no telemetry
-- no final app UI
 - prove local tile loading, elevation decoding, mesh generation, shading, async
   loading, caching, and LOD
 
 Stage 2: `terrain_core`
 
-- extract reusable terrain systems from `terrain_lab` into a library
-- preserve `terrain_lab` as a test/demo harness
+- extract reusable terrain systems from the native runtime into a library
+- preserve `apps/animus` as the test/demo harness
 
 Stage 3: minimal Animus app shell
 
-- create the real app only once `terrain_core` is stable
 - app shell hosts the terrain renderer and basic layer controls/debug panels
 
 Stage 4: `telemetry_core`
@@ -366,8 +350,8 @@ enum class TileState {
 ```
 
 Avoid vague booleans such as `isLoaded`, `isLoading`, or `hasMesh`. Explicit
-states are critical for debugging smooth streaming. `terrain_lab` must show a
-tile-state debug overlay, each state should have a debug color, and tile state
+states are critical for debugging smooth streaming. `apps/animus` must show a
+tile-state debug view, each state should have a debug color, and tile state
 transitions should be logged or inspectable.
 
 Suggested debug colors:
@@ -693,7 +677,13 @@ These APIs are needed later for telemetry placement.
 
 Telemetry is intentionally delayed until terrain is stable.
 
-Later `telemetry_core` should support:
+`telemetry_core` should start with standalone offline MAVLink `.tlog` playback.
+It must stay vehicle-agnostic and must not depend on Altair, Bayek, Python
+tools, rendering, UI, or live network ingest. CSV/JSON are debug/export paths,
+not the primary Phase K input. Live UDP, MCAP, Protobuf, and HDF5 are deferred
+until deterministic playback is solid.
+
+`telemetry_core` should support:
 
 - `TelemetrySample`
 - `Entity`
@@ -701,12 +691,15 @@ Later `telemetry_core` should support:
 - `Event`
 - `Timeline`
 - `PlaybackClock`
+- MAVLink v1 and unsigned MAVLink v2 frame parsing
+- common MAVLink messages for playback: `HEARTBEAT`, `GLOBAL_POSITION_INT`,
+  `GPS_RAW_INT`, `ATTITUDE`, and `VFR_HUD`
+- unsupported valid MAVLink messages preserved as events
+- parser diagnostics for CRC failures, truncated frames, signed MAVLink v2
+  frames, unsupported versions, and malformed input
 - interpolation
 - terrain-relative placement
-- MCAP import
-- Protobuf messages
-- HDF5 datasets
-- optional CSV/JSON debug input
+- optional CSV/JSON debug import/export
 
 Example conceptual sample:
 
@@ -725,8 +718,10 @@ struct TelemetrySample {
 };
 ```
 
-Telemetry should depend on `geo_core` and `terrain_core` query APIs.
-`terrain_core` should not depend on `telemetry_core`.
+Telemetry may use `geo_core` contracts. Terrain height sampling belongs in
+`terrain_core`, but `terrain_core` must not depend on `telemetry_core`.
+App-level code in `apps/animus` should combine resident terrain height data with
+telemetry placement and expose diagnostics when terrain height is unavailable.
 
 ## 24. Build Phases and Milestones
 
@@ -735,7 +730,7 @@ Phase 0: project skeleton
 Goal:
 
 - CMake + Conan project builds on Linux
-- `terrain_lab` executable opens a GLFW window
+- `apps/animus` executable opens a GLFW window
 - OpenGL context is created
 - GLEW initialized
 - OpenGL vendor/version printed
@@ -908,13 +903,13 @@ Phase 12: minimal Animus app
 
 Goal:
 
-- create real app shell after `terrain_lab` is successful
+- host the native app shell after terrain core is stable
 - host `terrain_core` renderer
 - add layer controls and cache/debug panels
 
 Acceptance:
 
-- `terrain_core` works outside `terrain_lab`
+- `terrain_core` stays independent of `apps/animus`
 - app remains native desktop
 - no web UI introduced
 
@@ -997,19 +992,18 @@ Phase D, sample data and offline tile preparation:
   raw float32 height tiles.
 - [x] Add validation for dimensions, coordinate coverage, sampling mode,
   min/max elevation, no-data values, and missing neighboring tiles.
-- [ ] Prepare or download a real Lake Tahoe pack under ignored local data paths
+- [x] Prepare or download a real Lake Tahoe pack under ignored local data paths
   and validate it with the Phase D tools before depending on it for rendering.
 
 Phase E, native window and minimal render foundation:
 
-- [x] Implement `apps/terrain_lab` as the first executable.
+- [x] Implement `apps/animus` as the native executable.
 - [x] Open a GLFW window with an OpenGL Core Profile context.
 - [x] Initialize GLEW and print OpenGL vendor, renderer, and version.
 - [x] Enable debug context/logging where available.
 - [x] Add only the `render_core` wrappers needed by the next terrain steps:
   window/context, shader compile/link, mesh, and render stats.
-- [x] Keep `terrain_lab` independent from telemetry, final app shell code, and
-  Altair/Bayek internals.
+- [x] Keep `apps/animus` independent from telemetry and Altair/Bayek internals.
 
 Phase F, single-tile and fixed-patch terrain:
 
@@ -1023,74 +1017,89 @@ Phase F, single-tile and fixed-patch terrain:
 
 Phase G, extraction into `terrain_core`:
 
-- [ ] Move reusable tile models, raster models, source interfaces, decoders,
-  mesh generation, and terrain render coordination out of `terrain_lab` into
-  `terrain_core` once the fixed patch works.
-- [ ] Keep `terrain_lab` as a thin harness over `terrain_core`.
-- [ ] Add CPU-only tests for mesh generation, padding, Terrain-RGB decode, and
+- [x] Move reusable tile models, raster models, source interfaces, decoders,
+  mesh generation, and terrain render coordination into `terrain_core` once the
+  fixed patch works.
+- [x] Keep `apps/animus` as a harness over `terrain_core`.
+- [x] Add CPU-only tests for mesh generation, padding, Terrain-RGB decode, and
   tile-state transitions where practical.
-- [ ] Keep OpenGL-specific upload and draw code behind `render_core` or a narrow
+- [x] Keep OpenGL-specific upload and draw code behind `render_core` or a narrow
   terrain render backend boundary.
 
 Phase H, streaming and no-holes LOD:
 
-- [ ] Implement the explicit `TileState` state machine and debug colors.
-- [ ] Add worker threads for disk/cache lookup, decode, raster normalization,
+- [x] Implement the explicit `TileState` state machine and debug colors.
+- [x] Add worker threads for disk/cache lookup, decode, raster normalization,
   and CPU mesh generation.
-- [ ] Enforce the rule that workers never create OpenGL resources.
-- [ ] Define `PreparedTile` as the CPU-to-render-thread handoff object.
-- [ ] Add render-thread GPU upload queues and per-frame upload budgets.
-- [ ] Implement a camera-driven tile wishlist with bounded resident tiles and
+- [x] Enforce the rule that workers never create OpenGL resources.
+- [x] Define `PreparedTile` as the CPU-to-render-thread handoff object.
+- [x] Add render-thread GPU upload queues and per-frame upload budgets.
+- [x] Implement a camera-driven tile wishlist with bounded resident tiles and
   bounded outstanding jobs.
-- [ ] Prioritize center-screen or near-camera tile requests.
-- [ ] Implement parent fallback so parent tiles remain visible until all
+- [x] Prioritize center-screen or near-camera tile requests.
+- [x] Implement parent fallback so parent tiles remain visible until all
   replacement children are `ReadyGpu`.
-- [ ] Show visible tiles, queued jobs, upload queues, failed tiles, and fallback
-  states in the `terrain_lab` overlay.
+- [x] Show visible tiles, queued jobs, upload queues, failed tiles, and fallback
+  states in the `apps/animus` debug panels.
 
 Phase I, cache, synthesis, and richer terrain data:
 
-- [ ] Implement cache keys from `LayerSpec` identity plus `TileCoord`.
-- [ ] Add L0 resident GPU tile tracking, L1 CPU raster cache, and L3 disk tile
+- [x] Implement cache keys from `LayerSpec` identity plus `TileCoord`.
+- [x] Add L0 resident GPU tile tracking, L1 CPU raster cache, and L3 disk tile
   cache with bounded memory use.
-- [ ] Add LRU eviction and cache hit/miss counters.
-- [ ] Implement local disk cache persistence and restart reuse.
-- [ ] Add missing-child synthesis from parent crop/scale.
-- [ ] Add missing-parent synthesis from four-child downsample.
-- [ ] Persist synthesized tiles and prevent repeated synthesis loops.
-- [ ] Add GDAL-backed GeoTIFF tile extraction after local XYZ tile loading is
+- [x] Add LRU eviction and cache hit/miss counters.
+- [x] Implement local disk cache persistence and restart reuse.
+- [x] Add missing-child synthesis from parent crop/scale.
+- [x] Add missing-parent synthesis from four-child downsample.
+- [x] Persist synthesized tiles and prevent repeated synthesis loops.
+- [x] Add GDAL-backed GeoTIFF tile extraction after local XYZ tile loading is
   stable.
-- [ ] Add elevation/bathymetry merge into one renderer-facing height raster.
+- [x] Add elevation/bathymetry merge into one renderer-facing height raster.
 
 Phase J, full app shell after terrain stability:
 
-- [ ] Create `apps/animus` only after `terrain_core` is stable.
-- [ ] Host the terrain renderer in the app shell without introducing any web UI.
-- [ ] Add basic layer controls, cache panels, tile debug views, and render stats.
-- [ ] Keep app-level code dependent on `terrain_core`, not the other way around.
-- [ ] Keep `terrain_lab` working as a regression harness for every app-shell
-  change.
+- [x] Create `apps/animus` only after `terrain_core` is stable.
+- [x] Host the terrain renderer in the app shell without introducing any web UI.
+- [x] Add basic layer controls, cache panels, tile debug views, and render stats.
+- [x] Keep app-level code dependent on `terrain_core`, not the other way around.
+- [x] Keep `apps/animus` working as the terrain regression harness for every
+  app-shell change.
 
 Phase K, delayed telemetry:
 
-- [ ] Define `TelemetrySample`, `Entity`, `Track`, `Event`, `Timeline`, and
+- [x] Split `apps/animus/src/main.cpp` into app state, UI/debug panels, terrain
+  rendering orchestration, and telemetry playback modules before adding more
+  runtime complexity.
+- [x] Introduce app-level state for layers, playback, selected entity/tile, and
+  diagnostics without making `terrain_core` depend on UI.
+- [x] Define `TelemetrySample`, `Entity`, `Track`, `Event`, `Timeline`, and
   `PlaybackClock`.
-- [ ] Add simple CSV/JSON debug telemetry ingestion before MCAP/Protobuf/HDF5.
-- [ ] Implement interpolation and timeline playback.
-- [ ] Render one moving entity over terrain.
-- [ ] Render track lines and event markers.
-- [ ] Use `terrain_core` height queries for terrain-relative placement.
-- [ ] Add MCAP, Protobuf, and HDF5 support only after the simple playback path
-  works.
+- [x] Add standalone MAVLink `.tlog` playback as the primary Phase K telemetry
+  input.
+- [x] Keep CSV/JSON as optional debug/export helpers.
+- [x] Implement interpolation and timeline playback.
+- [x] Render one moving entity over terrain.
+- [x] Render track lines and event markers.
+- [x] Reorganize developer panels into terrain, cache, render, telemetry,
+  timeline, and entity inspection surfaces as telemetry arrives.
+- [x] Use `terrain_core` height queries for terrain-relative placement.
+- [x] Add live UDP, MCAP, Protobuf, and HDF5 support only after `.tlog`
+  playback works.
 
 Phase L, advanced terrain/data features:
 
+- [ ] Add persisted UI/app config only after there are real preferences, recent
+  files, layer presets, or project/session concepts.
 - [ ] Add GeoTIFF overlays draped onto terrain with opacity and draw order.
 - [ ] Add remote tile providers after local cache behavior is stable.
 - [ ] Add SQLite/MBTiles metadata and cache indexing.
 - [ ] Add cache prewarming tools for offline workflows.
 - [ ] Add vertical datum/geoid correction metadata before mixing telemetry
   altitude and terrain height.
+- [ ] Add visual regression artifact bundles or HTML reports once telemetry
+  overlays, tracks, and events exist.
+- [ ] Add PNG or export-friendly screenshot formats if captures become review
+  artifacts; keep PPM for deterministic smoke checks.
 - [ ] Add video/export workflows only after terrain and telemetry playback are
   stable.
 
@@ -1137,7 +1146,7 @@ Definition of fully designed:
 - shader compile checks where practical
 - mesh generation tests can be CPU-only
 
-`terrain_lab` manual validation:
+`apps/animus` manual validation:
 
 - one tile renders
 - 3x3 patch seamless
@@ -1148,7 +1157,7 @@ Definition of fully designed:
 
 ## 27. Debugging and Observability
 
-`terrain_lab` must have strong debug tools.
+`apps/animus` must have strong debug tools.
 
 Required debug information:
 
@@ -1173,7 +1182,7 @@ Terrain streaming without debug visualization becomes impossible to tune.
 
 Explicit early non-goals:
 
-- no telemetry in `terrain_lab`
+- no telemetry in the terrain runtime
 - no final UI before terrain is stable
 - no MCAP/Protobuf/HDF5 ingestion in terrain milestones
 - no FFmpeg/video export in terrain milestones
@@ -1227,7 +1236,7 @@ Rules for future agents:
 - do not create OpenGL resources on worker threads
 - do not hide failures; expose tile errors in debug UI/logs
 - add tests for pure math/data transformations
-- keep `terrain_lab` working as a regression harness
+- keep `apps/animus` working as the regression harness
 - keep core systems renderer-independent where practical
 - keep the project self-contained under the top-level `animus/` folder so it
   can become a standalone repository

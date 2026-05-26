@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-
 SUPPORTED_LAYERS = {"imagery", "elevation", "bathymetry"}
 SUPPORTED_FORMATS = {"png", "terrain_rgb_png", "float32_le"}
 TILE_PATH_RE = re.compile(
@@ -74,9 +73,7 @@ def parse_tile_path(pack_root: Path, path: Path) -> TilePath:
     relative = path.relative_to(pack_root).as_posix()
     match = TILE_PATH_RE.match(relative)
     if match is None:
-        raise ValueError(
-            "tile path must match <layer>/<z>/<x>/<y>.<ext>: " f"{relative}"
-        )
+        raise ValueError("tile path must match <layer>/<z>/<x>/<y>.<ext>: " f"{relative}")
 
     layer = match.group("layer")
     if layer not in SUPPORTED_LAYERS:
@@ -156,14 +153,25 @@ def lake_tahoe_manifest() -> dict[str, Any]:
     }
 
 
+def manifest_tile_sets(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    if "tile_sets" in manifest:
+        tile_sets = manifest["tile_sets"]
+        if not isinstance(tile_sets, list) or not tile_sets:
+            raise ValueError("tile_sets must be a non-empty array")
+        return tile_sets
+    return [manifest["tile_set"]]
+
+
 def required_coords(manifest: dict[str, Any]) -> list[TileCoord]:
-    tile_set = manifest["tile_set"]
-    zoom = int(tile_set["zoom"])
-    return [
-        TileCoord(zoom, x, y)
-        for y in range(int(tile_set["y_min"]), int(tile_set["y_max"]) + 1)
-        for x in range(int(tile_set["x_min"]), int(tile_set["x_max"]) + 1)
-    ]
+    coords: list[TileCoord] = []
+    for tile_set in manifest_tile_sets(manifest):
+        zoom = int(tile_set["zoom"])
+        coords.extend(
+            TileCoord(zoom, x, y)
+            for y in range(int(tile_set["y_min"]), int(tile_set["y_max"]) + 1)
+            for x in range(int(tile_set["x_min"]), int(tile_set["x_max"]) + 1)
+        )
+    return sorted(set(coords))
 
 
 def iter_tile_files(pack_root: Path) -> list[Path]:
@@ -229,7 +237,9 @@ def inspect_float32(path: Path, tile_size: int | None = None) -> dict[str, Any]:
     return result
 
 
-def inspect_tile(pack_root: Path, path: Path, manifest: dict[str, Any] | None = None) -> dict[str, Any]:
+def inspect_tile(
+    pack_root: Path, path: Path, manifest: dict[str, Any] | None = None
+) -> dict[str, Any]:
     tile_path = parse_tile_path(pack_root, path)
     layer_spec = (manifest or {}).get("layers", {}).get(tile_path.layer, {})
     declared_format = layer_spec.get("format")
@@ -260,8 +270,8 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if manifest.get("schema") != "animus.terrain_pack.v1":
         errors.append("manifest schema must be animus.terrain_pack.v1")
-    if "tile_set" not in manifest:
-        errors.append("manifest must define tile_set")
+    if "tile_set" not in manifest and "tile_sets" not in manifest:
+        errors.append("manifest must define tile_set or tile_sets")
     if "layers" not in manifest or not isinstance(manifest["layers"], dict):
         errors.append("manifest must define layers object")
         return errors
@@ -312,12 +322,17 @@ def validate_pack(pack_root: Path, manifest: dict[str, Any]) -> list[str]:
         return errors
 
     files_by_key: dict[tuple[str, str], Path] = {}
-    tile_set = manifest["tile_set"]
-    zoom = int(tile_set["zoom"])
-    x_min = int(tile_set["x_min"])
-    x_max = int(tile_set["x_max"])
-    y_min = int(tile_set["y_min"])
-    y_max = int(tile_set["y_max"])
+    tile_sets = manifest_tile_sets(manifest)
+
+    def covered(coord: TileCoord) -> bool:
+        for tile_set in tile_sets:
+            if coord.z != int(tile_set["zoom"]):
+                continue
+            if int(tile_set["x_min"]) <= coord.x <= int(tile_set["x_max"]) and int(
+                tile_set["y_min"]
+            ) <= coord.y <= int(tile_set["y_max"]):
+                return True
+        return False
 
     for path in iter_tile_files(pack_root):
         try:
@@ -332,9 +347,7 @@ def validate_pack(pack_root: Path, manifest: dict[str, Any]) -> list[str]:
             continue
         if tile_path.extension != layer_spec["extension"].lower():
             errors.append(f"{path}: extension does not match manifest layer extension")
-        if tile_path.coord.z != zoom:
-            errors.append(f"{path}: zoom {tile_path.coord.z} does not match manifest zoom {zoom}")
-        if not (x_min <= tile_path.coord.x <= x_max and y_min <= tile_path.coord.y <= y_max):
+        if not covered(tile_path.coord):
             errors.append(f"{path}: tile is outside manifest coordinate coverage")
         errors.extend(validate_tile_file(pack_root, path, manifest, layer_spec))
 

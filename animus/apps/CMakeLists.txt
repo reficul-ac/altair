@@ -1,1 +1,1 @@
-add_subdirectory(terrain_lab)
+add_subdirectory(animus)

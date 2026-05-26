@@ -6,27 +6,32 @@
 #include <string_view>
 #include <vector>
 
-namespace animus::terrain_core {
+namespace animus::terrain_core
+{
 
-enum class LayerType {
+enum class LayerType
+{
     Imagery,
     Elevation,
     Bathymetry,
     Overlay,
 };
 
-enum class RasterFormat {
+enum class RasterFormat
+{
     Float32,
     UInt8RGB,
     UInt8RGBA,
 };
 
-enum class SamplingMode {
+enum class SamplingMode
+{
     Center,
     Corner,
 };
 
-enum class TileState {
+enum class TileState
+{
     Missing,
     Queued,
     Loading,
@@ -42,7 +47,8 @@ enum class TileState {
     Retiring,
 };
 
-struct LayerSpec {
+struct LayerSpec
+{
     LayerType type = LayerType::Imagery;
     std::string source;
     std::string style;
@@ -52,7 +58,8 @@ struct LayerSpec {
     int max_zoom = 18;
 };
 
-struct Raster {
+struct Raster
+{
     int width = 0;
     int height = 0;
     int channels = 0;

@@ -2,9 +2,9 @@
 
 ## Platform
 
-Animus targets native Linux desktop development. Phase E adds the first OpenGL
-runtime executable, so local machines need working OpenGL driver access plus
-the platform development files discovered by CMake.
+Animus targets native Linux desktop development. The `apps/animus` executable
+owns the OpenGL terrain runtime, so local machines need working OpenGL driver
+access plus the platform development files discovered by CMake.
 
 On Debian/Ubuntu-style systems, useful baseline packages include `cmake`,
 `ninja-build`, `build-essential`, `pkg-config`, `libgl1-mesa-dev`, and the
@@ -16,7 +16,8 @@ OpenGL smoke runs need a display server or a virtual framebuffer. Use
 not available:
 
 ```bash
-xvfb-run -a animus/build/apps/terrain_lab/terrain_lab --smoke --frames 3
+xvfb-run -a animus/build/apps/animus/animus --smoke --frames 120 \
+  --capture-ppm /tmp/animus_smoke.ppm
 ```
 
 Nix users may need `nixGL` or an equivalent GPU wrapper when running native
@@ -80,18 +81,49 @@ OpenGL smoke tests are opt-in because they require a working graphics context:
 cmake -S animus -B animus/build -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE=animus/build/conan_toolchain.cmake \
   -DANIMUS_ENABLE_OPENGL_TESTS=ON
-ctest --test-dir animus/build -R animus_terrain_lab_opengl_smoke --output-on-failure
+ctest --test-dir animus/build -R animus_app_opengl_smoke --output-on-failure
 ```
 
-Run the first native executable directly with:
+Run the native executable directly with:
 
 ```bash
-animus/build/apps/terrain_lab/terrain_lab
-animus/build/apps/terrain_lab/terrain_lab --smoke --frames 3
+animus/build/apps/animus/animus
+animus/build/apps/animus/animus --smoke --frames 120 --capture-ppm /tmp/animus_smoke.ppm
 ```
 
-Normal mode opens a GLFW window, clears to a dark blue-green color, draws one
-triangle, and exits on Escape or window close. Smoke mode still creates a real
-OpenGL context, renders the requested frame count, prints OpenGL vendor,
-renderer, OpenGL version, GLSL version, and exits nonzero if context creation,
-GLEW initialization, shader compilation, linking, or drawing setup fails.
+Normal mode opens a GLFW window with the terrain developer console and exits on
+Escape or window close. Smoke mode still creates a real OpenGL context, renders
+the requested frame count, prints OpenGL vendor, renderer, OpenGL version, GLSL
+version, writes captures when requested, and exits nonzero if context creation,
+GLEW initialization, shader compilation, linking, streaming, upload, or drawing
+setup fails.
+
+## Screenshot Capture
+
+Use Animus' built-in framebuffer capture for repeatable smoke screenshots. The
+capture is written as binary PPM after the requested frame has been rendered and
+before the buffer swap:
+
+```bash
+xvfb-run -a animus/build/apps/animus/animus --smoke --frames 120 \
+  --capture-ppm artifacts/animus/screenshots/animus_smoke.ppm
+```
+
+For pixel-stable terrain-only comparisons, disable the developer console so
+frame-time text and cache counters do not change the image:
+
+```bash
+xvfb-run -a animus/build/apps/animus/animus --smoke --frames 120 \
+  --no-debug-overlay --capture-ppm artifacts/animus/screenshots/terrain_only.ppm
+```
+
+Validate a captured PPM without extra dependencies:
+
+```bash
+python3 -c "from pathlib import Path; p=Path('artifacts/animus/screenshots/terrain_only.ppm'); d=p.read_bytes(); h=d.split(b'\n',3); px=h[3]; print(h[0].decode(), h[1].decode(), len(set(px)), min(px), max(px))"
+```
+
+The unique-value count should be greater than one and the min/max values should
+not be identical. Store captures under ignored artifact paths such as
+`artifacts/animus/screenshots/` unless a future test promotes a small fixture
+into source control.

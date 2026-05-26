@@ -1,10 +1,12 @@
 #include "animus/terrain_core/contracts.hpp"
 
-namespace animus::terrain_core {
+namespace animus::terrain_core
+{
 
 std::string_view to_string(const LayerType type)
 {
-    switch (type) {
+    switch (type)
+    {
     case LayerType::Imagery:
         return "imagery";
     case LayerType::Elevation:
@@ -20,7 +22,8 @@ std::string_view to_string(const LayerType type)
 
 std::string_view to_string(const RasterFormat format)
 {
-    switch (format) {
+    switch (format)
+    {
     case RasterFormat::Float32:
         return "float32";
     case RasterFormat::UInt8RGB:
@@ -34,7 +37,8 @@ std::string_view to_string(const RasterFormat format)
 
 std::string_view to_string(const SamplingMode mode)
 {
-    switch (mode) {
+    switch (mode)
+    {
     case SamplingMode::Center:
         return "center";
     case SamplingMode::Corner:
@@ -46,7 +50,8 @@ std::string_view to_string(const SamplingMode mode)
 
 std::string_view to_string(const TileState state)
 {
-    switch (state) {
+    switch (state)
+    {
     case TileState::Missing:
         return "missing";
     case TileState::Queued:

@@ -1,11 +1,13 @@
 #include "animus/render_core/render_stats.hpp"
 
-namespace animus::render_core {
+namespace animus::render_core
+{
 
 void RenderStats::frame_started()
 {
     current_frame_start_ = Clock::now();
-    if (frame_count_ == 0) {
+    if (frame_count_ == 0)
+    {
         first_frame_start_ = current_frame_start_;
     }
 }
@@ -30,7 +32,8 @@ double RenderStats::last_frame_seconds() const
 
 double RenderStats::total_seconds() const
 {
-    if (frame_count_ == 0) {
+    if (frame_count_ == 0)
+    {
         return 0.0;
     }
     return std::chrono::duration<double>(last_frame_end_ - first_frame_start_).count();

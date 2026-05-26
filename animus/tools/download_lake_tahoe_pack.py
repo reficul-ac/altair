@@ -19,10 +19,10 @@ from terrain_pack import (
     TileCoord,
     add_manifest_argument,
     load_manifest,
+    manifest_tile_sets,
     required_coords,
     validate_pack,
 )
-
 
 TOOL_VERSION = "1"
 PROVENANCE_SCHEMA = "animus.lake_tahoe_pack_provenance.v1"
@@ -103,7 +103,11 @@ def build_work_items(manifest: dict[str, Any], pack_root: Path) -> list[TileWork
             imagery_url=imagery_tile_url(coord),
             imagery_output=pack_root / "imagery" / str(coord.z) / str(coord.x) / f"{coord.y}.png",
             elevation_url=elevation_export_url(coord),
-            elevation_output=pack_root / "elevation" / str(coord.z) / str(coord.x) / f"{coord.y}.png",
+            elevation_output=pack_root
+            / "elevation"
+            / str(coord.z)
+            / str(coord.x)
+            / f"{coord.y}.png",
         )
         for coord in required_coords(manifest)
     ]
@@ -115,13 +119,17 @@ def plan_json(manifest: dict[str, Any], pack_root: Path) -> dict[str, Any]:
         "schema": "animus.lake_tahoe_pack_plan.v1",
         "tool_version": TOOL_VERSION,
         "pack_root": str(pack_root),
-        "tile_range": manifest["tile_set"],
+        "tile_ranges": manifest_tile_sets(manifest),
         "imagery": [
             {"tile": item.coord.key, "url": item.imagery_url, "output": str(item.imagery_output)}
             for item in items
         ],
         "elevation": [
-            {"tile": item.coord.key, "url": item.elevation_url, "output": str(item.elevation_output)}
+            {
+                "tile": item.coord.key,
+                "url": item.elevation_url,
+                "output": str(item.elevation_output),
+            }
             for item in items
         ],
     }
@@ -137,6 +145,7 @@ def provenance_json(manifest: dict[str, Any], pack_root: Path) -> dict[str, Any]
             "schema": manifest.get("schema"),
             "name": manifest.get("name"),
             "tile_set": manifest.get("tile_set"),
+            "tile_sets": manifest.get("tile_sets"),
         },
         "sources": {
             "imagery": {
@@ -238,8 +247,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     add_manifest_argument(parser)
     parser.add_argument("--pack-root", type=Path, default=Path("animus/data/tiles/lake_tahoe"))
-    parser.add_argument("--dry-run", action="store_true", help="Print planned URLs and outputs only.")
-    parser.add_argument("--timeout", type=float, default=60.0, help="Per-request timeout in seconds.")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print planned URLs and outputs only."
+    )
+    parser.add_argument(
+        "--timeout", type=float, default=60.0, help="Per-request timeout in seconds."
+    )
     args = parser.parse_args()
 
     manifest = load_manifest(args.manifest)

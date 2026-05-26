@@ -1,7 +1,8 @@
 # Animus Terrain Data
 
 Phase D defines the offline tile-pack shape used before runtime tile loading
-exists.
+exists. Phase H extends the same local XYZ layout with optional multi-zoom
+`tile_sets` manifests for streamed terrain.
 
 ## Lake Tahoe Sample Area
 
@@ -12,6 +13,14 @@ The first sample area is a Lake Tahoe 3x3 tile patch:
 - center tile: `12/682/1563`
 - patch: `x=681..683`, `y=1562..1564`
 - manifest: `animus/data/sample_areas/lake_tahoe_phase_d.json`
+
+The Phase H streaming sample keeps that Phase D `tile_set` for compatibility
+and adds `tile_sets`:
+
+- z11 parent coverage around `x=341 y=781`, 3x3
+- z12 primary coverage around `x=682 y=1563`, 5x5
+- z13 detailed center coverage around `x=1364 y=3126`, 6x6
+- manifest: `animus/data/sample_areas/lake_tahoe_phase_h.json`
 
 Real imagery, elevation, and bathymetry tiles remain local artifacts under
 ignored paths such as `animus/data/tiles/` or `animus/data/downloaded/`.
@@ -62,6 +71,7 @@ Useful commands:
 ```bash
 python3 animus/tools/prepare_terrain_pack.py --manifest animus/data/sample_areas/lake_tahoe_phase_d.json
 python3 animus/tools/download_lake_tahoe_pack.py --dry-run
+python3 animus/tools/download_lake_tahoe_pack.py --manifest animus/data/sample_areas/lake_tahoe_phase_h.json --dry-run
 python3 animus/tools/download_lake_tahoe_pack.py
 python3 animus/tools/inspect_tile.py --pack-root animus/data/tiles/lake_tahoe imagery/12/682/1563.png
 python3 animus/tools/validate_tile_pyramid.py --pack-root animus/data/tiles/lake_tahoe --manifest animus/data/sample_areas/lake_tahoe_phase_d.json

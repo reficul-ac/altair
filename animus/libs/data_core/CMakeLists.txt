@@ -1,16 +1,7 @@
-add_library(animus_data_core
-    src/cache_key.cpp
-)
+add_library(animus_data_core src/cache_key.cpp)
 
-target_include_directories(animus_data_core
-    PUBLIC
-        include
-)
+target_include_directories(animus_data_core PUBLIC include)
 
-target_link_libraries(animus_data_core
-    PUBLIC
-        animus_geo_core
-        animus_terrain_core
-)
+target_link_libraries(animus_data_core PUBLIC animus_geo_core animus_terrain_core)
 
 animus_enable_warnings(animus_data_core)

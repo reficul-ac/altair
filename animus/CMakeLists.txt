@@ -16,6 +16,7 @@ endif()
 option(ANIMUS_ENABLE_WARNINGS "Enable compiler warnings for Animus targets" ON)
 option(ANIMUS_WARNINGS_AS_ERRORS "Treat compiler warnings as errors for Animus targets" OFF)
 option(ANIMUS_ENABLE_OPENGL_TESTS "Enable OpenGL smoke tests that require a graphics context" OFF)
+option(ANIMUS_ENABLE_GDAL "Enable GDAL-backed GeoTIFF terrain extraction" ON)
 
 function(animus_enable_warnings target)
     if(NOT ANIMUS_ENABLE_WARNINGS)

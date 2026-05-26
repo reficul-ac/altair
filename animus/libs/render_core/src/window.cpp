@@ -8,10 +8,12 @@
 #include <string>
 #include <utility>
 
-namespace animus::render_core {
-namespace {
+namespace animus::render_core
+{
+namespace
+{
 
-void glfw_error_callback(int code, const char* description)
+void glfw_error_callback(int code, const char *description)
 {
     const std::string message = description == nullptr ? "unknown GLFW error" : description;
     std::cerr << "GLFW error " << code << ": " << message << '\n';
@@ -19,14 +21,16 @@ void glfw_error_callback(int code, const char* description)
 
 } // namespace
 
-GlfwWindow::GlfwWindow(const WindowConfig& config)
+GlfwWindow::GlfwWindow(const WindowConfig &config)
 {
-    if (config.width <= 0 || config.height <= 0) {
+    if (config.width <= 0 || config.height <= 0)
+    {
         throw std::invalid_argument("Window dimensions must be positive");
     }
 
     glfwSetErrorCallback(glfw_error_callback);
-    if (glfwInit() != GLFW_TRUE) {
+    if (glfwInit() != GLFW_TRUE)
+    {
         throw std::runtime_error("glfwInit failed");
     }
     owns_glfw_ = true;
@@ -41,12 +45,9 @@ GlfwWindow::GlfwWindow(const WindowConfig& config)
 #endif
 
     window_ = glfwCreateWindow(
-        config.width,
-        config.height,
-        std::string(config.title).c_str(),
-        nullptr,
-        nullptr);
-    if (window_ == nullptr) {
+        config.width, config.height, std::string(config.title).c_str(), nullptr, nullptr);
+    if (window_ == nullptr)
+    {
         glfwTerminate();
         owns_glfw_ = false;
         throw std::runtime_error("Failed to create GLFW OpenGL window");
@@ -55,27 +56,32 @@ GlfwWindow::GlfwWindow(const WindowConfig& config)
 
 GlfwWindow::~GlfwWindow()
 {
-    if (window_ != nullptr) {
+    if (window_ != nullptr)
+    {
         glfwDestroyWindow(window_);
     }
-    if (owns_glfw_) {
+    if (owns_glfw_)
+    {
         glfwTerminate();
     }
 }
 
-GlfwWindow::GlfwWindow(GlfwWindow&& other) noexcept
+GlfwWindow::GlfwWindow(GlfwWindow &&other) noexcept
     : window_(std::exchange(other.window_, nullptr)),
       owns_glfw_(std::exchange(other.owns_glfw_, false))
 {
 }
 
-GlfwWindow& GlfwWindow::operator=(GlfwWindow&& other) noexcept
+GlfwWindow &GlfwWindow::operator=(GlfwWindow &&other) noexcept
 {
-    if (this != &other) {
-        if (window_ != nullptr) {
+    if (this != &other)
+    {
+        if (window_ != nullptr)
+        {
             glfwDestroyWindow(window_);
         }
-        if (owns_glfw_) {
+        if (owns_glfw_)
+        {
             glfwTerminate();
         }
         window_ = std::exchange(other.window_, nullptr);
@@ -130,7 +136,7 @@ int GlfwWindow::framebuffer_height() const
     return height;
 }
 
-GLFWwindow* GlfwWindow::native_handle() const
+GLFWwindow *GlfwWindow::native_handle() const
 {
     return window_;
 }
@@ -140,10 +146,10 @@ void initialize_glew()
     glewExperimental = GL_TRUE;
     const GLenum status = glewInit();
     glGetError();
-    if (status != GLEW_OK) {
-        throw std::runtime_error(
-            std::string("glewInit failed: ") +
-            reinterpret_cast<const char*>(glewGetErrorString(status)));
+    if (status != GLEW_OK)
+    {
+        throw std::runtime_error(std::string("glewInit failed: ") +
+                                 reinterpret_cast<const char *>(glewGetErrorString(status)));
     }
 }
 

@@ -6,8 +6,10 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace animus::geo_core {
-namespace {
+namespace animus::geo_core
+{
+namespace
+{
 
 constexpr double pi = 3.141592653589793238462643383279502884;
 constexpr double min_longitude_deg = -180.0;
@@ -15,14 +17,16 @@ constexpr double max_longitude_deg = 180.0;
 
 void validate_zoom(const int z)
 {
-    if (z < 0 || z > max_tile_zoom) {
+    if (z < 0 || z > max_tile_zoom)
+    {
         throw std::invalid_argument("tile zoom is outside the supported range");
     }
 }
 
 void validate_tile(const TileCoord coord)
 {
-    if (!is_valid(coord)) {
+    if (!is_valid(coord))
+    {
         throw std::invalid_argument("tile coordinate is outside the supported range");
     }
 }
@@ -39,8 +43,7 @@ double rad_to_deg(const double radians)
 
 double clamp_latitude(const double lat_deg)
 {
-    return std::clamp(
-        lat_deg, -web_mercator_max_latitude_deg, web_mercator_max_latitude_deg);
+    return std::clamp(lat_deg, -web_mercator_max_latitude_deg, web_mercator_max_latitude_deg);
 }
 
 double clamp_longitude(const double lon_deg)
@@ -75,7 +78,8 @@ std::uint64_t fnv1a_mix_int(std::uint64_t hash, const int value)
 {
     constexpr std::uint64_t fnv_prime = 1099511628211ULL;
     const auto bits = static_cast<std::uint32_t>(value);
-    for (int shift = 0; shift < 32; shift += 8) {
+    for (int shift = 0; shift < 32; shift += 8)
+    {
         hash ^= (bits >> shift) & 0xffU;
         hash *= fnv_prime;
     }
@@ -86,7 +90,8 @@ std::uint64_t fnv1a_mix_int(std::uint64_t hash, const int value)
 
 bool is_valid(const TileCoord coord)
 {
-    if (coord.z < 0 || coord.z > max_tile_zoom) {
+    if (coord.z < 0 || coord.z > max_tile_zoom)
+    {
         return false;
     }
 
@@ -121,8 +126,7 @@ GeoBounds tile_to_bounds(const TileCoord coord)
     const double west =
         (static_cast<double>(coord.x) / static_cast<double>(axis_count)) * 360.0 - 180.0;
     const double east =
-        (static_cast<double>(coord.x + 1) / static_cast<double>(axis_count)) * 360.0
-        - 180.0;
+        (static_cast<double>(coord.x + 1) / static_cast<double>(axis_count)) * 360.0 - 180.0;
 
     return GeoBounds{
         latitude_from_tile_y(static_cast<double>(coord.y + 1), axis_count),
@@ -132,8 +136,7 @@ GeoBounds tile_to_bounds(const TileCoord coord)
     };
 }
 
-Vec2 lat_lon_to_tile_uv(
-    const double lat_deg, const double lon_deg, const TileCoord coord)
+Vec2 lat_lon_to_tile_uv(const double lat_deg, const double lon_deg, const TileCoord coord)
 {
     validate_tile(coord);
 
@@ -150,7 +153,8 @@ Vec2 lat_lon_to_tile_uv(
 TileCoord parent(const TileCoord coord)
 {
     validate_tile(coord);
-    if (coord.z == 0) {
+    if (coord.z == 0)
+    {
         return coord;
     }
 
@@ -160,7 +164,8 @@ TileCoord parent(const TileCoord coord)
 std::array<TileCoord, 4> children(const TileCoord coord)
 {
     validate_tile(coord);
-    if (coord.z == max_tile_zoom) {
+    if (coord.z == max_tile_zoom)
+    {
         throw std::invalid_argument("max-zoom tile has no supported children");
     }
 

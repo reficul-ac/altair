@@ -7,10 +7,10 @@ bootstrap the repository boundary; it is not part of the Altair build.
 ## Phase Status
 
 Phase A established the independent project root, build files, documentation,
-verification entrypoint, and generated-data ignore policy. Phases B through D
-add pure model contracts, tile math, terrain data contracts, and offline tile
-tooling. Phase E adds the first native runtime app, `terrain_lab`, with a
-minimal GLFW/GLEW/OpenGL render foundation.
+verification entrypoint, and generated-data ignore policy. Phases B through I
+add pure model contracts, tile math, terrain data contracts, offline tile
+tooling, reusable terrain streaming/cache systems, and the native
+`apps/animus` developer console around that terrain runtime.
 
 ## Build And Test
 
@@ -37,10 +37,12 @@ GLEW from Conan plus the platform OpenGL library found by CMake.
 Run the native render smoke after building:
 
 ```bash
-animus/build/apps/terrain_lab/terrain_lab --smoke --frames 3
+animus/build/apps/animus/animus --smoke --frames 120 --capture-ppm /tmp/animus_phase_j.ppm
 ```
 
 Use `xvfb-run -a` before the command on headless Linux systems.
+Use `--no-debug-overlay` with `--capture-ppm` for more stable terrain-only
+screenshots.
 
 ## Repository Boundary
 

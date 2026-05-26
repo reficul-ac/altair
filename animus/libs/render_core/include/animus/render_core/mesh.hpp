@@ -5,27 +5,30 @@
 #include <span>
 #include <vector>
 
-namespace animus::render_core {
+namespace animus::render_core
+{
 
-class TriangleMesh {
-public:
+class TriangleMesh
+{
+  public:
     TriangleMesh();
     ~TriangleMesh();
 
-    TriangleMesh(const TriangleMesh&) = delete;
-    TriangleMesh& operator=(const TriangleMesh&) = delete;
-    TriangleMesh(TriangleMesh&& other) noexcept;
-    TriangleMesh& operator=(TriangleMesh&& other) noexcept;
+    TriangleMesh(const TriangleMesh &) = delete;
+    TriangleMesh &operator=(const TriangleMesh &) = delete;
+    TriangleMesh(TriangleMesh &&other) noexcept;
+    TriangleMesh &operator=(TriangleMesh &&other) noexcept;
 
     void draw() const;
 
-private:
+  private:
     unsigned int vao_ = 0;
     unsigned int vbo_ = 0;
     int vertex_count_ = 0;
 };
 
-struct TerrainVertex {
+struct TerrainVertex
+{
     float x = 0.0F;
     float y = 0.0F;
     float z = 0.0F;
@@ -33,20 +36,21 @@ struct TerrainVertex {
     float v = 0.0F;
 };
 
-class IndexedMesh {
-public:
+class IndexedMesh
+{
+  public:
     IndexedMesh(std::span<const TerrainVertex> vertices, std::span<const std::uint32_t> indices);
     ~IndexedMesh();
 
-    IndexedMesh(const IndexedMesh&) = delete;
-    IndexedMesh& operator=(const IndexedMesh&) = delete;
-    IndexedMesh(IndexedMesh&& other) noexcept;
-    IndexedMesh& operator=(IndexedMesh&& other) noexcept;
+    IndexedMesh(const IndexedMesh &) = delete;
+    IndexedMesh &operator=(const IndexedMesh &) = delete;
+    IndexedMesh(IndexedMesh &&other) noexcept;
+    IndexedMesh &operator=(IndexedMesh &&other) noexcept;
 
     void draw() const;
     [[nodiscard]] std::size_t index_count() const;
 
-private:
+  private:
     unsigned int vao_ = 0;
     unsigned int vbo_ = 0;
     unsigned int ebo_ = 0;
