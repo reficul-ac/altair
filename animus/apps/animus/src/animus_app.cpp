@@ -9,6 +9,9 @@
 #include "animus/render_core/texture.hpp"
 #include "animus/render_core/window.hpp"
 #include "animus/telemetry_core/telemetry.hpp"
+#include "animus/telemetry_live/live_telemetry_buffer.hpp"
+#include "animus/telemetry_live/trail_decimation.hpp"
+#include "animus/telemetry_live/udp_mavlink_receiver.hpp"
 #include "animus/terrain_core/datum.hpp"
 #include "animus/terrain_core/terrain_data.hpp"
 #include "animus/terrain_core/terrain_stream.hpp"
@@ -19,11 +22,13 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -669,10 +674,22 @@ struct TelemetryPlaybackState
     animus::telemetry_core::Timeline timeline;
     animus::telemetry_core::PlaybackClock clock;
     bool loaded = false;
+    bool live = false;
     bool terrain_height_unavailable = false;
     bool unknown_datum_relative_fallback = false;
     bool geoid_correction_unavailable = false;
     animus::telemetry_core::EntityId selected_entity;
+    std::string live_endpoint;
+    animus::telemetry_live::UdpMavlinkReceiverStats receiver_stats;
+    animus::telemetry_live::LiveTelemetryBufferStats live_stats;
+    double live_snapshot_elapsed_s = 0.0;
+    double live_ingest_ms = 0.0;
+    double live_prune_finalize_ms = 0.0;
+    double live_snapshot_copy_ms = 0.0;
+    double live_overlay_draw_ms = 0.0;
+    std::size_t live_rendered_trail_points = 0;
+    std::size_t live_frame_batch_messages = 0;
+    std::size_t live_frame_batch_samples = 0;
 };
 
 struct ProjectedPoint
@@ -680,6 +697,50 @@ struct ProjectedPoint
     bool visible = false;
     ImVec2 screen;
 };
+
+struct TelemetryOverlayDrawStats
+{
+    double draw_ms = 0.0;
+    std::size_t rendered_trail_points = 0;
+};
+
+struct LiveDebugCsv
+{
+    std::ofstream output;
+
+    explicit LiveDebugCsv(const std::filesystem::path &path)
+    {
+        if (path.empty())
+        {
+            return;
+        }
+        if (!path.parent_path().empty())
+        {
+            std::filesystem::create_directories(path.parent_path());
+        }
+        output.open(path);
+        if (!output)
+        {
+            throw std::runtime_error("failed to open live telemetry debug CSV: " + path.string());
+        }
+        output << "frame,wall_time_s,drained_datagrams,receiver_queue_before_drain,"
+                  "receiver_dropped_datagrams,ingest_ms,prune_finalize_ms,snapshot_copy_ms,"
+                  "overlay_draw_ms,retained_samples,rendered_trail_points,current_sample_time_s,"
+                  "timeline_end_time_s,last_packet_age_s,receiver_queue_high_water,parsed_messages,"
+                  "batch_messages,batch_samples\n";
+    }
+
+    [[nodiscard]] bool enabled() const
+    {
+        return output.is_open();
+    }
+};
+
+double steady_time_s()
+{
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
 
 std::optional<float>
 sample_resident_terrain_height_m(const Options &options,
@@ -834,26 +895,29 @@ project_to_screen(const Mat4 &mvp, const Vec3 world, const int width, const int 
                    (0.5F - ndc_y * 0.5F) * static_cast<float>(height))};
 }
 
-void draw_telemetry_overlay(const Options &options,
-                            const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
-                            const animus::terrain_core::GeoidCorrectionGrid &geoid_grid,
-                            TelemetryPlaybackState &playback,
-                            const Camera &camera,
-                            const int framebuffer_width,
-                            const int framebuffer_height)
+TelemetryOverlayDrawStats
+draw_telemetry_overlay(const Options &options,
+                       const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                       const animus::terrain_core::GeoidCorrectionGrid &geoid_grid,
+                       TelemetryPlaybackState &playback,
+                       const Camera &camera,
+                       const int framebuffer_width,
+                       const int framebuffer_height)
 {
+    const double draw_start_s = steady_time_s();
+    TelemetryOverlayDrawStats stats;
     playback.terrain_height_unavailable = false;
     playback.unknown_datum_relative_fallback = false;
     playback.geoid_correction_unavailable = false;
     if (!playback.loaded || playback.timeline.entities.empty())
     {
-        return;
+        return stats;
     }
     const auto current =
         playback.timeline.sample_at(playback.selected_entity, playback.clock.time_s());
     if (!current)
     {
-        return;
+        return stats;
     }
 
     ImDrawList *draw = ImGui::GetBackgroundDrawList();
@@ -861,9 +925,15 @@ void draw_telemetry_overlay(const Options &options,
     const auto *track = playback.timeline.track_for(playback.selected_entity);
     if (track != nullptr && track->samples.size() >= 2U)
     {
+        const std::size_t max_points =
+            playback.live ? options.telemetry_live_render_max_points : track->samples.size();
+        const std::vector<std::size_t> trail_indices =
+            animus::telemetry_live::decimated_trail_indices(track->samples.size(), max_points);
+        stats.rendered_trail_points = trail_indices.size();
         std::optional<ImVec2> previous;
-        for (const auto &sample : track->samples)
+        for (const std::size_t sample_index : trail_indices)
         {
+            const auto &sample = track->samples[sample_index];
             bool unavailable = false;
             bool unknown_datum = false;
             const Vec3 world = telemetry_world_position(options,
@@ -883,35 +953,39 @@ void draw_telemetry_overlay(const Options &options,
         }
     }
 
-    for (const auto &event : playback.timeline.events)
+    if (!playback.live)
     {
-        if (event.time_s > playback.clock.time_s())
+        for (const auto &event : playback.timeline.events)
         {
-            break;
-        }
-        const auto event_sample = playback.timeline.sample_at(event.entity_id, event.time_s);
-        if (!event_sample)
-        {
-            continue;
-        }
-        bool unavailable = false;
-        bool unknown_datum = false;
-        const Vec3 event_world = telemetry_world_position(options,
-                                                          tiles,
-                                                          geoid_grid,
-                                                          *event_sample,
-                                                          unavailable,
-                                                          unknown_datum,
-                                                          playback.geoid_correction_unavailable);
-        const ProjectedPoint event_point =
-            project_to_screen(mvp, event_world, framebuffer_width, framebuffer_height);
-        if (event_point.visible)
-        {
-            draw->AddTriangleFilled(
-                ImVec2(event_point.screen.x, event_point.screen.y - 10.0F),
-                ImVec2(event_point.screen.x - 6.0F, event_point.screen.y + 2.0F),
-                ImVec2(event_point.screen.x + 6.0F, event_point.screen.y + 2.0F),
-                IM_COL32(96, 220, 255, 235));
+            if (event.time_s > playback.clock.time_s())
+            {
+                break;
+            }
+            const auto event_sample = playback.timeline.sample_at(event.entity_id, event.time_s);
+            if (!event_sample)
+            {
+                continue;
+            }
+            bool unavailable = false;
+            bool unknown_datum = false;
+            const Vec3 event_world =
+                telemetry_world_position(options,
+                                         tiles,
+                                         geoid_grid,
+                                         *event_sample,
+                                         unavailable,
+                                         unknown_datum,
+                                         playback.geoid_correction_unavailable);
+            const ProjectedPoint event_point =
+                project_to_screen(mvp, event_world, framebuffer_width, framebuffer_height);
+            if (event_point.visible)
+            {
+                draw->AddTriangleFilled(
+                    ImVec2(event_point.screen.x, event_point.screen.y - 10.0F),
+                    ImVec2(event_point.screen.x - 6.0F, event_point.screen.y + 2.0F),
+                    ImVec2(event_point.screen.x + 6.0F, event_point.screen.y + 2.0F),
+                    IM_COL32(96, 220, 255, 235));
+            }
         }
     }
 
@@ -929,6 +1003,8 @@ void draw_telemetry_overlay(const Options &options,
         draw->AddCircleFilled(point.screen, 7.0F, IM_COL32(255, 80, 64, 255), 18);
         draw->AddCircle(point.screen, 11.0F, IM_COL32(255, 255, 255, 230), 18, 2.0F);
     }
+    stats.draw_ms = (steady_time_s() - draw_start_s) * 1000.0;
+    return stats;
 }
 
 void render_frame(const animus::render_core::GlfwWindow &window,
@@ -1272,8 +1348,48 @@ void draw_developer_workspace(
 
         if (playback.loaded && ImGui::BeginTabItem("Telemetry"))
         {
-            ImGui::Text("file");
-            ImGui::TextWrapped("%s", options.telemetry_tlog.string().c_str());
+            if (playback.live)
+            {
+                ImGui::Text("source Live UDP");
+                ImGui::Text("bind endpoint");
+                ImGui::TextWrapped("%s", playback.live_endpoint.c_str());
+                ImGui::Text("state %s",
+                            playback.receiver_stats.connected
+                                ? (playback.receiver_stats.stale ? "stale" : "connected")
+                                : "waiting");
+                ImGui::Text("datagrams %llu bytes %llu age %.3f s",
+                            static_cast<unsigned long long>(playback.receiver_stats.datagrams),
+                            static_cast<unsigned long long>(playback.receiver_stats.bytes),
+                            playback.receiver_stats.last_packet_age_s);
+                ImGui::Text("queue %zu high %zu drained %zu before %zu",
+                            playback.receiver_stats.queued_datagrams,
+                            playback.receiver_stats.queue_high_water,
+                            playback.receiver_stats.last_drain_datagrams,
+                            playback.receiver_stats.last_drain_queue_before);
+                ImGui::Text(
+                    "dropped datagrams %llu samples %llu",
+                    static_cast<unsigned long long>(playback.receiver_stats.dropped_datagrams),
+                    static_cast<unsigned long long>(playback.live_stats.dropped_samples));
+                ImGui::Text("batch datagrams %zu messages %zu samples %zu",
+                            playback.receiver_stats.last_drain_datagrams,
+                            playback.live_frame_batch_messages,
+                            playback.live_frame_batch_samples);
+                ImGui::Text("live ms ingest %.3f prune/finalize %.3f copy %.3f overlay %.3f",
+                            playback.live_ingest_ms,
+                            playback.live_prune_finalize_ms,
+                            playback.live_snapshot_copy_ms,
+                            playback.live_overlay_draw_ms);
+                ImGui::Text("retained %zu rendered trail %zu",
+                            playback.live_stats.retained_samples,
+                            playback.live_rendered_trail_points);
+            }
+            else
+            {
+                ImGui::Text("format %s",
+                            animus::telemetry_core::to_string(playback.timeline.source_format));
+                ImGui::Text("file");
+                ImGui::TextWrapped("%s", options.telemetry.string().c_str());
+            }
             ImGui::Text("entities %zu samples %zu events %zu",
                         playback.timeline.entities.size(),
                         playback.timeline.samples.size(),
@@ -1288,6 +1404,15 @@ void draw_developer_workspace(
                         static_cast<unsigned long long>(diag.signed_v2_frames),
                         static_cast<unsigned long long>(diag.unsupported_versions),
                         static_cast<unsigned long long>(diag.malformed_frames));
+            ImGui::Text("schema %llu channels %llu layouts %llu decoded-fail %llu",
+                        static_cast<unsigned long long>(diag.schema_mismatches),
+                        static_cast<unsigned long long>(diag.unsupported_channels),
+                        static_cast<unsigned long long>(diag.unsupported_layouts),
+                        static_cast<unsigned long long>(diag.decode_failures));
+            ImGui::Text("skipped %llu non-monotonic %llu missing-required %llu",
+                        static_cast<unsigned long long>(diag.skipped_records),
+                        static_cast<unsigned long long>(diag.non_monotonic_timestamps),
+                        static_cast<unsigned long long>(diag.missing_required_fields));
             ImGui::Text("terrain height %s",
                         playback.terrain_height_unavailable ? "unavailable for some samples"
                                                             : "available");
@@ -1438,9 +1563,10 @@ int run(const Options &options)
     const std::filesystem::path pack_root = resolve_pack_root(options.pack_root);
     const animus::terrain_core::GeoidCorrectionGrid geoid_grid(options.geoid_grid);
     TelemetryPlaybackState telemetry;
-    if (!options.telemetry_tlog.empty())
+    if (!options.telemetry.empty())
     {
-        telemetry.timeline = animus::telemetry_core::load_tlog(options.telemetry_tlog);
+        telemetry.timeline =
+            animus::telemetry_core::load_telemetry(options.telemetry, options.telemetry_format);
         telemetry.loaded = true;
         telemetry.clock.set_range(telemetry.timeline.start_time_s, telemetry.timeline.end_time_s);
         telemetry.clock.set_rate(options.playback_rate);
@@ -1449,9 +1575,32 @@ int run(const Options &options)
         {
             telemetry.selected_entity = telemetry.timeline.entities.front().id;
         }
-        std::cout << "Loaded telemetry tlog: " << options.telemetry_tlog << " entities "
-                  << telemetry.timeline.entities.size() << " samples "
-                  << telemetry.timeline.samples.size() << '\n';
+        std::cout << "Loaded telemetry "
+                  << animus::telemetry_core::to_string(telemetry.timeline.source_format) << ": "
+                  << options.telemetry << " entities " << telemetry.timeline.entities.size()
+                  << " samples " << telemetry.timeline.samples.size() << " events "
+                  << telemetry.timeline.events.size() << " skipped "
+                  << telemetry.timeline.diagnostics.skipped_records << '\n';
+    }
+    std::unique_ptr<animus::telemetry_live::UdpMavlinkReceiver> live_receiver;
+    std::unique_ptr<animus::telemetry_live::LiveTelemetryBuffer> live_buffer;
+    if (options.telemetry_live_udp_enabled)
+    {
+        animus::telemetry_live::UdpMavlinkReceiverConfig receiver_config;
+        receiver_config.bind_host = options.telemetry_live_udp_host;
+        receiver_config.bind_port = options.telemetry_live_udp_port;
+        live_receiver =
+            std::make_unique<animus::telemetry_live::UdpMavlinkReceiver>(receiver_config);
+        live_receiver->start();
+        animus::telemetry_live::LiveTelemetryBufferConfig buffer_config;
+        buffer_config.history_seconds = options.telemetry_live_buffer_s;
+        buffer_config.max_samples = options.telemetry_live_max_samples;
+        live_buffer = std::make_unique<animus::telemetry_live::LiveTelemetryBuffer>(buffer_config);
+        telemetry.loaded = true;
+        telemetry.live = true;
+        telemetry.clock.set_paused(true);
+        telemetry.live_endpoint = live_receiver->local_endpoint();
+        std::cout << "Listening for live MAVLink UDP on " << telemetry.live_endpoint << '\n';
     }
 
     animus::render_core::GlfwWindow window({
@@ -1522,6 +1671,8 @@ int run(const Options &options)
                   mp4_recorder.mp4_path.size(),
                   "%s",
                   "artifacts/animus/videos/manual_recording.mp4");
+    LiveDebugCsv live_debug_csv(options.telemetry_live_debug_csv);
+    const double live_debug_start_s = steady_time_s();
 
     while (!window.should_close())
     {
@@ -1540,6 +1691,57 @@ int run(const Options &options)
         if (debug_layer != nullptr)
         {
             debug_layer->begin_frame();
+        }
+        if (live_receiver && live_buffer)
+        {
+            const auto datagrams = live_receiver->drain();
+            std::size_t batch_samples = 0U;
+            telemetry.live_ingest_ms = 0.0;
+            telemetry.live_prune_finalize_ms = 0.0;
+            telemetry.live_snapshot_copy_ms = 0.0;
+            telemetry.live_frame_batch_messages = 0U;
+            telemetry.live_frame_batch_samples = 0U;
+            if (!datagrams.empty())
+            {
+                live_buffer->ingest(datagrams);
+                batch_samples = live_buffer->stats().last_batch_samples;
+            }
+            telemetry.receiver_stats = live_receiver->stats();
+            telemetry.live_stats = live_buffer->stats();
+            if (!datagrams.empty())
+            {
+                telemetry.live_ingest_ms = telemetry.live_stats.last_batch_ingest_ms;
+                telemetry.live_prune_finalize_ms =
+                    telemetry.live_stats.last_batch_prune_finalize_ms;
+                telemetry.live_frame_batch_messages = telemetry.live_stats.last_batch_messages;
+                telemetry.live_frame_batch_samples = telemetry.live_stats.last_batch_samples;
+            }
+            telemetry.live_snapshot_elapsed_s += stats.last_frame_seconds();
+            const bool should_snapshot =
+                batch_samples > 0U &&
+                (telemetry.timeline.samples.empty() || telemetry.live_snapshot_elapsed_s >= 0.05);
+            if (should_snapshot)
+            {
+                telemetry.live_snapshot_elapsed_s = 0.0;
+                const double snapshot_start_s = steady_time_s();
+                telemetry.timeline = live_buffer->timeline();
+                telemetry.live_snapshot_copy_ms = (steady_time_s() - snapshot_start_s) * 1000.0;
+                telemetry.clock.set_range(telemetry.timeline.start_time_s,
+                                          telemetry.timeline.end_time_s);
+                telemetry.clock.seek(telemetry.timeline.end_time_s);
+                if (!telemetry.timeline.entities.empty())
+                {
+                    const bool selected_present =
+                        std::any_of(telemetry.timeline.entities.begin(),
+                                    telemetry.timeline.entities.end(),
+                                    [&telemetry](const animus::telemetry_core::Entity &entity)
+                                    { return entity.id == telemetry.selected_entity; });
+                    if (!selected_present)
+                    {
+                        telemetry.selected_entity = telemetry.timeline.entities.front().id;
+                    }
+                }
+            }
         }
         telemetry.clock.advance(stats.last_frame_seconds());
         const bool camera_mouse_enabled =
@@ -1619,13 +1821,16 @@ int run(const Options &options)
                      debug_layer != nullptr && highlight_fallback);
         if (debug_layer != nullptr)
         {
-            draw_telemetry_overlay(options,
-                                   tiles,
-                                   geoid_grid,
-                                   telemetry,
-                                   input.camera,
-                                   window.framebuffer_width(),
-                                   window.framebuffer_height());
+            const TelemetryOverlayDrawStats overlay_stats =
+                draw_telemetry_overlay(options,
+                                       tiles,
+                                       geoid_grid,
+                                       telemetry,
+                                       input.camera,
+                                       window.framebuffer_width(),
+                                       window.framebuffer_height());
+            telemetry.live_overlay_draw_ms = overlay_stats.draw_ms;
+            telemetry.live_rendered_trail_points = overlay_stats.rendered_trail_points;
             draw_developer_workspace(options,
                                      pack_root,
                                      info,
@@ -1646,6 +1851,29 @@ int run(const Options &options)
                                      overlay_enabled,
                                      overlay_opacity);
             debug_layer->end_frame();
+        }
+        if (live_debug_csv.enabled() && telemetry.live)
+        {
+            const auto current =
+                telemetry.timeline.sample_at(telemetry.selected_entity, telemetry.clock.time_s());
+            live_debug_csv.output << stats.frame_count() << ','
+                                  << (steady_time_s() - live_debug_start_s) << ','
+                                  << telemetry.receiver_stats.last_drain_datagrams << ','
+                                  << telemetry.receiver_stats.last_drain_queue_before << ','
+                                  << telemetry.receiver_stats.dropped_datagrams << ','
+                                  << telemetry.live_ingest_ms << ','
+                                  << telemetry.live_prune_finalize_ms << ','
+                                  << telemetry.live_snapshot_copy_ms << ','
+                                  << telemetry.live_overlay_draw_ms << ','
+                                  << telemetry.live_stats.retained_samples << ','
+                                  << telemetry.live_rendered_trail_points << ','
+                                  << (current ? current->time_s : 0.0) << ','
+                                  << telemetry.timeline.end_time_s << ','
+                                  << telemetry.receiver_stats.last_packet_age_s << ','
+                                  << telemetry.receiver_stats.queue_high_water << ','
+                                  << telemetry.live_stats.parsed_messages << ','
+                                  << telemetry.live_frame_batch_messages << ','
+                                  << telemetry.live_frame_batch_samples << '\n';
         }
         if (screenshot_tool.pending_png)
         {

@@ -81,6 +81,20 @@ Detailed architecture and phase checklist:
   once telemetry overlays, tracks, and events exist.
 - [x] During Phase L, add PNG or export-friendly screenshot formats if captures
   become review artifacts; keep PPM for deterministic smoke checks.
+- [x] Phase M: add structured offline telemetry imports for canonical
+  `animus.telemetry.v1` Protobuf carried in MCAP and canonical HDF5/HighFive
+  sample tables, keeping live UDP deferred to the next phase.
+- [x] Phase N: add direct live MAVLink UDP telemetry ingest with Asio-scoped
+  `telemetry_live`, shared MAVLink reduction, bounded live buffers, app CLI/UI
+  support, deterministic live UDP smoke coverage, and Debug/Release verification.
+- [x] Add Animus live MAVLink lag diagnostics, batch-oriented live reduction,
+  capped live trail rendering, and frame-limited live smoke artifacts.
+- [ ] Run the full 120 s real-display Animus live MAVLink capture with external
+  `ffmpeg x11grab` motion analysis to confirm no repeated marker freezes over
+  0.5 s during realtime `cruise6dof` SITL streaming.
+- [ ] Add telemetry overlay controls for selecting which event types are allowed
+  to render on the trajectory; keep dense live MAVLink packet events hidden by
+  default.
 
 ## Vehicle And SITL
 

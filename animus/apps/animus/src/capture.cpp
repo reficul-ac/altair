@@ -137,16 +137,15 @@ void encode_mp4_from_png_sequence(const std::filesystem::path &sequence_dir,
     }
     if (!std::filesystem::exists(sequence_dir / "frame_000000.png"))
     {
-        throw std::runtime_error("MP4 export has no recorded PNG frames: " +
-                                 sequence_dir.string());
+        throw std::runtime_error("MP4 export has no recorded PNG frames: " + sequence_dir.string());
     }
 
     ensure_parent_directory(output_path);
     const std::filesystem::path input_pattern = sequence_dir / "frame_%06d.png";
-    const std::string command =
-        "ffmpeg -y -hide_banner -loglevel error -framerate " + std::to_string(fps) + " -i " +
-        shell_quote(input_pattern) + " -c:v libx264 -pix_fmt yuv420p -crf 18 " +
-        shell_quote(output_path);
+    const std::string command = "ffmpeg -y -hide_banner -loglevel error -framerate " +
+                                std::to_string(fps) + " -i " + shell_quote(input_pattern) +
+                                " -c:v libx264 -pix_fmt yuv420p -crf 18 " +
+                                shell_quote(output_path);
     const int result = std::system(command.c_str());
     if (result != 0)
     {
@@ -154,8 +153,7 @@ void encode_mp4_from_png_sequence(const std::filesystem::path &sequence_dir,
     }
     if (!std::filesystem::exists(output_path) || std::filesystem::file_size(output_path) == 0U)
     {
-        throw std::runtime_error("ffmpeg MP4 export wrote an empty file: " +
-                                 output_path.string());
+        throw std::runtime_error("ffmpeg MP4 export wrote an empty file: " + output_path.string());
     }
 }
 

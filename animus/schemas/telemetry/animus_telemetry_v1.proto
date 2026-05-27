@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package animus.telemetry.v1;
+
+message SourceFields {
+  bool position = 1;
+  bool altitude_msl = 2;
+  bool altitude_relative = 3;
+  bool attitude = 4;
+  bool velocity = 5;
+  bool heading = 6;
+}
+
+enum AltitudeDatum {
+  ALTITUDE_DATUM_UNKNOWN = 0;
+  ALTITUDE_DATUM_MSL_ORTHOMETRIC = 1;
+  ALTITUDE_DATUM_ELLIPSOID = 2;
+  ALTITUDE_DATUM_TERRAIN_RELATIVE = 3;
+}
+
+message TelemetrySample {
+  double timestamp_s = 1;
+  uint32 system_id = 2;
+  uint32 component_id = 3;
+  double lat_deg = 4;
+  double lon_deg = 5;
+  double altitude_msl_m = 6;
+  double altitude_relative_m = 7;
+  double roll_rad = 8;
+  double pitch_rad = 9;
+  double yaw_rad = 10;
+  double ground_speed_mps = 11;
+  double climb_rate_mps = 12;
+  double heading_deg = 13;
+  AltitudeDatum altitude_datum = 14;
+  SourceFields fields = 15;
+  bool timestamp_valid = 16;
+}

@@ -11,7 +11,7 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 RECOMMENDATION_ARTIFACT_DIR = pathlib.Path("artifacts/agent-verification/<timestamp>")
-CHECK_ORDER = ("format", "cmake", "release", "sitl_plots", "mc")
+CHECK_ORDER = ("format", "cmake", "release", "sitl_plots", "sitl_live", "mc")
 
 
 def parse_args():
@@ -28,6 +28,11 @@ def parse_args():
         help="configure, build, and test Release tree with warnings as errors",
     )
     parser.add_argument("--sitl-plots", action="store_true", help="run cruise6dof SITL and plots")
+    parser.add_argument(
+        "--sitl-live",
+        action="store_true",
+        help="run cruise6dof SITL MAVLink into Animus direct live UDP capture",
+    )
     parser.add_argument("--mc", action="store_true", help="run Monte Carlo smoke summary")
     parser.add_argument("--all", action="store_true", help="run every verification check")
     parser.add_argument(
@@ -156,6 +161,11 @@ def select_verification_for_paths(paths):
                     reasons,
                     "sitl_plots",
                     "SITL/simulation behavior may affect generated CSVs or plots",
+                )
+                add_reason(
+                    reasons,
+                    "sitl_live",
+                    "MAVLink or telemetry changes may affect live Animus UDP ingestion",
                 )
             if is_mc_path(path):
                 add_reason(reasons, "cmake", "Monte Carlo runner or guardrail path changed")
@@ -300,6 +310,25 @@ def selected_checks_for_flags(flags, artifact_dir=RECOMMENDATION_ARTIFACT_DIR):
             ],
             [csv_path, plots_dir],
         )
+    if "all" in requested or "sitl_live" in requested:
+        live_dir = artifact_dir / "animus_sitl_live"
+        add_check(
+            checks,
+            "sitl_live",
+            [
+                [
+                    sys.executable,
+                    "tools/python/run_animus_sitl_live_smoke.py",
+                    "--animus-build-dir",
+                    "animus/build",
+                    "--vehicle-build-dir",
+                    "build",
+                    "--output-dir",
+                    live_dir,
+                ]
+            ],
+            [live_dir],
+        )
     if "all" in requested or "mc" in requested:
         mc_csv = artifact_dir / "mc_summary.csv"
         add_check(
@@ -326,7 +355,11 @@ def selected_checks_for_flags(flags, artifact_dir=RECOMMENDATION_ARTIFACT_DIR):
 def selected_checks(args, artifact_dir):
     flags = []
     for flag in CHECK_ORDER:
-        attr = "sitl_plots" if flag == "sitl_plots" else flag
+        attr = flag
+        if flag == "sitl_plots":
+            attr = "sitl_plots"
+        elif flag == "sitl_live":
+            attr = "sitl_live"
         if getattr(args, attr, False):
             flags.append(flag)
     if args.all:
@@ -358,7 +391,15 @@ def write_manifest(manifest_path, manifest):
 
 
 def has_execution_flag(args):
-    return args.all or args.format or args.cmake or args.release or args.sitl_plots or args.mc
+    return (
+        args.all
+        or args.format
+        or args.cmake
+        or args.release
+        or args.sitl_plots
+        or args.sitl_live
+        or args.mc
+    )
 
 
 def print_recommendations(changed_files, recommendations):

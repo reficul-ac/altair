@@ -35,12 +35,11 @@ class GeoidCorrectionGrid
     std::filesystem::path grid_path_;
 };
 
-[[nodiscard]] std::optional<double>
-height_above_terrain_m(AltitudeReference reference,
-                       double altitude_m,
-                       double terrain_orthometric_m,
-                       double lat_deg,
-                       double lon_deg,
-                       const GeoidCorrectionGrid &grid);
+[[nodiscard]] std::optional<double> height_above_terrain_m(AltitudeReference reference,
+                                                           double altitude_m,
+                                                           double terrain_orthometric_m,
+                                                           double lat_deg,
+                                                           double lon_deg,
+                                                           const GeoidCorrectionGrid &grid);
 
 } // namespace animus::terrain_core

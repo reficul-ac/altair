@@ -53,9 +53,8 @@ const std::filesystem::path &GeoidCorrectionGrid::path() const
     return grid_path_;
 }
 
-DatumCorrection
-GeoidCorrectionGrid::ellipsoid_to_orthometric_offset(const double lat_deg,
-                                                     const double lon_deg) const
+DatumCorrection GeoidCorrectionGrid::ellipsoid_to_orthometric_offset(const double lat_deg,
+                                                                     const double lon_deg) const
 {
     if (grid_path_.empty())
     {
@@ -73,8 +72,7 @@ GeoidCorrectionGrid::ellipsoid_to_orthometric_offset(const double lat_deg,
         throw std::runtime_error("Failed to create PROJ context");
     }
     const std::string pipeline_definition =
-        "+proj=pipeline +step +proj=vgridshift +grids=" + grid_path_.string() +
-        " +multiplier=1";
+        "+proj=pipeline +step +proj=vgridshift +grids=" + grid_path_.string() + " +multiplier=1";
     ProjPipeline pipeline(proj_create(context.get(), pipeline_definition.c_str()));
     if (!pipeline)
     {
@@ -96,13 +94,12 @@ GeoidCorrectionGrid::ellipsoid_to_orthometric_offset(const double lat_deg,
 #endif
 }
 
-std::optional<double>
-height_above_terrain_m(const AltitudeReference reference,
-                       const double altitude_m,
-                       const double terrain_orthometric_m,
-                       const double lat_deg,
-                       const double lon_deg,
-                       const GeoidCorrectionGrid &grid)
+std::optional<double> height_above_terrain_m(const AltitudeReference reference,
+                                             const double altitude_m,
+                                             const double terrain_orthometric_m,
+                                             const double lat_deg,
+                                             const double lon_deg,
+                                             const GeoidCorrectionGrid &grid)
 {
     if (!std::isfinite(altitude_m) || !std::isfinite(terrain_orthometric_m))
     {
@@ -115,8 +112,7 @@ height_above_terrain_m(const AltitudeReference reference,
         return altitude_m - terrain_orthometric_m;
     case AltitudeReference::Ellipsoid:
     {
-        const DatumCorrection correction =
-            grid.ellipsoid_to_orthometric_offset(lat_deg, lon_deg);
+        const DatumCorrection correction = grid.ellipsoid_to_orthometric_offset(lat_deg, lon_deg);
         if (!correction.available)
         {
             return std::nullopt;

@@ -43,7 +43,11 @@ class AnimusRecipe(ConanFile):
         self.requires("sqlite3/3.50.4")
         self.requires("libcurl/8.16.0")
         self.requires("libjpeg-turbo/3.1.2")
+        self.requires("asio/1.36.0")
         self.requires("gdal/3.12.1")
+        self.requires("protobuf/7.35.0")
+        self.requires("hdf5/1.14.6", override=True)
+        self.requires("highfive/3.1.1")
         if self.options.with_export_ffmpeg:
             self.requires("ffmpeg/8.1.1")
 

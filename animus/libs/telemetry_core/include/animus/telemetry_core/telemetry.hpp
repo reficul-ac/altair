@@ -18,6 +18,13 @@ enum class AltitudeDatum
     TerrainRelative,
 };
 
+enum class TelemetryImportFormat
+{
+    Tlog,
+    McapProtobuf,
+    Hdf5Animus,
+};
+
 struct EntityId
 {
     std::uint8_t system_id = 0;
@@ -91,6 +98,13 @@ struct ParserDiagnostics
     std::uint64_t signed_v2_frames = 0;
     std::uint64_t unsupported_versions = 0;
     std::uint64_t malformed_frames = 0;
+    std::uint64_t schema_mismatches = 0;
+    std::uint64_t unsupported_channels = 0;
+    std::uint64_t unsupported_layouts = 0;
+    std::uint64_t decode_failures = 0;
+    std::uint64_t skipped_records = 0;
+    std::uint64_t non_monotonic_timestamps = 0;
+    std::uint64_t missing_required_fields = 0;
 };
 
 struct Timeline
@@ -100,6 +114,7 @@ struct Timeline
     std::vector<Track> tracks;
     std::vector<Event> events;
     ParserDiagnostics diagnostics;
+    TelemetryImportFormat source_format = TelemetryImportFormat::Tlog;
     double start_time_s = 0.0;
     double end_time_s = 0.0;
 
@@ -135,5 +150,10 @@ class PlaybackClock
 
 [[nodiscard]] Timeline load_tlog(const std::filesystem::path &path);
 [[nodiscard]] Timeline load_tlog_bytes(const std::vector<std::uint8_t> &bytes);
+[[nodiscard]] Timeline load_mcap_protobuf(const std::filesystem::path &path);
+[[nodiscard]] Timeline load_hdf5(const std::filesystem::path &path);
+[[nodiscard]] Timeline load_telemetry(const std::filesystem::path &path,
+                                      TelemetryImportFormat format);
+[[nodiscard]] const char *to_string(TelemetryImportFormat format);
 
 } // namespace animus::telemetry_core

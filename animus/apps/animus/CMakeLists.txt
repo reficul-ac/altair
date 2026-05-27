@@ -8,6 +8,7 @@ target_link_libraries(
             animus_render_core
             animus_terrain_core
             animus_telemetry_core
+            animus_telemetry_live
             PNG::PNG
 )
 

@@ -73,6 +73,41 @@ std::size_t parse_positive_size(std::string_view name, std::string_view value)
     return parsed;
 }
 
+std::uint16_t parse_udp_port(std::string_view name, std::string_view value)
+{
+    const int parsed = parse_positive_int(name, value);
+    if (parsed > 65535)
+    {
+        throw std::invalid_argument(std::string("Expected UDP port 1..65535 for ") +
+                                    std::string(name));
+    }
+    return static_cast<std::uint16_t>(parsed);
+}
+
+double parse_positive_double(std::string_view name, std::string_view value)
+{
+    std::size_t consumed = 0;
+    const double parsed = std::stod(std::string(value), &consumed);
+    if (consumed != value.size() || parsed <= 0.0)
+    {
+        throw std::invalid_argument(std::string("Expected positive number for ") +
+                                    std::string(name));
+    }
+    return parsed;
+}
+
+void parse_host_port(std::string_view option, std::string_view value, Options &options)
+{
+    const std::size_t colon = value.rfind(':');
+    if (colon == std::string_view::npos || colon == 0U || colon + 1U >= value.size())
+    {
+        throw std::invalid_argument(std::string(option) + " must be HOST:PORT");
+    }
+    options.telemetry_live_udp_host = std::string(value.substr(0U, colon));
+    options.telemetry_live_udp_port = parse_udp_port(option, value.substr(colon + 1U));
+    options.telemetry_live_udp_enabled = true;
+}
+
 std::string_view next_arg(int argc, char **argv, int &index, std::string_view option)
 {
     if (++index >= argc)
@@ -522,6 +557,57 @@ Options parse_options(int argc, char **argv)
         else if (arg == "--telemetry-tlog")
         {
             options.telemetry_tlog = std::string(next_arg(argc, argv, index, arg));
+            options.telemetry = options.telemetry_tlog;
+            options.telemetry_format = animus::telemetry_core::TelemetryImportFormat::Tlog;
+        }
+        else if (arg == "--telemetry")
+        {
+            options.telemetry = std::string(next_arg(argc, argv, index, arg));
+        }
+        else if (arg == "--telemetry-live-udp")
+        {
+            parse_host_port(arg, next_arg(argc, argv, index, arg), options);
+        }
+        else if (arg == "--telemetry-live-buffer-s")
+        {
+            options.telemetry_live_buffer_s =
+                parse_positive_double(arg, next_arg(argc, argv, index, arg));
+        }
+        else if (arg == "--telemetry-live-max-samples")
+        {
+            options.telemetry_live_max_samples =
+                parse_positive_size(arg, next_arg(argc, argv, index, arg));
+        }
+        else if (arg == "--telemetry-live-render-max-points")
+        {
+            options.telemetry_live_render_max_points =
+                parse_positive_size(arg, next_arg(argc, argv, index, arg));
+        }
+        else if (arg == "--telemetry-live-debug-csv")
+        {
+            options.telemetry_live_debug_csv = std::string(next_arg(argc, argv, index, arg));
+        }
+        else if (arg == "--telemetry-format")
+        {
+            const std::string value = std::string(next_arg(argc, argv, index, arg));
+            if (value == "tlog")
+            {
+                options.telemetry_format = animus::telemetry_core::TelemetryImportFormat::Tlog;
+            }
+            else if (value == "mcap")
+            {
+                options.telemetry_format =
+                    animus::telemetry_core::TelemetryImportFormat::McapProtobuf;
+            }
+            else if (value == "hdf5")
+            {
+                options.telemetry_format =
+                    animus::telemetry_core::TelemetryImportFormat::Hdf5Animus;
+            }
+            else
+            {
+                throw std::invalid_argument("--telemetry-format must be tlog, mcap, or hdf5");
+            }
         }
         else if (arg == "--playback-rate")
         {
@@ -533,23 +619,30 @@ Options parse_options(int argc, char **argv)
         }
         else if (arg == "--help" || arg == "-h")
         {
-            std::cout << "usage: animus [--pack-root PATH] [--z N] [--center-x N]\n"
-                      << "                   [--center-y N] [--frames N] [--width PX]\n"
-                      << "                   [--height PX] [--height-scale F] [--smoke]\n"
-                      << "                   [--capture-ppm PATH] [--capture-png PATH]\n"
-                      << "                   [--capture-sequence-dir DIR]\n"
-                      << "                   [--capture-sequence-fps FPS]\n"
-                      << "                   [--debug-overlay] [--no-debug-overlay]\n"
-                      << "                   [--min-z N] [--max-z N] [--tile-budget N]\n"
-                      << "                   [--cache-root PATH] [--elevation-geotiff PATH]\n"
-                      << "                   [--bathymetry-geotiff PATH]\n"
-                      << "                   [--imagery-mbtiles PATH]\n"
-                      << "                   [--remote-imagery-url URL_TEMPLATE]\n"
-                      << "                   [--overlay-geotiff PATH] [--overlay-opacity F]\n"
-                      << "                   [--overlay PATH] [--geoid-grid PATH]\n"
-                      << "                   [--config PATH] [--no-load-config]\n"
-                      << "                   [--telemetry-tlog PATH] [--playback-rate F]\n"
-                      << "                   [--playback-start-paused]\n";
+            std::cout
+                << "usage: animus [--pack-root PATH] [--z N] [--center-x N]\n"
+                << "                   [--center-y N] [--frames N] [--width PX]\n"
+                << "                   [--height PX] [--height-scale F] [--smoke]\n"
+                << "                   [--capture-ppm PATH] [--capture-png PATH]\n"
+                << "                   [--capture-sequence-dir DIR]\n"
+                << "                   [--capture-sequence-fps FPS]\n"
+                << "                   [--debug-overlay] [--no-debug-overlay]\n"
+                << "                   [--min-z N] [--max-z N] [--tile-budget N]\n"
+                << "                   [--cache-root PATH] [--elevation-geotiff PATH]\n"
+                << "                   [--bathymetry-geotiff PATH]\n"
+                << "                   [--imagery-mbtiles PATH]\n"
+                << "                   [--remote-imagery-url URL_TEMPLATE]\n"
+                << "                   [--overlay-geotiff PATH] [--overlay-opacity F]\n"
+                << "                   [--overlay PATH] [--geoid-grid PATH]\n"
+                << "                   [--config PATH] [--no-load-config]\n"
+                << "                   [--telemetry PATH] [--telemetry-format tlog|mcap|hdf5]\n"
+                << "                   [--telemetry-live-udp HOST:PORT]\n"
+                << "                   [--telemetry-live-buffer-s SECONDS]\n"
+                << "                   [--telemetry-live-max-samples N]\n"
+                << "                   [--telemetry-live-render-max-points N]\n"
+                << "                   [--telemetry-live-debug-csv PATH]\n"
+                << "                   [--telemetry-tlog PATH] [--playback-rate F]\n"
+                << "                   [--playback-start-paused]\n";
             std::exit(0);
         }
         else
@@ -565,6 +658,10 @@ Options parse_options(int argc, char **argv)
     if (options.min_z > options.max_z)
     {
         throw std::invalid_argument("--min-z must be <= --max-z");
+    }
+    if (!options.telemetry.empty() && options.telemetry_live_udp_enabled)
+    {
+        throw std::invalid_argument("--telemetry and --telemetry-live-udp are mutually exclusive");
     }
     upsert_compat_overlay(options);
     sort_overlays(options);

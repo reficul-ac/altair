@@ -45,8 +45,8 @@ The `smoke` scenario keeps its compact CSV output for plumbing checks. The `crui
 
 ```ini
 # cruise6dof_initial.ini
-lat_deg = 37.4275
-lon_deg = -122.1697
+lat_deg = 39.0968
+lon_deg = -120.0324
 altitude_m = 150
 roll_rad = 0
 pitch_rad = 0.04
@@ -95,6 +95,17 @@ Use `--mavlink-host` and `--mavlink-port` for a remote endpoint or a non-default
 ```sh
 ./build/vehicle/sitl_runner --scenario cruise6dof --initial cruise6dof_initial.ini --duration 60 --dt 0.01 --output sitl_cruise6dof.csv --mavlink --mavlink-host 127.0.0.1 --mavlink-port 14551
 ```
+
+To launch Animus and stream `cruise6dof` directly into its live UDP receiver,
+use:
+
+```sh
+python3 tools/python/run_animus_sitl_live.py
+```
+
+The launcher starts Animus on `127.0.0.1:14550`, runs `sitl_runner --mavlink`
+from source port `14551`, and centers Animus on the Tahoe tile used by the
+default `tests/integration/cruise6dof_initial.ini` fixture.
 
 For live QGroundControl monitoring and WebSocket telemetry, use the live session launcher:
 

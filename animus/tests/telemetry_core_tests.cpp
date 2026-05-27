@@ -1,4 +1,5 @@
 #include "animus/telemetry_core/mavlink.hpp"
+#include "animus/telemetry_core/mavlink_reducer.hpp"
 #include "animus/telemetry_core/telemetry.hpp"
 
 #include <cmath>
@@ -10,14 +11,24 @@
 
 #include <gtest/gtest.h>
 
+#if defined(ANIMUS_TESTS_HAVE_IMPORTS)
+#include "animus_telemetry_v1.pb.h"
+
+#include <hdf5.h>
+#include <mcap/writer.hpp>
+#endif
+
 namespace
 {
 
+using animus::telemetry_core::load_hdf5;
+using animus::telemetry_core::load_mcap_protobuf;
 using animus::telemetry_core::load_tlog;
 using animus::telemetry_core::load_tlog_bytes;
 using animus::telemetry_core::mavlink_crc_extra;
 using animus::telemetry_core::mavlink_crc_x25;
 using animus::telemetry_core::parse_mavlink_stream;
+using animus::telemetry_core::reduce_mavlink_messages;
 
 void push_u16(std::vector<std::uint8_t> &payload, const std::uint16_t value)
 {
@@ -192,6 +203,185 @@ vfr_hud_payload(const float ground_speed, const std::int16_t heading_deg, const 
     return payload;
 }
 
+#if defined(ANIMUS_TESTS_HAVE_IMPORTS)
+animus::telemetry::v1::TelemetrySample
+canonical_proto_sample(const double time_s, const double lat_deg, const double lon_deg)
+{
+    animus::telemetry::v1::TelemetrySample sample;
+    sample.set_timestamp_s(time_s);
+    sample.set_timestamp_valid(true);
+    sample.set_system_id(1U);
+    sample.set_component_id(42U);
+    sample.set_lat_deg(lat_deg);
+    sample.set_lon_deg(lon_deg);
+    sample.set_altitude_msl_m(1510.0 + time_s);
+    sample.set_altitude_relative_m(110.0 + time_s);
+    sample.set_roll_rad(0.1 + time_s);
+    sample.set_pitch_rad(-0.2);
+    sample.set_yaw_rad(0.3);
+    sample.set_ground_speed_mps(25.0 + time_s);
+    sample.set_climb_rate_mps(-1.5);
+    sample.set_heading_deg(123.0);
+    sample.set_altitude_datum(animus::telemetry::v1::ALTITUDE_DATUM_MSL_ORTHOMETRIC);
+    auto *fields = sample.mutable_fields();
+    fields->set_position(true);
+    fields->set_altitude_msl(true);
+    fields->set_altitude_relative(true);
+    fields->set_attitude(true);
+    fields->set_velocity(true);
+    fields->set_heading(true);
+    return sample;
+}
+
+std::filesystem::path temp_file(const char *name)
+{
+    return std::filesystem::temp_directory_path() / name;
+}
+
+void write_mcap_fixture(const std::filesystem::path &path, const bool include_bad_payload = false)
+{
+    mcap::McapWriter writer;
+    const auto open_status = writer.open(path.string(), mcap::McapWriterOptions(""));
+    ASSERT_TRUE(open_status.ok()) << open_status.message;
+
+    mcap::Schema schema("animus.telemetry.v1.TelemetrySample", "protobuf", "");
+    writer.addSchema(schema);
+    mcap::Channel channel("/animus/telemetry/v1/samples", "protobuf", schema.id);
+    writer.addChannel(channel);
+
+    mcap::Schema unsupported_schema("animus.telemetry.v1.Unsupported", "protobuf", "");
+    writer.addSchema(unsupported_schema);
+    mcap::Channel unsupported_channel("/unsupported", "protobuf", unsupported_schema.id);
+    writer.addChannel(unsupported_channel);
+
+    const auto first = canonical_proto_sample(1.0, 39.0, -120.0).SerializeAsString();
+    const auto second = canonical_proto_sample(2.0, 39.2, -120.2).SerializeAsString();
+    const std::vector<std::string> payloads =
+        include_bad_payload ? std::vector<std::string>{first, "not protobuf", second}
+                            : std::vector<std::string>{first, second};
+
+    std::uint32_t sequence = 1U;
+    for (const std::string &payload : payloads)
+    {
+        mcap::Message message;
+        message.channelId = channel.id;
+        message.sequence = sequence++;
+        message.logTime = static_cast<mcap::Timestamp>(message.sequence) * 1000000000ULL;
+        message.publishTime = message.logTime;
+        message.data = reinterpret_cast<const std::byte *>(payload.data());
+        message.dataSize = payload.size();
+        ASSERT_TRUE(writer.write(message).ok());
+    }
+
+    const std::string unsupported_payload = "ignored";
+    mcap::Message unsupported;
+    unsupported.channelId = unsupported_channel.id;
+    unsupported.sequence = sequence;
+    unsupported.logTime = 1500000000ULL;
+    unsupported.publishTime = unsupported.logTime;
+    unsupported.data = reinterpret_cast<const std::byte *>(unsupported_payload.data());
+    unsupported.dataSize = unsupported_payload.size();
+    ASSERT_TRUE(writer.write(unsupported).ok());
+    writer.close();
+}
+
+void write_attr_string(const hid_t group, const char *name, const char *value)
+{
+    const hid_t type = H5Tcopy(H5T_C_S1);
+    ASSERT_GE(type, 0);
+    ASSERT_GE(H5Tset_size(type, std::strlen(value) + 1U), 0);
+    const hid_t space = H5Screate(H5S_SCALAR);
+    ASSERT_GE(space, 0);
+    const hid_t attr = H5Acreate2(group, name, type, space, H5P_DEFAULT, H5P_DEFAULT);
+    ASSERT_GE(attr, 0);
+    EXPECT_GE(H5Awrite(attr, type, value), 0);
+    H5Aclose(attr);
+    H5Sclose(space);
+    H5Tclose(type);
+}
+
+void write_attr_int(const hid_t group, const char *name, const int value)
+{
+    const hid_t space = H5Screate(H5S_SCALAR);
+    ASSERT_GE(space, 0);
+    const hid_t attr = H5Acreate2(group, name, H5T_NATIVE_INT, space, H5P_DEFAULT, H5P_DEFAULT);
+    ASSERT_GE(attr, 0);
+    EXPECT_GE(H5Awrite(attr, H5T_NATIVE_INT, &value), 0);
+    H5Aclose(attr);
+    H5Sclose(space);
+}
+
+void write_hdf5_fixture(const std::filesystem::path &path,
+                        const bool bad_schema = false,
+                        const bool missing_required = false)
+{
+    const hid_t file = H5Fcreate(path.string().c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    ASSERT_GE(file, 0);
+    const hid_t root = H5Gcreate2(file, "/animus", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    ASSERT_GE(root, 0);
+    const hid_t telemetry = H5Gcreate2(root, "telemetry", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    ASSERT_GE(telemetry, 0);
+    const hid_t version_group = H5Gcreate2(telemetry, "v1", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    ASSERT_GE(version_group, 0);
+    write_attr_string(version_group,
+                      "schema",
+                      bad_schema ? "animus.telemetry.v1.Wrong"
+                                 : "animus.telemetry.v1.TelemetrySample");
+    write_attr_int(version_group, "version", 1);
+
+    constexpr std::uint32_t mask =
+        (1U << 0U) | (1U << 1U) | (1U << 2U) | (1U << 3U) | (1U << 4U) | (1U << 5U);
+    std::vector<double> values{
+        1.0,
+        1.0,
+        42.0,
+        39.0,
+        -120.0,
+        1511.0,
+        111.0,
+        1.1,
+        -0.2,
+        0.3,
+        26.0,
+        -1.5,
+        123.0,
+        1.0,
+        static_cast<double>(missing_required ? 0U : mask),
+        missing_required ? 0.0 : 1.0,
+        2.0,
+        1.0,
+        42.0,
+        39.2,
+        -120.2,
+        1512.0,
+        112.0,
+        2.1,
+        -0.2,
+        0.3,
+        27.0,
+        -1.5,
+        123.0,
+        1.0,
+        static_cast<double>(mask),
+        1.0,
+    };
+    hsize_t dims[2] = {2U, 16U};
+    const hid_t space = H5Screate_simple(2, dims, nullptr);
+    ASSERT_GE(space, 0);
+    const hid_t dataset = H5Dcreate2(
+        version_group, "samples", H5T_NATIVE_DOUBLE, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    ASSERT_GE(dataset, 0);
+    EXPECT_GE(H5Dwrite(dataset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, values.data()),
+              0);
+    H5Dclose(dataset);
+    H5Sclose(space);
+    H5Gclose(version_group);
+    H5Gclose(telemetry);
+    H5Gclose(root);
+    H5Fclose(file);
+}
+#endif
+
 } // namespace
 
 TEST(TelemetryCoreTlog, EmptyLogProducesEmptyTimeline)
@@ -315,6 +505,32 @@ TEST(TelemetryCoreTlog, DecodesCommonMessagesAndInterpolates)
     EXPECT_TRUE(sample->fields.attitude);
 }
 
+TEST(TelemetryCoreTlog, ReducerMatchesTlogTimeline)
+{
+    std::vector<std::uint8_t> stream;
+    const auto first =
+        frame_v1(1, 1, 1, 33, global_position_payload(1000, 39.0, -120.0, 1500000, 100000));
+    const auto attitude = frame_v1(2, 1, 1, 30, attitude_payload(1500, 0.1F, 0.2F, 0.3F));
+    const auto vfr = frame_v1(3, 1, 1, 74, vfr_hud_payload(23.5F, 271, -1.25F));
+    stream.insert(stream.end(), first.begin(), first.end());
+    stream.insert(stream.end(), attitude.begin(), attitude.end());
+    stream.insert(stream.end(), vfr.begin(), vfr.end());
+
+    const auto parsed = parse_mavlink_stream(stream);
+    const auto direct = reduce_mavlink_messages(parsed.messages, parsed.diagnostics);
+    const auto tlog = load_tlog_bytes(stream);
+
+    ASSERT_EQ(direct.samples.size(), tlog.samples.size());
+    ASSERT_EQ(direct.events.size(), tlog.events.size());
+    for (std::size_t index = 0U; index < tlog.samples.size(); ++index)
+    {
+        EXPECT_DOUBLE_EQ(direct.samples[index].time_s, tlog.samples[index].time_s);
+        EXPECT_DOUBLE_EQ(direct.samples[index].lat_deg, tlog.samples[index].lat_deg);
+        EXPECT_DOUBLE_EQ(direct.samples[index].lon_deg, tlog.samples[index].lon_deg);
+    }
+    EXPECT_EQ(direct.diagnostics.frames_decoded, tlog.diagnostics.frames_decoded);
+}
+
 TEST(TelemetryCoreTlog, SupportsMultipleEntitiesAndFileLoad)
 {
     std::vector<std::uint8_t> stream;
@@ -336,3 +552,88 @@ TEST(TelemetryCoreTlog, SupportsMultipleEntitiesAndFileLoad)
     ASSERT_EQ(timeline.samples.size(), 2U);
     EXPECT_LE(timeline.samples[0].time_s, timeline.samples[1].time_s);
 }
+
+#if defined(ANIMUS_TESTS_HAVE_IMPORTS)
+TEST(TelemetryCoreImports, LoadsDeterministicMcapProtobufFixture)
+{
+    const auto path = temp_file("animus_generated_test.mcap");
+    write_mcap_fixture(path);
+    const auto timeline = load_mcap_protobuf(path);
+    std::filesystem::remove(path);
+
+    EXPECT_EQ(timeline.source_format, animus::telemetry_core::TelemetryImportFormat::McapProtobuf);
+    ASSERT_EQ(timeline.samples.size(), 2U);
+    EXPECT_EQ(timeline.entities.size(), 1U);
+    EXPECT_EQ(timeline.events.size(), 1U);
+    EXPECT_EQ(timeline.diagnostics.unsupported_channels, 1U);
+    EXPECT_DOUBLE_EQ(timeline.samples[0].time_s, 1.0);
+    EXPECT_NEAR(timeline.samples[1].lat_deg, 39.2, 1.0e-9);
+    EXPECT_NEAR(*timeline.samples[0].altitude_msl_m, 1511.0, 1.0e-9);
+    EXPECT_TRUE(timeline.samples[0].fields.attitude);
+}
+
+TEST(TelemetryCoreImports, LoadsDeterministicHdf5FixtureWithTimelineParity)
+{
+    const auto mcap_path = temp_file("animus_generated_parity.mcap");
+    const auto hdf5_path = temp_file("animus_generated_parity.h5");
+    write_mcap_fixture(mcap_path);
+    write_hdf5_fixture(hdf5_path);
+
+    const auto mcap = load_mcap_protobuf(mcap_path);
+    const auto hdf5 = load_hdf5(hdf5_path);
+    std::filesystem::remove(mcap_path);
+    std::filesystem::remove(hdf5_path);
+
+    ASSERT_EQ(mcap.samples.size(), hdf5.samples.size());
+    EXPECT_EQ(hdf5.source_format, animus::telemetry_core::TelemetryImportFormat::Hdf5Animus);
+    for (std::size_t index = 0U; index < mcap.samples.size(); ++index)
+    {
+        EXPECT_DOUBLE_EQ(mcap.samples[index].time_s, hdf5.samples[index].time_s);
+        EXPECT_DOUBLE_EQ(mcap.samples[index].lat_deg, hdf5.samples[index].lat_deg);
+        EXPECT_DOUBLE_EQ(mcap.samples[index].lon_deg, hdf5.samples[index].lon_deg);
+        EXPECT_DOUBLE_EQ(*mcap.samples[index].ground_speed_mps,
+                         *hdf5.samples[index].ground_speed_mps);
+    }
+}
+
+TEST(TelemetryCoreImports, ReportsMalformedMcapPayload)
+{
+    const auto path = temp_file("animus_generated_bad_payload.mcap");
+    write_mcap_fixture(path, true);
+    const auto timeline = load_mcap_protobuf(path);
+    std::filesystem::remove(path);
+
+    EXPECT_EQ(timeline.samples.size(), 2U);
+    EXPECT_EQ(timeline.diagnostics.decode_failures, 1U);
+}
+
+TEST(TelemetryCoreImports, RejectsHdf5SchemaAndMissingRequiredFields)
+{
+    const auto bad_schema = temp_file("animus_generated_bad_schema.h5");
+    write_hdf5_fixture(bad_schema, true, false);
+    const auto schema_timeline = load_hdf5(bad_schema);
+    std::filesystem::remove(bad_schema);
+    EXPECT_TRUE(schema_timeline.samples.empty());
+    EXPECT_EQ(schema_timeline.diagnostics.schema_mismatches, 1U);
+
+    const auto missing_required = temp_file("animus_generated_missing_required.h5");
+    write_hdf5_fixture(missing_required, false, true);
+    const auto missing_timeline = load_hdf5(missing_required);
+    std::filesystem::remove(missing_required);
+    EXPECT_EQ(missing_timeline.samples.size(), 1U);
+    EXPECT_EQ(missing_timeline.diagnostics.missing_required_fields, 1U);
+}
+
+TEST(TelemetryCoreImports, RejectsUnsupportedHdf5Layout)
+{
+    const auto path = temp_file("animus_generated_bad_layout.h5");
+    const hid_t file = H5Fcreate(path.string().c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    ASSERT_GE(file, 0);
+    H5Fclose(file);
+
+    const auto timeline = load_hdf5(path);
+    std::filesystem::remove(path);
+    EXPECT_TRUE(timeline.samples.empty());
+    EXPECT_EQ(timeline.diagnostics.unsupported_layouts, 1U);
+}
+#endif

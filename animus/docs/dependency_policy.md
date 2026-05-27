@@ -23,12 +23,14 @@ uses them:
 - zlib, zstd, or lz4 for cache/data compression when cache formats need them.
 - FFmpeg as an optional tool/runtime dependency for explicit MP4 export
   workflows. Default build and test must not require building FFmpeg.
+- Asio as a header-only dependency for direct live MAVLink UDP ingest. Keep it
+  scoped to `telemetry_live` and app targets that explicitly consume live
+  networking.
 
 ## Delayed Dependencies
 
 These dependencies should wait until their phase has a direct requirement:
 
-- MCAP, Protobuf, and HDF5/HighFive for telemetry import and structured logs.
 - yaml-cpp, tinyxml2, libkml, libarchive, and libcurl for richer config,
   import, archive, and remote-source workflows.
 - Sol2 for scripting after the core terrain and app shell are stable.

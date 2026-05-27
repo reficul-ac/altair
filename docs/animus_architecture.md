@@ -1086,6 +1086,43 @@ Phase K, delayed telemetry:
 - [x] Add live UDP, MCAP, Protobuf, and HDF5 support only after `.tlog`
   playback works.
 
+Phase M, structured telemetry imports:
+
+- [x] Define `animus.telemetry.v1.TelemetrySample` as the canonical offline
+  import schema under `animus/schemas/telemetry/`.
+- [x] Keep generated Protobuf C++ sources build-local.
+- [x] Add MCAP + Protobuf import for channels whose schema name is
+  `animus.telemetry.v1.TelemetrySample` and whose schema/channel encoding is
+  `protobuf`.
+- [x] Add HDF5 import for the single canonical layout
+  `/animus/telemetry/v1/samples` with schema/version attributes.
+- [x] Normalize `.tlog`, MCAP, and HDF5 imports through the same `Timeline`
+  finalization path.
+- [x] Surface source format, skipped records, unsupported channel/layout, schema,
+  and decode diagnostics in `telemetry_core` and the app telemetry panel.
+- [x] Defer live UDP ingest to the next telemetry phase.
+
+Phase N, live MAVLink UDP telemetry:
+
+- [x] Add direct MAVLink UDP ingest with Asio scoped to a `telemetry_live`
+  layer, not the deterministic offline `telemetry_core` target.
+- [x] Factor MAVLink message-to-sample reduction so `.tlog` playback and live
+  UDP share timeline normalization while preserving existing `.tlog` timestamp
+  semantics.
+- [x] Support receive-time fallback for untimed live MAVLink messages.
+- [x] Add bounded live history by seconds and sample count with dropped-sample
+  diagnostics.
+- [x] Add `--telemetry-live-udp HOST:PORT`, `--telemetry-live-buffer-s`, and
+  `--telemetry-live-max-samples`; reject simultaneous offline and live
+  telemetry inputs.
+- [x] Keep UDP receive work off the render thread and drain packet data on the
+  render thread before timeline/UI/overlay updates.
+- [x] Surface live endpoint, connected/stale state, packet counts, age, samples,
+  entities, dropped samples, and parser diagnostics in the telemetry panel.
+- [x] Add deterministic live UDP unit and smoke coverage.
+- [x] Mark Phase N complete only after Debug and Release warnings-as-errors
+  verification pass.
+
 Phase L, advanced terrain/data features:
 
 - [x] Add persisted UI/app config only after there are real preferences, recent

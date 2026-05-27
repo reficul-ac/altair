@@ -37,7 +37,10 @@ def main():
     module = load_verify_agent_work(Path(sys.argv[1]))
     cases = (
         (["vehicle/altair_fsw.c"], ["format", "cmake", "release"]),
-        (["tests/integration/cruise6dof_case_initial.ini"], ["cmake", "sitl_plots"]),
+        (
+            ["tests/integration/cruise6dof_case_initial.ini"],
+            ["cmake", "sitl_plots", "sitl_live"],
+        ),
         (["vehicle/mc_runner.c"], ["format", "cmake", "release", "mc"]),
         (["docs/testing.md"], ["format"]),
         (["docs/testing.md", "mixer/altair_mixer.c"], ["format", "cmake", "release"]),

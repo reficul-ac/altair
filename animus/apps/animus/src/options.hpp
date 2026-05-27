@@ -1,9 +1,12 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
+
+#include "animus/telemetry_core/telemetry.hpp"
 
 namespace animus::app
 {
@@ -62,7 +65,17 @@ struct Options
     std::size_t max_upload_bytes = 32U * 1024U * 1024U;
     int simulate_slow_load_ms = 0;
     bool use_bathymetry = false;
+    std::filesystem::path telemetry;
     std::filesystem::path telemetry_tlog;
+    bool telemetry_live_udp_enabled = false;
+    std::string telemetry_live_udp_host = "127.0.0.1";
+    std::uint16_t telemetry_live_udp_port = 14550;
+    double telemetry_live_buffer_s = 120.0;
+    std::size_t telemetry_live_max_samples = 20000U;
+    std::size_t telemetry_live_render_max_points = 1000U;
+    std::filesystem::path telemetry_live_debug_csv;
+    animus::telemetry_core::TelemetryImportFormat telemetry_format =
+        animus::telemetry_core::TelemetryImportFormat::Tlog;
     float playback_rate = 1.0F;
     bool playback_start_paused = false;
 };

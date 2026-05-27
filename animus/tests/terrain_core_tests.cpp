@@ -228,7 +228,8 @@ start_one_shot_http_server(std::string body, int status_code, std::chrono::milli
                 return;
             }
             std::array<char, 512> request_buffer{};
-            (void)read(*client, request_buffer.data(), request_buffer.size());
+            [[maybe_unused]] const ssize_t bytes_read =
+                read(*client, request_buffer.data(), request_buffer.size());
             if (delay.count() > 0)
             {
                 std::this_thread::sleep_for(delay);

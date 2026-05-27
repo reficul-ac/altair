@@ -7,8 +7,10 @@ import argparse
 import json
 import os
 import shutil
+import socket
 import subprocess
 import struct
+import threading
 import time
 import zlib
 from pathlib import Path
@@ -313,6 +315,88 @@ def run_capture_command(
         assert_png_contains_telemetry_marker(png_capture)
 
 
+def send_live_udp_fixture(host: str, port: int, stop: threading.Event) -> None:
+    datagrams = [
+        frame_v1(
+            1,
+            33,
+            struct.pack(
+                "<IiiiihhhH",
+                1000,
+                round(39.13006 * 1.0e7),
+                round(-119.98125 * 1.0e7),
+                1_500_000,
+                100_000,
+                300,
+                400,
+                -50,
+                12_345,
+            ),
+        ),
+        frame_v1(2, 74, struct.pack("<ffhHff", 18.0, 22.5, 270, 50, 1400.0, -0.5)),
+        frame_v1(
+            3,
+            33,
+            struct.pack(
+                "<IiiiihhhH",
+                2000,
+                round(39.13025 * 1.0e7),
+                round(-119.97975 * 1.0e7),
+                1_501_000,
+                101_000,
+                310,
+                390,
+                -45,
+                12_400,
+            ),
+        ),
+    ]
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+        while not stop.is_set():
+            for datagram in datagrams:
+                udp.sendto(datagram, (host, port))
+                time.sleep(0.02)
+
+
+def run_live_udp_smoke(root: Path, build_dir: Path, env: dict[str, str]) -> None:
+    executable = build_dir / "apps" / "animus" / "animus"
+    if not executable.exists():
+        raise RuntimeError(f"Animus executable not found: {executable}")
+
+    host = "127.0.0.1"
+    port = 15670
+    generated = build_dir / "generated"
+    generated.mkdir(parents=True, exist_ok=True)
+    ppm_capture = generated / "live_udp_smoke.ppm"
+    png_capture = generated / "live_udp_smoke.png"
+    command = [
+        str(executable),
+        "--smoke",
+        "--frames",
+        "180",
+        "--telemetry-live-udp",
+        f"{host}:{port}",
+        "--capture-ppm",
+        str(ppm_capture),
+        "--capture-png",
+        str(png_capture),
+    ]
+    xvfb_run = shutil.which("xvfb-run")
+    if xvfb_run:
+        command = [xvfb_run, "-a", *command]
+
+    stop = threading.Event()
+    sender = threading.Thread(target=send_live_udp_fixture, args=(host, port, stop), daemon=True)
+    sender.start()
+    try:
+        run_command(command, cwd=generated, env=env)
+    finally:
+        stop.set()
+        sender.join(timeout=1.0)
+    assert_ppm_nonblank(ppm_capture)
+    assert_png_contains_telemetry_marker(png_capture)
+
+
 def run_screenshot_smoke(root: Path, build_dir: Path, env: dict[str, str]) -> None:
     executable = build_dir / "apps" / "animus" / "animus"
     if not executable.exists():
@@ -432,6 +516,11 @@ def main() -> int:
         help="Generate a GeoTIFF overlay fixture and verify it visibly changes a PNG capture.",
     )
     parser.add_argument(
+        "--live-udp-smoke",
+        action="store_true",
+        help="Run Animus with direct MAVLink UDP fixture telemetry under Xvfb when available.",
+    )
+    parser.add_argument(
         "--skip-build",
         action="store_true",
         help="Use the existing build directory and skip Conan, CMake, build, and CTest steps.",
@@ -494,6 +583,8 @@ def main() -> int:
         )
     if args.screenshot_smoke:
         run_screenshot_smoke(root, build_dir, env)
+    if args.live_udp_smoke:
+        run_live_udp_smoke(root, build_dir, env)
     if args.artifact_bundle is not None:
         if args.artifact_bundle:
             bundle_dir = Path(args.artifact_bundle).resolve()
