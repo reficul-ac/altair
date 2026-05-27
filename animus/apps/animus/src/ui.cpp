@@ -32,7 +32,29 @@ const ImVec4 live_green(0.34F, 0.76F, 0.52F, 1.0F);
 const ImVec4 stale_amber(0.93F, 0.60F, 0.28F, 1.0F);
 const ImVec4 quiet_gray(0.46F, 0.49F, 0.52F, 1.0F);
 
+enum class PillState
+{
+    Good,
+    Warning,
+    Error,
+    Inactive,
+};
+
 const char *altitude_datum_label(animus::telemetry_core::AltitudeDatum datum);
+
+const char *workspace_label(const WorkspaceMode mode)
+{
+    switch (mode)
+    {
+    case WorkspaceMode::Operator:
+        return "Operator";
+    case WorkspaceMode::Advanced:
+        return "Advanced";
+    case WorkspaceMode::Developer:
+        return "Developer";
+    }
+    return "Operator";
+}
 
 const char *mode_label(const UiNavigationMode mode)
 {
@@ -100,23 +122,44 @@ void draw_status_dot(const ImVec4 color)
         16);
 }
 
-void draw_status_pill(const char *label, const ImVec4 color, const char *value = nullptr)
+ImVec4 pill_state_color(const PillState state)
 {
-    const std::string text =
-        value == nullptr ? std::string(label) : std::string(label) + " " + value;
-    const ImVec2 text_size = ImGui::CalcTextSize(text.c_str());
+    switch (state)
+    {
+    case PillState::Good:
+        return live_green;
+    case PillState::Warning:
+        return stale_amber;
+    case PillState::Error:
+        return ImVec4(0.94F, 0.28F, 0.28F, 1.0F);
+    case PillState::Inactive:
+        return quiet_gray;
+    }
+    return quiet_gray;
+}
+
+bool draw_status_pill(const char *popup_id, const char *summary, const PillState state)
+{
+    const ImVec2 text_size = ImGui::CalcTextSize(summary);
     const ImVec2 cursor = ImGui::GetCursorScreenPos();
-    const ImVec2 size(text_size.x + 22.0F, 23.0F);
+    const ImVec2 size(text_size.x + 24.0F, 23.0F);
+    ImGui::InvisibleButton((std::string("##") + popup_id).c_str(), size);
+    const bool hovered = ImGui::IsItemHovered();
+    if (ImGui::IsItemClicked())
+    {
+        ImGui::OpenPopup(popup_id);
+    }
     ImDrawList *draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilled(
-        cursor, ImVec2(cursor.x + size.x, cursor.y + size.y), IM_COL32(26, 31, 35, 214), 6.0F);
+    draw->AddRectFilled(cursor,
+                        ImVec2(cursor.x + size.x, cursor.y + size.y),
+                        hovered ? IM_COL32(38, 47, 53, 232) : IM_COL32(26, 31, 35, 214),
+                        6.0F);
     draw->AddCircleFilled(ImVec2(cursor.x + 10.0F, cursor.y + 11.5F),
                           3.5F,
-                          ImGui::ColorConvertFloat4ToU32(color),
+                          ImGui::ColorConvertFloat4ToU32(pill_state_color(state)),
                           14);
-    draw->AddText(
-        ImVec2(cursor.x + 17.0F, cursor.y + 4.0F), IM_COL32(219, 226, 232, 242), text.c_str());
-    ImGui::Dummy(size);
+    draw->AddText(ImVec2(cursor.x + 18.0F, cursor.y + 4.0F), IM_COL32(219, 226, 232, 242), summary);
+    return ImGui::BeginPopup(popup_id);
 }
 
 void nav_button(UiState &ui_state, UiNavigationMode mode)
@@ -150,21 +193,74 @@ void nav_button(UiState &ui_state, UiNavigationMode mode)
     ImGui::PopID();
 }
 
+bool mode_visible_in_workspace(const UiNavigationMode mode, const WorkspaceMode workspace_mode)
+{
+    if (mode == UiNavigationMode::Developer)
+    {
+        return workspace_mode == WorkspaceMode::Developer;
+    }
+    if (mode == UiNavigationMode::Layers)
+    {
+        return workspace_mode != WorkspaceMode::Operator;
+    }
+    return true;
+}
+
+void sanitize_active_mode(UiState &ui_state)
+{
+    if (!mode_visible_in_workspace(ui_state.active_mode, ui_state.workspace_mode))
+    {
+        ui_state.active_mode = UiNavigationMode::View;
+    }
+}
+
+void workspace_button(UiState &ui_state, const WorkspaceMode mode)
+{
+    const bool selected = ui_state.workspace_mode == mode;
+    ImGui::PushID(workspace_label(mode));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0F, 5.0F));
+    if (selected)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.16F, 0.28F, 0.34F, 0.96F));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.19F, 0.34F, 0.41F, 1.0F));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.86F, 0.94F, 0.98F, 1.0F));
+    }
+    else
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.09F, 0.105F, 0.115F, 0.55F));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15F, 0.17F, 0.18F, 0.88F));
+        ImGui::PushStyleColor(ImGuiCol_Text, text_muted);
+    }
+    if (ImGui::Button(workspace_label(mode), ImVec2(0.0F, 0.0F)))
+    {
+        ui_state.workspace_mode = mode;
+        sanitize_active_mode(ui_state);
+        if (mode == WorkspaceMode::Developer)
+        {
+            ui_state.developer_diagnostics_visible = true;
+        }
+    }
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar(2);
+    ImGui::PopID();
+}
+
 const char *telemetry_state_label(const TelemetryPlaybackState &playback)
 {
     if (!playback.loaded)
     {
-        return "telemetry idle";
+        return "Telemetry idle";
     }
     if (!playback.live)
     {
-        return playback.clock.paused() ? "playback paused" : "playback running";
+        return playback.clock.paused() ? "Telemetry paused" : "Telemetry running";
     }
     if (!playback.receiver_stats.connected)
     {
-        return "live waiting";
+        return "Telemetry waiting";
     }
-    return playback.receiver_stats.stale ? "live stale" : "live connected";
+    return playback.receiver_stats.stale ? "Telemetry stale" : "Telemetry live";
 }
 
 ImVec4 telemetry_state_color(const TelemetryPlaybackState &playback)
@@ -269,11 +365,84 @@ bool entity_degraded(const animus::telemetry_core::TelemetrySample &sample)
     return !sample.fields.position;
 }
 
+PillState telemetry_pill_state(const TelemetryPlaybackState &playback)
+{
+    if (!playback.loaded)
+    {
+        return PillState::Inactive;
+    }
+    if (playback.live && (!playback.receiver_stats.connected || playback.receiver_stats.stale))
+    {
+        return PillState::Warning;
+    }
+    if (playback.terrain_height_unavailable || playback.unknown_datum_relative_fallback ||
+        playback.geoid_correction_unavailable)
+    {
+        return PillState::Warning;
+    }
+    return PillState::Good;
+}
+
+std::string selected_entity_summary(const TelemetryPlaybackState &playback, const UiState &ui_state)
+{
+    if (!playback.loaded || !ui_state.telemetry_entity_selected)
+    {
+        return "Selected none";
+    }
+    const auto sample = current_entity_sample(playback, playback.selected_entity);
+    std::string summary = "Selected " + entity_label(playback.selected_entity);
+    if (sample && sample->ground_speed_mps)
+    {
+        summary += " " + format_value("%.1f m/s", *sample->ground_speed_mps);
+    }
+    return summary;
+}
+
+PillState selected_entity_state(const TelemetryPlaybackState &playback, const UiState &ui_state)
+{
+    if (!playback.loaded || !ui_state.telemetry_entity_selected)
+    {
+        return PillState::Inactive;
+    }
+    const auto sample = current_entity_sample(playback, playback.selected_entity);
+    if (!sample)
+    {
+        return PillState::Warning;
+    }
+    return entity_stale(playback, *sample) || entity_degraded(*sample) ? PillState::Warning
+                                                                       : PillState::Good;
+}
+
+std::string time_summary(const TelemetryPlaybackState &playback)
+{
+    if (!playback.loaded)
+    {
+        return "Time idle";
+    }
+    if (playback.live)
+    {
+        return format_value("Time %.1f s live", playback.timeline.end_time_s);
+    }
+    return format_value(playback.clock.paused() ? "Time %.1f s paused" : "Time %.1f s",
+                        playback.clock.time_s());
+}
+
+void same_line_if_room()
+{
+    if (ImGui::GetContentRegionAvail().x > 150.0F)
+    {
+        ImGui::SameLine();
+    }
+}
+
 void draw_top_status_bar(const Options &options,
                          const animus::render_core::RenderStats &stats,
                          const animus::terrain_core::TerrainStreamSnapshot &snapshot,
                          const TelemetryPlaybackState &playback,
-                         const Mp4RecorderState &recorder)
+                         const ScreenshotToolState &screenshot_tool,
+                         const Mp4RecorderState &recorder,
+                         const UiState &ui_state,
+                         std::size_t resident_gpu_bytes)
 {
     ImGui::SetNextWindowPos(ImVec2(0.0F, 0.0F), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x, status_bar_height),
@@ -283,22 +452,136 @@ void draw_top_status_bar(const Options &options,
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055F, 0.065F, 0.073F, 0.94F));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 7.0F));
     ImGui::Begin("Animus Status", nullptr, flags);
-    ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Animus");
-    ImGui::SameLine();
-    draw_status_pill(telemetry_state_label(playback), telemetry_state_color(playback));
-    ImGui::SameLine();
-    draw_status_pill("terrain", live_green, std::to_string(snapshot.resident_gpu_tiles).c_str());
-    ImGui::SameLine();
-    const std::string frame_ms = format_value("%.1f ms", stats.last_frame_seconds() * 1000.0);
-    draw_status_pill("frame", quiet_gray, frame_ms.c_str());
-    ImGui::SameLine();
-    muted_text(options.telemetry_live_udp_enabled
-                   ? "Live UDP"
-                   : (!options.telemetry.empty() ? "Log" : "Terrain"));
-    if (recorder.recording)
+    const std::string terrain_summary =
+        snapshot.failed_tiles > 0U
+            ? "Terrain errors"
+            : "Terrain OK - " + std::to_string(snapshot.resident_gpu_tiles) + " resident";
+    const PillState terrain_state = snapshot.failed_tiles > 0U
+                                        ? PillState::Error
+                                        : ((snapshot.resident_gpu_tiles == 0U ||
+                                            snapshot.loading_jobs > 0U || snapshot.queued_jobs > 0U)
+                                               ? PillState::Warning
+                                               : PillState::Good);
+    const bool imagery_available =
+        !options.imagery_mbtiles.empty() || !options.remote_imagery_url_template.empty();
+    const bool elevation_available =
+        !options.elevation_geotiff.empty() || snapshot.cache_stats.persisted_tiles > 0U ||
+        snapshot.cache_stats.synthesized_tiles > 0U || snapshot.resident_gpu_tiles > 0U;
+    const std::string frame_ms = format_value("Perf %.1f ms", stats.last_frame_seconds() * 1000.0);
+    const PillState perf_state =
+        stats.last_frame_seconds() > 0.033 ? PillState::Warning : PillState::Good;
+    const std::string capture_summary =
+        recorder.recording ? "Capture recording " + std::to_string(recorder.frame_count)
+                           : (screenshot_tool.pending_png ? "Capture saving" : "Capture idle");
+
+    if (draw_status_pill("mode_status",
+                         ("Mode " + std::string(workspace_label(ui_state.workspace_mode))).c_str(),
+                         PillState::Good))
     {
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1.0F, 0.42F, 0.38F, 1.0F), "recording %d", recorder.frame_count);
+        ImGui::Text("Workspace %s", workspace_label(ui_state.workspace_mode));
+        ImGui::Text("Panel %s", mode_label(ui_state.active_mode));
+        ImGui::EndPopup();
+    }
+    same_line_if_room();
+    if (draw_status_pill("terrain_status", terrain_summary.c_str(), terrain_state))
+    {
+        ImGui::Text("resident %zu", snapshot.resident_gpu_tiles);
+        ImGui::Text("queued %zu loading %zu ready-cpu %zu failed %zu",
+                    snapshot.queued_jobs,
+                    snapshot.loading_jobs,
+                    snapshot.ready_cpu_tiles,
+                    snapshot.failed_tiles);
+        ImGui::Text("gpu %.2f MiB", static_cast<double>(resident_gpu_bytes) / (1024.0 * 1024.0));
+        ImGui::EndPopup();
+    }
+    same_line_if_room();
+    if (draw_status_pill("imagery_status",
+                         imagery_available ? "Imagery configured" : "Imagery local tiles",
+                         imagery_available ? PillState::Good : PillState::Inactive))
+    {
+        ImGui::Text("MBTiles %s",
+                    options.imagery_mbtiles.empty() ? "not set"
+                                                    : options.imagery_mbtiles.string().c_str());
+        ImGui::Text("remote %s",
+                    options.remote_imagery_url_template.empty()
+                        ? "not set"
+                        : options.remote_imagery_url_template.c_str());
+        ImGui::EndPopup();
+    }
+    same_line_if_room();
+    if (draw_status_pill("elevation_status",
+                         elevation_available ? "Elevation active" : "Elevation synthetic",
+                         elevation_available ? PillState::Good : PillState::Warning))
+    {
+        ImGui::Text("GeoTIFF %s",
+                    options.elevation_geotiff.empty() ? "not set"
+                                                      : options.elevation_geotiff.string().c_str());
+        ImGui::Text("bathymetry %s", options.use_bathymetry ? "enabled" : "disabled");
+        ImGui::Text("synthesized %llu",
+                    static_cast<unsigned long long>(snapshot.cache_stats.synthesized_tiles));
+        ImGui::EndPopup();
+    }
+    same_line_if_room();
+    if (draw_status_pill(
+            "telemetry_status", telemetry_state_label(playback), telemetry_pill_state(playback)))
+    {
+        ImGui::Text("source %s",
+                    playback.live ? "Live UDP" : (!options.telemetry.empty() ? "Log" : "none"));
+        ImGui::Text("entities %zu samples %zu events %zu",
+                    playback.timeline.entities.size(),
+                    playback.timeline.samples.size(),
+                    playback.timeline.events.size());
+        if (playback.live)
+        {
+            ImGui::Text("endpoint %s", playback.live_endpoint.c_str());
+            ImGui::Text("datagrams %llu age %.3f s",
+                        static_cast<unsigned long long>(playback.receiver_stats.datagrams),
+                        playback.receiver_stats.last_packet_age_s);
+        }
+        ImGui::EndPopup();
+    }
+    same_line_if_room();
+    const std::string entity_summary = selected_entity_summary(playback, ui_state);
+    if (draw_status_pill("selected_entity_status",
+                         entity_summary.c_str(),
+                         selected_entity_state(playback, ui_state)))
+    {
+        ImGui::Text("selected %s",
+                    ui_state.telemetry_entity_selected
+                        ? entity_label(playback.selected_entity).c_str()
+                        : "none");
+        ImGui::Text("follow %s", ui_state.follow_selected_entity ? "enabled" : "disabled");
+        ImGui::EndPopup();
+    }
+    same_line_if_room();
+    const std::string time_text = time_summary(playback);
+    if (draw_status_pill("time_status",
+                         time_text.c_str(),
+                         playback.loaded ? PillState::Good : PillState::Inactive))
+    {
+        ImGui::Text(
+            "range %.3f..%.3f s", playback.timeline.start_time_s, playback.timeline.end_time_s);
+        ImGui::Text("rate %.2fx", playback.clock.rate());
+        ImGui::Text("paused %s", playback.clock.paused() ? "yes" : "no");
+        ImGui::EndPopup();
+    }
+    same_line_if_room();
+    if (draw_status_pill("capture_status",
+                         capture_summary.c_str(),
+                         recorder.recording ? PillState::Warning : PillState::Inactive))
+    {
+        ImGui::Text("PNG %s", screenshot_path(screenshot_tool).string().c_str());
+        ImGui::Text("MP4 %s", recorder_output_path(recorder).string().c_str());
+        ImGui::Text("status %s", recorder.status.c_str());
+        ImGui::EndPopup();
+    }
+    same_line_if_room();
+    if (draw_status_pill("perf_status", frame_ms.c_str(), perf_state))
+    {
+        ImGui::Text("frames %d", stats.frame_count());
+        ImGui::Text("last %.3f ms", stats.last_frame_seconds() * 1000.0);
+        ImGui::Text("total %.3f s", stats.total_seconds());
+        ImGui::EndPopup();
     }
     ImGui::End();
     ImGui::PopStyleVar();
@@ -307,9 +590,10 @@ void draw_top_status_bar(const Options &options,
 
 void draw_nav(UiState &ui_state)
 {
+    sanitize_active_mode(ui_state);
     ImGui::SetNextWindowPos(ImVec2(chrome_margin, status_bar_height + chrome_margin),
                             ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(nav_width, 246.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(nav_width, 342.0F), ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
@@ -317,15 +601,25 @@ void draw_nav(UiState &ui_state)
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0F, 12.0F));
     ImGui::Begin("Navigate", nullptr, flags);
+    workspace_button(ui_state, WorkspaceMode::Operator);
+    workspace_button(ui_state, WorkspaceMode::Advanced);
+    workspace_button(ui_state, WorkspaceMode::Developer);
+    ImGui::Separator();
     nav_button(ui_state, UiNavigationMode::View);
-    ImGui::Dummy(ImVec2(0.0F, 2.0F));
-    nav_button(ui_state, UiNavigationMode::Layers);
+    if (mode_visible_in_workspace(UiNavigationMode::Layers, ui_state.workspace_mode))
+    {
+        ImGui::Dummy(ImVec2(0.0F, 2.0F));
+        nav_button(ui_state, UiNavigationMode::Layers);
+    }
     ImGui::Dummy(ImVec2(0.0F, 2.0F));
     nav_button(ui_state, UiNavigationMode::Telemetry);
     ImGui::Dummy(ImVec2(0.0F, 2.0F));
     nav_button(ui_state, UiNavigationMode::Capture);
-    ImGui::Separator();
-    nav_button(ui_state, UiNavigationMode::Developer);
+    if (mode_visible_in_workspace(UiNavigationMode::Developer, ui_state.workspace_mode))
+    {
+        ImGui::Separator();
+        nav_button(ui_state, UiNavigationMode::Developer);
+    }
     ImGui::End();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
@@ -512,7 +806,10 @@ void draw_entity_list(TelemetryPlaybackState &playback, UiState &ui)
     }
 }
 
-void draw_telemetry_panel(const Options &options, TelemetryPlaybackState &playback, UiState &ui)
+void draw_telemetry_panel(const Options &options,
+                          TelemetryPlaybackState &playback,
+                          UiState &ui,
+                          bool diagnostics_available)
 {
     if (!playback.loaded)
     {
@@ -524,10 +821,11 @@ void draw_telemetry_panel(const Options &options, TelemetryPlaybackState &playba
     {
         ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Live UDP");
         ImGui::TextColored(text_muted, "%s", playback.live_endpoint.c_str());
-        draw_status_pill(playback.receiver_stats.connected
-                             ? (playback.receiver_stats.stale ? "stale" : "connected")
-                             : "waiting",
-                         telemetry_state_color(playback));
+        draw_status_dot(telemetry_state_color(playback));
+        ImGui::SameLine();
+        ImGui::TextUnformatted(playback.receiver_stats.connected
+                                   ? (playback.receiver_stats.stale ? "stale" : "connected")
+                                   : "waiting");
         ImGui::Text("datagrams %llu  age %.3f s",
                     static_cast<unsigned long long>(playback.receiver_stats.datagrams),
                     playback.receiver_stats.last_packet_age_s);
@@ -556,6 +854,11 @@ void draw_telemetry_panel(const Options &options, TelemetryPlaybackState &playba
     if (playback.geoid_correction_unavailable)
     {
         ImGui::TextWrapped("warning: ellipsoid altitude datum needs a configured geoid grid");
+    }
+
+    if (!diagnostics_available)
+    {
+        return;
     }
 
     ImGui::Checkbox("Diagnostics", &ui.telemetry_diagnostics_visible);
@@ -603,7 +906,9 @@ void draw_telemetry_panel(const Options &options, TelemetryPlaybackState &playba
     }
 }
 
-void draw_capture_panel(ScreenshotToolState &screenshot_tool, Mp4RecorderState &mp4_recorder)
+void draw_capture_panel(ScreenshotToolState &screenshot_tool,
+                        Mp4RecorderState &mp4_recorder,
+                        bool settings_available)
 {
     ImGui::InputText("PNG path", screenshot_tool.png_path.data(), screenshot_tool.png_path.size());
     if (ImGui::Button("Save PNG"))
@@ -619,6 +924,10 @@ void draw_capture_panel(ScreenshotToolState &screenshot_tool, Mp4RecorderState &
             screenshot_tool.png_path.data(), screenshot_tool.png_path.size(), "%s", default_path);
     }
     ImGui::TextWrapped("%s", screenshot_tool.status.c_str());
+    if (!settings_available)
+    {
+        return;
+    }
     ImGui::Separator();
     ImGui::InputText("MP4 path", mp4_recorder.mp4_path.data(), mp4_recorder.mp4_path.size());
     ImGui::InputInt("FPS", &mp4_recorder.fps);
@@ -1104,7 +1413,15 @@ void draw_app_workspace(const Options &options,
                         bool &overlay_enabled,
                         float &overlay_opacity)
 {
-    draw_top_status_bar(options, stats, snapshot, playback, mp4_recorder);
+    sanitize_active_mode(ui_state);
+    draw_top_status_bar(options,
+                        stats,
+                        snapshot,
+                        playback,
+                        screenshot_tool,
+                        mp4_recorder,
+                        ui_state,
+                        resident_gpu_bytes);
     draw_nav(ui_state);
 
     const float panel_left = chrome_margin + nav_width + panel_gap;
@@ -1121,6 +1438,7 @@ void draw_app_workspace(const Options &options,
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 12.0F));
     ImGui::Begin(mode_label(ui_state.active_mode), nullptr, flags);
+    const bool advanced_workspace = ui_state.workspace_mode != WorkspaceMode::Operator;
     switch (ui_state.active_mode)
     {
     case UiNavigationMode::View:
@@ -1135,11 +1453,11 @@ void draw_app_workspace(const Options &options,
     case UiNavigationMode::Telemetry:
         ui_state.inspector_target =
             playback.loaded ? InspectorTarget::Entity : InspectorTarget::TelemetrySource;
-        draw_telemetry_panel(options, playback, ui_state);
+        draw_telemetry_panel(options, playback, ui_state, advanced_workspace);
         break;
     case UiNavigationMode::Capture:
         ui_state.inspector_target = InspectorTarget::None;
-        draw_capture_panel(screenshot_tool, mp4_recorder);
+        draw_capture_panel(screenshot_tool, mp4_recorder, advanced_workspace);
         break;
     case UiNavigationMode::Developer:
         ui_state.inspector_target = InspectorTarget::TelemetrySource;

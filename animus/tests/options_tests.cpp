@@ -1,5 +1,7 @@
 #include "options.hpp"
 
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <vector>
 
@@ -46,6 +48,39 @@ TEST(AnimusOptions, ParsesLiveUdpEndpointAndBounds)
 
 TEST(AnimusOptions, RejectsOfflineAndLiveTelemetryTogether)
 {
-    EXPECT_THROW(parse({"animus", "--telemetry", "flight.tlog", "--telemetry-live-udp", "127.0.0.1:14550"}),
-                 std::invalid_argument);
+    EXPECT_THROW(
+        parse({"animus", "--telemetry", "flight.tlog", "--telemetry-live-udp", "127.0.0.1:14550"}),
+        std::invalid_argument);
+}
+
+TEST(AnimusOptions, ParsesDeveloperWorkspace)
+{
+    const auto options = parse({"animus", "--debug-overlay", "--developer-workspace"});
+
+    EXPECT_TRUE(options.developer_workspace);
+    EXPECT_EQ(options.workspace_mode, animus::app::WorkspaceMode::Developer);
+}
+
+TEST(AnimusOptions, LoadsAndSavesWorkspaceMode)
+{
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "animus_options_workspace_test.json";
+    {
+        std::ofstream output(path);
+        output << "{\n"
+               << "  \"schema\": \"animus.app_config.v1\",\n"
+               << "  \"workspace_mode\": \"advanced\"\n"
+               << "}\n";
+    }
+
+    auto options = parse({"animus", "--config", path.string().c_str()});
+    EXPECT_EQ(options.workspace_mode, animus::app::WorkspaceMode::Advanced);
+
+    options.workspace_mode = animus::app::WorkspaceMode::Developer;
+    animus::app::save_app_config(options);
+
+    const auto restored = parse({"animus", "--config", path.string().c_str()});
+    EXPECT_EQ(restored.workspace_mode, animus::app::WorkspaceMode::Developer);
+
+    std::filesystem::remove(path);
 }

@@ -1440,6 +1440,12 @@ int run(const Options &options)
     ScreenshotToolState screenshot_tool;
     Mp4RecorderState mp4_recorder;
     UiState ui_state;
+    ui_state.workspace_mode = options.workspace_mode;
+    if (options.developer_workspace && options.debug_overlay)
+    {
+        ui_state.workspace_mode = animus::app::WorkspaceMode::Developer;
+        ui_state.developer_diagnostics_visible = true;
+    }
     ui_state.telemetry_entity_selected = !telemetry.timeline.entities.empty();
     std::snprintf(screenshot_tool.png_path.data(),
                   screenshot_tool.png_path.size(),
@@ -1847,7 +1853,9 @@ int run(const Options &options)
     std::cout << "Rendered frames: " << stats.frame_count()
               << "\nLast frame seconds: " << stats.last_frame_seconds()
               << "\nTotal render seconds: " << stats.total_seconds() << '\n';
-    animus::app::save_app_config(options);
+    Options saved_options = options;
+    saved_options.workspace_mode = ui_state.workspace_mode;
+    animus::app::save_app_config(saved_options);
     return 0;
 }
 

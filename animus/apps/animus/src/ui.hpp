@@ -111,6 +111,7 @@ struct TelemetryEventFilters
 
 struct UiState
 {
+    WorkspaceMode workspace_mode = WorkspaceMode::Operator;
     UiNavigationMode active_mode = UiNavigationMode::View;
     InspectorTarget inspector_target = InspectorTarget::Terrain;
     bool developer_diagnostics_visible = false;

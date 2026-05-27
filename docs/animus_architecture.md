@@ -223,31 +223,31 @@ all existing diagnostics behind progressive disclosure.
 
 Checklist:
 
-- [ ] Add app-owned `WorkspaceMode` state with `Operator`, `Advanced`, and
+- [x] Add app-owned `WorkspaceMode` state with `Operator`, `Advanced`, and
   `Developer`.
-- [ ] Default normal runs to `Operator`; enter `Developer` only from an existing
+- [x] Default normal runs to `Operator`; enter `Developer` only from an existing
   debug/developer CLI option or persisted config.
-- [ ] Replace the top status bar with compact status pills for `Mode`,
+- [x] Replace the top status bar with compact status pills for `Mode`,
   `Terrain`, `Imagery`, `Elevation`, `Telemetry`, `Selected Entity`,
   `Time / Playback`, `Capture`, and `Perf`.
-- [ ] Give every pill a `Good`, `Warning`, `Error`, or `Inactive` state plus a
+- [x] Give every pill a `Good`, `Warning`, `Error`, or `Inactive` state plus a
   compact summary.
-- [ ] Add click-to-open ImGui detail popups for pills without permanently
+- [x] Add click-to-open ImGui detail popups for pills without permanently
   cluttering the viewport.
-- [ ] Keep GL info, upload budgets, cache internals, parser diagnostics, live
+- [x] Keep GL info, upload budgets, cache internals, parser diagnostics, live
   ingest timing, and full tile runtime table visible only in `Developer`.
 
 Acceptance:
 
-- [ ] The app starts with a terrain viewport and a cleaner `Operator` shell.
-- [ ] Existing Developer diagnostics are still reachable.
-- [ ] The status ribbon does not materially affect frame time.
-- [ ] Smoke/capture workflows still work.
+- [x] The app starts with a terrain viewport and a cleaner `Operator` shell.
+- [x] Existing Developer diagnostics are still reachable.
+- [x] The status ribbon does not materially affect frame time.
+- [x] Smoke/capture workflows still work.
 
 Validation:
 
-- [ ] `python3 animus/tools/verify_animus.py`
-- [ ] `xvfb-run -a animus/build/apps/animus/animus --smoke --frames 120 --capture-png /tmp/animus_operator_shell.png`
+- [x] `python3 animus/tools/verify_animus.py`
+- [x] `xvfb-run -a animus/build/apps/animus/animus --smoke --frames 120 --capture-png /tmp/animus_operator_shell.png`
 
 Deferred:
 

@@ -11,6 +11,13 @@
 namespace animus::app
 {
 
+enum class WorkspaceMode
+{
+    Operator,
+    Advanced,
+    Developer,
+};
+
 struct OverlayLayerConfig
 {
     std::filesystem::path path;
@@ -44,6 +51,8 @@ struct Options
     std::filesystem::path geoid_grid;
     std::filesystem::path config_path;
     bool load_config = true;
+    WorkspaceMode workspace_mode = WorkspaceMode::Operator;
+    bool developer_workspace = false;
     std::filesystem::path capture_ppm;
     std::filesystem::path capture_png;
     std::filesystem::path capture_sequence_dir;

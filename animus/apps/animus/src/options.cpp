@@ -84,6 +84,37 @@ std::uint16_t parse_udp_port(std::string_view name, std::string_view value)
     return static_cast<std::uint16_t>(parsed);
 }
 
+WorkspaceMode parse_workspace_mode(std::string_view value)
+{
+    if (value == "operator")
+    {
+        return WorkspaceMode::Operator;
+    }
+    if (value == "advanced")
+    {
+        return WorkspaceMode::Advanced;
+    }
+    if (value == "developer")
+    {
+        return WorkspaceMode::Developer;
+    }
+    throw std::invalid_argument("workspace mode must be operator, advanced, or developer");
+}
+
+const char *workspace_mode_config_value(const WorkspaceMode mode)
+{
+    switch (mode)
+    {
+    case WorkspaceMode::Operator:
+        return "operator";
+    case WorkspaceMode::Advanced:
+        return "advanced";
+    case WorkspaceMode::Developer:
+        return "developer";
+    }
+    return "operator";
+}
+
 double parse_positive_double(std::string_view name, std::string_view value)
 {
     std::size_t consumed = 0;
@@ -309,6 +340,17 @@ void load_app_config(Options &options)
     {
         options.overlays = std::move(overlays);
     }
+    if (const auto value = json_string_field(text, "workspace_mode"))
+    {
+        try
+        {
+            options.workspace_mode = parse_workspace_mode(*value);
+        }
+        catch (const std::invalid_argument &)
+        {
+            std::cerr << "ignoring invalid workspace_mode in config: " << *value << '\n';
+        }
+    }
 }
 
 void upsert_compat_overlay(Options &options)
@@ -513,6 +555,11 @@ Options parse_options(int argc, char **argv)
         {
             options.debug_overlay = true;
         }
+        else if (arg == "--developer-workspace")
+        {
+            options.developer_workspace = true;
+            options.workspace_mode = WorkspaceMode::Developer;
+        }
         else if (arg == "--no-debug-overlay")
         {
             options.debug_overlay = false;
@@ -626,7 +673,8 @@ Options parse_options(int argc, char **argv)
                 << "                   [--capture-ppm PATH] [--capture-png PATH]\n"
                 << "                   [--capture-sequence-dir DIR]\n"
                 << "                   [--capture-sequence-fps FPS]\n"
-                << "                   [--debug-overlay] [--no-debug-overlay]\n"
+                << "                   [--debug-overlay] [--developer-workspace]\n"
+                << "                   [--no-debug-overlay]\n"
                 << "                   [--min-z N] [--max-z N] [--tile-budget N]\n"
                 << "                   [--cache-root PATH] [--elevation-geotiff PATH]\n"
                 << "                   [--bathymetry-geotiff PATH]\n"
@@ -703,6 +751,8 @@ void save_app_config(const Options &options)
         output << (index + 1U == options.overlays.size() ? "\n" : ",\n");
     }
     output << "  ],\n"
+           << "  \"workspace_mode\": \"" << workspace_mode_config_value(options.workspace_mode)
+           << "\",\n"
            << "  \"debug_overlay\": " << (options.debug_overlay ? "true" : "false") << ",\n"
            << "  \"capture_path\": \"" << options.capture_png.generic_string() << "\",\n"
            << "  \"capture_sequence_dir\": \"" << options.capture_sequence_dir.generic_string()
