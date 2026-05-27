@@ -78,8 +78,8 @@ inline RangeBearingResult range_bearing_between(const MapToolPoint &from, const 
 
     const double sin_half_lat = std::sin(d_lat * 0.5);
     const double sin_half_lon = std::sin(d_lon * 0.5);
-    const double a = sin_half_lat * sin_half_lat +
-                     std::cos(lat1) * std::cos(lat2) * sin_half_lon * sin_half_lon;
+    const double a =
+        sin_half_lat * sin_half_lat + std::cos(lat1) * std::cos(lat2) * sin_half_lon * sin_half_lon;
     const double c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(std::max(0.0, 1.0 - a)));
     const double y = std::sin(d_lon) * std::cos(lat2);
     const double x =

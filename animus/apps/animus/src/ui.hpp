@@ -150,6 +150,9 @@ struct UiState
     bool developer_diagnostics_visible = false;
     bool telemetry_diagnostics_visible = false;
     bool telemetry_entity_selected = false;
+    bool telemetry_tracks_visible = true;
+    bool telemetry_labels_visible = true;
+    bool bathymetry_enabled = false;
     bool follow_selected_entity = false;
     bool request_fit_all_entities = false;
     bool request_center_selected_entity = false;

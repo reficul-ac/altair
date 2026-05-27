@@ -37,9 +37,15 @@ target_compile_definitions(animus_contract_tests PRIVATE ANIMUS_SOURCE_DIR="${CM
 include(GoogleTest)
 gtest_discover_tests(animus_contract_tests)
 
-add_executable(animus_options_tests ../apps/animus/src/options.cpp options_tests.cpp)
+add_executable(
+    animus_options_tests ../apps/animus/src/layer_offline.cpp ../apps/animus/src/options.cpp
+                         options_tests.cpp
+)
 target_include_directories(animus_options_tests PRIVATE ../apps/animus/src)
-target_link_libraries(animus_options_tests PRIVATE animus_telemetry_core GTest::gtest_main)
+target_link_libraries(
+    animus_options_tests PRIVATE animus_geo_core animus_terrain_core animus_telemetry_core
+                                 GTest::gtest_main
+)
 animus_enable_warnings(animus_options_tests)
 gtest_discover_tests(animus_options_tests)
 

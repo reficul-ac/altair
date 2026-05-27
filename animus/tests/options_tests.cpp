@@ -1,4 +1,5 @@
 #include "options.hpp"
+#include "layer_offline.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -120,4 +121,54 @@ TEST(AnimusOptions, LoadsAndSavesViewMode)
     EXPECT_EQ(restored.view_mode, animus::app::ViewMode::Terrain3D);
 
     std::filesystem::remove(path);
+}
+
+TEST(AnimusOfflinePreview, BuildsCurrentViewPrewarmCommand)
+{
+    animus::app::Options options;
+    options.min_z = 2;
+    options.max_z = 3;
+    options.z = 2;
+    options.center_x = 1;
+    options.center_y = 1;
+    options.cache_root = "cache root";
+    options.imagery_mbtiles = "imagery.mbtiles";
+    options.remote_imagery_url_template = "https://tiles.example/{z}/{x}/{y}.png";
+    options.remote_imagery_user_agent = "Animus Test";
+
+    const std::vector<animus::terrain_core::TileRenderDecision> visible_tiles = {
+        {animus::geo_core::TileCoord{2, 1, 1}, false},
+        {animus::geo_core::TileCoord{2, 2, 1}, false},
+    };
+
+    const auto preview = animus::app::build_prewarm_preview(options, "pack root", visible_tiles);
+
+    EXPECT_EQ(preview.tile_count, 29U);
+    EXPECT_NE(preview.command.find("python3 animus/tools/prewarm_cache.py --bbox"),
+              std::string::npos);
+    EXPECT_NE(preview.command.find("--min-z 2 --max-z 3"), std::string::npos);
+    EXPECT_NE(preview.command.find("--pack-root 'pack root'"), std::string::npos);
+    EXPECT_NE(preview.command.find("--cache-root 'cache root'"), std::string::npos);
+    EXPECT_NE(preview.command.find("--mbtiles imagery.mbtiles"), std::string::npos);
+    EXPECT_NE(preview.command.find("--remote-url https://tiles.example/{z}/{x}/{y}.png"),
+              std::string::npos);
+    EXPECT_NE(preview.command.find("--remote-user-agent 'Animus Test'"), std::string::npos);
+}
+
+TEST(AnimusOfflinePreview, OmitsAbsentOptionalSources)
+{
+    animus::app::Options options;
+    options.min_z = 4;
+    options.max_z = 4;
+    options.z = 4;
+    options.center_x = 3;
+    options.center_y = 5;
+
+    const auto preview = animus::app::build_prewarm_preview(options, options.pack_root, {});
+
+    EXPECT_EQ(preview.layers, "imagery,elevation");
+    EXPECT_EQ(preview.tile_count, 4U);
+    EXPECT_EQ(preview.command.find("--mbtiles"), std::string::npos);
+    EXPECT_EQ(preview.command.find("--remote-url"), std::string::npos);
+    EXPECT_EQ(preview.command.find("--layers"), std::string::npos);
 }

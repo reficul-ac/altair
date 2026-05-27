@@ -714,7 +714,8 @@ build_load_requests(const Options &options,
                     const std::filesystem::path &pack_root,
                     const std::vector<TileCoord> &coords,
                     const animus::terrain_core::TerrainViewpoint &view,
-                    std::uint64_t generation)
+                    std::uint64_t generation,
+                    const bool use_bathymetry)
 {
     std::vector<animus::terrain_core::TileLoadRequest> requests;
     requests.reserve(coords.size());
@@ -740,7 +741,7 @@ build_load_requests(const Options &options,
         request.remote_imagery_cache_identity = options.remote_imagery_cache_identity;
         request.remote_imagery_user_agent = options.remote_imagery_user_agent;
         request.remote_imagery_timeout_ms = options.remote_imagery_timeout_ms;
-        request.use_bathymetry = options.use_bathymetry;
+        request.use_bathymetry = use_bathymetry;
         request.imagery_spec.resolution = 256;
         request.imagery_spec.min_zoom = options.min_z;
         request.imagery_spec.max_zoom = options.max_z;
@@ -1980,8 +1981,8 @@ draw_telemetry_overlay(const Options &options,
     const auto *track = ui_state.telemetry_entity_selected
                             ? playback.timeline.track_for(playback.selected_entity)
                             : nullptr;
-    if (current && telemetry_sample_placeable(*current) && track != nullptr &&
-        track->samples.size() >= 2U)
+    if (ui_state.telemetry_tracks_visible && current && telemetry_sample_placeable(*current) &&
+        track != nullptr && track->samples.size() >= 2U)
     {
         const std::size_t max_points =
             playback.live ? options.telemetry_live_render_max_points : track->samples.size();
@@ -2117,7 +2118,8 @@ draw_telemetry_overlay(const Options &options,
             }
         }
 
-        const bool draw_label = selected || !compact_labels || visible_labels < 3U || stale;
+        const bool draw_label = ui_state.telemetry_labels_visible &&
+                                (selected || !compact_labels || visible_labels < 3U || stale);
         if (!draw_label)
         {
             continue;
@@ -2492,6 +2494,7 @@ int run(const Options &options)
     std::optional<MapToolPoint> map_context_point;
     ui_state.workspace_mode = options.workspace_mode;
     ui_state.view_mode = options.view_mode;
+    ui_state.bathymetry_enabled = options.use_bathymetry;
     if (options.developer_workspace && options.debug_overlay)
     {
         ui_state.workspace_mode = animus::app::WorkspaceMode::Developer;
@@ -2788,8 +2791,12 @@ int run(const Options &options)
             animus::terrain_core::build_tile_wishlist(view, selected_zoom, options.tile_budget);
         const std::vector<TileCoord> requested_tiles =
             add_parent_fallback_requests(desired_tiles, options.min_z);
-        streamer.request_tiles(
-            build_load_requests(options, pack_root, requested_tiles, view, stream_generation));
+        streamer.request_tiles(build_load_requests(options,
+                                                   pack_root,
+                                                   requested_tiles,
+                                                   view,
+                                                   stream_generation,
+                                                   ui_state.bathymetry_enabled));
 
         const std::size_t max_tiles_by_textures =
             std::max<std::size_t>(1U, static_cast<std::size_t>(options.max_texture_uploads) / 2U);

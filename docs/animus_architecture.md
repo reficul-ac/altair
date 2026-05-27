@@ -382,32 +382,32 @@ prewarm workflows through native UI.
 
 Checklist:
 
-- [ ] Add an `Advanced` `Layer Stack` panel.
-- [ ] Show rows for base imagery, hillshade/terrain shading, elevation color
+- [x] Add an `Advanced` `Layer Stack` panel.
+- [x] Show rows for base imagery, hillshade/terrain shading, elevation color
   ramp when available, bathymetry, GeoTIFF overlays, MBTiles imagery, remote
   imagery, telemetry tracks, entity labels, debug tile state overlay, and
   fallback/synthetic highlight overlay.
-- [ ] Support visible checkbox, opacity slider, draw order where existing,
+- [x] Support visible checkbox, opacity slider, draw order where existing,
   source health, source type, and quick details popup where applicable.
-- [ ] Add presets for Operator clean, Terrain analysis, Telemetry review, Debug
+- [x] Add presets for Operator clean, Terrain analysis, Telemetry review, Debug
   tiles, Bathymetry, and Capture/export.
-- [ ] Add an `Advanced` `Offline Terrain Sets` or `Map Packs` panel using
+- [x] Add an `Advanced` `Offline Terrain Sets` or `Map Packs` panel using
   existing pack-root, cache-root, and prewarm concepts.
-- [ ] Generate a copyable prewarm command preview from current view or selected
+- [x] Generate a copyable prewarm command preview from current view or selected
   entity/track extent.
 
 Acceptance:
 
-- [ ] Active visual layers are understandable at a glance.
-- [ ] Presets visibly change only existing render/UI state.
-- [ ] Developer tile overlays are not shown by default in `Operator`.
-- [ ] Users can define/copy a valid prewarm command without adding a new
+- [x] Active visual layers are understandable at a glance.
+- [x] Presets visibly change only existing render/UI state.
+- [x] Developer tile overlays are not shown by default in `Operator`.
+- [x] Users can define/copy a valid prewarm command without adding a new
   provider/download stack.
 
 Validation:
 
-- [ ] `python3 animus/tools/verify_animus.py`
-- [ ] Manual review of generated command shape against:
+- [x] `python3 animus/tools/verify_animus.py`
+- [x] Manual review of generated command shape against:
 
 ```bash
 python3 animus/tools/prewarm_cache.py --bbox=... --min-z ... --max-z ... --pack-root ... --cache-root ...
