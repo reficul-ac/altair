@@ -543,6 +543,158 @@ bool entity_degraded(const animus::telemetry_core::TelemetrySample &sample)
     return !sample.fields.position;
 }
 
+ImU32 marker_color(const TimelineReviewMarkerCategory category)
+{
+    switch (category)
+    {
+    case TimelineReviewMarkerCategory::Gap:
+        return IM_COL32(238, 158, 74, 255);
+    case TimelineReviewMarkerCategory::Degraded:
+        return IM_COL32(224, 190, 84, 255);
+    case TimelineReviewMarkerCategory::ImportWarning:
+        return IM_COL32(230, 196, 80, 255);
+    case TimelineReviewMarkerCategory::ImportError:
+        return IM_COL32(235, 86, 86, 255);
+    case TimelineReviewMarkerCategory::Bookmark:
+        return IM_COL32(135, 196, 255, 255);
+    case TimelineReviewMarkerCategory::MinClearance:
+        return IM_COL32(93, 214, 145, 255);
+    case TimelineReviewMarkerCategory::MaxSpeed:
+        return IM_COL32(187, 142, 255, 255);
+    }
+    return IM_COL32(180, 186, 192, 255);
+}
+
+void request_review_jump(UiState &ui, const double time_s)
+{
+    ui.request_review_jump_time_s = time_s;
+}
+
+void request_review_marker_jump(UiState &ui,
+                                const std::vector<TimelineReviewMarker> &markers,
+                                const std::size_t index)
+{
+    if (index >= markers.size())
+    {
+        return;
+    }
+    ui.selected_review_marker_index = index;
+    ui.request_review_jump_time_s = markers[index].time_s;
+}
+
+void draw_series_chart(const TimelineReviewSeries &series, const ImVec2 size)
+{
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    const ImVec2 min = ImGui::GetCursorScreenPos();
+    const ImVec2 max(min.x + size.x, min.y + size.y);
+    ImGui::Dummy(size);
+    draw->AddRectFilled(min, max, IM_COL32(14, 18, 21, 190), 5.0F);
+    draw->AddRect(min, max, IM_COL32(58, 66, 72, 220), 5.0F);
+    draw->AddText(
+        ImVec2(min.x + 8.0F, min.y + 6.0F), IM_COL32(210, 218, 224, 240), series.label.c_str());
+    if (series.points.size() < 2U)
+    {
+        draw->AddText(
+            ImVec2(min.x + 8.0F, min.y + 28.0F), IM_COL32(140, 148, 155, 230), "unavailable");
+        return;
+    }
+
+    double min_time = series.points.front().time_s;
+    double max_time = series.points.back().time_s;
+    double min_value = series.points.front().value;
+    double max_value = series.points.front().value;
+    for (const auto &point : series.points)
+    {
+        min_time = std::min(min_time, point.time_s);
+        max_time = std::max(max_time, point.time_s);
+        min_value = std::min(min_value, point.value);
+        max_value = std::max(max_value, point.value);
+    }
+    if (max_time <= min_time || max_value <= min_value)
+    {
+        max_value = min_value + 1.0;
+    }
+
+    const ImVec2 plot_min(min.x + 8.0F, min.y + 26.0F);
+    const ImVec2 plot_max(max.x - 8.0F, max.y - 18.0F);
+    ImVec2 previous{};
+    bool have_previous = false;
+    for (const auto &point : series.points)
+    {
+        const float x =
+            plot_min.x + static_cast<float>((point.time_s - min_time) / (max_time - min_time)) *
+                             (plot_max.x - plot_min.x);
+        const float y =
+            plot_max.y - static_cast<float>((point.value - min_value) / (max_value - min_value)) *
+                             (plot_max.y - plot_min.y);
+        const ImVec2 current(x, y);
+        if (have_previous)
+        {
+            draw->AddLine(previous, current, IM_COL32(99, 175, 220, 255), 1.6F);
+        }
+        previous = current;
+        have_previous = true;
+    }
+    const std::string range = format_value("%.1f", min_value) + ".." +
+                              format_value("%.1f", max_value) + " " + series.unit;
+    draw->AddText(ImVec2(min.x + 8.0F, max.y - 15.0F), IM_COL32(143, 151, 158, 230), range.c_str());
+}
+
+void draw_review_charts(const TimelineReviewData &review)
+{
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Review charts");
+    const float width = ImGui::GetContentRegionAvail().x;
+    draw_series_chart(review.altitude, ImVec2(width, 76.0F));
+    draw_series_chart(review.ground_speed, ImVec2(width, 76.0F));
+    draw_series_chart(review.terrain_clearance, ImVec2(width, 76.0F));
+}
+
+void draw_review_jump_buttons(const TimelineReviewData &review, UiState &ui)
+{
+    const auto min_clearance =
+        std::find_if(review.markers.begin(),
+                     review.markers.end(),
+                     [](const TimelineReviewMarker &marker)
+                     { return marker.category == TimelineReviewMarkerCategory::MinClearance; });
+    const auto gap = std::find_if(review.markers.begin(),
+                                  review.markers.end(),
+                                  [](const TimelineReviewMarker &marker)
+                                  { return marker.category == TimelineReviewMarkerCategory::Gap; });
+    if (review.min_clearance_marker)
+    {
+        if (ImGui::Button("Min clearance"))
+        {
+            request_review_marker_jump(
+                ui,
+                review.markers,
+                static_cast<std::size_t>(min_clearance - review.markers.begin()));
+        }
+        ImGui::SameLine();
+    }
+    else
+    {
+        ImGui::BeginDisabled();
+        ImGui::Button("Min clearance");
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+    }
+    if (gap != review.markers.end())
+    {
+        if (ImGui::Button("Telemetry gap"))
+        {
+            request_review_marker_jump(
+                ui, review.markers, static_cast<std::size_t>(gap - review.markers.begin()));
+        }
+    }
+    else
+    {
+        ImGui::BeginDisabled();
+        ImGui::Button("Telemetry gap");
+        ImGui::EndDisabled();
+    }
+}
+
 PillState telemetry_pill_state(const TelemetryPlaybackState &playback)
 {
     if (!playback.loaded)
@@ -1321,6 +1473,11 @@ void draw_telemetry_panel(const Options &options,
                     animus::telemetry_core::to_string(playback.timeline.source_format));
         ImGui::TextWrapped("%s", options.telemetry.string().c_str());
         draw_timeline_controls(playback);
+        if (ui.telemetry_entity_selected)
+        {
+            draw_review_jump_buttons(playback.review, ui);
+            draw_review_charts(playback.review);
+        }
     }
     ImGui::Separator();
     draw_entity_list(playback, ui);
@@ -1781,7 +1938,49 @@ void draw_inspector(TelemetryPlaybackState &playback,
     ImGui::PopStyleColor(2);
 }
 
-void draw_bottom_timeline(TelemetryPlaybackState &playback, const UiState &ui_state)
+void draw_review_tape(TelemetryPlaybackState &playback, UiState &ui_state, const float width)
+{
+    const double start = playback.timeline.start_time_s;
+    const double end = playback.timeline.end_time_s;
+    const double duration = std::max(1.0e-6, end - start);
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    const ImVec2 tape_min = ImGui::GetCursorScreenPos();
+    const ImVec2 tape_size(width, 22.0F);
+    const ImVec2 tape_max(tape_min.x + tape_size.x, tape_min.y + tape_size.y);
+    ImGui::InvisibleButton("review_tape", tape_size);
+    draw->AddRectFilled(tape_min, tape_max, IM_COL32(12, 15, 18, 235), 5.0F);
+    draw->AddRect(tape_min, tape_max, IM_COL32(65, 73, 80, 230), 5.0F);
+    for (std::size_t index = 0U; index < playback.review.markers.size(); ++index)
+    {
+        const auto &marker = playback.review.markers[index];
+        const float x =
+            tape_min.x + static_cast<float>((marker.time_s - start) / duration) * tape_size.x;
+        const bool selected = ui_state.selected_review_marker_index &&
+                              *ui_state.selected_review_marker_index == index;
+        draw->AddLine(ImVec2(x, tape_min.y + 3.0F),
+                      ImVec2(x, tape_max.y - 3.0F),
+                      marker_color(marker.category),
+                      selected ? 3.2F : (marker.end_time_s ? 2.4F : 1.5F));
+    }
+    const float current_x =
+        tape_min.x + static_cast<float>((playback.clock.time_s() - start) / duration) * tape_size.x;
+    draw->AddTriangleFilled(ImVec2(current_x, tape_min.y - 2.0F),
+                            ImVec2(current_x - 5.0F, tape_min.y + 7.0F),
+                            ImVec2(current_x + 5.0F, tape_min.y + 7.0F),
+                            IM_COL32(235, 244, 250, 255));
+    draw->AddLine(ImVec2(current_x, tape_min.y + 4.0F),
+                  ImVec2(current_x, tape_max.y),
+                  IM_COL32(235, 244, 250, 255),
+                  1.4F);
+    if (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    {
+        const float local_x = std::clamp(ImGui::GetIO().MousePos.x - tape_min.x, 0.0F, tape_size.x);
+        request_review_jump(ui_state,
+                            start + duration * static_cast<double>(local_x / tape_size.x));
+    }
+}
+
+void draw_bottom_timeline(TelemetryPlaybackState &playback, UiState &ui_state)
 {
     if (!playback.loaded)
     {
@@ -1795,8 +1994,8 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback, const UiState &ui_st
     {
         return;
     }
-    ImGui::SetNextWindowPos(ImVec2(left, ImGui::GetIO().DisplaySize.y - 82.0F), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(available_width, 76.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(left, ImGui::GetIO().DisplaySize.y - 112.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(available_width, 106.0F), ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                              ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055F, 0.064F, 0.072F, 0.88F));
@@ -1824,7 +2023,70 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback, const UiState &ui_st
     }
     else
     {
-        draw_timeline_controls(playback);
+        ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F),
+                           "%.3f s / %.3f s",
+                           playback.clock.time_s(),
+                           playback.timeline.end_time_s);
+        ImGui::SameLine();
+        ImGui::TextColored(text_muted,
+                           "selected %s",
+                           ui_state.telemetry_entity_selected
+                               ? entity_label(playback.selected_entity).c_str()
+                               : "none");
+        ImGui::SameLine();
+        ImGui::TextColored(text_muted, "markers %zu", playback.review.markers.size());
+        draw_review_tape(playback, ui_state, ImGui::GetContentRegionAvail().x);
+        if (ImGui::Button(playback.clock.paused() ? "Play" : "Pause"))
+        {
+            playback.clock.set_paused(!playback.clock.paused());
+        }
+        ImGui::SameLine();
+        const auto previous =
+            previous_review_marker(playback.review.markers, playback.clock.time_s());
+        if (!previous)
+        {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Button("Prev marker") && previous)
+        {
+            request_review_marker_jump(ui_state, playback.review.markers, *previous);
+        }
+        if (!previous)
+        {
+            ImGui::EndDisabled();
+        }
+        ImGui::SameLine();
+        const auto next = next_review_marker(playback.review.markers, playback.clock.time_s());
+        if (!next)
+        {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Button("Next marker") && next)
+        {
+            request_review_marker_jump(ui_state, playback.review.markers, *next);
+        }
+        if (!next)
+        {
+            ImGui::EndDisabled();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Bookmark"))
+        {
+            add_timeline_bookmark(ui_state.timeline_bookmarks, playback.clock.time_s());
+        }
+        ImGui::SameLine();
+        bool looping = playback.clock.looping();
+        if (ImGui::Checkbox("Loop", &looping))
+        {
+            playback.clock.set_looping(looping);
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120.0F);
+        float rate = static_cast<float>(playback.clock.rate());
+        if (ImGui::SliderFloat("Rate", &rate, 0.1F, 16.0F, "%.2fx"))
+        {
+            playback.clock.set_rate(rate);
+        }
     }
     ImGui::End();
     ImGui::PopStyleVar(2);

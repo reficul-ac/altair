@@ -1459,6 +1459,50 @@ void update_selected_entity_terrain_state(
                         : terrain->confidence;
 }
 
+std::vector<animus::app::TerrainClearanceSample>
+build_review_clearance_samples(const Options &options,
+                               const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                               const animus::terrain_core::GeoidCorrectionGrid &geoid_grid,
+                               const animus::telemetry_core::Timeline &timeline,
+                               const animus::telemetry_core::EntityId selected_entity)
+{
+    std::vector<animus::app::TerrainClearanceSample> samples;
+    const auto *track = timeline.track_for(selected_entity);
+    if (track == nullptr || track->samples.empty())
+    {
+        return samples;
+    }
+    constexpr std::size_t max_samples = animus::app::default_timeline_review_sample_cap;
+    samples.reserve(std::min(track->samples.size(), max_samples));
+    const std::size_t input_last = track->samples.size() - 1U;
+    const std::size_t output_count = std::min(track->samples.size(), max_samples);
+    const std::size_t output_last = output_count - 1U;
+    for (std::size_t index = 0U; index < output_count; ++index)
+    {
+        const std::size_t source =
+            output_last == 0U ? 0U : (index * input_last + output_last / 2U) / output_last;
+        const auto &sample = track->samples[source];
+        if (!telemetry_sample_placeable(sample))
+        {
+            continue;
+        }
+        const auto terrain =
+            sample_resident_terrain(options, tiles, sample.lat_deg, sample.lon_deg);
+        if (!terrain)
+        {
+            continue;
+        }
+        bool datum_uncertain = false;
+        const auto clearance =
+            selected_entity_clearance_m(geoid_grid, sample, terrain->height_m, datum_uncertain);
+        if (clearance)
+        {
+            samples.push_back({sample.time_s, *clearance});
+        }
+    }
+    return samples;
+}
+
 std::optional<Vec3>
 selected_entity_world_position(const Options &options,
                                const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
@@ -2680,6 +2724,12 @@ int run(const Options &options)
         }
         ui_state.request_jump_latest_sample = false;
 
+        if (ui_state.request_review_jump_time_s && telemetry.loaded && !telemetry.live)
+        {
+            telemetry.clock.seek(*ui_state.request_review_jump_time_s);
+        }
+        ui_state.request_review_jump_time_s.reset();
+
         if (ui_state.request_home_view)
         {
             if (ui_state.view_mode == animus::app::ViewMode::Map2D)
@@ -2848,6 +2898,20 @@ int run(const Options &options)
         }
         streamer.update_l0_stats(tiles.size(), resident_gpu_bytes);
         update_selected_entity_terrain_state(options, tiles, geoid_grid, telemetry, ui_state);
+        if (telemetry.loaded && !telemetry.live && ui_state.telemetry_entity_selected)
+        {
+            telemetry.review = animus::app::build_timeline_review(
+                telemetry.timeline,
+                telemetry.selected_entity,
+                ui_state.timeline_bookmarks,
+                build_review_clearance_samples(
+                    options, tiles, geoid_grid, telemetry.timeline, telemetry.selected_entity),
+                animus::app::default_timeline_review_sample_cap);
+        }
+        else
+        {
+            telemetry.review = {};
+        }
 
         if (debug_layer != nullptr)
         {

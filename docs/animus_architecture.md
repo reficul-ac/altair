@@ -425,27 +425,27 @@ without complicating normal live mode.
 
 Checklist:
 
-- [ ] Extend offline playback timeline into a flight-tape-style review bar.
-- [ ] Add timeline markers for telemetry gaps, stale periods, degraded periods,
+- [x] Extend offline playback timeline into a flight-tape-style review bar.
+- [x] Add timeline markers for telemetry gaps, stale periods, degraded periods,
   min terrain clearance, max speed, parser/import warnings, and manual
   bookmarks.
-- [ ] Add actions for previous/next event, jump to min clearance, and jump to
+- [x] Add actions for previous/next event, jump to min clearance, and jump to
   telemetry gap.
-- [ ] Add bounded/decimated charts for altitude, speed, and terrain clearance
+- [x] Add bounded/decimated charts for altitude, speed, and terrain clearance
   when practical.
-- [ ] Keep live mode simple unless an explicit replay/live-buffer review mode is
+- [x] Keep live mode simple unless an explicit replay/live-buffer review mode is
   added.
 
 Acceptance:
 
-- [ ] Offline telemetry review is easier than before.
-- [ ] Existing live UDP behavior is not broken.
-- [ ] Charts and markers do not render unbounded sample counts.
+- [x] Offline telemetry review is easier than before.
+- [x] Existing live UDP behavior is not broken.
+- [x] Charts and markers do not render unbounded sample counts.
 
 Validation:
 
-- [ ] `python3 animus/tools/verify_animus.py --screenshot-smoke --artifact-bundle`
-- [ ] `python3 tools/python/run_animus_sitl_live_smoke.py`
+- [x] `python3 animus/tools/verify_animus.py --screenshot-smoke --artifact-bundle`
+- [x] `python3 tools/python/run_animus_sitl_live_smoke.py`
 
 Deferred:
 

@@ -7,6 +7,7 @@
 #include "animus/telemetry_live/udp_mavlink_receiver.hpp"
 #include "animus/terrain_core/terrain_stream.hpp"
 #include "options.hpp"
+#include "timeline_review.hpp"
 
 #include <array>
 #include <cstddef>
@@ -91,6 +92,7 @@ struct TelemetryPlaybackState
         TerrainConfidence confidence = TerrainConfidence::Unavailable;
     };
     SelectedEntityTerrain selected_entity_terrain;
+    TimelineReviewData review;
     animus::telemetry_core::EntityId selected_entity;
     std::string live_endpoint;
     animus::telemetry_live::UdpMavlinkReceiverStats receiver_stats;
@@ -158,10 +160,13 @@ struct UiState
     bool request_center_selected_entity = false;
     bool request_fit_selected_entity = false;
     bool request_jump_latest_sample = false;
+    std::optional<double> request_review_jump_time_s;
+    std::optional<std::size_t> selected_review_marker_index;
     bool request_home_view = false;
     int zoom_steps = 0;
     std::array<char, 64> telemetry_entity_filter{};
     TelemetryEventFilters telemetry_event_filters;
+    std::vector<TimelineBookmark> timeline_bookmarks;
 };
 
 [[nodiscard]] std::filesystem::path screenshot_path(const ScreenshotToolState &tool);
