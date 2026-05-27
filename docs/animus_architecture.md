@@ -459,29 +459,29 @@ editing or upload capability.
 
 Checklist:
 
-- [ ] Add read-only QGC `.plan` JSON import, or a parser stub plus UI placeholder
+- [x] Add read-only QGC `.plan` JSON import, or a parser stub plus UI placeholder
   if full parsing is not practical in the first slice.
-- [ ] Load a plan from CLI or UI file path field.
-- [ ] Draw mission waypoints, path lines, direction arrows, geofence
+- [x] Load a plan from CLI or UI file path field.
+- [x] Draw mission waypoints, path lines, direction arrows, geofence
   polygons/circles, and rally points where present.
-- [ ] Show route summary and compare planned route to selected telemetry track
+- [x] Show route summary and compare planned route to selected telemetry track
   when telemetry is loaded.
-- [ ] Keep plan visualization state app-owned unless a clear shared data model
+- [x] Keep plan visualization state app-owned unless a clear shared data model
   reason appears.
-- [ ] Add a layer-stack toggle for the plan overlay.
+- [x] Add a layer-stack toggle for the plan overlay.
 
 Acceptance:
 
-- [ ] A simple QGC `.plan` file can be visualized over terrain.
-- [ ] Invalid or unsupported plan files produce clear UI errors.
-- [ ] No mission upload, arming, vehicle command, or full mission editing path
+- [x] A simple QGC `.plan` file can be visualized over terrain.
+- [x] Invalid or unsupported plan files produce clear UI errors.
+- [x] No mission upload, arming, vehicle command, or full mission editing path
   exists.
 
 Validation:
 
-- [ ] Unit/parser coverage for a simple valid plan and malformed input if parser
+- [x] Unit/parser coverage for a simple valid plan and malformed input if parser
   code is added.
-- [ ] `python3 animus/tools/verify_animus.py`
+- [x] `python3 animus/tools/verify_animus.py`
 
 Deferred:
 

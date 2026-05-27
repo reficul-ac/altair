@@ -54,6 +54,10 @@ using animus::app::MapToolPoint;
 using animus::app::MapToolState;
 using animus::app::Mp4RecorderState;
 using animus::app::Options;
+using animus::app::PlanGeoPoint;
+using animus::app::PlanVisualizationData;
+using animus::app::PlanVisualizationLoadResult;
+using animus::app::PlanVisualizationState;
 using animus::app::ScreenshotToolState;
 using animus::app::TelemetryPlaybackState;
 using animus::app::ToolMode;
@@ -2203,6 +2207,219 @@ draw_telemetry_overlay(const Options &options,
     return stats;
 }
 
+Vec3 plan_world_position(const Options &options,
+                         const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                         const PlanGeoPoint &point)
+{
+    const std::optional<float> terrain_m =
+        sample_resident_terrain_height_m(options, tiles, point.lat_deg, point.lon_deg);
+    Vec3 world = terrain_world_position(options, point.lat_deg, point.lon_deg, terrain_m);
+    if (!terrain_m && point.alt_m)
+    {
+        world.y = static_cast<float>(*point.alt_m) * options.height_scale;
+    }
+    world.y += 0.025F;
+    return world;
+}
+
+std::vector<PlanGeoPoint> circle_points(const PlanGeoPoint &center, const double radius_m)
+{
+    std::vector<PlanGeoPoint> points;
+    points.reserve(65U);
+    constexpr double pi = 3.14159265358979323846;
+    constexpr double earth_radius_m = 6371008.8;
+    const double lat_rad = center.lat_deg * pi / 180.0;
+    const double dlat_deg = (radius_m / earth_radius_m) * 180.0 / pi;
+    const double cos_lat = std::max(0.05, std::abs(std::cos(lat_rad)));
+    const double dlon_deg = dlat_deg / cos_lat;
+    for (int index = 0; index <= 64; ++index)
+    {
+        const double theta = 2.0 * pi * static_cast<double>(index) / 64.0;
+        points.push_back({center.lat_deg + std::sin(theta) * dlat_deg,
+                          center.lon_deg + std::cos(theta) * dlon_deg,
+                          center.alt_m});
+    }
+    return points;
+}
+
+void draw_plan_polyline(ImDrawList *draw,
+                        const Options &options,
+                        const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                        const Mat4 &mvp,
+                        const std::vector<PlanGeoPoint> &points,
+                        const int framebuffer_width,
+                        const int framebuffer_height,
+                        const ImU32 color,
+                        const float thickness,
+                        const bool closed,
+                        const bool arrows)
+{
+    if (points.size() < 2U)
+    {
+        return;
+    }
+    std::vector<ImVec2> projected;
+    projected.reserve(points.size());
+    for (const PlanGeoPoint &point : points)
+    {
+        const ProjectedPoint screen = project_to_screen(
+            mvp, plan_world_position(options, tiles, point), framebuffer_width, framebuffer_height);
+        if (!screen.visible)
+        {
+            projected.push_back(ImVec2(-100000.0F, -100000.0F));
+            continue;
+        }
+        projected.push_back(screen.screen);
+    }
+
+    const auto draw_segment = [&](const ImVec2 a, const ImVec2 b, const bool arrow)
+    {
+        if (a.x < -99999.0F || b.x < -99999.0F)
+        {
+            return;
+        }
+        draw->AddLine(a, b, color, thickness);
+        if (!arrow)
+        {
+            return;
+        }
+        const ImVec2 delta(b.x - a.x, b.y - a.y);
+        const float length = std::sqrt(delta.x * delta.x + delta.y * delta.y);
+        if (length < 22.0F)
+        {
+            return;
+        }
+        const ImVec2 dir(delta.x / length, delta.y / length);
+        const ImVec2 normal(-dir.y, dir.x);
+        const ImVec2 tip(a.x + delta.x * 0.62F, a.y + delta.y * 0.62F);
+        draw->AddTriangleFilled(
+            tip,
+            ImVec2(tip.x - dir.x * 8.0F + normal.x * 4.0F, tip.y - dir.y * 8.0F + normal.y * 4.0F),
+            ImVec2(tip.x - dir.x * 8.0F - normal.x * 4.0F, tip.y - dir.y * 8.0F - normal.y * 4.0F),
+            color);
+    };
+
+    for (std::size_t index = 1U; index < projected.size(); ++index)
+    {
+        draw_segment(projected[index - 1U], projected[index], arrows);
+    }
+    if (closed)
+    {
+        draw_segment(projected.back(), projected.front(), false);
+    }
+}
+
+void draw_plan_overlay(const Options &options,
+                       const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                       const PlanVisualizationState &plan_state,
+                       const Camera &camera,
+                       const Map2DCamera &map_camera,
+                       const animus::app::ViewMode view_mode,
+                       const int framebuffer_width,
+                       const int framebuffer_height)
+{
+    if (!plan_state.overlay_visible || !plan_state.data)
+    {
+        return;
+    }
+    ImDrawList *draw = ImGui::GetBackgroundDrawList();
+    const Mat4 mvp = active_view_projection(
+        camera, map_camera, view_mode, framebuffer_width, framebuffer_height);
+    const PlanVisualizationData &plan = *plan_state.data;
+
+    std::vector<PlanGeoPoint> route;
+    route.reserve(plan.mission_waypoints.size());
+    for (const auto &waypoint : plan.mission_waypoints)
+    {
+        route.push_back(waypoint.point);
+    }
+    draw_plan_polyline(draw,
+                       options,
+                       tiles,
+                       mvp,
+                       route,
+                       framebuffer_width,
+                       framebuffer_height,
+                       IM_COL32(255, 213, 94, 232),
+                       2.2F,
+                       false,
+                       true);
+
+    for (const auto &outline : plan.complex_outlines)
+    {
+        draw_plan_polyline(draw,
+                           options,
+                           tiles,
+                           mvp,
+                           outline.points,
+                           framebuffer_width,
+                           framebuffer_height,
+                           IM_COL32(137, 209, 255, 184),
+                           1.8F,
+                           false,
+                           false);
+    }
+    for (const auto &polygon : plan.geofence_polygons)
+    {
+        draw_plan_polyline(draw,
+                           options,
+                           tiles,
+                           mvp,
+                           polygon.points,
+                           framebuffer_width,
+                           framebuffer_height,
+                           IM_COL32(248, 114, 114, 202),
+                           2.0F,
+                           true,
+                           false);
+    }
+    for (const auto &circle : plan.geofence_circles)
+    {
+        draw_plan_polyline(draw,
+                           options,
+                           tiles,
+                           mvp,
+                           circle_points(circle.center, circle.radius_m),
+                           framebuffer_width,
+                           framebuffer_height,
+                           IM_COL32(248, 114, 114, 178),
+                           1.8F,
+                           false,
+                           false);
+    }
+
+    const auto draw_point = [&](const PlanGeoPoint &point,
+                                const std::string &label,
+                                const ImU32 fill,
+                                const ImU32 stroke)
+    {
+        const ProjectedPoint screen = project_to_screen(
+            mvp, plan_world_position(options, tiles, point), framebuffer_width, framebuffer_height);
+        if (!screen.visible)
+        {
+            return;
+        }
+        draw->AddCircleFilled(screen.screen, 5.8F, fill, 20);
+        draw->AddCircle(screen.screen, 7.4F, stroke, 24, 1.4F);
+        if (!label.empty())
+        {
+            draw_tool_label(draw, screen.screen, label, IM_COL32(242, 246, 248, 236));
+        }
+    };
+    for (const auto &waypoint : plan.mission_waypoints)
+    {
+        draw_point(waypoint.point,
+                   waypoint.label,
+                   IM_COL32(255, 213, 94, 242),
+                   IM_COL32(255, 246, 184, 220));
+    }
+    for (const auto &rally : plan.rally_points)
+    {
+        draw_point(
+            rally.point, rally.label, IM_COL32(88, 221, 155, 232), IM_COL32(203, 250, 226, 214));
+    }
+}
+
 void draw_map2d_overlay(const Options &options,
                         const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
                         const Map2DCamera &camera,
@@ -2534,6 +2751,7 @@ int run(const Options &options)
     ScreenshotToolState screenshot_tool;
     Mp4RecorderState mp4_recorder;
     UiState ui_state;
+    PlanVisualizationState plan_state;
     MapToolState map_tools;
     std::optional<MapToolPoint> map_context_point;
     ui_state.workspace_mode = options.workspace_mode;
@@ -2545,6 +2763,17 @@ int run(const Options &options)
         ui_state.developer_diagnostics_visible = true;
     }
     ui_state.telemetry_entity_selected = !telemetry.timeline.entities.empty();
+    if (!options.plan.empty())
+    {
+        std::snprintf(
+            plan_state.path.data(), plan_state.path.size(), "%s", options.plan.string().c_str());
+        const PlanVisualizationLoadResult plan_result =
+            animus::app::load_plan_visualization(options.plan);
+        plan_state.data = plan_result.data;
+        plan_state.diagnostics = plan_result.diagnostics;
+        plan_state.error = plan_result.error;
+        plan_state.loaded_path = plan_result.data ? options.plan : std::filesystem::path{};
+    }
     std::snprintf(screenshot_tool.png_path.data(),
                   screenshot_tool.png_path.size(),
                   "%s",
@@ -3006,6 +3235,14 @@ int run(const Options &options)
                                        window.framebuffer_height());
             telemetry.live_overlay_draw_ms = overlay_stats.draw_ms;
             telemetry.live_rendered_trail_points = overlay_stats.rendered_trail_points;
+            draw_plan_overlay(options,
+                              tiles,
+                              plan_state,
+                              input.camera,
+                              input.map_camera,
+                              ui_state.view_mode,
+                              window.framebuffer_width(),
+                              window.framebuffer_height());
             if (ui_state.view_mode == animus::app::ViewMode::Map2D)
             {
                 draw_map2d_overlay(options,
@@ -3047,6 +3284,7 @@ int run(const Options &options)
                                mesh_uploads_used,
                                resident_gpu_bytes,
                                telemetry,
+                               plan_state,
                                vehicle_render.status,
                                screenshot_tool,
                                mp4_recorder,

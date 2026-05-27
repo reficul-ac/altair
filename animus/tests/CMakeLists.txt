@@ -49,6 +49,17 @@ target_link_libraries(
 animus_enable_warnings(animus_options_tests)
 gtest_discover_tests(animus_options_tests)
 
+add_executable(
+    animus_plan_visualization_tests ../apps/animus/src/plan_visualization.cpp
+                                    plan_visualization_tests.cpp
+)
+target_include_directories(animus_plan_visualization_tests PRIVATE ../apps/animus/src)
+target_link_libraries(
+    animus_plan_visualization_tests PRIVATE animus_telemetry_core GTest::gtest_main
+)
+animus_enable_warnings(animus_plan_visualization_tests)
+gtest_discover_tests(animus_plan_visualization_tests)
+
 add_executable(animus_map_tools_tests map_tools_tests.cpp)
 target_include_directories(animus_map_tools_tests PRIVATE ../apps/animus/src)
 target_link_libraries(animus_map_tools_tests PRIVATE GTest::gtest_main)

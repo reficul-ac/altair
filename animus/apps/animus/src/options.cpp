@@ -688,6 +688,10 @@ Options parse_options(int argc, char **argv)
         {
             options.telemetry_live_debug_csv = std::string(next_arg(argc, argv, index, arg));
         }
+        else if (arg == "--plan")
+        {
+            options.plan = std::string(next_arg(argc, argv, index, arg));
+        }
         else if (arg == "--telemetry-format")
         {
             const std::string value = std::string(next_arg(argc, argv, index, arg));
@@ -744,6 +748,7 @@ Options parse_options(int argc, char **argv)
                 << "                   [--telemetry-live-max-samples N]\n"
                 << "                   [--telemetry-live-render-max-points N]\n"
                 << "                   [--telemetry-live-debug-csv PATH]\n"
+                << "                   [--plan PATH]\n"
                 << "                   [--telemetry-tlog PATH] [--playback-rate F]\n"
                 << "                   [--playback-start-paused]\n";
             std::exit(0);

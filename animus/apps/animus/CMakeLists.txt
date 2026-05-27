@@ -7,6 +7,7 @@ add_executable(
     src/capture.cpp
     src/layer_offline.cpp
     src/options.cpp
+    src/plan_visualization.cpp
     src/timeline_review.cpp
     src/ui.cpp
 )

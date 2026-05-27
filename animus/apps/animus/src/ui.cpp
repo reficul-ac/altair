@@ -132,6 +132,15 @@ std::string format_distance_m(const std::optional<double> distance_m)
     return distance_m ? format_value("%.0f m", *distance_m) : std::string("n/a");
 }
 
+std::string format_route_distance(const double distance_m)
+{
+    if (distance_m >= 1000.0)
+    {
+        return format_value("%.2f km", distance_m / 1000.0);
+    }
+    return format_value("%.0f m", distance_m);
+}
+
 std::string format_rate_mps(const std::optional<double> rate_mps)
 {
     return rate_mps ? format_value("%.1f m/s", *rate_mps) : std::string("n/a");
@@ -426,6 +435,100 @@ void detail_popup(const char *id, const std::string &text)
 void table_text(const char *text)
 {
     ImGui::TextUnformatted(text);
+}
+
+void load_plan_into_state(PlanVisualizationState &plan_state)
+{
+    const std::filesystem::path path(plan_state.path.data());
+    if (path.empty())
+    {
+        plan_state.data.reset();
+        plan_state.loaded_path.clear();
+        plan_state.error = "plan path is empty";
+        plan_state.diagnostics.clear();
+        return;
+    }
+    const PlanVisualizationLoadResult result = load_plan_visualization(path);
+    plan_state.data = result.data;
+    plan_state.diagnostics = result.diagnostics;
+    plan_state.error = result.error;
+    plan_state.loaded_path = result.data ? path : std::filesystem::path{};
+}
+
+void draw_plan_controls(PlanVisualizationState &plan_state,
+                        const TelemetryPlaybackState &playback,
+                        const UiState &ui_state)
+{
+    ImGui::SeparatorText("Plan");
+    ImGui::Checkbox("Plan overlay", &plan_state.overlay_visible);
+    ImGui::InputText("Plan path", plan_state.path.data(), plan_state.path.size());
+    if (ImGui::Button("Load"))
+    {
+        load_plan_into_state(plan_state);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reload"))
+    {
+        if (plan_state.path[0] == '\0' && !plan_state.loaded_path.empty())
+        {
+            std::snprintf(plan_state.path.data(),
+                          plan_state.path.size(),
+                          "%s",
+                          plan_state.loaded_path.string().c_str());
+        }
+        load_plan_into_state(plan_state);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear"))
+    {
+        plan_state.data.reset();
+        plan_state.loaded_path.clear();
+        plan_state.error.clear();
+        plan_state.diagnostics.clear();
+        plan_state.path[0] = '\0';
+    }
+
+    if (!plan_state.error.empty())
+    {
+        ImGui::TextWrapped("error: %s", plan_state.error.c_str());
+        return;
+    }
+    if (!plan_state.data)
+    {
+        muted_text("No plan loaded.");
+        return;
+    }
+
+    const PlanVisualizationData &plan = *plan_state.data;
+    ImGui::Text("waypoints %zu  distance %s",
+                plan.mission_waypoints.size(),
+                format_route_distance(plan.route_distance_m).c_str());
+    ImGui::Text("geofence %zu/%zu  rally %zu  unsupported %zu",
+                plan.geofence_polygons.size(),
+                plan.geofence_circles.size(),
+                plan.rally_points.size(),
+                plan.unsupported_item_count);
+    if (!plan_state.loaded_path.empty())
+    {
+        ImGui::TextWrapped("%s", plan_state.loaded_path.string().c_str());
+    }
+    if (playback.loaded && ui_state.telemetry_entity_selected)
+    {
+        const auto *track = playback.timeline.track_for(playback.selected_entity);
+        if (track != nullptr)
+        {
+            const PlanTrackComparison comparison = compare_plan_to_track(plan, *track);
+            ImGui::Text("selected track %s",
+                        format_route_distance(comparison.selected_track_m).c_str());
+            ImGui::Text("first/last nearest %s / %s",
+                        format_distance_m(comparison.first_waypoint_nearest_track_m).c_str(),
+                        format_distance_m(comparison.last_waypoint_nearest_track_m).c_str());
+        }
+    }
+    for (const std::string &diagnostic : plan_state.diagnostics)
+    {
+        ImGui::TextWrapped("warning: %s", diagnostic.c_str());
+    }
 }
 
 void apply_layer_preset(const char *preset,
@@ -960,6 +1063,8 @@ void draw_view_panel(const Options &options,
                      const Camera &camera,
                      Map2DCamera &map_camera,
                      int selected_zoom,
+                     const TelemetryPlaybackState &playback,
+                     PlanVisualizationState &plan_state,
                      UiState &ui_state,
                      bool &state_colors,
                      bool &highlight_fallback)
@@ -1045,6 +1150,7 @@ void draw_view_panel(const Options &options,
                     camera.target.z,
                     camera.distance);
     }
+    draw_plan_controls(plan_state, playback, ui_state);
     ImGui::Separator();
     ImGui::Text("pack");
     ImGui::TextWrapped("%s", pack_root.string().c_str());
@@ -1083,6 +1189,7 @@ void draw_layer_row(const char *name,
 void draw_layer_stack(const Options &options,
                       const animus::terrain_core::TerrainStreamSnapshot &snapshot,
                       const TelemetryPlaybackState &playback,
+                      PlanVisualizationState &plan_state,
                       UiState &ui_state,
                       bool &state_colors,
                       bool &highlight_fallback,
@@ -1122,6 +1229,8 @@ void draw_layer_stack(const Options &options,
     ImGui::Checkbox("Telemetry tracks", &ui_state.telemetry_tracks_visible);
     ImGui::SameLine();
     ImGui::Checkbox("Entity labels", &ui_state.telemetry_labels_visible);
+    ImGui::SameLine();
+    ImGui::Checkbox("Plan overlay", &plan_state.overlay_visible);
     bool bathymetry_mutable = ui_state.bathymetry_enabled;
     if (!options.use_bathymetry || options.bathymetry_geotiff.empty())
     {
@@ -1239,6 +1348,14 @@ void draw_layer_stack(const Options &options,
                        playback.live ? "live telemetry" : "offline telemetry",
                        playback.loaded ? "active" : "idle",
                        "Entity labels remain compact when many entities are visible.");
+        draw_layer_row("Plan overlay",
+                       bool_label(plan_state.overlay_visible).c_str(),
+                       "1.00",
+                       "overlay",
+                       plan_state.data ? "qgc plan" : "none",
+                       !plan_state.error.empty() ? "error" : (plan_state.data ? "active" : "idle"),
+                       "Read-only QGroundControl .plan visualization. The app does not add "
+                       "mission upload, vehicle commands, drag handles, or write-back paths.");
         draw_layer_row("Debug tile states",
                        bool_label(state_colors).c_str(),
                        "0.35",
@@ -1294,6 +1411,7 @@ void draw_layer_panel(const Options &options,
                       const animus::terrain_core::TerrainStreamSnapshot &snapshot,
                       const std::vector<animus::terrain_core::TileRenderDecision> &visible_tiles,
                       const TelemetryPlaybackState &playback,
+                      PlanVisualizationState &plan_state,
                       UiState &ui_state,
                       bool &state_colors,
                       bool &highlight_fallback,
@@ -1303,6 +1421,7 @@ void draw_layer_panel(const Options &options,
     draw_layer_stack(options,
                      snapshot,
                      playback,
+                     plan_state,
                      ui_state,
                      state_colors,
                      highlight_fallback,
@@ -2187,6 +2306,7 @@ void draw_app_workspace(const Options &options,
                         int mesh_uploads_used,
                         std::size_t resident_gpu_bytes,
                         TelemetryPlaybackState &playback,
+                        PlanVisualizationState &plan_state,
                         const VehicleRuntimeStatus &vehicle_status,
                         ScreenshotToolState &screenshot_tool,
                         Mp4RecorderState &mp4_recorder,
@@ -2231,6 +2351,8 @@ void draw_app_workspace(const Options &options,
                         camera,
                         map_camera,
                         selected_zoom,
+                        playback,
+                        plan_state,
                         ui_state,
                         state_colors,
                         highlight_fallback);
@@ -2242,6 +2364,7 @@ void draw_app_workspace(const Options &options,
                          snapshot,
                          visible_tiles,
                          playback,
+                         plan_state,
                          ui_state,
                          state_colors,
                          highlight_fallback,

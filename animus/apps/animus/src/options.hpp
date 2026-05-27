@@ -91,6 +91,7 @@ struct Options
     std::size_t telemetry_live_max_samples = 20000U;
     std::size_t telemetry_live_render_max_points = 1000U;
     std::filesystem::path telemetry_live_debug_csv;
+    std::filesystem::path plan;
     animus::telemetry_core::TelemetryImportFormat telemetry_format =
         animus::telemetry_core::TelemetryImportFormat::Tlog;
     float playback_rate = 1.0F;

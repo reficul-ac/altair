@@ -69,6 +69,13 @@ TEST(AnimusOptions, ParsesViewMode)
     EXPECT_EQ(options.view_mode, animus::app::ViewMode::Map2D);
 }
 
+TEST(AnimusOptions, ParsesPlanPath)
+{
+    const auto options = parse({"animus", "--plan", "mission.plan"});
+
+    EXPECT_EQ(options.plan.string(), "mission.plan");
+}
+
 TEST(AnimusOptions, RejectsInvalidViewMode)
 {
     EXPECT_THROW(parse({"animus", "--view-mode", "browser"}), std::invalid_argument);

@@ -7,6 +7,7 @@
 #include "animus/telemetry_live/udp_mavlink_receiver.hpp"
 #include "animus/terrain_core/terrain_stream.hpp"
 #include "options.hpp"
+#include "plan_visualization.hpp"
 #include "timeline_review.hpp"
 
 #include <array>
@@ -169,6 +170,16 @@ struct UiState
     std::vector<TimelineBookmark> timeline_bookmarks;
 };
 
+struct PlanVisualizationState
+{
+    bool overlay_visible = true;
+    std::array<char, 512> path{};
+    std::filesystem::path loaded_path;
+    std::optional<PlanVisualizationData> data;
+    std::vector<std::string> diagnostics;
+    std::string error;
+};
+
 [[nodiscard]] std::filesystem::path screenshot_path(const ScreenshotToolState &tool);
 [[nodiscard]] std::filesystem::path recorder_output_path(const Mp4RecorderState &recorder);
 void start_mp4_recording(Mp4RecorderState &recorder);
@@ -190,6 +201,7 @@ void draw_app_workspace(const Options &options,
                         int mesh_uploads_used,
                         std::size_t resident_gpu_bytes,
                         TelemetryPlaybackState &playback,
+                        PlanVisualizationState &plan_state,
                         const VehicleRuntimeStatus &vehicle_status,
                         ScreenshotToolState &screenshot_tool,
                         Mp4RecorderState &mp4_recorder,
