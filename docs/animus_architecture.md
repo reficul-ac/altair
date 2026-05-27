@@ -1,4 +1,4 @@
-# Animus Architecture
+# Animus Architecture Plan
 
 This document defines the target architecture for Animus, a future native Linux
 desktop application for high-performance 3D terrain and telemetry
@@ -10,6 +10,555 @@ folder so it can later be shipped as its own repository. Even if early
 prototypes live beside Altair, the project boundary should remain clear:
 Animus rendering, terrain, data, and telemetry modules belong under `animus/`
 and should not be scattered across Altair or Bayek.
+
+This is the consolidated Animus architecture and roadmap document. It folds
+together the historical architecture phases, module contracts, terrain data
+plan, developer workspace direction, dependency rules, error policy, and the
+operator UI/vehicle roadmap. Keep future Animus phase planning here instead of
+creating parallel roadmap documents.
+
+## 0. Current Baseline
+
+Animus is currently embedded in this Altair checkout under `animus/` while it
+boots toward a future standalone native Linux application. It has its own CMake,
+Conan, libraries, tools, docs, tests, data, and cache roots. It is deliberately
+separate from Altair's top-level CMake build and must not depend on Altair or
+Bayek internals.
+
+The current app baseline includes:
+
+- native GLFW/OpenGL/Dear ImGui app shell under `animus/apps/animus`
+- terrain viewport as the primary visual surface
+- modes for `View`, `Layers`, `Telemetry`, `Capture`, and `Developer`
+- top status bar with telemetry state, tile residency, frame time, active
+  source, and recording state
+- contextual inspector
+- offline playback timeline
+- live telemetry status strip
+- entity list, entity selection, and follow-selected behavior
+- terrain and layer controls
+- capture controls
+- developer diagnostics panel
+- render stats, GL info, upload budgets, and resident GPU memory
+- cache L0/L1/L2/L3 counters, synthesis counts, persistence, and GeoTIFF
+  failures
+- parser diagnostics, live UDP queue state, dropped datagrams/samples, and
+  ingest/copy/draw timing
+- tile runtime table with state, source, cache tier, priority, fallback parent,
+  synthetic depth, height range, and error text
+- terrain streaming with bounded resident set, bounded outstanding jobs, upload
+  budgets, parent fallback, L1/L2/L3 caches, GeoTIFF, MBTiles, remote imagery,
+  elevation/bathymetry merge, and datum/geoid correction
+- offline and live telemetry entity rendering with tracks/tails, heading
+  indicators, labels, selection, stale/degraded state, terrain-relative
+  placement, and follow-selected camera
+
+Primary app sources are:
+
+- `animus/apps/animus/src/main.cpp`
+- `animus/apps/animus/src/animus_app.cpp`
+- `animus/apps/animus/src/ui.cpp`
+- `animus/apps/animus/src/ui.hpp`
+- `animus/apps/animus/src/options.cpp`
+- `animus/apps/animus/src/options.hpp`
+- `animus/apps/animus/src/capture.cpp`
+- `animus/apps/animus/src/capture.hpp`
+
+Useful validation commands:
+
+```bash
+python3 animus/tools/verify_animus.py
+xvfb-run -a animus/build/apps/animus/animus --smoke --frames 120 --capture-png /tmp/animus.png
+python3 animus/tools/verify_animus.py --screenshot-smoke --artifact-bundle
+python3 animus/tools/verify_animus.py --live-udp-smoke
+python3 tools/python/run_animus_sitl_live_smoke.py
+```
+
+## 0.1 Completed Work Summary
+
+The historical terrain-first phases are complete through the current app shell,
+advanced terrain/data features, structured telemetry imports, live MAVLink UDP
+telemetry, and terrain-first UI polish. Completed work includes:
+
+- independent `animus/` repository boundary, CMake/Conan build, local tests,
+  local verification wrapper, ignored generated data/cache/artifact roots
+- module ownership contracts for `geo_core`, `render_core`, `terrain_core`,
+  `data_core`, `telemetry_core`, `telemetry_live`, and `apps/animus`
+- Web Mercator XYZ tile math, coordinate conventions, stable tile/cache keys,
+  and edge-case tests
+- Lake Tahoe sample terrain pack manifests, local XYZ layout, terrain-pack
+  preparation/inspection/validation tools, and prewarm tooling
+- native GLFW/GLEW/OpenGL app foundation with debug context/logging
+- imagery tile loading, Terrain-RGB/float height decode, CPU terrain mesh
+  generation, height textures, hill shading, skirts/padding, and fixed tile
+  patch rendering
+- `terrain_core` extraction for tile models, raster models, source interfaces,
+  decoders, mesh generation, streaming, cache, synthesis, and terrain height
+  queries
+- asynchronous tile loading with render-thread-only GPU upload, per-frame
+  upload budgets, tile wishlist scheduling, bounded jobs/resident tiles, parent
+  fallback, visible debug states, and cache counters
+- local disk cache, L0/L1/L3 tracking, LRU eviction, synthesis persistence,
+  GeoTIFF extraction, MBTiles imagery, remote imagery, elevation/bathymetry
+  merge, and vertical datum/geoid metadata
+- native app shell with layer controls, cache panels, tile debug views, render
+  stats, capture/export, and app-owned UI/runtime state
+- `.tlog` playback, canonical telemetry timeline, interpolation, moving entity
+  rendering, tracks, event markers, and terrain-relative placement
+- structured telemetry imports through Protobuf/MCAP and HDF5 normalized into
+  the same timeline path
+- live MAVLink UDP ingest scoped to `telemetry_live`, bounded live history,
+  receive-time fallback, parser diagnostics, stale/degraded state, and smoke
+  coverage
+- terrain-first UI polish with compact navigation, contextual inspection,
+  capture controls, event visibility filters, and developer diagnostics hidden
+  behind explicit Developer mode
+- initial vehicle asset registry and GLB fallback path sufficient to keep
+  telemetry display working when richer vehicle assets are absent
+
+Remaining definition-of-done gaps are tracked later in this document under
+`Definition of fully designed` and in the root `TODO.md` only when they are
+active repository backlog items.
+
+## 0.2 Non-Negotiable Product Constraints
+
+Animus must remain a native C++20/OpenGL/Dear ImGui application unless this
+document is deliberately revised. Do not add Electron, React, Tauri, browser UI,
+CesiumJS, QtQuick, web map renderers, or a web frontend.
+
+Animus is a viewer and review tool, not a command-and-control GCS. QGroundControl
+interaction patterns may inspire lightweight UI choices such as a compact status
+ribbon, instrument panel, map controls, safe map-click actions, plan
+visualization, and offline map set management. Do not clone QGC wholesale and do
+not add MAVLink command authority.
+
+Official QGroundControl references for UI inspiration only:
+
+- Fly View: `https://docs.qgroundcontrol.com/master/en/qgc-user-guide/fly_view/fly_view.html`
+- Fly View Toolbar: `https://docs.qgroundcontrol.com/master/en/qgc-user-guide/fly_view/fly_view_toolbar.html`
+- Instrument Panel: `https://docs.qgroundcontrol.com/master/en/qgc-user-guide/fly_view/instrument_panel.html`
+- Plan View: `https://docs.qgroundcontrol.com/master/en/qgc-user-guide/plan_view/plan_view.html`
+- Offline Maps: `https://docs.qgroundcontrol.com/Stable_V5.0/en/qgc-user-guide/settings_view/offline_maps.html`
+- QGC Plan File Format: `https://docs.qgroundcontrol.com/master/en/qgc-dev-guide/file_formats/plan.html`
+
+## 0.3 Current Module Boundaries
+
+`apps/animus` owns UI/runtime policy: CLI parsing, workspace mode, camera/input
+policy, terrain/telemetry orchestration, capture/export, operator panels,
+developer panels, app config, and session-level presentation.
+
+`render_core` owns native rendering primitives only: window/context helpers,
+OpenGL setup, shader/texture/mesh wrappers, render stats, ImGui integration,
+and GPU upload boundaries. It must not contain telemetry semantics, entity
+policy, terrain loading policy, or app UI state.
+
+`terrain_core` owns terrain contracts, streaming, worker preparation, caches,
+tile sources, raster/mesh CPU generation, datum helpers, and height queries.
+Workers must not create OpenGL resources.
+
+`telemetry_core` owns deterministic offline telemetry models, parsing,
+timeline finalization, interpolation, and source diagnostics. It must not own
+vehicle policy, rendering, terrain streaming, app UI, Altair integration, or
+Bayek integration.
+
+`telemetry_live` owns direct live MAVLink UDP receive and live-buffer policy
+outside the deterministic offline core. It keeps network receive work off the
+render thread and exposes bounded diagnostics.
+
+`data_core` owns generic cache/path helpers and may later own compression,
+archive, SQLite, or MBTiles utilities when those capabilities are not
+terrain-specific.
+
+`vehicle_core` should exist only for reusable vehicle descriptor/registry/model
+policy once enough shared behavior justifies it. Vehicle visual improvements
+should start with app-owned registry/fallback icon behavior. Do not start with
+GLB loading.
+
+GPU resources are uploaded on the render thread by `apps/animus` through
+`render_core` boundaries.
+
+## 0.4 Active Operator Roadmap
+
+The next product step is to evolve Animus from a developer-console-like terrain
+and telemetry viewer into a cleaner operator-focused terrain and simulation
+viewer with progressively disclosed diagnostics. Preserve all current terrain,
+telemetry, capture, and smoke behavior while making the default experience
+quieter and more task-oriented.
+
+This is the active checklist for future implementation agents. Check an item
+only when the code, docs, and validation needed for that item are complete. If a
+phase is too large for one pass, finish a coherent checked subset and leave
+specific unchecked items in place.
+
+```cpp
+enum class WorkspaceMode {
+  Operator,
+  Advanced,
+  Developer
+};
+```
+
+```cpp
+enum class ViewMode {
+  Terrain3D,
+  Map2D,
+  Oblique25D
+};
+```
+
+```cpp
+enum class ToolMode {
+  None,
+  RangeBearing,
+  TerrainProbe,
+  ElevationProfile,
+  ClearanceProfile
+};
+```
+
+### Phase 1: Operator Shell
+
+Objective: make Animus open into an operator-first terrain viewer while keeping
+all existing diagnostics behind progressive disclosure.
+
+Checklist:
+
+- [ ] Add app-owned `WorkspaceMode` state with `Operator`, `Advanced`, and
+  `Developer`.
+- [ ] Default normal runs to `Operator`; enter `Developer` only from an existing
+  debug/developer CLI option or persisted config.
+- [ ] Replace the top status bar with compact status pills for `Mode`,
+  `Terrain`, `Imagery`, `Elevation`, `Telemetry`, `Selected Entity`,
+  `Time / Playback`, `Capture`, and `Perf`.
+- [ ] Give every pill a `Good`, `Warning`, `Error`, or `Inactive` state plus a
+  compact summary.
+- [ ] Add click-to-open ImGui detail popups for pills without permanently
+  cluttering the viewport.
+- [ ] Keep GL info, upload budgets, cache internals, parser diagnostics, live
+  ingest timing, and full tile runtime table visible only in `Developer`.
+
+Acceptance:
+
+- [ ] The app starts with a terrain viewport and a cleaner `Operator` shell.
+- [ ] Existing Developer diagnostics are still reachable.
+- [ ] The status ribbon does not materially affect frame time.
+- [ ] Smoke/capture workflows still work.
+
+Validation:
+
+- [ ] `python3 animus/tools/verify_animus.py`
+- [ ] `xvfb-run -a animus/build/apps/animus/animus --smoke --frames 120 --capture-png /tmp/animus_operator_shell.png`
+
+Deferred:
+
+- [ ] Full visual theme polish beyond spacing, grouping, and progressive
+  disclosure.
+
+### Phase 2: Map2D Viewport
+
+Objective: add a first-class top-down map mode that reuses existing terrain,
+tile, imagery, and telemetry paths.
+
+Checklist:
+
+- [ ] Add `ViewMode` with `Terrain3D`, `Map2D`, and disabled/stubbed
+  `Oblique25D`.
+- [ ] Preserve existing `Terrain3D` camera behavior.
+- [ ] Implement `Map2D` as an orthographic top-down camera, north-up by default,
+  with terrain height flattened or minimized for readability.
+- [ ] Reuse current resident tiles, imagery textures, terrain streamer,
+  overlays, and telemetry drawing paths.
+- [ ] Add viewport controls for 3D/2D/2.5D, north-up, track-up, free rotate,
+  follow selected, fit all entities, jump to latest live sample, home/default
+  Tahoe view, and zoom in/out.
+- [ ] Add 2D overlays for scale bar, cursor lat/lon, cursor terrain elevation
+  when available, tile z/x/y under cursor when cheap, zoom-ish readout, and
+  north arrow.
+- [ ] Make left-drag pan and mouse wheel zoom work naturally in `Map2D`.
+- [ ] Ensure the `Map2D` camera contributes a bounded tile wishlist without
+  increasing default streaming/upload budgets.
+
+Acceptance:
+
+- [ ] Users can switch between 3D terrain and 2D map view.
+- [ ] 2D mode shows terrain/imagery and telemetry overlays.
+- [ ] Follow-selected, north-up, and track-up are usable in 2D.
+- [ ] Existing 3D behavior is not regressed.
+- [ ] No browser map, web renderer, or separate map engine is introduced.
+
+Validation:
+
+- [ ] `python3 animus/tools/verify_animus.py`
+- [ ] Headless screenshot smoke in both default 3D and 2D-starting paths if a
+  CLI/config hook exists; otherwise document manual 2D smoke evidence.
+
+Deferred:
+
+- [ ] Real `Oblique25D` behavior unless it is cheap after `Map2D`.
+
+### Phase 3: Selected Entity UX
+
+Objective: make selected telemetry entities understandable at a glance without
+opening raw telemetry tables.
+
+Checklist:
+
+- [ ] Add an `Operator` selected-entity instrument card shown when an entity is
+  selected.
+- [ ] Show entity name or system/component id, live/offline state, telemetry age,
+  stale/degraded state, lat/lon, altitude MSL, relative altitude, terrain
+  elevation, terrain clearance, ground speed, climb rate, heading, roll, pitch,
+  and yaw when available.
+- [ ] Show terrain confidence as exact resident tile, fallback parent,
+  synthetic, unavailable, or datum uncertain.
+- [ ] Add small controls for follow, fit selected, center, show/hide label,
+  show/hide trail, and tail length when existing settings make that cheap.
+- [ ] Keep raw telemetry tables/lists in `Advanced` or `Developer`, not as the
+  primary operator surface.
+
+Acceptance:
+
+- [ ] Selecting an entity makes the card useful without raw telemetry panels.
+- [ ] Existing labels, tracks, tails, stale state, degraded state, and selection
+  behavior still work.
+- [ ] No telemetry semantics move into `render_core`.
+
+Validation:
+
+- [ ] `python3 animus/tools/verify_animus.py --screenshot-smoke --artifact-bundle`
+- [ ] `python3 animus/tools/verify_animus.py --live-udp-smoke`
+
+Deferred:
+
+- [ ] Rich attitude/heading widget if a simple indicator is not cheap.
+
+### Phase 4: Safe Map Tools
+
+Objective: add useful map-click and measurement tools without adding vehicle
+command authority.
+
+Checklist:
+
+- [ ] Add a right-click ImGui action menu for clicked terrain/map positions in
+  2D and in 3D when terrain intersection is available.
+- [ ] Add safe actions: copy lat/lon, copy lat/lon/elevation, place temporary
+  marker, center camera here, look at point, measure from selected entity, start
+  range/bearing measurement, inspect tile/source, add bookmark, and clear
+  markers/bookmarks.
+- [ ] Add bounded temporary markers/bookmarks, default cap 64 unless app style
+  already suggests a different small cap.
+- [ ] Add tile/source inspector fields for z/x/y, imagery source, elevation
+  source, cache tier, fallback/synthetic state, height range, and recent error
+  text when known.
+- [ ] Add `ToolMode` for terrain probe, range/bearing, elevation profile, and
+  clearance profile.
+- [ ] Implement terrain probe and range/bearing first; keep profile sampling
+  bounded and decimated.
+
+Acceptance:
+
+- [ ] Map action popup appears without sending MAVLink or vehicle commands.
+- [ ] Copy actions and markers work.
+- [ ] Terrain probe and range/bearing work in `Map2D`.
+- [ ] Tools degrade gracefully when terrain height is unavailable.
+- [ ] No parallel terrain state is added for inspection.
+
+Validation:
+
+- [ ] `python3 animus/tools/verify_animus.py`
+- [ ] Headless smoke capture still succeeds with map tools compiled in.
+
+Deferred:
+
+- [ ] Screenshot centered on clicked point unless existing capture APIs make it
+  trivial.
+- [ ] Clearance profile for selected track if the terrain query path would be
+  too expensive for the first tool slice.
+
+### Phase 5: Layer And Offline Sets
+
+Objective: consolidate visual layer control and expose existing offline terrain
+prewarm workflows through native UI.
+
+Checklist:
+
+- [ ] Add an `Advanced` `Layer Stack` panel.
+- [ ] Show rows for base imagery, hillshade/terrain shading, elevation color
+  ramp when available, bathymetry, GeoTIFF overlays, MBTiles imagery, remote
+  imagery, telemetry tracks, entity labels, debug tile state overlay, and
+  fallback/synthetic highlight overlay.
+- [ ] Support visible checkbox, opacity slider, draw order where existing,
+  source health, source type, and quick details popup where applicable.
+- [ ] Add presets for Operator clean, Terrain analysis, Telemetry review, Debug
+  tiles, Bathymetry, and Capture/export.
+- [ ] Add an `Advanced` `Offline Terrain Sets` or `Map Packs` panel using
+  existing pack-root, cache-root, and prewarm concepts.
+- [ ] Generate a copyable prewarm command preview from current view or selected
+  entity/track extent.
+
+Acceptance:
+
+- [ ] Active visual layers are understandable at a glance.
+- [ ] Presets visibly change only existing render/UI state.
+- [ ] Developer tile overlays are not shown by default in `Operator`.
+- [ ] Users can define/copy a valid prewarm command without adding a new
+  provider/download stack.
+
+Validation:
+
+- [ ] `python3 animus/tools/verify_animus.py`
+- [ ] Manual review of generated command shape against:
+
+```bash
+python3 animus/tools/prewarm_cache.py --bbox=... --min-z ... --max-z ... --pack-root ... --cache-root ...
+```
+
+Deferred:
+
+- [ ] Background execution/progress tracking for prewarm commands.
+- [ ] Arbitrary online provider browsing.
+
+### Phase 6: Timeline Review
+
+Objective: improve offline and live-buffer review for simulation analysis
+without complicating normal live mode.
+
+Checklist:
+
+- [ ] Extend offline playback timeline into a flight-tape-style review bar.
+- [ ] Add timeline markers for telemetry gaps, stale periods, degraded periods,
+  min terrain clearance, max speed, parser/import warnings, and manual
+  bookmarks.
+- [ ] Add actions for previous/next event, jump to min clearance, and jump to
+  telemetry gap.
+- [ ] Add bounded/decimated charts for altitude, speed, and terrain clearance
+  when practical.
+- [ ] Keep live mode simple unless an explicit replay/live-buffer review mode is
+  added.
+
+Acceptance:
+
+- [ ] Offline telemetry review is easier than before.
+- [ ] Existing live UDP behavior is not broken.
+- [ ] Charts and markers do not render unbounded sample counts.
+
+Validation:
+
+- [ ] `python3 animus/tools/verify_animus.py --screenshot-smoke --artifact-bundle`
+- [ ] `python3 tools/python/run_animus_sitl_live_smoke.py`
+
+Deferred:
+
+- [ ] Freeze-current-view while live telemetry continues buffering unless
+  existing architecture already supports it cleanly.
+
+### Phase 7: Read-Only Plan Visualization
+
+Objective: visualize QGroundControl `.plan` files for review without mission
+editing or upload capability.
+
+Checklist:
+
+- [ ] Add read-only QGC `.plan` JSON import, or a parser stub plus UI placeholder
+  if full parsing is not practical in the first slice.
+- [ ] Load a plan from CLI or UI file path field.
+- [ ] Draw mission waypoints, path lines, direction arrows, geofence
+  polygons/circles, and rally points where present.
+- [ ] Show route summary and compare planned route to selected telemetry track
+  when telemetry is loaded.
+- [ ] Keep plan visualization state app-owned unless a clear shared data model
+  reason appears.
+- [ ] Add a layer-stack toggle for the plan overlay.
+
+Acceptance:
+
+- [ ] A simple QGC `.plan` file can be visualized over terrain.
+- [ ] Invalid or unsupported plan files produce clear UI errors.
+- [ ] No mission upload, arming, vehicle command, or full mission editing path
+  exists.
+
+Validation:
+
+- [ ] Unit/parser coverage for a simple valid plan and malformed input if parser
+  code is added.
+- [ ] `python3 animus/tools/verify_animus.py`
+
+Deferred:
+
+- [ ] Terrain profile under route until Phase 4 profile tools exist.
+
+### Phase 8: Vehicle Visual Polish
+
+Objective: improve entity visual polish with deterministic fallback behavior
+before any richer model-loading work.
+
+Checklist:
+
+- [ ] Add an entity/vehicle visual style registry in `apps/animus` first unless
+  shared policy clearly justifies `vehicle_core`.
+- [ ] Add fallback icons or billboards for quadcopter, fixed wing, rover,
+  boat/surface, and unknown entities.
+- [ ] Define per-style icon shape, label template, trail style, heading
+  indicator style, and optional scale.
+- [ ] Preserve current telemetry markers when style lookup fails.
+- [ ] Keep stale/degraded, selection, label, and track behavior identical or
+  improved.
+
+Acceptance:
+
+- [ ] Entities look better in both 2D and 3D with fallback visuals.
+- [ ] Unknown entities still render.
+- [ ] GLB absence is not an error.
+- [ ] No vehicle policy moves into `telemetry_core`.
+- [ ] `render_core` does not learn telemetry semantics.
+
+Validation:
+
+- [ ] `python3 animus/tools/verify_animus.py --screenshot-smoke --artifact-bundle`
+- [ ] `python3 animus/tools/verify_animus.py --live-udp-smoke`
+
+Deferred:
+
+- [ ] GLB/glTF loading until fallback registry behavior is complete and tested.
+
+## 0.5 Performance And Bloat Rules
+
+These rules apply to every future phase:
+
+- Do not add a browser, web frontend, web map renderer, Electron, React, Tauri,
+  CesiumJS, or QtQuick.
+- Do not add heavyweight dependencies without strong justification.
+- Respect existing `TerrainStreamer` budgets: resident tile cap, maximum
+  outstanding jobs, worker count, texture uploads per frame, mesh uploads per
+  frame, upload bytes per frame, parent fallback, and L1/L2 byte limits.
+- Keep overlay counts bounded: labels, trails, markers, measurement samples,
+  profile samples, mission items, and annotations.
+- Prefer decimated data for drawing.
+- Avoid per-frame heap churn in hot paths.
+- Avoid blocking the render thread on I/O or terrain queries.
+- Keep diagnostics pull-based/collapsed where possible.
+- Preserve headless smoke/capture behavior.
+
+## 0.6 Vehicle Asset Direction
+
+The current vehicle asset direction exists to improve operator readability
+without making vehicle rendering a prerequisite for telemetry. If a vehicle
+model, descriptor, or registry lookup fails, telemetry must continue rendering
+through a deterministic fallback marker/icon.
+
+Asset package policy:
+
+- descriptors should be small, readable, and versioned
+- runtime delivery format should be GLB/glTF 2.0 when model loading is justified
+- orientation convention should be `+Y` forward/nose, `+X` right/right wing,
+  `+Z` up, origin at body center/center of mass, units meters
+- model loading failures are diagnostics, not telemetry failures
+- GPU upload remains behind `render_core`
+- `render_core` never owns telemetry semantics
+
+The previous GLB-heavy vehicle roadmap is intentionally superseded by the
+fallback-registry-first roadmap above. Rich GLB loading should wait until the
+operator shell, 2D map, selected entity card, and fallback icons are stable.
 
 ## 1. Animus Vision
 
@@ -744,7 +1293,11 @@ Telemetry may use `geo_core` contracts. Terrain height sampling belongs in
 App-level code in `apps/animus` should combine resident terrain height data with
 telemetry placement and expose diagnostics when terrain height is unavailable.
 
-## 24. Build Phases and Milestones
+## 24. Historical Build Phases and Milestones
+
+These phases are the completed terrain-first foundation history. Keep them as
+background context for architecture decisions; use the active operator roadmap
+above for future checkoff work.
 
 Phase 0: project skeleton
 
@@ -949,12 +1502,12 @@ Acceptance:
 - track line renders
 - terrain-relative placement works
 
-## 25. Actionable Design Checklist
+## 25. Historical Foundation Checklist
 
-This checklist turns the architecture into a sequence of design and
-implementation-ready work items. Each item should result in a clear artifact:
-code, tests, a tool, a sample dataset, or a design note that lets the next item
-proceed without rediscovering the same decisions.
+This checklist records the completed foundation work that got Animus to the
+current terrain, telemetry, live ingest, and app-shell baseline. Keep it as
+evidence and context. New operator-facing roadmap work should be tracked in the
+active operator roadmap above.
 
 Phase A, repository boundary and build foundation:
 

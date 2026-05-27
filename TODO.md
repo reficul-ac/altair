@@ -6,6 +6,7 @@ This file tracks near-term repository work. Roadmap and design context live in:
 - [Vehicle layer](docs/vehicle_layer.md)
 - [Simulation and Monte Carlo](docs/simulation_and_mc.md)
 - [Testing](docs/testing.md)
+- [Animus architecture plan](docs/animus_architecture.md)
 
 Reusable Bayek framework follow-up is tracked separately in
 [`bayek/TODO.md`](bayek/TODO.md).

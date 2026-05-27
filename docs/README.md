@@ -10,6 +10,8 @@ This directory documents Altair as a vehicle repository with Bayek as the reusab
 - [Embedded And HAL](embedded.md): PlatformIO skeleton, Arduino shim, HAL stubs, and why embedded code stays outside FSW.
 - [Testing Strategy](testing.md): Altair vehicle, integration, and performance checks.
 - [Design Rationale](design_rationale.md): reasons for Altair-specific choices.
+- [Animus Architecture Plan](animus_architecture.md): consolidated Animus
+  architecture, completed phases, module boundaries, and operator roadmap.
 
 Bayek framework documentation lives in the submodule:
 
