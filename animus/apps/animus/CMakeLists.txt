@@ -1,6 +1,13 @@
 find_package(PNG REQUIRED)
 
-add_executable(animus src/main.cpp src/animus_app.cpp src/capture.cpp src/options.cpp)
+add_executable(
+    animus
+    src/main.cpp
+    src/animus_app.cpp
+    src/capture.cpp
+    src/options.cpp
+    src/ui.cpp
+)
 
 target_link_libraries(
     animus

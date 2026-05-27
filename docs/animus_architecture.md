@@ -1123,6 +1123,27 @@ Phase N, live MAVLink UDP telemetry:
 - [x] Mark Phase N complete only after Debug and Release warnings-as-errors
   verification pass.
 
+Phase O, terrain-first UI polish:
+
+- [x] Keep Dear ImGui and the native OpenGL app architecture for this phase.
+- [x] Move app-owned workspace state and panel drawing into dedicated
+  `apps/animus` UI modules while preserving core-library boundaries.
+- [x] Add app-local UI state for active navigation mode, inspector target,
+  developer diagnostics visibility, and telemetry event visibility filters.
+- [x] Replace the dense all-in-one developer workspace with a terrain-first
+  shell: slim status bar, compact mode navigation, contextual inspector,
+  capture controls, and developer diagnostics contained behind an explicit
+  Developer mode.
+- [x] Keep layer, telemetry, capture, and key terrain controls user-facing while
+  moving tile tables, cache internals, GL info, upload budgets, parser
+  diagnostics, and live ingest timing into developer diagnostics.
+- [x] Add telemetry event visibility controls and hide dense informational
+  packet events by default.
+- [x] Preserve `--debug-overlay`, `--no-debug-overlay`, smoke mode, screenshot
+  capture, MP4 recording, and deterministic terrain-only capture behavior.
+- [x] Document current workspace behavior and Phase O direction in
+  `animus/docs/developer_workspace.md`.
+
 Phase L, advanced terrain/data features:
 
 - [x] Add persisted UI/app config only after there are real preferences, recent

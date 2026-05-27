@@ -45,6 +45,7 @@ public interfaces.
 remain Phase C work, after `geo_core::TileCoord` exists.
 
 `apps/animus` keeps `main.cpp` as the exception-handling entrypoint. CLI options
-live in `options.cpp`, framebuffer capture helpers live in `capture.cpp`, and
-the remaining runtime orchestration stays in `animus_app.cpp` until terrain,
-telemetry, rendering, and workspace panels are split into dedicated app modules.
+live in `options.cpp`, framebuffer capture helpers live in `capture.cpp`,
+terrain/render/live orchestration stays in `animus_app.cpp`, and app-owned
+workspace state plus Dear ImGui panels live in `ui.cpp`/`ui.hpp`. Core libraries
+must not include app UI headers.

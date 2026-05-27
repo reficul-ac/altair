@@ -1,5 +1,6 @@
 #include "capture.hpp"
 #include "options.hpp"
+#include "ui.hpp"
 
 #include "animus/render_core/gl_info.hpp"
 #include "animus/render_core/imgui_layer.hpp"
@@ -43,29 +44,20 @@
 namespace
 {
 
+using animus::app::Camera;
+using animus::app::Mp4RecorderState;
 using animus::app::Options;
+using animus::app::ScreenshotToolState;
+using animus::app::TelemetryPlaybackState;
+using animus::app::UiState;
+using animus::app::Vec3;
 using animus::geo_core::TileCoord;
 using animus::terrain_core::Raster;
 using animus::terrain_core::TerrainStreamer;
 
-struct Vec3
-{
-    float x = 0.0F;
-    float y = 0.0F;
-    float z = 0.0F;
-};
-
 struct Mat4
 {
     std::array<float, 16> data{};
-};
-
-struct Camera
-{
-    Vec3 target{0.0F, 3.45F, 0.0F};
-    float distance = 4.2F;
-    float yaw = -0.72F;
-    float pitch = 0.72F;
 };
 
 struct InputState
@@ -77,24 +69,6 @@ struct InputState
     double last_x = 0.0;
     double last_y = 0.0;
     double pending_scroll_y = 0.0;
-};
-
-struct ScreenshotToolState
-{
-    std::array<char, 512> png_path{};
-    bool pending_png = false;
-    std::string status = "ready";
-};
-
-struct Mp4RecorderState
-{
-    std::array<char, 512> mp4_path{};
-    int fps = 30;
-    bool recording = false;
-    bool pending_stop = false;
-    int frame_count = 0;
-    std::filesystem::path sequence_dir;
-    std::string status = "ready";
 };
 
 struct TerrainTileGpu
@@ -473,69 +447,6 @@ bool contains_visible_tile(
                        [coord](const auto &decision) { return decision.coord == coord; });
 }
 
-std::filesystem::path screenshot_path(const ScreenshotToolState &tool)
-{
-    const std::string path(tool.png_path.data());
-    if (path.empty())
-    {
-        return "artifacts/animus/screenshots/manual_screenshot.png";
-    }
-    return path;
-}
-
-std::filesystem::path recorder_output_path(const Mp4RecorderState &recorder)
-{
-    const std::string path(recorder.mp4_path.data());
-    if (path.empty())
-    {
-        return "artifacts/animus/videos/manual_recording.mp4";
-    }
-    return path;
-}
-
-std::filesystem::path recorder_sequence_dir(const std::filesystem::path &output_path)
-{
-    const std::filesystem::path parent =
-        output_path.has_parent_path() ? output_path.parent_path() : std::filesystem::path(".");
-    const std::string stem =
-        output_path.stem().empty() ? "manual_recording" : output_path.stem().string();
-    return parent / (stem + "_frames");
-}
-
-void start_mp4_recording(Mp4RecorderState &recorder)
-{
-    const std::filesystem::path output_path = recorder_output_path(recorder);
-    recorder.sequence_dir = recorder_sequence_dir(output_path);
-    if (std::filesystem::exists(recorder.sequence_dir))
-    {
-        std::filesystem::remove_all(recorder.sequence_dir);
-    }
-    std::filesystem::create_directories(recorder.sequence_dir);
-    recorder.frame_count = 0;
-    recorder.pending_stop = false;
-    recorder.recording = true;
-    recorder.status = "recording to " + output_path.string();
-}
-
-void finish_mp4_recording(Mp4RecorderState &recorder)
-{
-    const std::filesystem::path output_path = recorder_output_path(recorder);
-    if (recorder.frame_count <= 0)
-    {
-        recorder.status = "recording stopped with no frames";
-        recorder.pending_stop = false;
-        recorder.recording = false;
-        return;
-    }
-    recorder.status = "encoding " + output_path.string();
-    animus::app::encode_mp4_from_png_sequence(recorder.sequence_dir, recorder.fps, output_path);
-    std::filesystem::remove_all(recorder.sequence_dir);
-    recorder.status =
-        "saved " + output_path.string() + " (" + std::to_string(recorder.frame_count) + " frames)";
-    recorder.pending_stop = false;
-    recorder.recording = false;
-}
-
 std::vector<TileCoord> add_parent_fallback_requests(std::vector<TileCoord> desired, int min_zoom)
 {
     std::vector<TileCoord> requests = desired;
@@ -668,29 +579,6 @@ TerrainTileGpu upload_tile(const std::vector<animus::app::OverlayLayerConfig> &o
                           prepared.max_height_m,
                           gpu_bytes);
 }
-
-struct TelemetryPlaybackState
-{
-    animus::telemetry_core::Timeline timeline;
-    animus::telemetry_core::PlaybackClock clock;
-    bool loaded = false;
-    bool live = false;
-    bool terrain_height_unavailable = false;
-    bool unknown_datum_relative_fallback = false;
-    bool geoid_correction_unavailable = false;
-    animus::telemetry_core::EntityId selected_entity;
-    std::string live_endpoint;
-    animus::telemetry_live::UdpMavlinkReceiverStats receiver_stats;
-    animus::telemetry_live::LiveTelemetryBufferStats live_stats;
-    double live_snapshot_elapsed_s = 0.0;
-    double live_ingest_ms = 0.0;
-    double live_prune_finalize_ms = 0.0;
-    double live_snapshot_copy_ms = 0.0;
-    double live_overlay_draw_ms = 0.0;
-    std::size_t live_rendered_trail_points = 0;
-    std::size_t live_frame_batch_messages = 0;
-    std::size_t live_frame_batch_samples = 0;
-};
 
 struct ProjectedPoint
 {
@@ -900,6 +788,7 @@ draw_telemetry_overlay(const Options &options,
                        const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
                        const animus::terrain_core::GeoidCorrectionGrid &geoid_grid,
                        TelemetryPlaybackState &playback,
+                       const UiState &ui_state,
                        const Camera &camera,
                        const int framebuffer_width,
                        const int framebuffer_height)
@@ -957,6 +846,10 @@ draw_telemetry_overlay(const Options &options,
     {
         for (const auto &event : playback.timeline.events)
         {
+            if (!animus::app::telemetry_event_visible(event, ui_state.telemetry_event_filters))
+            {
+                continue;
+            }
             if (event.time_s > playback.clock.time_s())
             {
                 break;
@@ -1095,469 +988,6 @@ void render_frame(const animus::render_core::GlfwWindow &window,
     glDisable(GL_BLEND);
 }
 
-void draw_developer_workspace(
-    const Options &options,
-    const std::filesystem::path &pack_root,
-    const animus::render_core::GlInfo &gl_info,
-    const animus::render_core::RenderStats &stats,
-    const animus::terrain_core::TerrainStreamSnapshot &snapshot,
-    const Camera &camera,
-    int selected_zoom,
-    const std::vector<animus::terrain_core::TileRenderDecision> &visible_tiles,
-    std::size_t upload_bytes_used,
-    int texture_uploads_used,
-    int mesh_uploads_used,
-    std::size_t resident_gpu_bytes,
-    TelemetryPlaybackState &playback,
-    ScreenshotToolState &screenshot_tool,
-    Mp4RecorderState &mp4_recorder,
-    bool &state_colors,
-    bool &highlight_fallback,
-    bool &overlay_enabled,
-    float &overlay_opacity)
-{
-    ImGui::SetNextWindowPos(ImVec2(16.0F, 16.0F), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(680.0F, 520.0F), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Animus Workspace");
-
-    if (ImGui::BeginTabBar("workspace_tabs"))
-    {
-        if (ImGui::BeginTabItem("Terrain"))
-        {
-            ImGui::Text("pack root");
-            ImGui::TextWrapped("%s", pack_root.string().c_str());
-            ImGui::Text("cache root");
-            ImGui::TextWrapped("%s", options.cache_root.string().c_str());
-            ImGui::Separator();
-            ImGui::Text(
-                "zoom range %d..%d selected %d", options.min_z, options.max_z, selected_zoom);
-            ImGui::Text("center %d/%d height scale %.6f",
-                        options.center_x,
-                        options.center_y,
-                        options.height_scale);
-            ImGui::Text("bathymetry %s", options.use_bathymetry ? "enabled" : "disabled");
-            ImGui::Text("elevation GeoTIFF %s",
-                        options.elevation_geotiff.empty()
-                            ? "not set"
-                            : (std::filesystem::exists(options.elevation_geotiff) ? "available"
-                                                                                  : "missing"));
-            ImGui::Text("bathymetry GeoTIFF %s",
-                        options.bathymetry_geotiff.empty()
-                            ? "not set"
-                            : (std::filesystem::exists(options.bathymetry_geotiff) ? "available"
-                                                                                   : "missing"));
-            ImGui::Separator();
-            ImGui::Text(
-                "imagery MBTiles %s",
-                options.imagery_mbtiles.empty()
-                    ? "not set"
-                    : (std::filesystem::exists(options.imagery_mbtiles) ? "available" : "missing"));
-            ImGui::Text("remote imagery %s",
-                        options.remote_imagery_url_template.empty() ? "not set" : "configured");
-            ImGui::Separator();
-            ImGui::Checkbox("Overlay enabled", &overlay_enabled);
-            ImGui::SliderFloat("Overlay opacity", &overlay_opacity, 0.0F, 1.0F, "%.2f");
-            ImGui::Text("overlay order %d", options.overlay_order);
-            ImGui::Text("overlay layers %zu", options.overlays.size());
-            ImGui::Text(
-                "overlay GeoTIFF %s",
-                options.overlay_geotiff.empty()
-                    ? "not set"
-                    : (std::filesystem::exists(options.overlay_geotiff) ? "available" : "missing"));
-            ImGui::Separator();
-            ImGui::Checkbox("State colors", &state_colors);
-            ImGui::SameLine();
-            ImGui::Checkbox("Fallback highlight", &highlight_fallback);
-            ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem("Render"))
-        {
-            ImGui::Text("camera target %.2f %.2f %.2f distance %.2f zoom %d",
-                        camera.target.x,
-                        camera.target.y,
-                        camera.target.z,
-                        camera.distance,
-                        selected_zoom);
-            ImGui::Text("visible %zu resident %zu queued %zu loading %zu ready-cpu %zu failed %zu",
-                        visible_tiles.size(),
-                        snapshot.resident_gpu_tiles,
-                        snapshot.queued_jobs,
-                        snapshot.loading_jobs,
-                        snapshot.ready_cpu_tiles,
-                        snapshot.failed_tiles);
-            ImGui::Text("uploads textures %d meshes %d bytes %.2f MiB resident %.2f MiB",
-                        texture_uploads_used,
-                        mesh_uploads_used,
-                        static_cast<double>(upload_bytes_used) / (1024.0 * 1024.0),
-                        static_cast<double>(resident_gpu_bytes) / (1024.0 * 1024.0));
-            ImGui::Text("frames %d last %.3f ms total %.3f s",
-                        stats.frame_count(),
-                        stats.last_frame_seconds() * 1000.0,
-                        stats.total_seconds());
-            ImGui::Separator();
-            ImGui::Text("GL vendor %s", gl_info.vendor.c_str());
-            ImGui::Text("GL renderer %s", gl_info.renderer.c_str());
-            ImGui::Text("GL version %s", gl_info.version.c_str());
-            ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem("Capture"))
-        {
-            ImGui::InputText(
-                "PNG path", screenshot_tool.png_path.data(), screenshot_tool.png_path.size());
-            if (ImGui::Button("Save PNG"))
-            {
-                screenshot_tool.pending_png = true;
-                screenshot_tool.status = "saving after this frame";
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Use default"))
-            {
-                constexpr std::string_view default_path =
-                    "artifacts/animus/screenshots/manual_screenshot.png";
-                std::snprintf(screenshot_tool.png_path.data(),
-                              screenshot_tool.png_path.size(),
-                              "%s",
-                              default_path.data());
-            }
-            ImGui::TextWrapped("%s", screenshot_tool.status.c_str());
-            ImGui::Separator();
-            ImGui::InputText(
-                "MP4 path", mp4_recorder.mp4_path.data(), mp4_recorder.mp4_path.size());
-            ImGui::InputInt("FPS", &mp4_recorder.fps);
-            mp4_recorder.fps = std::clamp(mp4_recorder.fps, 1, 240);
-            bool record = mp4_recorder.recording;
-            if (ImGui::Checkbox("Record MP4", &record))
-            {
-                try
-                {
-                    if (record)
-                    {
-                        start_mp4_recording(mp4_recorder);
-                    }
-                    else
-                    {
-                        mp4_recorder.pending_stop = true;
-                        mp4_recorder.status = "finishing recording";
-                    }
-                }
-                catch (const std::exception &error)
-                {
-                    mp4_recorder.recording = false;
-                    mp4_recorder.pending_stop = false;
-                    mp4_recorder.status = std::string("recording failed: ") + error.what();
-                }
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Use video default"))
-            {
-                constexpr std::string_view default_path =
-                    "artifacts/animus/videos/manual_recording.mp4";
-                std::snprintf(mp4_recorder.mp4_path.data(),
-                              mp4_recorder.mp4_path.size(),
-                              "%s",
-                              default_path.data());
-            }
-            ImGui::Text("recorded frames %d", mp4_recorder.frame_count);
-            ImGui::TextWrapped("%s", mp4_recorder.status.c_str());
-            ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem("Cache"))
-        {
-            const auto &cache = snapshot.cache_stats;
-            ImGui::Text("L0 gpu tiles %zu bytes %.2f MiB",
-                        snapshot.resident_gpu_tiles,
-                        static_cast<double>(snapshot.resident_gpu_bytes) / (1024.0 * 1024.0));
-            ImGui::Text("L1 prepared %zu %.2f/%.2f MiB hits %llu misses %llu evict %llu",
-                        cache.l1_prepared.entries,
-                        static_cast<double>(cache.l1_prepared.bytes) / (1024.0 * 1024.0),
-                        static_cast<double>(cache.l1_prepared.byte_limit) / (1024.0 * 1024.0),
-                        static_cast<unsigned long long>(cache.l1_prepared.counters.hits),
-                        static_cast<unsigned long long>(cache.l1_prepared.counters.misses),
-                        static_cast<unsigned long long>(cache.l1_prepared.counters.evictions));
-            ImGui::Text("L2 rasters %zu %.2f/%.2f MiB hits %llu misses %llu evict %llu",
-                        cache.l2_raster.entries,
-                        static_cast<double>(cache.l2_raster.bytes) / (1024.0 * 1024.0),
-                        static_cast<double>(cache.l2_raster.byte_limit) / (1024.0 * 1024.0),
-                        static_cast<unsigned long long>(cache.l2_raster.counters.hits),
-                        static_cast<unsigned long long>(cache.l2_raster.counters.misses),
-                        static_cast<unsigned long long>(cache.l2_raster.counters.evictions));
-            ImGui::Text(
-                "L3 hits %llu misses %llu stores %llu synth %llu persisted %llu geotiff-fail %llu",
-                static_cast<unsigned long long>(cache.l3_disk.counters.hits),
-                static_cast<unsigned long long>(cache.l3_disk.counters.misses),
-                static_cast<unsigned long long>(cache.l3_disk.counters.stores),
-                static_cast<unsigned long long>(cache.synthesized_tiles),
-                static_cast<unsigned long long>(cache.persisted_tiles),
-                static_cast<unsigned long long>(cache.geotiff_extraction_failures));
-            ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem("Tiles"))
-        {
-            if (ImGui::BeginTable("tiles", 10, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders))
-            {
-                ImGui::TableSetupColumn("coord");
-                ImGui::TableSetupColumn("state");
-                ImGui::TableSetupColumn("tier");
-                ImGui::TableSetupColumn("source");
-                ImGui::TableSetupColumn("synth");
-                ImGui::TableSetupColumn("priority");
-                ImGui::TableSetupColumn("parent");
-                ImGui::TableSetupColumn("age");
-                ImGui::TableSetupColumn("height");
-                ImGui::TableSetupColumn("error");
-                ImGui::TableHeadersRow();
-                for (const auto &tile : snapshot.tiles)
-                {
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::Text("%d/%d/%d", tile.coord.z, tile.coord.x, tile.coord.y);
-                    ImGui::TableSetColumnIndex(1);
-                    ImGui::TextUnformatted(
-                        std::string(animus::terrain_core::to_string(tile.state)).c_str());
-                    ImGui::TableSetColumnIndex(2);
-                    ImGui::TextUnformatted(
-                        std::string(animus::terrain_core::to_string(tile.cache_tier)).c_str());
-                    ImGui::TableSetColumnIndex(3);
-                    ImGui::TextUnformatted(
-                        std::string(animus::terrain_core::to_string(tile.source_type)).c_str());
-                    ImGui::TableSetColumnIndex(4);
-                    ImGui::Text("%s/%d", tile.synthetic ? "yes" : "no", tile.synthesis_depth);
-                    ImGui::TableSetColumnIndex(5);
-                    ImGui::Text("%.2f", tile.priority);
-                    ImGui::TableSetColumnIndex(6);
-                    if (tile.parent)
-                    {
-                        ImGui::Text("%d/%d/%d", tile.parent->z, tile.parent->x, tile.parent->y);
-                    }
-                    ImGui::TableSetColumnIndex(7);
-                    ImGui::Text("%llu",
-                                static_cast<unsigned long long>(snapshot.frame - tile.state_frame));
-                    ImGui::TableSetColumnIndex(8);
-                    ImGui::Text("%.1f..%.1f", tile.min_height_m, tile.max_height_m);
-                    ImGui::TableSetColumnIndex(9);
-                    ImGui::TextUnformatted(tile.error.c_str());
-                }
-                ImGui::EndTable();
-            }
-            ImGui::EndTabItem();
-        }
-
-        if (playback.loaded && ImGui::BeginTabItem("Telemetry"))
-        {
-            if (playback.live)
-            {
-                ImGui::Text("source Live UDP");
-                ImGui::Text("bind endpoint");
-                ImGui::TextWrapped("%s", playback.live_endpoint.c_str());
-                ImGui::Text("state %s",
-                            playback.receiver_stats.connected
-                                ? (playback.receiver_stats.stale ? "stale" : "connected")
-                                : "waiting");
-                ImGui::Text("datagrams %llu bytes %llu age %.3f s",
-                            static_cast<unsigned long long>(playback.receiver_stats.datagrams),
-                            static_cast<unsigned long long>(playback.receiver_stats.bytes),
-                            playback.receiver_stats.last_packet_age_s);
-                ImGui::Text("queue %zu high %zu drained %zu before %zu",
-                            playback.receiver_stats.queued_datagrams,
-                            playback.receiver_stats.queue_high_water,
-                            playback.receiver_stats.last_drain_datagrams,
-                            playback.receiver_stats.last_drain_queue_before);
-                ImGui::Text(
-                    "dropped datagrams %llu samples %llu",
-                    static_cast<unsigned long long>(playback.receiver_stats.dropped_datagrams),
-                    static_cast<unsigned long long>(playback.live_stats.dropped_samples));
-                ImGui::Text("batch datagrams %zu messages %zu samples %zu",
-                            playback.receiver_stats.last_drain_datagrams,
-                            playback.live_frame_batch_messages,
-                            playback.live_frame_batch_samples);
-                ImGui::Text("live ms ingest %.3f prune/finalize %.3f copy %.3f overlay %.3f",
-                            playback.live_ingest_ms,
-                            playback.live_prune_finalize_ms,
-                            playback.live_snapshot_copy_ms,
-                            playback.live_overlay_draw_ms);
-                ImGui::Text("retained %zu rendered trail %zu",
-                            playback.live_stats.retained_samples,
-                            playback.live_rendered_trail_points);
-            }
-            else
-            {
-                ImGui::Text("format %s",
-                            animus::telemetry_core::to_string(playback.timeline.source_format));
-                ImGui::Text("file");
-                ImGui::TextWrapped("%s", options.telemetry.string().c_str());
-            }
-            ImGui::Text("entities %zu samples %zu events %zu",
-                        playback.timeline.entities.size(),
-                        playback.timeline.samples.size(),
-                        playback.timeline.events.size());
-            const auto &diag = playback.timeline.diagnostics;
-            ImGui::Text("frames %llu unsupported %llu crc %llu truncated %llu",
-                        static_cast<unsigned long long>(diag.frames_decoded),
-                        static_cast<unsigned long long>(diag.unsupported_messages),
-                        static_cast<unsigned long long>(diag.crc_failures),
-                        static_cast<unsigned long long>(diag.truncated_frames));
-            ImGui::Text("signed-v2 %llu bad-version %llu malformed %llu",
-                        static_cast<unsigned long long>(diag.signed_v2_frames),
-                        static_cast<unsigned long long>(diag.unsupported_versions),
-                        static_cast<unsigned long long>(diag.malformed_frames));
-            ImGui::Text("schema %llu channels %llu layouts %llu decoded-fail %llu",
-                        static_cast<unsigned long long>(diag.schema_mismatches),
-                        static_cast<unsigned long long>(diag.unsupported_channels),
-                        static_cast<unsigned long long>(diag.unsupported_layouts),
-                        static_cast<unsigned long long>(diag.decode_failures));
-            ImGui::Text("skipped %llu non-monotonic %llu missing-required %llu",
-                        static_cast<unsigned long long>(diag.skipped_records),
-                        static_cast<unsigned long long>(diag.non_monotonic_timestamps),
-                        static_cast<unsigned long long>(diag.missing_required_fields));
-            ImGui::Text("terrain height %s",
-                        playback.terrain_height_unavailable ? "unavailable for some samples"
-                                                            : "available");
-            if (playback.unknown_datum_relative_fallback)
-            {
-                ImGui::TextWrapped(
-                    "warning: telemetry relative altitude used with unknown altitude datum");
-            }
-            if (playback.geoid_correction_unavailable)
-            {
-                ImGui::TextWrapped(
-                    "warning: ellipsoid altitude datum needs a configured geoid grid");
-            }
-            if (!playback.timeline.events.empty())
-            {
-                ImGui::Separator();
-                if (ImGui::BeginTable("events", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders))
-                {
-                    ImGui::TableSetupColumn("time");
-                    ImGui::TableSetupColumn("entity");
-                    ImGui::TableSetupColumn("msg");
-                    ImGui::TableSetupColumn("event");
-                    ImGui::TableHeadersRow();
-                    for (const auto &event : playback.timeline.events)
-                    {
-                        ImGui::TableNextRow();
-                        ImGui::TableSetColumnIndex(0);
-                        ImGui::Text("%.3f", event.time_s);
-                        ImGui::TableSetColumnIndex(1);
-                        ImGui::Text("%u:%u",
-                                    static_cast<unsigned>(event.entity_id.system_id),
-                                    static_cast<unsigned>(event.entity_id.component_id));
-                        ImGui::TableSetColumnIndex(2);
-                        ImGui::Text("%u", event.message_id);
-                        ImGui::TableSetColumnIndex(3);
-                        ImGui::TextUnformatted(event.message.c_str());
-                    }
-                    ImGui::EndTable();
-                }
-            }
-            ImGui::EndTabItem();
-        }
-
-        if (playback.loaded && ImGui::BeginTabItem("Timeline"))
-        {
-            bool paused = playback.clock.paused();
-            if (ImGui::Checkbox("Paused", &paused))
-            {
-                playback.clock.set_paused(paused);
-            }
-            ImGui::SameLine();
-            bool looping = playback.clock.looping();
-            if (ImGui::Checkbox("Loop", &looping))
-            {
-                playback.clock.set_looping(looping);
-            }
-            float rate = static_cast<float>(playback.clock.rate());
-            if (ImGui::SliderFloat("Rate", &rate, 0.1F, 16.0F, "%.2fx"))
-            {
-                playback.clock.set_rate(rate);
-            }
-            double current_time = playback.clock.time_s();
-            if (ImGui::SliderScalar("Time",
-                                    ImGuiDataType_Double,
-                                    &current_time,
-                                    &playback.timeline.start_time_s,
-                                    &playback.timeline.end_time_s,
-                                    "%.3f s"))
-            {
-                playback.clock.seek(current_time);
-            }
-            ImGui::EndTabItem();
-        }
-
-        if (playback.loaded && ImGui::BeginTabItem("Entity"))
-        {
-            const auto sample =
-                playback.timeline.sample_at(playback.selected_entity, playback.clock.time_s());
-            if (!playback.timeline.entities.empty())
-            {
-                int selected_index = 0;
-                for (std::size_t index = 0U; index < playback.timeline.entities.size(); ++index)
-                {
-                    if (playback.timeline.entities[index].id == playback.selected_entity)
-                    {
-                        selected_index = static_cast<int>(index);
-                    }
-                }
-                if (ImGui::BeginCombo("Entity",
-                                      (std::to_string(playback.selected_entity.system_id) + ":" +
-                                       std::to_string(playback.selected_entity.component_id))
-                                          .c_str()))
-                {
-                    for (std::size_t index = 0U; index < playback.timeline.entities.size(); ++index)
-                    {
-                        const auto id = playback.timeline.entities[index].id;
-                        const std::string label =
-                            std::to_string(id.system_id) + ":" + std::to_string(id.component_id);
-                        const bool selected = static_cast<int>(index) == selected_index;
-                        if (ImGui::Selectable(label.c_str(), selected))
-                        {
-                            playback.selected_entity = id;
-                        }
-                        if (selected)
-                        {
-                            ImGui::SetItemDefaultFocus();
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
-            }
-            if (sample)
-            {
-                ImGui::Text("lat/lon %.7f %.7f", sample->lat_deg, sample->lon_deg);
-                ImGui::Text("alt msl %s rel %s",
-                            sample->altitude_msl_m ? std::to_string(*sample->altitude_msl_m).c_str()
-                                                   : "n/a",
-                            sample->altitude_relative_m
-                                ? std::to_string(*sample->altitude_relative_m).c_str()
-                                : "n/a");
-                ImGui::Text("att roll %s pitch %s yaw %s",
-                            sample->roll_rad ? std::to_string(*sample->roll_rad).c_str() : "n/a",
-                            sample->pitch_rad ? std::to_string(*sample->pitch_rad).c_str() : "n/a",
-                            sample->yaw_rad ? std::to_string(*sample->yaw_rad).c_str() : "n/a");
-                ImGui::Text(
-                    "speed %s heading %s",
-                    sample->ground_speed_mps ? std::to_string(*sample->ground_speed_mps).c_str()
-                                             : "n/a",
-                    sample->heading_deg ? std::to_string(*sample->heading_deg).c_str() : "n/a");
-                ImGui::Text("fields pos %s alt %s att %s vel %s hdg %s",
-                            sample->fields.position ? "yes" : "no",
-                            sample->fields.altitude_msl || sample->fields.altitude_relative ? "yes"
-                                                                                            : "no",
-                            sample->fields.attitude ? "yes" : "no",
-                            sample->fields.velocity ? "yes" : "no",
-                            sample->fields.heading ? "yes" : "no");
-            }
-            ImGui::EndTabItem();
-        }
-
-        ImGui::EndTabBar();
-    }
-    ImGui::End();
-}
-
 int run(const Options &options)
 {
     const std::filesystem::path pack_root = resolve_pack_root(options.pack_root);
@@ -1663,6 +1093,7 @@ int run(const Options &options)
     bool captured = false;
     ScreenshotToolState screenshot_tool;
     Mp4RecorderState mp4_recorder;
+    UiState ui_state;
     std::snprintf(screenshot_tool.png_path.data(),
                   screenshot_tool.png_path.size(),
                   "%s",
@@ -1826,30 +1257,32 @@ int run(const Options &options)
                                        tiles,
                                        geoid_grid,
                                        telemetry,
+                                       ui_state,
                                        input.camera,
                                        window.framebuffer_width(),
                                        window.framebuffer_height());
             telemetry.live_overlay_draw_ms = overlay_stats.draw_ms;
             telemetry.live_rendered_trail_points = overlay_stats.rendered_trail_points;
-            draw_developer_workspace(options,
-                                     pack_root,
-                                     info,
-                                     stats,
-                                     streamer.snapshot(),
-                                     input.camera,
-                                     selected_zoom,
-                                     visible_tiles,
-                                     upload_bytes_used,
-                                     texture_uploads_used,
-                                     mesh_uploads_used,
-                                     resident_gpu_bytes,
-                                     telemetry,
-                                     screenshot_tool,
-                                     mp4_recorder,
-                                     state_colors,
-                                     highlight_fallback,
-                                     overlay_enabled,
-                                     overlay_opacity);
+            draw_app_workspace(options,
+                               pack_root,
+                               info,
+                               stats,
+                               streamer.snapshot(),
+                               input.camera,
+                               selected_zoom,
+                               visible_tiles,
+                               upload_bytes_used,
+                               texture_uploads_used,
+                               mesh_uploads_used,
+                               resident_gpu_bytes,
+                               telemetry,
+                               screenshot_tool,
+                               mp4_recorder,
+                               ui_state,
+                               state_colors,
+                               highlight_fallback,
+                               overlay_enabled,
+                               overlay_opacity);
             debug_layer->end_frame();
         }
         if (live_debug_csv.enabled() && telemetry.live)
