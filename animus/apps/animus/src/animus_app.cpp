@@ -1,4 +1,5 @@
 #include "capture.hpp"
+#include "map_tools.hpp"
 #include "options.hpp"
 #include "ui.hpp"
 
@@ -49,10 +50,13 @@ namespace
 using animus::app::Camera;
 using animus::app::Map2DCamera;
 using animus::app::MapOrientationMode;
+using animus::app::MapToolPoint;
+using animus::app::MapToolState;
 using animus::app::Mp4RecorderState;
 using animus::app::Options;
 using animus::app::ScreenshotToolState;
 using animus::app::TelemetryPlaybackState;
+using animus::app::ToolMode;
 using animus::app::UiState;
 using animus::app::Vec3;
 using animus::app::VehicleRuntimeStatus;
@@ -97,6 +101,7 @@ struct TerrainTileGpu
     Raster heights;
     float min_height_m = 0.0F;
     float max_height_m = 0.0F;
+    bool synthetic = false;
     std::size_t estimated_gpu_bytes = 0;
 
     TerrainTileGpu(TileCoord tile_coord,
@@ -107,11 +112,12 @@ struct TerrainTileGpu
                    Raster height_raster,
                    float min_height,
                    float max_height,
+                   bool synthetic_tile,
                    std::size_t estimated_bytes)
         : coord(tile_coord), mesh(std::move(tile_mesh)), imagery(std::move(imagery_texture)),
           height_texture(std::move(height_values)), overlay_textures(std::move(overlay_values)),
           heights(std::move(height_raster)), min_height_m(min_height), max_height_m(max_height),
-          estimated_gpu_bytes(estimated_bytes)
+          synthetic(synthetic_tile), estimated_gpu_bytes(estimated_bytes)
     {
     }
 };
@@ -803,6 +809,7 @@ TerrainTileGpu upload_tile(const std::vector<animus::app::OverlayLayerConfig> &o
                           std::move(prepared.heights),
                           prepared.min_height_m,
                           prepared.max_height_m,
+                          prepared.synthetic,
                           gpu_bytes);
 }
 
@@ -1031,6 +1038,269 @@ sample_resident_terrain_height_m(const Options &options,
     return std::nullopt;
 }
 
+struct ResidentTerrainSample
+{
+    float height_m = 0.0F;
+    TelemetryPlaybackState::TerrainConfidence confidence =
+        TelemetryPlaybackState::TerrainConfidence::Unavailable;
+};
+
+std::optional<ResidentTerrainSample>
+sample_resident_terrain(const Options &options,
+                        const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                        const double lat_deg,
+                        const double lon_deg)
+{
+    const auto try_zoom = [&](const int zoom) -> std::optional<ResidentTerrainSample>
+    {
+        TileCoord coord;
+        try
+        {
+            coord = animus::geo_core::lat_lon_to_tile(lat_deg, lon_deg, zoom);
+        }
+        catch (const std::exception &)
+        {
+            return std::nullopt;
+        }
+        const auto it = tiles.find(coord);
+        if (it == tiles.end())
+        {
+            return std::nullopt;
+        }
+        const auto uv = animus::geo_core::lat_lon_to_tile_uv(lat_deg, lon_deg, coord);
+        const auto sample =
+            animus::terrain_core::sample_float_raster_bilinear(it->second.heights, uv.u, uv.v);
+        if (!sample.available)
+        {
+            return std::nullopt;
+        }
+        ResidentTerrainSample result;
+        result.height_m = sample.value;
+        if (it->second.synthetic)
+        {
+            result.confidence = TelemetryPlaybackState::TerrainConfidence::SyntheticResidentTile;
+        }
+        else if (zoom == options.z)
+        {
+            result.confidence = TelemetryPlaybackState::TerrainConfidence::ExactResidentTile;
+        }
+        else
+        {
+            result.confidence = TelemetryPlaybackState::TerrainConfidence::FallbackResidentTile;
+        }
+        return result;
+    };
+
+    if (const auto base = try_zoom(options.z))
+    {
+        return base;
+    }
+    std::vector<int> resident_zooms;
+    resident_zooms.reserve(tiles.size());
+    for (const auto &[coord, tile] : tiles)
+    {
+        (void)tile;
+        if (coord.z != options.z)
+        {
+            resident_zooms.push_back(coord.z);
+        }
+    }
+    std::sort(resident_zooms.begin(), resident_zooms.end(), std::greater<int>{});
+    resident_zooms.erase(std::unique(resident_zooms.begin(), resident_zooms.end()),
+                         resident_zooms.end());
+    for (const int zoom : resident_zooms)
+    {
+        if (const auto fallback = try_zoom(zoom))
+        {
+            return fallback;
+        }
+    }
+    return std::nullopt;
+}
+
+Vec3 terrain_world_position(const Options &options,
+                            const double lat_deg,
+                            const double lon_deg,
+                            const std::optional<float> terrain_m)
+{
+    const TileCoord coord = animus::geo_core::lat_lon_to_tile(lat_deg, lon_deg, options.z);
+    const auto uv = animus::geo_core::lat_lon_to_tile_uv(lat_deg, lon_deg, coord);
+    const float x = static_cast<float>(static_cast<double>(coord.x - options.center_x) + uv.u);
+    const float z = static_cast<float>(static_cast<double>(coord.y - options.center_y) + uv.v);
+    const float y = terrain_m ? *terrain_m * options.height_scale : 0.0F;
+    return {x, y, z};
+}
+
+MapToolPoint make_map_tool_point(const Options &options,
+                                 const double lat_deg,
+                                 const double lon_deg,
+                                 const std::optional<float> terrain_m,
+                                 const std::string &label)
+{
+    const TileCoord coord = animus::geo_core::lat_lon_to_tile(lat_deg, lon_deg, options.z);
+    const Vec3 world = terrain_world_position(options, lat_deg, lon_deg, terrain_m);
+    MapToolPoint point;
+    point.lat_deg = lat_deg;
+    point.lon_deg = lon_deg;
+    if (terrain_m)
+    {
+        point.terrain_elevation_m = *terrain_m;
+    }
+    point.tile_z = coord.z;
+    point.tile_x = coord.x;
+    point.tile_y = coord.y;
+    point.world_x = world.x;
+    point.world_y = world.y;
+    point.world_z = world.z;
+    point.label = label;
+    return point;
+}
+
+std::optional<MapToolPoint>
+map2d_point_from_screen(const Options &options,
+                        const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                        const Map2DCamera &camera,
+                        const ImVec2 screen,
+                        const int framebuffer_width,
+                        const int framebuffer_height)
+{
+    const float width = static_cast<float>(std::max(1, framebuffer_width));
+    const float height = static_cast<float>(std::max(1, framebuffer_height));
+    if (screen.x < 0.0F || screen.y < 0.0F || screen.x >= width || screen.y >= height)
+    {
+        return std::nullopt;
+    }
+    const float aspect = width / height;
+    const float half_height = std::clamp(camera.distance, 0.25F, 80.0F);
+    const float half_width = half_height * aspect;
+    const Vec3 right = map_right_vector(camera);
+    const Vec3 up = map_up_vector(camera);
+    const float sx = (screen.x / width - 0.5F) * 2.0F * half_width;
+    const float sy = (0.5F - screen.y / height) * 2.0F * half_height;
+    const float world_x = camera.target_x + right.x * sx + up.x * sy;
+    const float world_z = camera.target_z + right.z * sx + up.z * sy;
+    const double global_x = static_cast<double>(options.center_x) + 0.5 + world_x;
+    const double global_y = static_cast<double>(options.center_y) + 0.5 + world_z;
+    const auto lat_lon = animus::geo_core::tile_space_to_lat_lon(global_x, global_y, options.z);
+    return make_map_tool_point(
+        options,
+        lat_lon.u,
+        lat_lon.v,
+        sample_resident_terrain_height_m(options, tiles, lat_lon.u, lat_lon.v),
+        "map");
+}
+
+std::optional<MapToolPoint>
+terrain3d_point_from_screen(const Options &options,
+                            const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                            const Camera &camera,
+                            const ImVec2 screen,
+                            const int framebuffer_width,
+                            const int framebuffer_height)
+{
+    const float width = static_cast<float>(std::max(1, framebuffer_width));
+    const float height = static_cast<float>(std::max(1, framebuffer_height));
+    if (screen.x < 0.0F || screen.y < 0.0F || screen.x >= width || screen.y >= height)
+    {
+        return std::nullopt;
+    }
+
+    const float ndc_x = (screen.x / width) * 2.0F - 1.0F;
+    const float ndc_y = 1.0F - (screen.y / height) * 2.0F;
+    const Vec3 eye = camera_eye(camera);
+    const Vec3 forward = normalize(camera.target - eye);
+    const Vec3 right = normalize(cross(forward, {0.0F, 1.0F, 0.0F}));
+    const Vec3 up = normalize(cross(right, forward));
+    const float aspect = width / height;
+    constexpr float tan_half_fov = 0.41421356237F; // tan(22.5 deg), matching camera_mvp().
+    const Vec3 ray =
+        normalize(forward + right * (ndc_x * aspect * tan_half_fov) + up * (ndc_y * tan_half_fov));
+
+    auto terrain_delta = [&](const Vec3 world) -> std::optional<float>
+    {
+        const double global_x = static_cast<double>(options.center_x) + 0.5 + world.x;
+        const double global_y = static_cast<double>(options.center_y) + 0.5 + world.z;
+        const auto lat_lon = animus::geo_core::tile_space_to_lat_lon(global_x, global_y, options.z);
+        const auto terrain_m =
+            sample_resident_terrain_height_m(options, tiles, lat_lon.u, lat_lon.v);
+        if (!terrain_m)
+        {
+            return std::nullopt;
+        }
+        return world.y - *terrain_m * options.height_scale;
+    };
+
+    std::optional<Vec3> previous_world;
+    std::optional<float> previous_delta;
+    constexpr int step_count = 192;
+    const float max_distance = std::max(8.0F, camera.distance + 80.0F);
+    for (int step = 0; step <= step_count; ++step)
+    {
+        const float t = max_distance * static_cast<float>(step) / static_cast<float>(step_count);
+        const Vec3 world = eye + ray * t;
+        const auto delta = terrain_delta(world);
+        if (!delta)
+        {
+            previous_world.reset();
+            previous_delta.reset();
+            continue;
+        }
+        if (std::abs(*delta) < 0.002F)
+        {
+            const double global_x = static_cast<double>(options.center_x) + 0.5 + world.x;
+            const double global_y = static_cast<double>(options.center_y) + 0.5 + world.z;
+            const auto lat_lon =
+                animus::geo_core::tile_space_to_lat_lon(global_x, global_y, options.z);
+            return make_map_tool_point(
+                options,
+                lat_lon.u,
+                lat_lon.v,
+                sample_resident_terrain_height_m(options, tiles, lat_lon.u, lat_lon.v),
+                "terrain");
+        }
+        if (previous_world && previous_delta &&
+            ((*previous_delta > 0.0F && *delta <= 0.0F) ||
+             (*previous_delta < 0.0F && *delta >= 0.0F)))
+        {
+            float lo = t - max_distance / static_cast<float>(step_count);
+            float hi = t;
+            for (int refine = 0; refine < 10; ++refine)
+            {
+                const float mid = (lo + hi) * 0.5F;
+                const Vec3 mid_world = eye + ray * mid;
+                const auto mid_delta = terrain_delta(mid_world);
+                if (!mid_delta)
+                {
+                    break;
+                }
+                if ((*previous_delta > 0.0F && *mid_delta > 0.0F) ||
+                    (*previous_delta < 0.0F && *mid_delta < 0.0F))
+                {
+                    lo = mid;
+                }
+                else
+                {
+                    hi = mid;
+                }
+            }
+            const Vec3 hit = eye + ray * ((lo + hi) * 0.5F);
+            const double global_x = static_cast<double>(options.center_x) + 0.5 + hit.x;
+            const double global_y = static_cast<double>(options.center_y) + 0.5 + hit.z;
+            const auto lat_lon =
+                animus::geo_core::tile_space_to_lat_lon(global_x, global_y, options.z);
+            return make_map_tool_point(
+                options,
+                lat_lon.u,
+                lat_lon.v,
+                sample_resident_terrain_height_m(options, tiles, lat_lon.u, lat_lon.v),
+                "terrain");
+        }
+        previous_world = world;
+        previous_delta = *delta;
+    }
+    return std::nullopt;
+}
+
 animus::terrain_core::AltitudeReference
 altitude_reference(animus::telemetry_core::AltitudeDatum datum)
 {
@@ -1113,6 +1383,223 @@ Vec3 telemetry_world_position(const Options &options,
     return {x, y, z};
 }
 
+std::optional<double>
+selected_entity_clearance_m(const animus::terrain_core::GeoidCorrectionGrid &geoid_grid,
+                            const animus::telemetry_core::TelemetrySample &sample,
+                            const double terrain_m,
+                            bool &datum_uncertain)
+{
+    if (sample.altitude_relative_m)
+    {
+        if (sample.altitude_datum == animus::telemetry_core::AltitudeDatum::Unknown)
+        {
+            datum_uncertain = true;
+        }
+        return sample.altitude_relative_m;
+    }
+    if (!sample.altitude_msl_m)
+    {
+        return std::nullopt;
+    }
+    try
+    {
+        const auto clearance =
+            animus::terrain_core::height_above_terrain_m(altitude_reference(sample.altitude_datum),
+                                                         *sample.altitude_msl_m,
+                                                         terrain_m,
+                                                         sample.lat_deg,
+                                                         sample.lon_deg,
+                                                         geoid_grid);
+        if (!clearance)
+        {
+            datum_uncertain = true;
+        }
+        return clearance;
+    }
+    catch (const std::exception &)
+    {
+        datum_uncertain = true;
+        return std::nullopt;
+    }
+}
+
+void update_selected_entity_terrain_state(
+    const Options &options,
+    const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+    const animus::terrain_core::GeoidCorrectionGrid &geoid_grid,
+    TelemetryPlaybackState &playback,
+    const UiState &ui_state)
+{
+    playback.selected_entity_terrain = {};
+    if (!playback.loaded || !ui_state.telemetry_entity_selected)
+    {
+        return;
+    }
+    const auto sample =
+        playback.timeline.sample_at(playback.selected_entity, playback.clock.time_s());
+    if (!sample || !telemetry_sample_placeable(*sample))
+    {
+        return;
+    }
+    const auto terrain = sample_resident_terrain(options, tiles, sample->lat_deg, sample->lon_deg);
+    if (!terrain)
+    {
+        playback.selected_entity_terrain.confidence =
+            TelemetryPlaybackState::TerrainConfidence::Unavailable;
+        return;
+    }
+
+    bool datum_uncertain = false;
+    playback.selected_entity_terrain.terrain_elevation_m = terrain->height_m;
+    playback.selected_entity_terrain.terrain_clearance_m =
+        selected_entity_clearance_m(geoid_grid, *sample, terrain->height_m, datum_uncertain);
+    playback.selected_entity_terrain.confidence =
+        datum_uncertain ? TelemetryPlaybackState::TerrainConfidence::DatumUncertain
+                        : terrain->confidence;
+}
+
+std::optional<Vec3>
+selected_entity_world_position(const Options &options,
+                               const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                               const animus::terrain_core::GeoidCorrectionGrid &geoid_grid,
+                               const TelemetryPlaybackState &playback,
+                               const UiState &ui_state)
+{
+    if (!playback.loaded || !ui_state.telemetry_entity_selected)
+    {
+        return std::nullopt;
+    }
+    const auto sample =
+        playback.timeline.sample_at(playback.selected_entity, playback.clock.time_s());
+    if (!sample || !telemetry_sample_placeable(*sample))
+    {
+        return std::nullopt;
+    }
+    bool terrain_unavailable = false;
+    bool unknown_datum = false;
+    bool geoid_unavailable = false;
+    return telemetry_world_position(
+        options, tiles, geoid_grid, *sample, terrain_unavailable, unknown_datum, geoid_unavailable);
+}
+
+void center_selected_entity(const Options &options,
+                            const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                            const animus::terrain_core::GeoidCorrectionGrid &geoid_grid,
+                            const TelemetryPlaybackState &playback,
+                            const UiState &ui_state,
+                            InputState &input)
+{
+    const auto world =
+        selected_entity_world_position(options, tiles, geoid_grid, playback, ui_state);
+    if (!world)
+    {
+        return;
+    }
+    if (ui_state.view_mode == animus::app::ViewMode::Map2D)
+    {
+        input.map_camera.target_x = world->x;
+        input.map_camera.target_z = world->z;
+    }
+    else
+    {
+        input.camera.target = *world;
+    }
+}
+
+void fit_selected_entity(const Options &options,
+                         const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                         const animus::terrain_core::GeoidCorrectionGrid &geoid_grid,
+                         const TelemetryPlaybackState &playback,
+                         const UiState &ui_state,
+                         InputState &input)
+{
+    if (!playback.loaded || !ui_state.telemetry_entity_selected)
+    {
+        return;
+    }
+    const auto current =
+        playback.timeline.sample_at(playback.selected_entity, playback.clock.time_s());
+    if (!current || !telemetry_sample_placeable(*current))
+    {
+        return;
+    }
+
+    float min_x = std::numeric_limits<float>::max();
+    float min_y = std::numeric_limits<float>::max();
+    float min_z = std::numeric_limits<float>::max();
+    float max_x = std::numeric_limits<float>::lowest();
+    float max_y = std::numeric_limits<float>::lowest();
+    float max_z = std::numeric_limits<float>::lowest();
+    bool any = false;
+    const auto add_sample = [&](const animus::telemetry_core::TelemetrySample &sample)
+    {
+        if (!telemetry_sample_placeable(sample))
+        {
+            return;
+        }
+        bool terrain_unavailable = false;
+        bool unknown_datum = false;
+        bool geoid_unavailable = false;
+        const Vec3 world = telemetry_world_position(options,
+                                                    tiles,
+                                                    geoid_grid,
+                                                    sample,
+                                                    terrain_unavailable,
+                                                    unknown_datum,
+                                                    geoid_unavailable);
+        min_x = std::min(min_x, world.x);
+        min_y = std::min(min_y, world.y);
+        min_z = std::min(min_z, world.z);
+        max_x = std::max(max_x, world.x);
+        max_y = std::max(max_y, world.y);
+        max_z = std::max(max_z, world.z);
+        any = true;
+    };
+
+    const auto *track = playback.timeline.track_for(playback.selected_entity);
+    const double start_time_s = current->time_s - 20.0;
+    if (track != nullptr)
+    {
+        std::size_t accepted = 0U;
+        for (auto it = track->samples.rbegin(); it != track->samples.rend() && accepted < 80U; ++it)
+        {
+            if (it->time_s > current->time_s)
+            {
+                continue;
+            }
+            if (it->time_s < start_time_s)
+            {
+                break;
+            }
+            add_sample(*it);
+            ++accepted;
+        }
+    }
+    add_sample(*current);
+    if (!any)
+    {
+        return;
+    }
+
+    const Vec3 target{(min_x + max_x) * 0.5F, (min_y + max_y) * 0.5F, (min_z + max_z) * 0.5F};
+    const float span_x = max_x - min_x;
+    const float span_y = max_y - min_y;
+    const float span_z = max_z - min_z;
+    if (ui_state.view_mode == animus::app::ViewMode::Map2D)
+    {
+        input.map_camera.target_x = target.x;
+        input.map_camera.target_z = target.z;
+        input.map_camera.distance =
+            std::clamp(std::max(span_x, span_z) * 0.9F + 0.7F, 0.35F, 80.0F);
+    }
+    else
+    {
+        input.camera.target = target;
+        input.camera.distance =
+            std::clamp(std::max({span_x, span_y, span_z}) * 1.4F + 1.2F, 0.45F, 40.0F);
+    }
+}
+
 ProjectedPoint
 project_to_screen(const Mat4 &mvp, const Vec3 world, const int width, const int height)
 {
@@ -1135,6 +1622,331 @@ project_to_screen(const Mat4 &mvp, const Vec3 world, const int width, const int 
     return {true,
             ImVec2((ndc_x * 0.5F + 0.5F) * static_cast<float>(width),
                    (0.5F - ndc_y * 0.5F) * static_cast<float>(height))};
+}
+
+const animus::terrain_core::TileRuntimeState *
+runtime_tile_for_point(const animus::terrain_core::TerrainStreamSnapshot &snapshot,
+                       const MapToolPoint &point)
+{
+    const TileCoord coord{point.tile_z, point.tile_x, point.tile_y};
+    auto exact = std::find_if(snapshot.tiles.begin(),
+                              snapshot.tiles.end(),
+                              [coord](const auto &tile) { return tile.coord == coord; });
+    if (exact != snapshot.tiles.end())
+    {
+        return &*exact;
+    }
+    return nullptr;
+}
+
+bool visible_tile_uses_fallback(
+    const std::vector<animus::terrain_core::TileRenderDecision> &visible_tiles,
+    const MapToolPoint &point)
+{
+    const TileCoord coord{point.tile_z, point.tile_x, point.tile_y};
+    const auto it = std::find_if(visible_tiles.begin(),
+                                 visible_tiles.end(),
+                                 [coord](const auto &decision) { return decision.coord == coord; });
+    return it != visible_tiles.end() && it->using_fallback;
+}
+
+std::string lat_lon_clipboard_text(const MapToolPoint &point, const bool include_elevation)
+{
+    char text[160] = {};
+    if (include_elevation && point.terrain_elevation_m)
+    {
+        std::snprintf(text,
+                      sizeof(text),
+                      "%.7f, %.7f, %.2f m",
+                      point.lat_deg,
+                      point.lon_deg,
+                      *point.terrain_elevation_m);
+    }
+    else
+    {
+        std::snprintf(text, sizeof(text), "%.7f, %.7f", point.lat_deg, point.lon_deg);
+    }
+    return text;
+}
+
+std::optional<MapToolPoint>
+selected_entity_tool_point(const Options &options,
+                           const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                           const TelemetryPlaybackState &playback,
+                           const UiState &ui_state)
+{
+    if (!playback.loaded || !ui_state.telemetry_entity_selected)
+    {
+        return std::nullopt;
+    }
+    const auto sample =
+        playback.timeline.sample_at(playback.selected_entity, playback.clock.time_s());
+    if (!sample || !telemetry_sample_placeable(*sample))
+    {
+        return std::nullopt;
+    }
+    return make_map_tool_point(
+        options,
+        sample->lat_deg,
+        sample->lon_deg,
+        sample_resident_terrain_height_m(options, tiles, sample->lat_deg, sample->lon_deg),
+        "selected");
+}
+
+void draw_tool_label(ImDrawList *draw, const ImVec2 at, const std::string &label, const ImU32 color)
+{
+    const ImVec2 text_size = ImGui::CalcTextSize(label.c_str());
+    const ImVec2 min(at.x + 10.0F, at.y - text_size.y - 10.0F);
+    const ImVec2 max(min.x + text_size.x + 10.0F, min.y + text_size.y + 7.0F);
+    draw->AddRectFilled(min, max, IM_COL32(12, 17, 20, 210), 5.0F);
+    draw->AddRect(min, max, IM_COL32(230, 238, 242, 58), 5.0F);
+    draw->AddText(ImVec2(min.x + 5.0F, min.y + 3.0F), color, label.c_str());
+}
+
+void draw_tool_point(ImDrawList *draw,
+                     const Mat4 &mvp,
+                     const MapToolPoint &point,
+                     const int framebuffer_width,
+                     const int framebuffer_height,
+                     const ImU32 fill,
+                     const ImU32 stroke)
+{
+    const ProjectedPoint projected =
+        project_to_screen(mvp,
+                          {point.world_x, point.world_y + 0.012F, point.world_z},
+                          framebuffer_width,
+                          framebuffer_height);
+    if (!projected.visible)
+    {
+        return;
+    }
+    draw->AddCircleFilled(projected.screen, 5.5F, fill, 18);
+    draw->AddCircle(projected.screen, 7.5F, stroke, 20, 1.4F);
+    if (!point.label.empty())
+    {
+        draw_tool_label(draw, projected.screen, point.label, IM_COL32(232, 240, 244, 238));
+    }
+}
+
+void draw_map_tools_overlay(const MapToolState &tools,
+                            const Camera &camera,
+                            const Map2DCamera &map_camera,
+                            const animus::app::ViewMode view_mode,
+                            const int framebuffer_width,
+                            const int framebuffer_height)
+{
+    ImDrawList *draw = ImGui::GetForegroundDrawList();
+    const Mat4 mvp = active_view_projection(
+        camera, map_camera, view_mode, framebuffer_width, framebuffer_height);
+    for (const auto &marker : tools.markers)
+    {
+        draw_tool_point(draw,
+                        mvp,
+                        marker,
+                        framebuffer_width,
+                        framebuffer_height,
+                        IM_COL32(246, 194, 76, 236),
+                        IM_COL32(255, 246, 194, 216));
+    }
+    for (const auto &bookmark : tools.bookmarks)
+    {
+        draw_tool_point(draw,
+                        mvp,
+                        bookmark,
+                        framebuffer_width,
+                        framebuffer_height,
+                        IM_COL32(105, 192, 235, 230),
+                        IM_COL32(206, 238, 252, 218));
+    }
+    if (tools.terrain_probe)
+    {
+        draw_tool_point(draw,
+                        mvp,
+                        *tools.terrain_probe,
+                        framebuffer_width,
+                        framebuffer_height,
+                        IM_COL32(73, 211, 146, 238),
+                        IM_COL32(198, 248, 224, 224));
+    }
+    if (tools.range_anchor && tools.range_endpoint)
+    {
+        const ProjectedPoint a = project_to_screen(mvp,
+                                                   {tools.range_anchor->world_x,
+                                                    tools.range_anchor->world_y + 0.018F,
+                                                    tools.range_anchor->world_z},
+                                                   framebuffer_width,
+                                                   framebuffer_height);
+        const ProjectedPoint b = project_to_screen(mvp,
+                                                   {tools.range_endpoint->world_x,
+                                                    tools.range_endpoint->world_y + 0.018F,
+                                                    tools.range_endpoint->world_z},
+                                                   framebuffer_width,
+                                                   framebuffer_height);
+        if (a.visible && b.visible)
+        {
+            draw->AddLine(a.screen, b.screen, IM_COL32(253, 225, 128, 238), 2.4F);
+            draw->AddCircleFilled(a.screen, 5.0F, IM_COL32(253, 225, 128, 244), 18);
+            draw->AddCircleFilled(b.screen, 5.0F, IM_COL32(253, 225, 128, 244), 18);
+            const auto rb =
+                animus::app::range_bearing_between(*tools.range_anchor, *tools.range_endpoint);
+            char label[96] = {};
+            std::snprintf(label,
+                          sizeof(label),
+                          rb.distance_m >= 1000.0 ? "%.2f km  %.0f deg" : "%.0f m  %.0f deg",
+                          rb.distance_m >= 1000.0 ? rb.distance_m / 1000.0 : rb.distance_m,
+                          rb.initial_bearing_deg);
+            draw_tool_label(
+                draw,
+                ImVec2((a.screen.x + b.screen.x) * 0.5F, (a.screen.y + b.screen.y) * 0.5F),
+                label,
+                IM_COL32(253, 237, 171, 244));
+        }
+    }
+    else if (tools.range_anchor)
+    {
+        draw_tool_point(draw,
+                        mvp,
+                        *tools.range_anchor,
+                        framebuffer_width,
+                        framebuffer_height,
+                        IM_COL32(253, 225, 128, 244),
+                        IM_COL32(255, 247, 194, 224));
+    }
+}
+
+const char *imagery_source_label(const Options &options)
+{
+    if (!options.remote_imagery_url_template.empty())
+    {
+        return "remote_http";
+    }
+    if (!options.imagery_mbtiles.empty())
+    {
+        return "mbtiles";
+    }
+    return "local_xyz";
+}
+
+void draw_tile_source_inspector(
+    const animus::terrain_core::TerrainStreamSnapshot &snapshot,
+    const std::vector<animus::terrain_core::TileRenderDecision> &visible_tiles,
+    const Options &options,
+    const MapToolPoint &point)
+{
+    const auto *runtime = runtime_tile_for_point(snapshot, point);
+    ImGui::SeparatorText("Tile / Source");
+    ImGui::Text("tile %d/%d/%d", point.tile_z, point.tile_x, point.tile_y);
+    ImGui::Text("visible fallback %s",
+                visible_tile_uses_fallback(visible_tiles, point) ? "yes" : "no");
+    if (runtime == nullptr)
+    {
+        ImGui::TextUnformatted("runtime state not resident");
+        return;
+    }
+    ImGui::Text("imagery source %s", imagery_source_label(options));
+    ImGui::Text("state %s", std::string(animus::terrain_core::to_string(runtime->state)).c_str());
+    ImGui::Text("cache %s",
+                std::string(animus::terrain_core::to_string(runtime->cache_tier)).c_str());
+    ImGui::Text("elevation source %s",
+                std::string(animus::terrain_core::to_string(runtime->source_type)).c_str());
+    ImGui::Text(
+        "synthetic %s depth %d", runtime->synthetic ? "yes" : "no", runtime->synthesis_depth);
+    ImGui::Text("height %.1f..%.1f m", runtime->min_height_m, runtime->max_height_m);
+    if (runtime->parent)
+    {
+        ImGui::Text("parent %d/%d/%d", runtime->parent->z, runtime->parent->x, runtime->parent->y);
+    }
+    if (!runtime->error.empty())
+    {
+        ImGui::TextWrapped("error %s", runtime->error.c_str());
+    }
+}
+
+void draw_map_tool_popup(MapToolState &tools,
+                         const animus::terrain_core::TerrainStreamSnapshot &snapshot,
+                         const std::vector<animus::terrain_core::TileRenderDecision> &visible_tiles,
+                         const Options &options,
+                         const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                         const TelemetryPlaybackState &playback,
+                         const UiState &ui_state,
+                         InputState &input,
+                         const MapToolPoint &clicked)
+{
+    if (!ImGui::BeginPopup("map_tool_context"))
+    {
+        return;
+    }
+    ImGui::Text("%.7f, %.7f", clicked.lat_deg, clicked.lon_deg);
+    if (clicked.terrain_elevation_m)
+    {
+        ImGui::Text("elev %.2f m", *clicked.terrain_elevation_m);
+    }
+    else
+    {
+        ImGui::TextUnformatted("elev n/a");
+    }
+    if (ImGui::MenuItem("Copy lat/lon"))
+    {
+        ImGui::SetClipboardText(lat_lon_clipboard_text(clicked, false).c_str());
+    }
+    if (ImGui::MenuItem(
+            "Copy lat/lon/elevation", nullptr, false, clicked.terrain_elevation_m.has_value()))
+    {
+        ImGui::SetClipboardText(lat_lon_clipboard_text(clicked, true).c_str());
+    }
+    if (ImGui::MenuItem("Place temporary marker"))
+    {
+        MapToolPoint point = clicked;
+        point.label = "M" + std::to_string(tools.next_order);
+        animus::app::push_bounded_point(tools.markers, point, tools.next_order);
+    }
+    if (ImGui::MenuItem("Add session bookmark"))
+    {
+        MapToolPoint point = clicked;
+        point.label = "B" + std::to_string(tools.next_order);
+        animus::app::push_bounded_point(tools.bookmarks, point, tools.next_order);
+    }
+    if (ImGui::MenuItem("Center camera here"))
+    {
+        input.map_camera.target_x = clicked.world_x;
+        input.map_camera.target_z = clicked.world_z;
+        input.camera.target = {clicked.world_x, clicked.world_y, clicked.world_z};
+    }
+    if (ImGui::MenuItem("Look at point",
+                        nullptr,
+                        false,
+                        ui_state.view_mode == animus::app::ViewMode::Terrain3D))
+    {
+        input.camera.target = {clicked.world_x, clicked.world_y, clicked.world_z};
+    }
+    const auto selected_point = selected_entity_tool_point(options, tiles, playback, ui_state);
+    if (ImGui::MenuItem("Measure from selected entity", nullptr, false, selected_point.has_value()))
+    {
+        tools.mode = ToolMode::RangeBearing;
+        tools.range_anchor = *selected_point;
+        tools.range_endpoint = clicked;
+    }
+    if (ImGui::MenuItem("Start range/bearing here"))
+    {
+        tools.mode = ToolMode::RangeBearing;
+        tools.range_anchor = clicked;
+        tools.range_endpoint.reset();
+    }
+    if (ImGui::MenuItem(
+            "Terrain probe here", nullptr, false, clicked.terrain_elevation_m.has_value()))
+    {
+        tools.mode = ToolMode::TerrainProbe;
+        tools.terrain_probe = clicked;
+    }
+    ImGui::MenuItem("Elevation profile", "deferred", false, false);
+    ImGui::MenuItem("Clearance profile", "deferred", false, false);
+    if (ImGui::MenuItem("Clear markers/bookmarks"))
+    {
+        tools.markers.clear();
+        tools.bookmarks.clear();
+    }
+    draw_tile_source_inspector(snapshot, visible_tiles, options, clicked);
+    ImGui::EndPopup();
 }
 
 TelemetryOverlayDrawStats
@@ -1676,6 +2488,8 @@ int run(const Options &options)
     ScreenshotToolState screenshot_tool;
     Mp4RecorderState mp4_recorder;
     UiState ui_state;
+    MapToolState map_tools;
+    std::optional<MapToolPoint> map_context_point;
     ui_state.workspace_mode = options.workspace_mode;
     ui_state.view_mode = options.view_mode;
     if (options.developer_workspace && options.debug_overlay)
@@ -1844,6 +2658,18 @@ int run(const Options &options)
                 }
             }
         }
+
+        if (ui_state.request_center_selected_entity)
+        {
+            center_selected_entity(options, tiles, geoid_grid, telemetry, ui_state, input);
+        }
+        ui_state.request_center_selected_entity = false;
+
+        if (ui_state.request_fit_selected_entity)
+        {
+            fit_selected_entity(options, tiles, geoid_grid, telemetry, ui_state, input);
+        }
+        ui_state.request_fit_selected_entity = false;
 
         if (ui_state.request_jump_latest_sample && telemetry.loaded && !telemetry.live)
         {
@@ -2014,6 +2840,47 @@ int run(const Options &options)
             resident_gpu_bytes += tile.estimated_gpu_bytes;
         }
         streamer.update_l0_stats(tiles.size(), resident_gpu_bytes);
+        update_selected_entity_terrain_state(options, tiles, geoid_grid, telemetry, ui_state);
+
+        if (debug_layer != nullptr)
+        {
+            const ImGuiIO &io = ImGui::GetIO();
+            const auto resolve_screen_point =
+                [&](const ImVec2 screen) -> std::optional<MapToolPoint>
+            {
+                if (ui_state.view_mode == animus::app::ViewMode::Map2D)
+                {
+                    return map2d_point_from_screen(options,
+                                                   tiles,
+                                                   input.map_camera,
+                                                   screen,
+                                                   window.framebuffer_width(),
+                                                   window.framebuffer_height());
+                }
+                return terrain3d_point_from_screen(options,
+                                                   tiles,
+                                                   input.camera,
+                                                   screen,
+                                                   window.framebuffer_width(),
+                                                   window.framebuffer_height());
+            };
+            if (!io.WantCaptureMouse && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+            {
+                map_context_point = resolve_screen_point(io.MousePos);
+                if (map_context_point)
+                {
+                    ImGui::OpenPopup("map_tool_context");
+                }
+            }
+            if (!io.WantCaptureMouse && map_tools.mode == ToolMode::RangeBearing &&
+                map_tools.range_anchor && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+            {
+                if (const auto endpoint = resolve_screen_point(io.MousePos))
+                {
+                    map_tools.range_endpoint = endpoint;
+                }
+            }
+        }
 
         const animus::render_core::ModelMesh *selected_model = nullptr;
         Mat4 selected_model_matrix_value = identity();
@@ -2076,6 +2943,24 @@ int run(const Options &options)
                                    window.framebuffer_width(),
                                    window.framebuffer_height(),
                                    selected_zoom);
+            }
+            draw_map_tools_overlay(map_tools,
+                                   input.camera,
+                                   input.map_camera,
+                                   ui_state.view_mode,
+                                   window.framebuffer_width(),
+                                   window.framebuffer_height());
+            if (map_context_point)
+            {
+                draw_map_tool_popup(map_tools,
+                                    streamer.snapshot(),
+                                    visible_tiles,
+                                    options,
+                                    tiles,
+                                    telemetry,
+                                    ui_state,
+                                    input,
+                                    *map_context_point);
             }
             draw_app_workspace(options,
                                pack_root,

@@ -303,30 +303,30 @@ opening raw telemetry tables.
 
 Checklist:
 
-- [ ] Add an `Operator` selected-entity instrument card shown when an entity is
+- [x] Add an `Operator` selected-entity instrument card shown when an entity is
   selected.
-- [ ] Show entity name or system/component id, live/offline state, telemetry age,
+- [x] Show entity name or system/component id, live/offline state, telemetry age,
   stale/degraded state, lat/lon, altitude MSL, relative altitude, terrain
   elevation, terrain clearance, ground speed, climb rate, heading, roll, pitch,
   and yaw when available.
-- [ ] Show terrain confidence as exact resident tile, fallback parent,
+- [x] Show terrain confidence as exact resident tile, fallback parent,
   synthetic, unavailable, or datum uncertain.
 - [ ] Add small controls for follow, fit selected, center, show/hide label,
   show/hide trail, and tail length when existing settings make that cheap.
-- [ ] Keep raw telemetry tables/lists in `Advanced` or `Developer`, not as the
+- [x] Keep raw telemetry tables/lists in `Advanced` or `Developer`, not as the
   primary operator surface.
 
 Acceptance:
 
-- [ ] Selecting an entity makes the card useful without raw telemetry panels.
-- [ ] Existing labels, tracks, tails, stale state, degraded state, and selection
+- [x] Selecting an entity makes the card useful without raw telemetry panels.
+- [x] Existing labels, tracks, tails, stale state, degraded state, and selection
   behavior still work.
-- [ ] No telemetry semantics move into `render_core`.
+- [x] No telemetry semantics move into `render_core`.
 
 Validation:
 
-- [ ] `python3 animus/tools/verify_animus.py --screenshot-smoke --artifact-bundle`
-- [ ] `python3 animus/tools/verify_animus.py --live-udp-smoke`
+- [x] `python3 animus/tools/verify_animus.py --screenshot-smoke --artifact-bundle`
+- [x] `python3 animus/tools/verify_animus.py --live-udp-smoke`
 
 Deferred:
 
@@ -339,34 +339,34 @@ command authority.
 
 Checklist:
 
-- [ ] Add a right-click ImGui action menu for clicked terrain/map positions in
+- [x] Add a right-click ImGui action menu for clicked terrain/map positions in
   2D and in 3D when terrain intersection is available.
-- [ ] Add safe actions: copy lat/lon, copy lat/lon/elevation, place temporary
+- [x] Add safe actions: copy lat/lon, copy lat/lon/elevation, place temporary
   marker, center camera here, look at point, measure from selected entity, start
   range/bearing measurement, inspect tile/source, add bookmark, and clear
   markers/bookmarks.
-- [ ] Add bounded temporary markers/bookmarks, default cap 64 unless app style
+- [x] Add bounded temporary markers/bookmarks, default cap 64 unless app style
   already suggests a different small cap.
-- [ ] Add tile/source inspector fields for z/x/y, imagery source, elevation
+- [x] Add tile/source inspector fields for z/x/y, imagery source, elevation
   source, cache tier, fallback/synthetic state, height range, and recent error
   text when known.
-- [ ] Add `ToolMode` for terrain probe, range/bearing, elevation profile, and
+- [x] Add `ToolMode` for terrain probe, range/bearing, elevation profile, and
   clearance profile.
-- [ ] Implement terrain probe and range/bearing first; keep profile sampling
+- [x] Implement terrain probe and range/bearing first; keep profile sampling
   bounded and decimated.
 
 Acceptance:
 
-- [ ] Map action popup appears without sending MAVLink or vehicle commands.
-- [ ] Copy actions and markers work.
-- [ ] Terrain probe and range/bearing work in `Map2D`.
-- [ ] Tools degrade gracefully when terrain height is unavailable.
-- [ ] No parallel terrain state is added for inspection.
+- [x] Map action popup appears without sending MAVLink or vehicle commands.
+- [x] Copy actions and markers work.
+- [x] Terrain probe and range/bearing work in `Map2D`.
+- [x] Tools degrade gracefully when terrain height is unavailable.
+- [x] No parallel terrain state is added for inspection.
 
 Validation:
 
-- [ ] `python3 animus/tools/verify_animus.py`
-- [ ] Headless smoke capture still succeeds with map tools compiled in.
+- [x] `python3 animus/tools/verify_animus.py`
+- [x] Headless smoke capture still succeeds with map tools compiled in.
 
 Deferred:
 

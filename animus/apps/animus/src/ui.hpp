@@ -11,6 +11,7 @@
 #include <array>
 #include <cstddef>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -75,6 +76,21 @@ struct TelemetryPlaybackState
     bool terrain_height_unavailable = false;
     bool unknown_datum_relative_fallback = false;
     bool geoid_correction_unavailable = false;
+    enum class TerrainConfidence
+    {
+        ExactResidentTile,
+        FallbackResidentTile,
+        SyntheticResidentTile,
+        Unavailable,
+        DatumUncertain,
+    };
+    struct SelectedEntityTerrain
+    {
+        std::optional<double> terrain_elevation_m;
+        std::optional<double> terrain_clearance_m;
+        TerrainConfidence confidence = TerrainConfidence::Unavailable;
+    };
+    SelectedEntityTerrain selected_entity_terrain;
     animus::telemetry_core::EntityId selected_entity;
     std::string live_endpoint;
     animus::telemetry_live::UdpMavlinkReceiverStats receiver_stats;
@@ -136,6 +152,8 @@ struct UiState
     bool telemetry_entity_selected = false;
     bool follow_selected_entity = false;
     bool request_fit_all_entities = false;
+    bool request_center_selected_entity = false;
+    bool request_fit_selected_entity = false;
     bool request_jump_latest_sample = false;
     bool request_home_view = false;
     int zoom_steps = 0;

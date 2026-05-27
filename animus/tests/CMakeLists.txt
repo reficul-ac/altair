@@ -43,6 +43,12 @@ target_link_libraries(animus_options_tests PRIVATE animus_telemetry_core GTest::
 animus_enable_warnings(animus_options_tests)
 gtest_discover_tests(animus_options_tests)
 
+add_executable(animus_map_tools_tests map_tools_tests.cpp)
+target_include_directories(animus_map_tools_tests PRIVATE ../apps/animus/src)
+target_link_libraries(animus_map_tools_tests PRIVATE GTest::gtest_main)
+animus_enable_warnings(animus_map_tools_tests)
+gtest_discover_tests(animus_map_tools_tests)
+
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 add_test(NAME animus_python_tool_tests COMMAND ${Python3_EXECUTABLE} -m unittest discover -s

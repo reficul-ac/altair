@@ -41,6 +41,9 @@ Reusable Bayek framework follow-up is tracked separately in
   path after the operator UI/entity overlay foundation is stable.
 - [ ] Add per-entity Animus vehicle assignment policy and UI after the default
   Generic RC Plane model path is exercised in operator workflows.
+- [ ] Add selected-entity overlay preferences for label visibility, trail
+  visibility, and tail length after the overlay renderer has app-local
+  preference wiring.
 
 ## Workflow, Artifacts, And Verification
 
