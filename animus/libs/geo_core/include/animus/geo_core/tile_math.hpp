@@ -41,6 +41,7 @@ int tiles_per_axis(int z);
 TileCoord lat_lon_to_tile(double lat_deg, double lon_deg, int z);
 GeoBounds tile_to_bounds(TileCoord coord);
 Vec2 lat_lon_to_tile_uv(double lat_deg, double lon_deg, TileCoord coord);
+Vec2 tile_space_to_lat_lon(double x, double y, int z);
 
 TileCoord parent(TileCoord coord);
 std::array<TileCoord, 4> children(TileCoord coord);

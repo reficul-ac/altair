@@ -18,6 +18,13 @@ enum class WorkspaceMode
     Developer,
 };
 
+enum class ViewMode
+{
+    Terrain3D,
+    Map2D,
+    Oblique25D,
+};
+
 struct OverlayLayerConfig
 {
     std::filesystem::path path;
@@ -52,6 +59,7 @@ struct Options
     std::filesystem::path config_path;
     bool load_config = true;
     WorkspaceMode workspace_mode = WorkspaceMode::Operator;
+    ViewMode view_mode = ViewMode::Terrain3D;
     bool developer_workspace = false;
     std::filesystem::path capture_ppm;
     std::filesystem::path capture_png;

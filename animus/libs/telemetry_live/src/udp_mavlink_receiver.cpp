@@ -38,9 +38,8 @@ void UdpMavlinkReceiver::start()
     const auto address = asio::ip::make_address(config_.bind_host);
     socket_.open(asio::ip::udp::v4());
     socket_.bind(asio::ip::udp::endpoint(address, config_.bind_port));
-    start_time_s_ = std::chrono::duration<double>(
-                        std::chrono::steady_clock::now().time_since_epoch())
-                        .count();
+    start_time_s_ =
+        std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     running_ = true;
     receive_next();
     thread_ = std::thread([this]() { io_.run(); });

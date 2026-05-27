@@ -56,6 +56,34 @@ const char *workspace_label(const WorkspaceMode mode)
     return "Operator";
 }
 
+const char *view_mode_label(const ViewMode mode)
+{
+    switch (mode)
+    {
+    case ViewMode::Terrain3D:
+        return "3D";
+    case ViewMode::Map2D:
+        return "2D";
+    case ViewMode::Oblique25D:
+        return "2.5D";
+    }
+    return "3D";
+}
+
+const char *orientation_label(const MapOrientationMode mode)
+{
+    switch (mode)
+    {
+    case MapOrientationMode::NorthUp:
+        return "North";
+    case MapOrientationMode::TrackUp:
+        return "Track";
+    case MapOrientationMode::FreeRotate:
+        return "Free";
+    }
+    return "North";
+}
+
 const char *mode_label(const UiNavigationMode mode)
 {
     switch (mode)
@@ -628,16 +656,93 @@ void draw_nav(UiState &ui_state)
 void draw_view_panel(const Options &options,
                      const std::filesystem::path &pack_root,
                      const Camera &camera,
+                     Map2DCamera &map_camera,
                      int selected_zoom,
+                     UiState &ui_state,
                      bool &state_colors,
                      bool &highlight_fallback)
 {
+    ImGui::Text("Viewport");
+    if (ImGui::Button("3D"))
+    {
+        ui_state.view_mode = ViewMode::Terrain3D;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("2D"))
+    {
+        ui_state.view_mode = ViewMode::Map2D;
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled();
+    ImGui::Button("2.5D");
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextColored(text_muted, "%s", view_mode_label(ui_state.view_mode));
+
+    if (ui_state.view_mode == ViewMode::Map2D)
+    {
+        ImGui::SeparatorText("Map");
+        if (ImGui::Button("North"))
+        {
+            ui_state.view_mode = ViewMode::Map2D;
+            map_camera.orientation = MapOrientationMode::NorthUp;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Track"))
+        {
+            map_camera.orientation = MapOrientationMode::TrackUp;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Free"))
+        {
+            map_camera.orientation = MapOrientationMode::FreeRotate;
+        }
+        ImGui::SameLine();
+        ImGui::TextColored(text_muted, "%s", orientation_label(map_camera.orientation));
+    }
+    ImGui::SeparatorText("Actions");
+    ImGui::Checkbox("Follow selected", &ui_state.follow_selected_entity);
+    if (ImGui::Button("Fit all"))
+    {
+        ui_state.request_fit_all_entities = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Latest"))
+    {
+        ui_state.request_jump_latest_sample = true;
+    }
+    if (ImGui::Button("Home"))
+    {
+        ui_state.request_home_view = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("-"))
+    {
+        ui_state.zoom_steps -= 1;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("+"))
+    {
+        ui_state.zoom_steps += 1;
+    }
+    ImGui::Separator();
     ImGui::Text("zoom %d  range %d..%d", selected_zoom, options.min_z, options.max_z);
-    ImGui::Text("camera %.2f %.2f %.2f  distance %.2f",
-                camera.target.x,
-                camera.target.y,
-                camera.target.z,
-                camera.distance);
+    if (ui_state.view_mode == ViewMode::Map2D)
+    {
+        ImGui::Text("map %.2f %.2f  scale %.2f rot %.1f deg",
+                    map_camera.target_x,
+                    map_camera.target_z,
+                    map_camera.distance,
+                    map_camera.rotation_rad * 180.0F / 3.1415926535F);
+    }
+    else
+    {
+        ImGui::Text("camera %.2f %.2f %.2f  distance %.2f",
+                    camera.target.x,
+                    camera.target.y,
+                    camera.target.z,
+                    camera.distance);
+    }
     ImGui::Separator();
     ImGui::Text("pack");
     ImGui::TextWrapped("%s", pack_root.string().c_str());
@@ -1397,6 +1502,7 @@ void draw_app_workspace(const Options &options,
                         const animus::render_core::RenderStats &stats,
                         const animus::terrain_core::TerrainStreamSnapshot &snapshot,
                         const Camera &camera,
+                        Map2DCamera &map_camera,
                         int selected_zoom,
                         const std::vector<animus::terrain_core::TileRenderDecision> &visible_tiles,
                         std::size_t upload_bytes_used,
@@ -1431,7 +1537,7 @@ void draw_app_workspace(const Options &options,
     const float main_width =
         std::clamp(ImGui::GetIO().DisplaySize.x - panel_left - inspector_reserve, 320.0F, 470.0F);
     ImGui::SetNextWindowPos(ImVec2(panel_left, panel_top), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(main_width, 390.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(main_width, 430.0F), ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
     ImGui::PushStyleColor(ImGuiCol_Border, panel_border);
@@ -1443,8 +1549,14 @@ void draw_app_workspace(const Options &options,
     {
     case UiNavigationMode::View:
         ui_state.inspector_target = InspectorTarget::Terrain;
-        draw_view_panel(
-            options, pack_root, camera, selected_zoom, state_colors, highlight_fallback);
+        draw_view_panel(options,
+                        pack_root,
+                        camera,
+                        map_camera,
+                        selected_zoom,
+                        ui_state,
+                        state_colors,
+                        highlight_fallback);
         break;
     case UiNavigationMode::Layers:
         ui_state.inspector_target = InspectorTarget::Layer;

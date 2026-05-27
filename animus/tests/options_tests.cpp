@@ -61,6 +61,19 @@ TEST(AnimusOptions, ParsesDeveloperWorkspace)
     EXPECT_EQ(options.workspace_mode, animus::app::WorkspaceMode::Developer);
 }
 
+TEST(AnimusOptions, ParsesViewMode)
+{
+    const auto options = parse({"animus", "--view-mode", "map2d"});
+
+    EXPECT_EQ(options.view_mode, animus::app::ViewMode::Map2D);
+}
+
+TEST(AnimusOptions, RejectsInvalidViewMode)
+{
+    EXPECT_THROW(parse({"animus", "--view-mode", "browser"}), std::invalid_argument);
+    EXPECT_THROW(parse({"animus", "--view-mode", "oblique25d"}), std::invalid_argument);
+}
+
 TEST(AnimusOptions, LoadsAndSavesWorkspaceMode)
 {
     const std::filesystem::path path =
@@ -81,6 +94,30 @@ TEST(AnimusOptions, LoadsAndSavesWorkspaceMode)
 
     const auto restored = parse({"animus", "--config", path.string().c_str()});
     EXPECT_EQ(restored.workspace_mode, animus::app::WorkspaceMode::Developer);
+
+    std::filesystem::remove(path);
+}
+
+TEST(AnimusOptions, LoadsAndSavesViewMode)
+{
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "animus_options_view_mode_test.json";
+    {
+        std::ofstream output(path);
+        output << "{\n"
+               << "  \"schema\": \"animus.app_config.v1\",\n"
+               << "  \"view_mode\": \"map2d\"\n"
+               << "}\n";
+    }
+
+    auto options = parse({"animus", "--config", path.string().c_str()});
+    EXPECT_EQ(options.view_mode, animus::app::ViewMode::Map2D);
+
+    options.view_mode = animus::app::ViewMode::Terrain3D;
+    animus::app::save_app_config(options);
+
+    const auto restored = parse({"animus", "--config", path.string().c_str()});
+    EXPECT_EQ(restored.view_mode, animus::app::ViewMode::Terrain3D);
 
     std::filesystem::remove(path);
 }

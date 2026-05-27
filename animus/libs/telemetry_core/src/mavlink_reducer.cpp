@@ -177,8 +177,7 @@ std::size_t MavlinkTelemetryReducer::ingest(std::span<const MavlinkMessage> mess
                 state.lat_deg = static_cast<double>(i32(message.payload, 4U)) * 1.0e-7;
                 state.lon_deg = static_cast<double>(i32(message.payload, 8U)) * 1.0e-7;
                 state.altitude_msl_m = static_cast<double>(i32(message.payload, 12U)) * 0.001;
-                state.altitude_relative_m =
-                    static_cast<double>(i32(message.payload, 16U)) * 0.001;
+                state.altitude_relative_m = static_cast<double>(i32(message.payload, 16U)) * 0.001;
                 const double vx = static_cast<double>(i16(message.payload, 20U)) * 0.01;
                 const double vy = static_cast<double>(i16(message.payload, 22U)) * 0.01;
                 state.ground_speed_mps = std::sqrt(vx * vx + vy * vy);
@@ -261,26 +260,24 @@ std::size_t MavlinkTelemetryReducer::prune(const double history_seconds,
         history_seconds > 0.0 ? newest_time_s - history_seconds : newest_time_s;
     const std::size_t before = timeline_.samples.size();
 
-    timeline_.samples.erase(
-        std::remove_if(timeline_.samples.begin(),
-                       timeline_.samples.end(),
-                       [oldest_time_s](const TelemetrySample &sample)
-                       { return sample.time_s < oldest_time_s; }),
-        timeline_.samples.end());
+    timeline_.samples.erase(std::remove_if(timeline_.samples.begin(),
+                                           timeline_.samples.end(),
+                                           [oldest_time_s](const TelemetrySample &sample)
+                                           { return sample.time_s < oldest_time_s; }),
+                            timeline_.samples.end());
     if (max_samples > 0U && timeline_.samples.size() > max_samples)
     {
         timeline_.samples.erase(timeline_.samples.begin(),
-                                timeline_.samples.end() -
-                                    static_cast<std::ptrdiff_t>(max_samples));
+                                timeline_.samples.end() - static_cast<std::ptrdiff_t>(max_samples));
     }
 
     const double pruned_start =
         timeline_.samples.empty() ? newest_time_s : timeline_.samples.front().time_s;
-    timeline_.events.erase(
-        std::remove_if(timeline_.events.begin(),
-                       timeline_.events.end(),
-                       [pruned_start](const Event &event) { return event.time_s < pruned_start; }),
-        timeline_.events.end());
+    timeline_.events.erase(std::remove_if(timeline_.events.begin(),
+                                          timeline_.events.end(),
+                                          [pruned_start](const Event &event)
+                                          { return event.time_s < pruned_start; }),
+                           timeline_.events.end());
     finalize();
     return before - timeline_.samples.size();
 }

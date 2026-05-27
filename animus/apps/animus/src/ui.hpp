@@ -32,6 +32,22 @@ struct Camera
     float pitch = 0.72F;
 };
 
+enum class MapOrientationMode
+{
+    NorthUp,
+    TrackUp,
+    FreeRotate,
+};
+
+struct Map2DCamera
+{
+    float target_x = 0.0F;
+    float target_z = 0.0F;
+    float distance = 4.2F;
+    float rotation_rad = 0.0F;
+    MapOrientationMode orientation = MapOrientationMode::NorthUp;
+};
+
 struct ScreenshotToolState
 {
     std::array<char, 512> png_path{};
@@ -112,12 +128,17 @@ struct TelemetryEventFilters
 struct UiState
 {
     WorkspaceMode workspace_mode = WorkspaceMode::Operator;
+    ViewMode view_mode = ViewMode::Terrain3D;
     UiNavigationMode active_mode = UiNavigationMode::View;
     InspectorTarget inspector_target = InspectorTarget::Terrain;
     bool developer_diagnostics_visible = false;
     bool telemetry_diagnostics_visible = false;
     bool telemetry_entity_selected = false;
     bool follow_selected_entity = false;
+    bool request_fit_all_entities = false;
+    bool request_jump_latest_sample = false;
+    bool request_home_view = false;
+    int zoom_steps = 0;
     std::array<char, 64> telemetry_entity_filter{};
     TelemetryEventFilters telemetry_event_filters;
 };
@@ -135,6 +156,7 @@ void draw_app_workspace(const Options &options,
                         const animus::render_core::RenderStats &stats,
                         const animus::terrain_core::TerrainStreamSnapshot &snapshot,
                         const Camera &camera,
+                        Map2DCamera &map_camera,
                         int selected_zoom,
                         const std::vector<animus::terrain_core::TileRenderDecision> &visible_tiles,
                         std::size_t upload_bytes_used,

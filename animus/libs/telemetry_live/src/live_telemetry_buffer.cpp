@@ -18,11 +18,10 @@ double steady_time_s()
 } // namespace
 
 LiveTelemetryBuffer::LiveTelemetryBuffer(LiveTelemetryBufferConfig config)
-    : config_(config),
-      reducer_(animus::telemetry_core::MavlinkTelemetryReducerConfig{
-          .use_receive_time_for_untimed_messages = true,
-          .preserve_message_events = false,
-          .finalize_after_ingest = false})
+    : config_(config), reducer_(animus::telemetry_core::MavlinkTelemetryReducerConfig{
+                           .use_receive_time_for_untimed_messages = true,
+                           .preserve_message_events = false,
+                           .finalize_after_ingest = false})
 {
 }
 

@@ -75,8 +75,8 @@ bool has_diagnostic_containing(const animus::vehicle_core::VehicleRegistry &regi
 
 TEST(VehicleCore, BuiltInGenericRcPlaneDescriptorLoads)
 {
-    const auto registry = animus::vehicle_core::VehicleRegistry::load_from_directory(
-        source_vehicle_root());
+    const auto registry =
+        animus::vehicle_core::VehicleRegistry::load_from_directory(source_vehicle_root());
     const auto *definition = registry.default_definition();
     ASSERT_NE(definition, nullptr);
     EXPECT_EQ(definition->id, "animus.rc_plane.generic");
@@ -134,8 +134,8 @@ TEST(VehicleCore, DuplicateIdsAreRejected)
 
 TEST(VehicleCore, GeneratedRcPlaneGlbParses)
 {
-    const auto registry = animus::vehicle_core::VehicleRegistry::load_from_directory(
-        source_vehicle_root());
+    const auto registry =
+        animus::vehicle_core::VehicleRegistry::load_from_directory(source_vehicle_root());
     const auto *definition = registry.default_definition();
     ASSERT_NE(definition, nullptr);
 

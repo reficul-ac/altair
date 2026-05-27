@@ -261,35 +261,35 @@ tile, imagery, and telemetry paths.
 
 Checklist:
 
-- [ ] Add `ViewMode` with `Terrain3D`, `Map2D`, and disabled/stubbed
+- [x] Add `ViewMode` with `Terrain3D`, `Map2D`, and disabled/stubbed
   `Oblique25D`.
-- [ ] Preserve existing `Terrain3D` camera behavior.
-- [ ] Implement `Map2D` as an orthographic top-down camera, north-up by default,
+- [x] Preserve existing `Terrain3D` camera behavior.
+- [x] Implement `Map2D` as an orthographic top-down camera, north-up by default,
   with terrain height flattened or minimized for readability.
-- [ ] Reuse current resident tiles, imagery textures, terrain streamer,
+- [x] Reuse current resident tiles, imagery textures, terrain streamer,
   overlays, and telemetry drawing paths.
-- [ ] Add viewport controls for 3D/2D/2.5D, north-up, track-up, free rotate,
+- [x] Add viewport controls for 3D/2D/2.5D, north-up, track-up, free rotate,
   follow selected, fit all entities, jump to latest live sample, home/default
   Tahoe view, and zoom in/out.
-- [ ] Add 2D overlays for scale bar, cursor lat/lon, cursor terrain elevation
+- [x] Add 2D overlays for scale bar, cursor lat/lon, cursor terrain elevation
   when available, tile z/x/y under cursor when cheap, zoom-ish readout, and
   north arrow.
-- [ ] Make left-drag pan and mouse wheel zoom work naturally in `Map2D`.
-- [ ] Ensure the `Map2D` camera contributes a bounded tile wishlist without
+- [x] Make left-drag pan and mouse wheel zoom work naturally in `Map2D`.
+- [x] Ensure the `Map2D` camera contributes a bounded tile wishlist without
   increasing default streaming/upload budgets.
 
 Acceptance:
 
-- [ ] Users can switch between 3D terrain and 2D map view.
-- [ ] 2D mode shows terrain/imagery and telemetry overlays.
-- [ ] Follow-selected, north-up, and track-up are usable in 2D.
-- [ ] Existing 3D behavior is not regressed.
-- [ ] No browser map, web renderer, or separate map engine is introduced.
+- [x] Users can switch between 3D terrain and 2D map view.
+- [x] 2D mode shows terrain/imagery and telemetry overlays.
+- [x] Follow-selected, north-up, and track-up are usable in 2D.
+- [x] Existing 3D behavior is not regressed.
+- [x] No browser map, web renderer, or separate map engine is introduced.
 
 Validation:
 
-- [ ] `python3 animus/tools/verify_animus.py`
-- [ ] Headless screenshot smoke in both default 3D and 2D-starting paths if a
+- [x] `python3 animus/tools/verify_animus.py`
+- [x] Headless screenshot smoke in both default 3D and 2D-starting paths if a
   CLI/config hook exists; otherwise document manual 2D smoke evidence.
 
 Deferred:

@@ -36,7 +36,9 @@ struct H5Handle
     herr_t (*close_fn)(hid_t) = nullptr;
 
     H5Handle() = default;
-    H5Handle(const hid_t value, herr_t (*closer)(hid_t)) : id(value), close_fn(closer) {}
+    H5Handle(const hid_t value, herr_t (*closer)(hid_t)) : id(value), close_fn(closer)
+    {
+    }
     H5Handle(const H5Handle &) = delete;
     H5Handle &operator=(const H5Handle &) = delete;
     H5Handle(H5Handle &&other) noexcept : id(other.id), close_fn(other.close_fn)
@@ -195,12 +197,8 @@ Timeline load_hdf5(const std::filesystem::path &path)
     }
 
     std::vector<double> values(static_cast<std::size_t>(dims[0] * dims[1]), 0.0);
-    if (!values.empty() && H5Dread(dataset.id,
-                                   H5T_NATIVE_DOUBLE,
-                                   H5S_ALL,
-                                   H5S_ALL,
-                                   H5P_DEFAULT,
-                                   values.data()) < 0)
+    if (!values.empty() &&
+        H5Dread(dataset.id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, values.data()) < 0)
     {
         ++timeline.diagnostics.decode_failures;
         add_event(timeline, 0.0, {}, 0U, EventSeverity::Error, "Failed to read HDF5 samples");

@@ -75,8 +75,7 @@ void finalize_timeline(Timeline &timeline)
         it->second = sample.time_s;
     }
 
-    std::map<EntityId, std::vector<TelemetrySample>, decltype(&entity_less)> by_entity(
-        entity_less);
+    std::map<EntityId, std::vector<TelemetrySample>, decltype(&entity_less)> by_entity(entity_less);
     for (const TelemetrySample &sample : timeline.samples)
     {
         by_entity[sample.entity_id].push_back(sample);

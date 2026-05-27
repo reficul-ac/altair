@@ -101,6 +101,23 @@ WorkspaceMode parse_workspace_mode(std::string_view value)
     throw std::invalid_argument("workspace mode must be operator, advanced, or developer");
 }
 
+ViewMode parse_view_mode(std::string_view value)
+{
+    if (value == "terrain3d")
+    {
+        return ViewMode::Terrain3D;
+    }
+    if (value == "map2d")
+    {
+        return ViewMode::Map2D;
+    }
+    if (value == "oblique25d")
+    {
+        return ViewMode::Oblique25D;
+    }
+    throw std::invalid_argument("view mode must be terrain3d, map2d, or oblique25d");
+}
+
 const char *workspace_mode_config_value(const WorkspaceMode mode)
 {
     switch (mode)
@@ -113,6 +130,20 @@ const char *workspace_mode_config_value(const WorkspaceMode mode)
         return "developer";
     }
     return "operator";
+}
+
+const char *view_mode_config_value(const ViewMode mode)
+{
+    switch (mode)
+    {
+    case ViewMode::Terrain3D:
+        return "terrain3d";
+    case ViewMode::Map2D:
+        return "map2d";
+    case ViewMode::Oblique25D:
+        return "oblique25d";
+    }
+    return "terrain3d";
 }
 
 double parse_positive_double(std::string_view name, std::string_view value)
@@ -351,6 +382,21 @@ void load_app_config(Options &options)
             std::cerr << "ignoring invalid workspace_mode in config: " << *value << '\n';
         }
     }
+    if (const auto value = json_string_field(text, "view_mode"))
+    {
+        try
+        {
+            options.view_mode = parse_view_mode(*value);
+            if (options.view_mode == ViewMode::Oblique25D)
+            {
+                options.view_mode = ViewMode::Terrain3D;
+            }
+        }
+        catch (const std::invalid_argument &)
+        {
+            std::cerr << "ignoring invalid view_mode in config: " << *value << '\n';
+        }
+    }
 }
 
 void upsert_compat_overlay(Options &options)
@@ -560,6 +606,14 @@ Options parse_options(int argc, char **argv)
             options.developer_workspace = true;
             options.workspace_mode = WorkspaceMode::Developer;
         }
+        else if (arg == "--view-mode")
+        {
+            options.view_mode = parse_view_mode(next_arg(argc, argv, index, arg));
+            if (options.view_mode == ViewMode::Oblique25D)
+            {
+                throw std::invalid_argument("--view-mode oblique25d is not implemented yet");
+            }
+        }
         else if (arg == "--no-debug-overlay")
         {
             options.debug_overlay = false;
@@ -674,6 +728,7 @@ Options parse_options(int argc, char **argv)
                 << "                   [--capture-sequence-dir DIR]\n"
                 << "                   [--capture-sequence-fps FPS]\n"
                 << "                   [--debug-overlay] [--developer-workspace]\n"
+                << "                   [--view-mode terrain3d|map2d]\n"
                 << "                   [--no-debug-overlay]\n"
                 << "                   [--min-z N] [--max-z N] [--tile-budget N]\n"
                 << "                   [--cache-root PATH] [--elevation-geotiff PATH]\n"
@@ -753,6 +808,7 @@ void save_app_config(const Options &options)
     output << "  ],\n"
            << "  \"workspace_mode\": \"" << workspace_mode_config_value(options.workspace_mode)
            << "\",\n"
+           << "  \"view_mode\": \"" << view_mode_config_value(options.view_mode) << "\",\n"
            << "  \"debug_overlay\": " << (options.debug_overlay ? "true" : "false") << ",\n"
            << "  \"capture_path\": \"" << options.capture_png.generic_string() << "\",\n"
            << "  \"capture_sequence_dir\": \"" << options.capture_sequence_dir.generic_string()

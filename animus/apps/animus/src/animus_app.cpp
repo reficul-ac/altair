@@ -47,13 +47,15 @@ namespace
 {
 
 using animus::app::Camera;
+using animus::app::Map2DCamera;
+using animus::app::MapOrientationMode;
 using animus::app::Mp4RecorderState;
 using animus::app::Options;
 using animus::app::ScreenshotToolState;
 using animus::app::TelemetryPlaybackState;
 using animus::app::UiState;
-using animus::app::VehicleRuntimeStatus;
 using animus::app::Vec3;
+using animus::app::VehicleRuntimeStatus;
 using animus::geo_core::TileCoord;
 using animus::terrain_core::Raster;
 using animus::terrain_core::TerrainStreamer;
@@ -66,6 +68,7 @@ struct Mat4
 struct InputState
 {
     Camera camera;
+    Map2DCamera map_camera;
     bool left_drag = false;
     bool middle_drag = false;
     bool was_reset_pressed = false;
@@ -119,6 +122,7 @@ layout (location = 0) in vec3 position;
 layout (location = 1) in vec2 texcoord;
 
 uniform mat4 mvp;
+uniform float terrain_height_factor;
 
 out vec2 uv;
 out vec3 world_position;
@@ -126,8 +130,9 @@ out vec3 world_position;
 void main()
 {
     uv = texcoord;
-    world_position = position;
-    gl_Position = mvp * vec4(position, 1.0);
+    vec3 rendered_position = vec3(position.x, position.y * terrain_height_factor, position.z);
+    world_position = rendered_position;
+    gl_Position = mvp * vec4(rendered_position, 1.0);
 }
 )glsl";
 
@@ -391,6 +396,23 @@ Mat4 perspective(float fov_y_radians, float aspect, float near_plane, float far_
     return matrix;
 }
 
+Mat4 orthographic(const float left,
+                  const float right,
+                  const float bottom,
+                  const float top,
+                  const float near_plane,
+                  const float far_plane)
+{
+    Mat4 matrix = identity();
+    matrix.data[0] = 2.0F / (right - left);
+    matrix.data[5] = 2.0F / (top - bottom);
+    matrix.data[10] = -2.0F / (far_plane - near_plane);
+    matrix.data[12] = -(right + left) / (right - left);
+    matrix.data[13] = -(top + bottom) / (top - bottom);
+    matrix.data[14] = -(far_plane + near_plane) / (far_plane - near_plane);
+    return matrix;
+}
+
 Mat4 look_at(Vec3 eye, Vec3 center, Vec3 up)
 {
     const Vec3 forward = normalize(center - eye);
@@ -432,8 +454,45 @@ Mat4 camera_mvp(const Camera &camera, int width, int height)
                     look_at(camera_eye(camera), camera.target, {0.0F, 1.0F, 0.0F}));
 }
 
+Vec3 map_up_vector(const Map2DCamera &camera)
+{
+    return {std::sin(camera.rotation_rad), 0.0F, -std::cos(camera.rotation_rad)};
+}
+
+Vec3 map_right_vector(const Map2DCamera &camera)
+{
+    return {std::cos(camera.rotation_rad), 0.0F, std::sin(camera.rotation_rad)};
+}
+
+Mat4 map2d_mvp(const Map2DCamera &camera, const int width, const int height)
+{
+    const float aspect =
+        static_cast<float>(std::max(width, 1)) / static_cast<float>(std::max(height, 1));
+    const float half_height = std::clamp(camera.distance, 0.25F, 80.0F);
+    const Vec3 target{camera.target_x, 0.0F, camera.target_z};
+    const Vec3 eye{camera.target_x, 32.0F, camera.target_z};
+    return multiply(orthographic(-half_height * aspect,
+                                 half_height * aspect,
+                                 -half_height,
+                                 half_height,
+                                 -100.0F,
+                                 100.0F),
+                    look_at(eye, target, map_up_vector(camera)));
+}
+
+Mat4 active_view_projection(const Camera &camera,
+                            const Map2DCamera &map_camera,
+                            const animus::app::ViewMode view_mode,
+                            const int width,
+                            const int height)
+{
+    return view_mode == animus::app::ViewMode::Map2D ? map2d_mvp(map_camera, width, height)
+                                                     : camera_mvp(camera, width, height);
+}
+
 bool update_camera(GLFWwindow *window,
                    InputState &input,
+                   const animus::app::ViewMode view_mode,
                    const bool camera_mouse_enabled,
                    const bool camera_keyboard_enabled)
 {
@@ -446,6 +505,50 @@ bool update_camera(GLFWwindow *window,
     const bool middle = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS;
     const double dx = x - input.last_x;
     const double dy = y - input.last_y;
+
+    if (view_mode == animus::app::ViewMode::Map2D)
+    {
+        if (camera_mouse_enabled && left && input.left_drag)
+        {
+            int framebuffer_width = 1;
+            int framebuffer_height = 1;
+            glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
+            const float world_per_pixel = (2.0F * input.map_camera.distance) /
+                                          static_cast<float>(std::max(1, framebuffer_height));
+            (void)framebuffer_width;
+            const Vec3 right = map_right_vector(input.map_camera);
+            const Vec3 up = map_up_vector(input.map_camera);
+            input.map_camera.target_x += right.x * static_cast<float>(-dx) * world_per_pixel +
+                                         up.x * static_cast<float>(dy) * world_per_pixel;
+            input.map_camera.target_z += right.z * static_cast<float>(-dx) * world_per_pixel +
+                                         up.z * static_cast<float>(dy) * world_per_pixel;
+            target_panned = true;
+        }
+        if (camera_mouse_enabled && middle && input.middle_drag &&
+            input.map_camera.orientation == MapOrientationMode::FreeRotate)
+        {
+            input.map_camera.rotation_rad -= static_cast<float>(dx) * 0.006F;
+        }
+        if (camera_mouse_enabled && input.pending_scroll_y != 0.0)
+        {
+            const float zoom = std::pow(0.88F, static_cast<float>(input.pending_scroll_y));
+            input.map_camera.distance = std::clamp(input.map_camera.distance * zoom, 0.35F, 80.0F);
+        }
+        input.pending_scroll_y = 0.0;
+        input.left_drag = camera_mouse_enabled && left;
+        input.middle_drag = camera_mouse_enabled && middle;
+        input.last_x = x;
+        input.last_y = y;
+
+        const bool reset_pressed = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS;
+        if (camera_keyboard_enabled && reset_pressed && !input.was_reset_pressed)
+        {
+            input.map_camera = Map2DCamera{};
+            target_panned = true;
+        }
+        input.was_reset_pressed = camera_keyboard_enabled && reset_pressed;
+        return target_panned;
+    }
 
     if (camera_mouse_enabled && middle && input.middle_drag)
     {
@@ -529,6 +632,30 @@ terrain_viewpoint(const Options &options, const Camera &camera, const int zoom)
     };
 }
 
+animus::terrain_core::TerrainViewpoint
+terrain_viewpoint(const Options &options, const Map2DCamera &camera, const int zoom)
+{
+    const double scale = static_cast<double>(zoom_scale_from_base(zoom, options.z));
+    return {
+        (static_cast<double>(options.center_x) + 0.5 + static_cast<double>(camera.target_x)) *
+            scale,
+        (static_cast<double>(options.center_y) + 0.5 + static_cast<double>(camera.target_z)) *
+            scale,
+        camera.distance,
+    };
+}
+
+animus::terrain_core::TerrainViewpoint
+active_terrain_viewpoint(const Options &options,
+                         const Camera &camera,
+                         const Map2DCamera &map_camera,
+                         const animus::app::ViewMode view_mode,
+                         const int zoom)
+{
+    return view_mode == animus::app::ViewMode::Map2D ? terrain_viewpoint(options, map_camera, zoom)
+                                                     : terrain_viewpoint(options, camera, zoom);
+}
+
 float request_priority(const animus::terrain_core::TerrainViewpoint &view, const TileCoord coord)
 {
     const double tile_center_x = static_cast<double>(coord.x) + 0.5;
@@ -580,14 +707,13 @@ std::vector<animus::terrain_core::TileLoadRequest>
 build_load_requests(const Options &options,
                     const std::filesystem::path &pack_root,
                     const std::vector<TileCoord> &coords,
-                    const Camera &camera,
+                    const animus::terrain_core::TerrainViewpoint &view,
                     std::uint64_t generation)
 {
     std::vector<animus::terrain_core::TileLoadRequest> requests;
     requests.reserve(coords.size());
     for (const TileCoord coord : coords)
     {
-        const auto view = terrain_viewpoint(options, camera, coord.z);
         animus::terrain_core::TileLoadRequest request;
         request.coord = coord;
         request.priority =
@@ -746,8 +872,7 @@ to_render_model_primitives(const animus::vehicle_core::VehicleModelCpu &model)
         out.vertices.reserve(primitive.vertices.size());
         for (const auto &vertex : primitive.vertices)
         {
-            out.vertices.push_back(
-                {vertex.x, vertex.y, vertex.z, vertex.nx, vertex.ny, vertex.nz});
+            out.vertices.push_back({vertex.x, vertex.y, vertex.z, vertex.nx, vertex.ny, vertex.nz});
         }
         out.indices = primitive.indices;
         primitives.push_back(std::move(out));
@@ -755,8 +880,8 @@ to_render_model_primitives(const animus::vehicle_core::VehicleModelCpu &model)
     return primitives;
 }
 
-std::string vehicle_diagnostic_text(
-    const animus::vehicle_core::VehicleRegistryDiagnostic &diagnostic)
+std::string
+vehicle_diagnostic_text(const animus::vehicle_core::VehicleRegistryDiagnostic &diagnostic)
 {
     return std::string(animus::vehicle_core::to_string(diagnostic.severity)) + ": " +
            diagnostic.package_path.string() + ": " + diagnostic.message;
@@ -806,10 +931,9 @@ VehicleRenderState load_vehicle_render_state()
     return state;
 }
 
-Mat4 selected_vehicle_model_matrix(
-    const animus::vehicle_core::VehicleDefinition &definition,
-    const Vec3 world,
-    const std::optional<float> heading)
+Mat4 selected_vehicle_model_matrix(const animus::vehicle_core::VehicleDefinition &definition,
+                                   const Vec3 world,
+                                   const std::optional<float> heading)
 {
     constexpr float deg_to_rad = 3.1415926535F / 180.0F;
     const Mat4 pose_rotation = rotation_y(heading.value_or(0.0F));
@@ -819,8 +943,7 @@ Mat4 selected_vehicle_model_matrix(
                           rotation_z(definition.orientation.roll_deg * deg_to_rad)));
     return multiply(translation(world),
                     multiply(pose_rotation,
-                             multiply(descriptor_rotation,
-                                      uniform_scale(definition.model_scale))));
+                             multiply(descriptor_rotation, uniform_scale(definition.model_scale))));
 }
 
 struct LiveDebugCsv
@@ -1021,6 +1144,7 @@ draw_telemetry_overlay(const Options &options,
                        TelemetryPlaybackState &playback,
                        const UiState &ui_state,
                        const Camera &camera,
+                       const Map2DCamera &map_camera,
                        const int framebuffer_width,
                        const int framebuffer_height)
 {
@@ -1039,7 +1163,8 @@ draw_telemetry_overlay(const Options &options,
             : std::optional<animus::telemetry_core::TelemetrySample>{};
 
     ImDrawList *draw = ImGui::GetBackgroundDrawList();
-    const Mat4 mvp = camera_mvp(camera, framebuffer_width, framebuffer_height);
+    const Mat4 mvp = active_view_projection(
+        camera, map_camera, ui_state.view_mode, framebuffer_width, framebuffer_height);
     const auto *track = ui_state.telemetry_entity_selected
                             ? playback.timeline.track_for(playback.selected_entity)
                             : nullptr;
@@ -1220,6 +1345,101 @@ draw_telemetry_overlay(const Options &options,
     return stats;
 }
 
+void draw_map2d_overlay(const Options &options,
+                        const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                        const Map2DCamera &camera,
+                        const int framebuffer_width,
+                        const int framebuffer_height,
+                        const int selected_zoom)
+{
+    const float width = static_cast<float>(std::max(1, framebuffer_width));
+    const float height = static_cast<float>(std::max(1, framebuffer_height));
+    const float aspect = width / height;
+    const float half_height = std::clamp(camera.distance, 0.25F, 80.0F);
+    const float half_width = half_height * aspect;
+    const Vec3 right = map_right_vector(camera);
+    const Vec3 up = map_up_vector(camera);
+
+    ImDrawList *draw = ImGui::GetForegroundDrawList();
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const bool cursor_inside =
+        mouse.x >= 0.0F && mouse.y >= 0.0F && mouse.x < width && mouse.y < height;
+    const float center_global_x = static_cast<float>(options.center_x) + 0.5F + camera.target_x;
+    const float center_global_y = static_cast<float>(options.center_y) + 0.5F + camera.target_z;
+    float cursor_global_x = center_global_x;
+    float cursor_global_y = center_global_y;
+    if (cursor_inside)
+    {
+        const float sx = (mouse.x / width - 0.5F) * 2.0F * half_width;
+        const float sy = (0.5F - mouse.y / height) * 2.0F * half_height;
+        const float world_x = camera.target_x + right.x * sx + up.x * sy;
+        const float world_z = camera.target_z + right.z * sx + up.z * sy;
+        cursor_global_x = static_cast<float>(options.center_x) + 0.5F + world_x;
+        cursor_global_y = static_cast<float>(options.center_y) + 0.5F + world_z;
+    }
+    const auto lat_lon =
+        animus::geo_core::tile_space_to_lat_lon(cursor_global_x, cursor_global_y, options.z);
+    const int axis = animus::geo_core::tiles_per_axis(options.z);
+    const TileCoord cursor_tile{
+        options.z,
+        std::clamp(static_cast<int>(std::floor(cursor_global_x)), 0, axis - 1),
+        std::clamp(static_cast<int>(std::floor(cursor_global_y)), 0, axis - 1)};
+    const auto terrain_height =
+        sample_resident_terrain_height_m(options, tiles, lat_lon.u, lat_lon.v);
+
+    const float bar_pixels = 120.0F;
+    const double tile_fraction = (static_cast<double>(bar_pixels) / static_cast<double>(height)) *
+                                 static_cast<double>(half_height) * 2.0;
+    const auto bar_start =
+        animus::geo_core::tile_space_to_lat_lon(center_global_x, center_global_y, options.z);
+    const auto bar_end = animus::geo_core::tile_space_to_lat_lon(
+        center_global_x + tile_fraction, center_global_y, options.z);
+    const double meters_per_deg_lon =
+        std::cos(bar_start.u * 3.14159265358979323846 / 180.0) * 111320.0;
+    const double bar_meters = std::abs(bar_end.v - bar_start.v) * meters_per_deg_lon;
+
+    const ImVec2 panel_min(14.0F, height - 112.0F);
+    const ImVec2 panel_max(330.0F, height - 14.0F);
+    draw->AddRectFilled(panel_min, panel_max, IM_COL32(11, 16, 19, 188), 7.0F);
+    draw->AddRect(panel_min, panel_max, IM_COL32(122, 145, 156, 86), 7.0F);
+    draw->AddText(
+        ImVec2(panel_min.x + 10.0F, panel_min.y + 8.0F), IM_COL32(229, 236, 240, 238), "Map2D");
+    char text[192] = {};
+    std::snprintf(text, sizeof(text), "z %d  %.6f %.6f", selected_zoom, lat_lon.u, lat_lon.v);
+    draw->AddText(
+        ImVec2(panel_min.x + 10.0F, panel_min.y + 30.0F), IM_COL32(190, 201, 207, 232), text);
+    std::snprintf(text,
+                  sizeof(text),
+                  "tile %d/%d/%d  elev %s",
+                  cursor_tile.z,
+                  cursor_tile.x,
+                  cursor_tile.y,
+                  terrain_height ? std::to_string(static_cast<int>(*terrain_height)).c_str()
+                                 : "n/a");
+    draw->AddText(
+        ImVec2(panel_min.x + 10.0F, panel_min.y + 52.0F), IM_COL32(190, 201, 207, 232), text);
+    const ImVec2 bar_a(panel_min.x + 10.0F, panel_min.y + 82.0F);
+    const ImVec2 bar_b(panel_min.x + 10.0F + bar_pixels, panel_min.y + 82.0F);
+    draw->AddLine(bar_a, bar_b, IM_COL32(232, 238, 241, 238), 3.0F);
+    draw->AddLine(bar_a, ImVec2(bar_a.x, bar_a.y - 8.0F), IM_COL32(232, 238, 241, 238), 2.0F);
+    draw->AddLine(bar_b, ImVec2(bar_b.x, bar_b.y - 8.0F), IM_COL32(232, 238, 241, 238), 2.0F);
+    std::snprintf(text,
+                  sizeof(text),
+                  "%.0f %s",
+                  bar_meters >= 1000.0 ? bar_meters / 1000.0 : bar_meters,
+                  bar_meters >= 1000.0 ? "km" : "m");
+    draw->AddText(ImVec2(bar_b.x + 10.0F, bar_b.y - 11.0F), IM_COL32(232, 238, 241, 238), text);
+
+    const ImVec2 arrow_base(width - 54.0F, 72.0F);
+    const float north_screen_rad = -camera.rotation_rad;
+    const ImVec2 arrow_tip(arrow_base.x + std::sin(north_screen_rad) * 28.0F,
+                           arrow_base.y - std::cos(north_screen_rad) * 28.0F);
+    draw->AddCircleFilled(arrow_base, 22.0F, IM_COL32(11, 16, 19, 176), 32);
+    draw->AddLine(arrow_base, arrow_tip, IM_COL32(235, 241, 244, 244), 3.0F);
+    draw->AddText(
+        ImVec2(arrow_tip.x - 4.0F, arrow_tip.y - 18.0F), IM_COL32(235, 241, 244, 244), "N");
+}
+
 void render_frame(const animus::render_core::GlfwWindow &window,
                   const animus::render_core::ShaderProgram &program,
                   const animus::render_core::ShaderProgram &overlay_program,
@@ -1229,6 +1449,8 @@ void render_frame(const animus::render_core::GlfwWindow &window,
                   const animus::render_core::ModelMesh *selected_model,
                   const Mat4 &selected_model_matrix,
                   const Camera &camera,
+                  const Map2DCamera &map_camera,
+                  animus::app::ViewMode view_mode,
                   float height_scale,
                   bool state_colors,
                   bool highlight_fallback)
@@ -1239,12 +1461,24 @@ void render_frame(const animus::render_core::GlfwWindow &window,
     glClearColor(0.11F, 0.15F, 0.17F, 1.0F);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    const Mat4 mvp = camera_mvp(camera, framebuffer_width, framebuffer_height);
+    const Mat4 mvp = active_view_projection(
+        camera, map_camera, view_mode, framebuffer_width, framebuffer_height);
+    const bool map_mode = view_mode == animus::app::ViewMode::Map2D;
+    if (map_mode)
+    {
+        glDisable(GL_CULL_FACE);
+    }
+    else
+    {
+        glEnable(GL_CULL_FACE);
+    }
     program.use();
     glUniformMatrix4fv(glGetUniformLocation(program.id(), "mvp"), 1, GL_FALSE, mvp.data.data());
+    glUniform1f(glGetUniformLocation(program.id(), "terrain_height_factor"),
+                map_mode ? 0.0F : 1.0F);
     glUniform1i(glGetUniformLocation(program.id(), "imagery_tex"), 0);
     glUniform1i(glGetUniformLocation(program.id(), "height_tex"), 1);
-    glUniform1f(glGetUniformLocation(program.id(), "height_scale"), height_scale);
+    glUniform1f(glGetUniformLocation(program.id(), "height_scale"), map_mode ? 0.0F : height_scale);
 
     for (const auto &decision : visible_tiles)
     {
@@ -1292,6 +1526,8 @@ void render_frame(const animus::render_core::GlfwWindow &window,
     overlay_program.use();
     glUniformMatrix4fv(
         glGetUniformLocation(overlay_program.id(), "mvp"), 1, GL_FALSE, mvp.data.data());
+    glUniform1f(glGetUniformLocation(overlay_program.id(), "terrain_height_factor"),
+                map_mode ? 0.0F : 1.0F);
     glUniform1i(glGetUniformLocation(overlay_program.id(), "overlay_tex"), 0);
     std::vector<int> overlay_orders;
     for (const auto &[coord, tile] : tiles)
@@ -1441,6 +1677,7 @@ int run(const Options &options)
     Mp4RecorderState mp4_recorder;
     UiState ui_state;
     ui_state.workspace_mode = options.workspace_mode;
+    ui_state.view_mode = options.view_mode;
     if (options.developer_workspace && options.debug_overlay)
     {
         ui_state.workspace_mode = animus::app::WorkspaceMode::Developer;
@@ -1538,8 +1775,11 @@ int run(const Options &options)
             debug_layer == nullptr || !debug_layer->wants_mouse_capture();
         const bool camera_keyboard_enabled =
             debug_layer == nullptr || !debug_layer->wants_keyboard_capture();
-        const bool camera_target_panned = update_camera(
-            window.native_handle(), input, camera_mouse_enabled, camera_keyboard_enabled);
+        const bool camera_target_panned = update_camera(window.native_handle(),
+                                                        input,
+                                                        ui_state.view_mode,
+                                                        camera_mouse_enabled,
+                                                        camera_keyboard_enabled);
         if (camera_target_panned)
         {
             ui_state.follow_selected_entity = false;
@@ -1586,25 +1826,144 @@ int run(const Options &options)
                 bool terrain_unavailable = false;
                 bool unknown_datum = false;
                 bool geoid_unavailable = false;
-                input.camera.target = telemetry_world_position(options,
-                                                               tiles,
-                                                               geoid_grid,
-                                                               *followed,
-                                                               terrain_unavailable,
-                                                               unknown_datum,
-                                                               geoid_unavailable);
+                const Vec3 world = telemetry_world_position(options,
+                                                            tiles,
+                                                            geoid_grid,
+                                                            *followed,
+                                                            terrain_unavailable,
+                                                            unknown_datum,
+                                                            geoid_unavailable);
+                if (ui_state.view_mode == animus::app::ViewMode::Map2D)
+                {
+                    input.map_camera.target_x = world.x;
+                    input.map_camera.target_z = world.z;
+                }
+                else
+                {
+                    input.camera.target = world;
+                }
             }
         }
 
+        if (ui_state.request_jump_latest_sample && telemetry.loaded && !telemetry.live)
+        {
+            telemetry.clock.seek(telemetry.timeline.end_time_s);
+        }
+        ui_state.request_jump_latest_sample = false;
+
+        if (ui_state.request_home_view)
+        {
+            if (ui_state.view_mode == animus::app::ViewMode::Map2D)
+            {
+                input.map_camera = Map2DCamera{};
+            }
+            else
+            {
+                input.camera = Camera{};
+            }
+        }
+        ui_state.request_home_view = false;
+
+        if (ui_state.zoom_steps != 0)
+        {
+            const float zoom = std::pow(0.82F, static_cast<float>(ui_state.zoom_steps));
+            if (ui_state.view_mode == animus::app::ViewMode::Map2D)
+            {
+                input.map_camera.distance =
+                    std::clamp(input.map_camera.distance * zoom, 0.35F, 80.0F);
+            }
+            else
+            {
+                input.camera.distance = std::clamp(input.camera.distance * zoom, 0.45F, 40.0F);
+            }
+            ui_state.zoom_steps = 0;
+        }
+
+        if (ui_state.request_fit_all_entities && telemetry.loaded)
+        {
+            bool any = false;
+            float min_x = std::numeric_limits<float>::max();
+            float min_z = std::numeric_limits<float>::max();
+            float max_x = std::numeric_limits<float>::lowest();
+            float max_z = std::numeric_limits<float>::lowest();
+            for (const auto &entity : telemetry.timeline.entities)
+            {
+                const auto sample =
+                    telemetry.timeline.sample_at(entity.id, telemetry.clock.time_s());
+                if (!sample || !telemetry_sample_placeable(*sample))
+                {
+                    continue;
+                }
+                bool terrain_unavailable = false;
+                bool unknown_datum = false;
+                bool geoid_unavailable = false;
+                const Vec3 world = telemetry_world_position(options,
+                                                            tiles,
+                                                            geoid_grid,
+                                                            *sample,
+                                                            terrain_unavailable,
+                                                            unknown_datum,
+                                                            geoid_unavailable);
+                min_x = std::min(min_x, world.x);
+                min_z = std::min(min_z, world.z);
+                max_x = std::max(max_x, world.x);
+                max_z = std::max(max_z, world.z);
+                any = true;
+            }
+            if (any)
+            {
+                input.map_camera.target_x = (min_x + max_x) * 0.5F;
+                input.map_camera.target_z = (min_z + max_z) * 0.5F;
+                input.map_camera.distance =
+                    std::clamp(std::max(max_x - min_x, max_z - min_z) * 0.8F + 0.8F, 0.35F, 80.0F);
+                ui_state.view_mode = animus::app::ViewMode::Map2D;
+            }
+        }
+        ui_state.request_fit_all_entities = false;
+
+        if (ui_state.view_mode == animus::app::ViewMode::Map2D)
+        {
+            if (input.map_camera.orientation == MapOrientationMode::NorthUp)
+            {
+                input.map_camera.rotation_rad = 0.0F;
+            }
+            else if (input.map_camera.orientation == MapOrientationMode::TrackUp)
+            {
+                const auto sample = ui_state.telemetry_entity_selected
+                                        ? telemetry.timeline.sample_at(telemetry.selected_entity,
+                                                                       telemetry.clock.time_s())
+                                        : std::optional<animus::telemetry_core::TelemetrySample>{};
+                if (sample)
+                {
+                    if (const auto heading = telemetry_heading_rad(*sample))
+                    {
+                        input.map_camera.rotation_rad = *heading;
+                    }
+                    else
+                    {
+                        input.map_camera.rotation_rad = 0.0F;
+                    }
+                }
+                else
+                {
+                    input.map_camera.rotation_rad = 0.0F;
+                }
+            }
+        }
+
+        const float active_distance = ui_state.view_mode == animus::app::ViewMode::Map2D
+                                          ? input.map_camera.distance
+                                          : input.camera.distance;
         const int selected_zoom = animus::terrain_core::select_zoom_for_distance(
-            input.camera.distance, options.min_z, options.max_z);
-        const auto view = terrain_viewpoint(options, input.camera, selected_zoom);
+            active_distance, options.min_z, options.max_z);
+        const auto view = active_terrain_viewpoint(
+            options, input.camera, input.map_camera, ui_state.view_mode, selected_zoom);
         desired_tiles =
             animus::terrain_core::build_tile_wishlist(view, selected_zoom, options.tile_budget);
         const std::vector<TileCoord> requested_tiles =
             add_parent_fallback_requests(desired_tiles, options.min_z);
-        streamer.request_tiles(build_load_requests(
-            options, pack_root, requested_tiles, input.camera, stream_generation));
+        streamer.request_tiles(
+            build_load_requests(options, pack_root, requested_tiles, view, stream_generation));
 
         const std::size_t max_tiles_by_textures =
             std::max<std::size_t>(1U, static_cast<std::size_t>(options.max_texture_uploads) / 2U);
@@ -1675,10 +2034,8 @@ int run(const Options &options)
                                                             terrain_unavailable,
                                                             unknown_datum,
                                                             geoid_unavailable);
-                selected_model_matrix_value =
-                    selected_vehicle_model_matrix(*vehicle_render.default_definition,
-                                                  world,
-                                                  telemetry_heading_rad(*sample));
+                selected_model_matrix_value = selected_vehicle_model_matrix(
+                    *vehicle_render.default_definition, world, telemetry_heading_rad(*sample));
                 selected_model = vehicle_render.default_model.get();
             }
         }
@@ -1692,6 +2049,8 @@ int run(const Options &options)
                      selected_model,
                      selected_model_matrix_value,
                      input.camera,
+                     input.map_camera,
+                     ui_state.view_mode,
                      options.height_scale,
                      state_colors,
                      debug_layer != nullptr && highlight_fallback);
@@ -1704,16 +2063,27 @@ int run(const Options &options)
                                        telemetry,
                                        ui_state,
                                        input.camera,
+                                       input.map_camera,
                                        window.framebuffer_width(),
                                        window.framebuffer_height());
             telemetry.live_overlay_draw_ms = overlay_stats.draw_ms;
             telemetry.live_rendered_trail_points = overlay_stats.rendered_trail_points;
+            if (ui_state.view_mode == animus::app::ViewMode::Map2D)
+            {
+                draw_map2d_overlay(options,
+                                   tiles,
+                                   input.map_camera,
+                                   window.framebuffer_width(),
+                                   window.framebuffer_height(),
+                                   selected_zoom);
+            }
             draw_app_workspace(options,
                                pack_root,
                                info,
                                stats,
                                streamer.snapshot(),
                                input.camera,
+                               input.map_camera,
                                selected_zoom,
                                visible_tiles,
                                upload_bytes_used,
@@ -1855,6 +2225,7 @@ int run(const Options &options)
               << "\nTotal render seconds: " << stats.total_seconds() << '\n';
     Options saved_options = options;
     saved_options.workspace_mode = ui_state.workspace_mode;
+    saved_options.view_mode = ui_state.view_mode;
     animus::app::save_app_config(saved_options);
     return 0;
 }

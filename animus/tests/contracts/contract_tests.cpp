@@ -24,6 +24,7 @@ using animus::geo_core::lat_lon_to_tile_uv;
 using animus::geo_core::max_tile_zoom;
 using animus::geo_core::parent;
 using animus::geo_core::tile_key;
+using animus::geo_core::tile_space_to_lat_lon;
 using animus::geo_core::tile_to_bounds;
 using animus::geo_core::TileCoord;
 using animus::geo_core::tiles_per_axis;
@@ -162,6 +163,21 @@ TEST(GeoCore, LatLonToTileUvUsesTopLeftOrigin)
     EXPECT_NEAR(southeast.v, 1.0, 1e-12);
 
     EXPECT_THROW((void)lat_lon_to_tile_uv(0.0, 0.0, TileCoord{2, 4, 0}), std::invalid_argument);
+}
+
+TEST(GeoCore, TileSpaceToLatLonInvertsWebMercatorTileSpace)
+{
+    const Vec2 root_center = tile_space_to_lat_lon(0.5, 0.5, 0);
+    EXPECT_NEAR(root_center.u, 0.0, 1e-12);
+    EXPECT_NEAR(root_center.v, 0.0, 1e-12);
+
+    const TileCoord tahoe = lat_lon_to_tile(39.13006, -119.98125, 12);
+    const Vec2 uv = lat_lon_to_tile_uv(39.13006, -119.98125, tahoe);
+    const Vec2 restored = tile_space_to_lat_lon(tahoe.x + uv.u, tahoe.y + uv.v, tahoe.z);
+    EXPECT_NEAR(restored.u, 39.13006, 1e-10);
+    EXPECT_NEAR(restored.v, -119.98125, 1e-10);
+
+    EXPECT_THROW((void)tile_space_to_lat_lon(0.0, 0.0, max_tile_zoom + 1), std::invalid_argument);
 }
 
 TEST(GeoCore, ParentAndChildrenFollowXyzQuadtree)

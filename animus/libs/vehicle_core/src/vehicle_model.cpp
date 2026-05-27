@@ -130,8 +130,8 @@ void append_node_primitives(const cgltf_node &node, VehicleModelCpu &model)
                     normal_values = {read_normal[0], read_normal[1], read_normal[2]};
                 }
             }
-            const auto p =
-                transform_position(world, {position_values[0], position_values[1], position_values[2]});
+            const auto p = transform_position(
+                world, {position_values[0], position_values[1], position_values[2]});
             const auto n = transform_normal(world, normal_values);
             out.vertices.push_back({p[0], p[1], p[2], n[0], n[1], n[2]});
         }
@@ -141,8 +141,8 @@ void append_node_primitives(const cgltf_node &node, VehicleModelCpu &model)
             out.indices.reserve(static_cast<std::size_t>(primitive.indices->count));
             for (cgltf_size index = 0; index < primitive.indices->count; ++index)
             {
-                out.indices.push_back(
-                    static_cast<std::uint32_t>(cgltf_accessor_read_index(primitive.indices, index)));
+                out.indices.push_back(static_cast<std::uint32_t>(
+                    cgltf_accessor_read_index(primitive.indices, index)));
             }
         }
         else

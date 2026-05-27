@@ -1,8 +1,4 @@
-add_library(
-    animus_vehicle_core
-    src/vehicle_definition.cpp
-    src/vehicle_model.cpp
-)
+add_library(animus_vehicle_core src/vehicle_definition.cpp src/vehicle_model.cpp)
 
 target_include_directories(
     animus_vehicle_core

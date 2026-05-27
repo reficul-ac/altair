@@ -30,9 +30,8 @@ std::string trim(std::string_view value)
 
 std::string unquote(const std::string &value)
 {
-    if (value.size() >= 2U &&
-        ((value.front() == '"' && value.back() == '"') ||
-         (value.front() == '\'' && value.back() == '\'')))
+    if (value.size() >= 2U && ((value.front() == '"' && value.back() == '"') ||
+                               (value.front() == '\'' && value.back() == '\'')))
     {
         return value.substr(1U, value.size() - 2U);
     }
@@ -102,11 +101,10 @@ std::map<std::string, std::string> parse_descriptor_fields(const std::filesystem
     return fields;
 }
 
-std::optional<std::string> required_string(
-    const std::map<std::string, std::string> &fields,
-    const std::string &key,
-    std::vector<VehicleRegistryDiagnostic> &diagnostics,
-    const std::filesystem::path &descriptor)
+std::optional<std::string> required_string(const std::map<std::string, std::string> &fields,
+                                           const std::string &key,
+                                           std::vector<VehicleRegistryDiagnostic> &diagnostics,
+                                           const std::filesystem::path &descriptor)
 {
     const auto it = fields.find(key);
     if (it == fields.end() || trim(it->second).empty())
@@ -142,9 +140,9 @@ std::optional<float> required_float(const std::map<std::string, std::string> &fi
     return value;
 }
 
-std::optional<VehicleDefinition> load_descriptor(
-    const std::filesystem::path &descriptor,
-    std::vector<VehicleRegistryDiagnostic> &diagnostics)
+std::optional<VehicleDefinition>
+load_descriptor(const std::filesystem::path &descriptor,
+                std::vector<VehicleRegistryDiagnostic> &diagnostics)
 {
     std::map<std::string, std::string> fields;
     try
@@ -309,10 +307,10 @@ VehicleRegistry VehicleRegistry::load_from_directory(const std::filesystem::path
 
 const VehicleDefinition *VehicleRegistry::find(const std::string_view id) const
 {
-    const auto it = std::find_if(definitions_.begin(),
-                                 definitions_.end(),
-                                 [id](const VehicleDefinition &definition)
-                                 { return definition.id == id; });
+    const auto it =
+        std::find_if(definitions_.begin(),
+                     definitions_.end(),
+                     [id](const VehicleDefinition &definition) { return definition.id == id; });
     return it == definitions_.end() ? nullptr : &*it;
 }
 

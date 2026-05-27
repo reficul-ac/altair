@@ -40,9 +40,9 @@ class MavlinkTelemetryReducer
 
     [[nodiscard]] std::size_t ingest(std::span<const MavlinkMessage> messages,
                                      std::optional<double> receive_time_s = std::nullopt);
-    [[nodiscard]] std::size_t ingest_parse_result(
-        const MavlinkParseResult &parsed,
-        std::optional<double> receive_time_s = std::nullopt);
+    [[nodiscard]] std::size_t
+    ingest_parse_result(const MavlinkParseResult &parsed,
+                        std::optional<double> receive_time_s = std::nullopt);
     void finalize();
 
     [[nodiscard]] const Timeline &timeline() const;

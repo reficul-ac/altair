@@ -51,7 +51,8 @@ std::vector<std::uint8_t> frame_v1(const std::uint8_t sequence,
                                    const std::uint8_t message_id,
                                    const std::vector<std::uint8_t> &payload)
 {
-    std::vector<std::uint8_t> frame{0xFE, static_cast<std::uint8_t>(payload.size()), sequence, 1, 1, message_id};
+    std::vector<std::uint8_t> frame{
+        0xFE, static_cast<std::uint8_t>(payload.size()), sequence, 1, 1, message_id};
     frame.insert(frame.end(), payload.begin(), payload.end());
     const std::uint16_t crc = animus::telemetry_core::mavlink_crc_x25(
         std::span<const std::uint8_t>(frame).subspan(1U),
@@ -60,8 +61,7 @@ std::vector<std::uint8_t> frame_v1(const std::uint8_t sequence,
     return frame;
 }
 
-std::vector<std::uint8_t> global_position_payload(const std::uint32_t time_ms,
-                                                  const double lat_deg)
+std::vector<std::uint8_t> global_position_payload(const std::uint32_t time_ms, const double lat_deg)
 {
     std::vector<std::uint8_t> payload;
     push_u32(payload, time_ms);
@@ -128,8 +128,8 @@ TEST(TelemetryLiveBuffer, BatchIngestKeepsLatestTrackSemantics)
         frame_v1(1, 33, global_position_payload(1000, 39.0)), 1.0});
     datagrams.push_back(animus::telemetry_live::UdpMavlinkDatagram{
         frame_v1(2, 33, global_position_payload(2000, 39.1)), 2.0});
-    datagrams.push_back(animus::telemetry_live::UdpMavlinkDatagram{
-        frame_v1(3, 74, vfr_hud_payload()), 2.5});
+    datagrams.push_back(
+        animus::telemetry_live::UdpMavlinkDatagram{frame_v1(3, 74, vfr_hud_payload()), 2.5});
 
     animus::telemetry_live::LiveTelemetryBuffer sequential;
     for (const auto &datagram : datagrams)
@@ -159,7 +159,8 @@ TEST(TelemetryLiveBuffer, DoesNotPreservePacketMessagesAsTrajectoryEvents)
     animus::telemetry_live::LiveTelemetryBuffer buffer;
     buffer.ingest(animus::telemetry_live::UdpMavlinkDatagram{
         frame_v1(1, 33, global_position_payload(1000, 39.0)), 1.0});
-    buffer.ingest(animus::telemetry_live::UdpMavlinkDatagram{frame_v1(2, 0, std::vector<std::uint8_t>(9U, 0U)), 1.1});
+    buffer.ingest(animus::telemetry_live::UdpMavlinkDatagram{
+        frame_v1(2, 0, std::vector<std::uint8_t>(9U, 0U)), 1.1});
 
     EXPECT_TRUE(buffer.timeline().events.empty());
 }

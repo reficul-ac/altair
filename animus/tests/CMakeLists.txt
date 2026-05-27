@@ -1,6 +1,10 @@
 add_executable(
-    animus_contract_tests contracts/contract_tests.cpp terrain_core_tests.cpp
-                          telemetry_core_tests.cpp telemetry_live_tests.cpp vehicle_core_tests.cpp
+    animus_contract_tests
+    contracts/contract_tests.cpp
+    terrain_core_tests.cpp
+    telemetry_core_tests.cpp
+    telemetry_live_tests.cpp
+    vehicle_core_tests.cpp
 )
 
 target_link_libraries(

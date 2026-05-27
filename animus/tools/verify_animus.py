@@ -202,14 +202,17 @@ def assert_png_nonblank(path: Path) -> tuple[bytes, int]:
 
 def assert_png_contains_telemetry_marker(path: Path) -> None:
     pixels, channels = assert_png_nonblank(path)
-    red_marker_pixels = 0
+    marker_pixels = 0
     for offset in range(0, len(pixels) - channels + 1, channels):
         red = pixels[offset]
         green = pixels[offset + 1]
         blue = pixels[offset + 2]
-        if red >= 220 and green <= 120 and blue <= 120:
-            red_marker_pixels += 1
-    if red_marker_pixels < 20:
+        red_marker = red >= 220 and green <= 120 and blue <= 120
+        selected_blue_marker = red <= 140 and green >= 150 and blue >= 200
+        yellow_marker = red >= 200 and green >= 160 and blue <= 130
+        if red_marker or selected_blue_marker or yellow_marker:
+            marker_pixels += 1
+    if marker_pixels < 20:
         raise RuntimeError(f"Capture does not show the telemetry marker: {path}")
 
 
@@ -290,6 +293,7 @@ def run_capture_command(
     ppm_capture: Path,
     png_capture: Path | None,
     env: dict[str, str],
+    extra_args: list[str] | None = None,
 ) -> None:
     write_generated_tlog(tlog)
 
@@ -303,6 +307,8 @@ def run_capture_command(
         "--capture-ppm",
         str(ppm_capture),
     ]
+    if extra_args:
+        command.extend(extra_args)
     if png_capture is not None:
         command.extend(["--capture-png", str(png_capture)])
     xvfb_run = shutil.which("xvfb-run")
@@ -408,6 +414,25 @@ def run_screenshot_smoke(root: Path, build_dir: Path, env: dict[str, str]) -> No
     run_capture_command(root, executable, tlog, ppm_capture, png_capture, env)
 
 
+def run_map2d_smoke(root: Path, build_dir: Path, env: dict[str, str]) -> None:
+    executable = build_dir / "apps" / "animus" / "animus"
+    if not executable.exists():
+        raise RuntimeError(f"Animus executable not found: {executable}")
+
+    tlog = build_dir / "generated" / "map2d_smoke.tlog"
+    ppm_capture = build_dir / "generated" / "map2d_smoke.ppm"
+    png_capture = build_dir / "generated" / "map2d_smoke.png"
+    run_capture_command(
+        root,
+        executable,
+        tlog,
+        ppm_capture,
+        png_capture,
+        env,
+        extra_args=["--view-mode", "map2d"],
+    )
+
+
 def run_overlay_smoke(root: Path, build_dir: Path, bundle_dir: Path, env: dict[str, str]) -> None:
     executable = build_dir / "apps" / "animus" / "animus"
     if not executable.exists():
@@ -501,6 +526,11 @@ def main() -> int:
         help="Run the app under Xvfb when available and validate nonblank PPM and PNG captures.",
     )
     parser.add_argument(
+        "--map2d-smoke",
+        action="store_true",
+        help="Run the app in Map2D under Xvfb when available and validate capture diversity.",
+    )
+    parser.add_argument(
         "--artifact-bundle",
         nargs="?",
         const="",
@@ -583,6 +613,8 @@ def main() -> int:
         )
     if args.screenshot_smoke:
         run_screenshot_smoke(root, build_dir, env)
+    if args.map2d_smoke:
+        run_map2d_smoke(root, build_dir, env)
     if args.live_udp_smoke:
         run_live_udp_smoke(root, build_dir, env)
     if args.artifact_bundle is not None:

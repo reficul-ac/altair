@@ -8,12 +8,13 @@ import math
 import struct
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "vehicles" / "generic_rc_plane" / "generic_rc_plane.glb"
 
 
-def normal(a: tuple[float, float, float], b: tuple[float, float, float], c: tuple[float, float, float]):
+def normal(
+    a: tuple[float, float, float], b: tuple[float, float, float], c: tuple[float, float, float]
+):
     ux, uy, uz = b[0] - a[0], b[1] - a[1], b[2] - a[2]
     vx, vy, vz = c[0] - a[0], c[1] - a[1], c[2] - a[2]
     nx, ny, nz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
@@ -122,32 +123,46 @@ def main():
         idx_offset, idx_length = append_bytes(blob, idx_bytes)
 
         pos_view = len(buffer_views)
-        buffer_views.append({"buffer": 0, "byteOffset": pos_offset, "byteLength": pos_length, "target": 34962})
+        buffer_views.append(
+            {"buffer": 0, "byteOffset": pos_offset, "byteLength": pos_length, "target": 34962}
+        )
         norm_view = len(buffer_views)
-        buffer_views.append({"buffer": 0, "byteOffset": norm_offset, "byteLength": norm_length, "target": 34962})
+        buffer_views.append(
+            {"buffer": 0, "byteOffset": norm_offset, "byteLength": norm_length, "target": 34962}
+        )
         idx_view = len(buffer_views)
-        buffer_views.append({"buffer": 0, "byteOffset": idx_offset, "byteLength": idx_length, "target": 34963})
+        buffer_views.append(
+            {"buffer": 0, "byteOffset": idx_offset, "byteLength": idx_length, "target": 34963}
+        )
 
         min_pos, max_pos = accessor_min_max(positions)
         pos_accessor = len(accessors)
-        accessors.append({
-            "bufferView": pos_view,
-            "componentType": 5126,
-            "count": len(positions),
-            "type": "VEC3",
-            "min": min_pos,
-            "max": max_pos,
-        })
+        accessors.append(
+            {
+                "bufferView": pos_view,
+                "componentType": 5126,
+                "count": len(positions),
+                "type": "VEC3",
+                "min": min_pos,
+                "max": max_pos,
+            }
+        )
         norm_accessor = len(accessors)
-        accessors.append({"bufferView": norm_view, "componentType": 5126, "count": len(normals), "type": "VEC3"})
+        accessors.append(
+            {"bufferView": norm_view, "componentType": 5126, "count": len(normals), "type": "VEC3"}
+        )
         idx_accessor = len(accessors)
-        accessors.append({"bufferView": idx_view, "componentType": 5123, "count": len(indices), "type": "SCALAR"})
-        gltf_primitives.append({
-            "attributes": {"POSITION": pos_accessor, "NORMAL": norm_accessor},
-            "indices": idx_accessor,
-            "material": material,
-            "mode": 4,
-        })
+        accessors.append(
+            {"bufferView": idx_view, "componentType": 5123, "count": len(indices), "type": "SCALAR"}
+        )
+        gltf_primitives.append(
+            {
+                "attributes": {"POSITION": pos_accessor, "NORMAL": norm_accessor},
+                "indices": idx_accessor,
+                "material": material,
+                "mode": 4,
+            }
+        )
 
     gltf = {
         "asset": {"version": "2.0", "generator": "Animus generic RC plane generator"},
@@ -156,10 +171,34 @@ def main():
         "nodes": [{"mesh": 0, "name": "Generic RC Plane"}],
         "meshes": [{"name": "Generic RC Plane Mesh", "primitives": gltf_primitives}],
         "materials": [
-            {"name": "Body", "pbrMetallicRoughness": {"baseColorFactor": [0.82, 0.86, 0.88, 1.0], "roughnessFactor": 0.8}},
-            {"name": "Wing", "pbrMetallicRoughness": {"baseColorFactor": [0.18, 0.48, 0.78, 1.0], "roughnessFactor": 0.7}},
-            {"name": "Nose", "pbrMetallicRoughness": {"baseColorFactor": [0.92, 0.22, 0.16, 1.0], "roughnessFactor": 0.65}},
-            {"name": "Prop Marker", "pbrMetallicRoughness": {"baseColorFactor": [0.08, 0.09, 0.10, 0.56], "roughnessFactor": 0.9}},
+            {
+                "name": "Body",
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": [0.82, 0.86, 0.88, 1.0],
+                    "roughnessFactor": 0.8,
+                },
+            },
+            {
+                "name": "Wing",
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": [0.18, 0.48, 0.78, 1.0],
+                    "roughnessFactor": 0.7,
+                },
+            },
+            {
+                "name": "Nose",
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": [0.92, 0.22, 0.16, 1.0],
+                    "roughnessFactor": 0.65,
+                },
+            },
+            {
+                "name": "Prop Marker",
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": [0.08, 0.09, 0.10, 0.56],
+                    "roughnessFactor": 0.9,
+                },
+            },
         ],
         "buffers": [{"byteLength": len(blob)}],
         "bufferViews": buffer_views,

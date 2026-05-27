@@ -1,10 +1,8 @@
 find_package(asio REQUIRED)
 
 add_library(
-    animus_telemetry_live
-    src/live_telemetry_buffer.cpp
-    src/trail_decimation.cpp
-    src/udp_mavlink_receiver.cpp
+    animus_telemetry_live src/live_telemetry_buffer.cpp src/trail_decimation.cpp
+                          src/udp_mavlink_receiver.cpp
 )
 
 target_include_directories(animus_telemetry_live PUBLIC include)

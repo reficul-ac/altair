@@ -150,6 +150,17 @@ Vec2 lat_lon_to_tile_uv(const double lat_deg, const double lon_deg, const TileCo
     };
 }
 
+Vec2 tile_space_to_lat_lon(const double x, const double y, const int z)
+{
+    const int axis_count = tiles_per_axis(z);
+    const double clamped_x = std::clamp(x, 0.0, static_cast<double>(axis_count));
+    const double clamped_y = std::clamp(y, 0.0, static_cast<double>(axis_count));
+    return Vec2{
+        latitude_from_tile_y(clamped_y, axis_count),
+        (clamped_x / static_cast<double>(axis_count)) * 360.0 - 180.0,
+    };
+}
+
 TileCoord parent(const TileCoord coord)
 {
     validate_tile(coord);
