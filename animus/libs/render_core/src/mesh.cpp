@@ -193,4 +193,123 @@ std::size_t IndexedMesh::index_count() const
     return index_count_;
 }
 
+ModelPrimitiveMesh::ModelPrimitiveMesh(std::span<const ModelVertex> vertices,
+                                       std::span<const std::uint32_t> indices,
+                                       std::array<float, 4> base_color)
+    : base_color_(base_color)
+{
+    if (vertices.empty() || indices.empty())
+    {
+        throw std::invalid_argument("ModelPrimitiveMesh requires vertices and indices");
+    }
+
+    glGenVertexArrays(1, &vao_);
+    glBindVertexArray(vao_);
+
+    glGenBuffers(1, &vbo_);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(vertices.size_bytes()),
+                 vertices.data(),
+                 GL_STATIC_DRAW);
+
+    glGenBuffers(1, &ebo_);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo_);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(indices.size_bytes()),
+                 indices.data(),
+                 GL_STATIC_DRAW);
+
+    constexpr GLsizei stride = sizeof(ModelVertex);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, nullptr);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(
+        1, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void *>(offsetof(ModelVertex, nx)));
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    index_count_ = indices.size();
+}
+
+ModelPrimitiveMesh::~ModelPrimitiveMesh()
+{
+    if (ebo_ != 0)
+    {
+        glDeleteBuffers(1, &ebo_);
+    }
+    if (vbo_ != 0)
+    {
+        glDeleteBuffers(1, &vbo_);
+    }
+    if (vao_ != 0)
+    {
+        glDeleteVertexArrays(1, &vao_);
+    }
+}
+
+ModelPrimitiveMesh::ModelPrimitiveMesh(ModelPrimitiveMesh &&other) noexcept
+    : vao_(std::exchange(other.vao_, 0)), vbo_(std::exchange(other.vbo_, 0)),
+      ebo_(std::exchange(other.ebo_, 0)), index_count_(std::exchange(other.index_count_, 0)),
+      base_color_(std::exchange(other.base_color_, std::array<float, 4>{1.0F, 1.0F, 1.0F, 1.0F}))
+{
+}
+
+ModelPrimitiveMesh &ModelPrimitiveMesh::operator=(ModelPrimitiveMesh &&other) noexcept
+{
+    if (this != &other)
+    {
+        if (ebo_ != 0)
+        {
+            glDeleteBuffers(1, &ebo_);
+        }
+        if (vbo_ != 0)
+        {
+            glDeleteBuffers(1, &vbo_);
+        }
+        if (vao_ != 0)
+        {
+            glDeleteVertexArrays(1, &vao_);
+        }
+        vao_ = std::exchange(other.vao_, 0);
+        vbo_ = std::exchange(other.vbo_, 0);
+        ebo_ = std::exchange(other.ebo_, 0);
+        index_count_ = std::exchange(other.index_count_, 0);
+        base_color_ =
+            std::exchange(other.base_color_, std::array<float, 4>{1.0F, 1.0F, 1.0F, 1.0F});
+    }
+    return *this;
+}
+
+void ModelPrimitiveMesh::draw() const
+{
+    glBindVertexArray(vao_);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(index_count_), GL_UNSIGNED_INT, nullptr);
+    glBindVertexArray(0);
+}
+
+const std::array<float, 4> &ModelPrimitiveMesh::base_color() const
+{
+    return base_color_;
+}
+
+ModelMesh::ModelMesh(std::span<const ModelPrimitive> primitives)
+{
+    if (primitives.empty())
+    {
+        throw std::invalid_argument("ModelMesh requires at least one primitive");
+    }
+    primitives_.reserve(primitives.size());
+    for (const auto &primitive : primitives)
+    {
+        primitives_.emplace_back(primitive.vertices, primitive.indices, primitive.base_color);
+    }
+}
+
+const std::vector<ModelPrimitiveMesh> &ModelMesh::primitives() const
+{
+    return primitives_;
+}
+
 } // namespace animus::render_core

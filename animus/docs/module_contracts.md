@@ -18,10 +18,14 @@ under `animus/libs/<module>/include/animus/<module>/` and use
   boundaries. It must not own tile loading policy or telemetry models.
 - `telemetry_core` is delayed. When added, it may query terrain height through
   narrow interfaces but must not drive terrain cache or renderer ownership.
+- `vehicle_core` owns vehicle descriptors, registry validation, and CPU-side
+  static GLB loading. It may parse reusable asset packages but must not own
+  OpenGL resources, telemetry selection policy, app UI, or Altair-specific
+  vehicle assignments.
 - `apps/animus` owns UI, CLI parsing, runtime state, capture/export commands,
   and developer panels. App modules may compose the core libraries, but
-  `terrain_core`, `telemetry_core`, `render_core`, and `data_core` must remain
-  independent of app UI and command-line policy.
+  `terrain_core`, `telemetry_core`, `render_core`, `vehicle_core`, and
+  `data_core` must remain independent of app UI and command-line policy.
 
 ## Public Header Policy
 
@@ -49,3 +53,16 @@ live in `options.cpp`, framebuffer capture helpers live in `capture.cpp`,
 terrain/render/live orchestration stays in `animus_app.cpp`, and app-owned
 workspace state plus Dear ImGui panels live in `ui.cpp`/`ui.hpp`. Core libraries
 must not include app UI headers.
+
+`vehicle_core` defines:
+
+- `VehicleType`
+- `VehicleDefinition`
+- `VehicleOrientation`
+- `VehicleDimensions`
+- `VehicleRegistry`
+- `VehicleRegistryDiagnostic`
+
+Vehicle packages are loaded from `animus/assets/vehicles/`. The current default
+definition is `animus.rc_plane.generic`; all telemetry entities use that default
+until a future assignment system exists.

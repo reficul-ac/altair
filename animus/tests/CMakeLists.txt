@@ -1,6 +1,6 @@
 add_executable(
     animus_contract_tests contracts/contract_tests.cpp terrain_core_tests.cpp
-                          telemetry_core_tests.cpp telemetry_live_tests.cpp
+                          telemetry_core_tests.cpp telemetry_live_tests.cpp vehicle_core_tests.cpp
 )
 
 target_link_libraries(
@@ -9,6 +9,7 @@ target_link_libraries(
             animus_terrain_core
             animus_telemetry_core
             animus_telemetry_live
+            animus_vehicle_core
             GTest::gtest_main
 )
 if(ANIMUS_ENABLE_TELEMETRY_IMPORTS)

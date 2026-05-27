@@ -1,0 +1,14 @@
+id: animus.rc_plane.generic
+display_name: Generic RC Plane
+type: rc_plane
+model:
+  path: generic_rc_plane.glb
+  scale: 0.045
+orientation:
+  yaw_deg: 0
+  pitch_deg: 0
+  roll_deg: 0
+dimensions:
+  length_m: 1.2
+  wingspan_m: 1.6
+  height_m: 0.28

@@ -208,7 +208,7 @@ bool entity_matches_filter(const animus::telemetry_core::Entity &entity, const c
     {
         return true;
     }
-    const std::string haystack = lower_ascii(entity_label(entity.id) + " generic vehicle");
+    const std::string haystack = lower_ascii(entity_label(entity.id) + " generic rc plane vehicle");
     return haystack.find(needle) != std::string::npos;
 }
 
@@ -475,9 +475,9 @@ void draw_entity_list(TelemetryPlaybackState &playback, UiState &ui)
         draw->AddText(ImVec2(row_min.x + 26.0F, row_min.y + 9.0F),
                       selected ? IM_COL32(238, 247, 252, 255) : IM_COL32(224, 229, 233, 242),
                       id.c_str());
-        draw->AddText(ImVec2(row_min.x + row_width - 58.0F, row_min.y + 9.0F),
+        draw->AddText(ImVec2(row_min.x + row_width - 118.0F, row_min.y + 9.0F),
                       IM_COL32(151, 159, 166, 232),
-                      "generic");
+                      "Generic RC Plane");
         std::string secondary = "no current pose";
         if (sample)
         {
@@ -667,6 +667,7 @@ void draw_developer_panel(
     int mesh_uploads_used,
     std::size_t resident_gpu_bytes,
     const TelemetryPlaybackState &playback,
+    const VehicleRuntimeStatus &vehicle_status,
     UiState &ui)
 {
     ImGui::Checkbox("Show diagnostics", &ui.developer_diagnostics_visible);
@@ -768,6 +769,22 @@ void draw_developer_panel(
         }
     }
 
+    if (ImGui::CollapsingHeader("Vehicles", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Text("packages %zu", vehicle_status.registry_package_count);
+        ImGui::Text("default %s", vehicle_status.default_vehicle_id.c_str());
+        ImGui::Text("type %s", vehicle_status.default_vehicle_type.c_str());
+        ImGui::Text("model %s", vehicle_status.model_status.c_str());
+        if (!vehicle_status.diagnostics.empty())
+        {
+            ImGui::SeparatorText("Asset diagnostics");
+            for (const auto &diagnostic : vehicle_status.diagnostics)
+            {
+                ImGui::TextWrapped("%s", diagnostic.c_str());
+            }
+        }
+    }
+
     if (ImGui::CollapsingHeader("Tiles"))
     {
         if (ImGui::BeginTable("tiles", 10, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders))
@@ -821,7 +838,9 @@ void draw_developer_panel(
     (void)options;
 }
 
-void draw_inspector(TelemetryPlaybackState &playback, UiState &ui_state)
+void draw_inspector(TelemetryPlaybackState &playback,
+                    const VehicleRuntimeStatus &vehicle_status,
+                    UiState &ui_state)
 {
     if (ui_state.inspector_target == InspectorTarget::None || ImGui::GetIO().DisplaySize.x < 980.0F)
     {
@@ -870,7 +889,10 @@ void draw_inspector(TelemetryPlaybackState &playback, UiState &ui_state)
             "%s",
             !sample ? "no current sample"
                     : (degraded ? "invalid position" : (stale ? "stale" : "telemetry valid")));
-        muted_text("generic fallback icon");
+        ImGui::Text("Vehicle   %s", vehicle_status.default_vehicle_name.c_str());
+        ImGui::Text("ID        %s", vehicle_status.default_vehicle_id.c_str());
+        ImGui::Text("Type      %s", vehicle_status.default_vehicle_type.c_str());
+        ImGui::Text("Model     %s", vehicle_status.model_status.c_str());
         ImGui::Checkbox("Follow selected", &ui_state.follow_selected_entity);
         if (sample)
         {
@@ -1073,6 +1095,7 @@ void draw_app_workspace(const Options &options,
                         int mesh_uploads_used,
                         std::size_t resident_gpu_bytes,
                         TelemetryPlaybackState &playback,
+                        const VehicleRuntimeStatus &vehicle_status,
                         ScreenshotToolState &screenshot_tool,
                         Mp4RecorderState &mp4_recorder,
                         UiState &ui_state,
@@ -1130,6 +1153,7 @@ void draw_app_workspace(const Options &options,
                              mesh_uploads_used,
                              resident_gpu_bytes,
                              playback,
+                             vehicle_status,
                              ui_state);
         break;
     }
@@ -1137,7 +1161,7 @@ void draw_app_workspace(const Options &options,
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
 
-    draw_inspector(playback, ui_state);
+    draw_inspector(playback, vehicle_status, ui_state);
     draw_bottom_timeline(playback, ui_state);
 }
 

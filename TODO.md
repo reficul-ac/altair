@@ -36,8 +36,10 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Version and generate `docs/telemetry_contract.json` plus schema/docs,
   CSV header checks, compatibility checks, and fresh/stale/unsupported
   field-state semantics.
-- [ ] Implement the documented Animus vehicle asset registry and GLB fallback
+- [x] Implement the documented Animus vehicle asset registry and GLB fallback
   path after the operator UI/entity overlay foundation is stable.
+- [ ] Add per-entity Animus vehicle assignment policy and UI after the default
+  Generic RC Plane model path is exercised in operator workflows.
 
 ## Workflow, Artifacts, And Verification
 

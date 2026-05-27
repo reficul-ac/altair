@@ -10,7 +10,29 @@ Phase A established the independent project root, build files, documentation,
 verification entrypoint, and generated-data ignore policy. Phases B through I
 add pure model contracts, tile math, terrain data contracts, offline tile
 tooling, reusable terrain streaming/cache systems, and the native
-`apps/animus` developer console around that terrain runtime.
+`apps/animus` developer console around that terrain runtime. The current active
+vehicle-model phase adds the first built-in vehicle descriptor registry and a
+minimal selected-entity GLB render path.
+
+## Vehicle Models
+
+Animus currently maps every telemetry entity to the built-in
+`animus.rc_plane.generic` vehicle definition. The default package lives at:
+
+```text
+animus/assets/vehicles/generic_rc_plane/
+```
+
+The package descriptor is `vehicle.animus.yaml`; its model is the generated
+`generic_rc_plane.glb`. If descriptor or model loading fails, Animus keeps the
+existing telemetry icon, label, heading, and selected-ring overlays as the
+operator-visible fallback and reports concise asset diagnostics in the
+Developer panel.
+
+The supported GLB subset is intentionally narrow: static triangle mesh
+primitives, positions, optional normals, indices, node transforms, and material
+base color factors. Textures, skins, animation, morph targets, and advanced
+glTF extensions are ignored in this first slice.
 
 ## Build And Test
 

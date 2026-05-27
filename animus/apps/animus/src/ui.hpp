@@ -73,6 +73,17 @@ struct TelemetryPlaybackState
     std::size_t live_frame_batch_samples = 0;
 };
 
+struct VehicleRuntimeStatus
+{
+    std::size_t registry_package_count = 0;
+    std::string default_vehicle_id;
+    std::string default_vehicle_name = "Generic RC Plane";
+    std::string default_vehicle_type = "rc_plane";
+    std::string model_status = "not loaded";
+    bool model_loaded = false;
+    std::vector<std::string> diagnostics;
+};
+
 enum class UiNavigationMode
 {
     View,
@@ -130,6 +141,7 @@ void draw_app_workspace(const Options &options,
                         int mesh_uploads_used,
                         std::size_t resident_gpu_bytes,
                         TelemetryPlaybackState &playback,
+                        const VehicleRuntimeStatus &vehicle_status,
                         ScreenshotToolState &screenshot_tool,
                         Mp4RecorderState &mp4_recorder,
                         UiState &ui_state,

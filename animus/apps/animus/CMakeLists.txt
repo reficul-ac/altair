@@ -16,6 +16,7 @@ target_link_libraries(
             animus_terrain_core
             animus_telemetry_core
             animus_telemetry_live
+            animus_vehicle_core
             PNG::PNG
 )
 

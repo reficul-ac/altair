@@ -16,6 +16,8 @@
 #include "animus/terrain_core/datum.hpp"
 #include "animus/terrain_core/terrain_data.hpp"
 #include "animus/terrain_core/terrain_stream.hpp"
+#include "animus/vehicle_core/vehicle_definition.hpp"
+#include "animus/vehicle_core/vehicle_model.hpp"
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -50,6 +52,7 @@ using animus::app::Options;
 using animus::app::ScreenshotToolState;
 using animus::app::TelemetryPlaybackState;
 using animus::app::UiState;
+using animus::app::VehicleRuntimeStatus;
 using animus::app::Vec3;
 using animus::geo_core::TileCoord;
 using animus::terrain_core::Raster;
@@ -175,6 +178,42 @@ void main()
 }
 )glsl";
 
+constexpr std::string_view model_vertex_shader = R"glsl(
+#version 330 core
+layout (location = 0) in vec3 position;
+layout (location = 1) in vec3 normal;
+
+uniform mat4 view_projection;
+uniform mat4 model;
+
+out vec3 world_normal;
+
+void main()
+{
+    vec4 world_position = model * vec4(position, 1.0);
+    world_normal = mat3(model) * normal;
+    gl_Position = view_projection * world_position;
+}
+)glsl";
+
+constexpr std::string_view model_fragment_shader = R"glsl(
+#version 330 core
+in vec3 world_normal;
+
+uniform vec4 base_color;
+
+out vec4 color;
+
+void main()
+{
+    vec3 normal = normalize(world_normal);
+    vec3 light_dir = normalize(vec3(-0.42, 0.72, -0.32));
+    float diffuse = clamp(dot(normal, light_dir), 0.0, 1.0);
+    vec3 lit = base_color.rgb * (0.36 + 0.64 * diffuse);
+    color = vec4(lit, base_color.a);
+}
+)glsl";
+
 std::filesystem::path resolve_pack_root(const std::filesystem::path &requested)
 {
     if (std::filesystem::exists(requested))
@@ -284,6 +323,60 @@ Mat4 multiply(const Mat4 &a, const Mat4 &b)
         }
     }
     return result;
+}
+
+Mat4 translation(const Vec3 value)
+{
+    Mat4 matrix = identity();
+    matrix.data[12] = value.x;
+    matrix.data[13] = value.y;
+    matrix.data[14] = value.z;
+    return matrix;
+}
+
+Mat4 uniform_scale(const float scale)
+{
+    Mat4 matrix = identity();
+    matrix.data[0] = scale;
+    matrix.data[5] = scale;
+    matrix.data[10] = scale;
+    return matrix;
+}
+
+Mat4 rotation_x(const float radians)
+{
+    Mat4 matrix = identity();
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    matrix.data[5] = c;
+    matrix.data[6] = s;
+    matrix.data[9] = -s;
+    matrix.data[10] = c;
+    return matrix;
+}
+
+Mat4 rotation_y(const float radians)
+{
+    Mat4 matrix = identity();
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    matrix.data[0] = c;
+    matrix.data[2] = -s;
+    matrix.data[8] = s;
+    matrix.data[10] = c;
+    return matrix;
+}
+
+Mat4 rotation_z(const float radians)
+{
+    Mat4 matrix = identity();
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    matrix.data[0] = c;
+    matrix.data[1] = s;
+    matrix.data[4] = -s;
+    matrix.data[5] = c;
+    return matrix;
 }
 
 Mat4 perspective(float fov_y_radians, float aspect, float near_plane, float far_plane)
@@ -599,6 +692,14 @@ struct TelemetryOverlayDrawStats
     std::size_t rendered_trail_points = 0;
 };
 
+struct VehicleRenderState
+{
+    animus::vehicle_core::VehicleRegistry registry;
+    const animus::vehicle_core::VehicleDefinition *default_definition = nullptr;
+    std::unique_ptr<animus::render_core::ModelMesh> default_model;
+    VehicleRuntimeStatus status;
+};
+
 std::string entity_label(const animus::telemetry_core::EntityId id)
 {
     return std::to_string(id.system_id) + ":" + std::to_string(id.component_id);
@@ -631,6 +732,95 @@ std::optional<float> telemetry_heading_rad(const animus::telemetry_core::Telemet
         return static_cast<float>(*sample.yaw_rad);
     }
     return std::nullopt;
+}
+
+std::vector<animus::render_core::ModelPrimitive>
+to_render_model_primitives(const animus::vehicle_core::VehicleModelCpu &model)
+{
+    std::vector<animus::render_core::ModelPrimitive> primitives;
+    primitives.reserve(model.primitives.size());
+    for (const auto &primitive : model.primitives)
+    {
+        animus::render_core::ModelPrimitive out;
+        out.base_color = primitive.base_color;
+        out.vertices.reserve(primitive.vertices.size());
+        for (const auto &vertex : primitive.vertices)
+        {
+            out.vertices.push_back(
+                {vertex.x, vertex.y, vertex.z, vertex.nx, vertex.ny, vertex.nz});
+        }
+        out.indices = primitive.indices;
+        primitives.push_back(std::move(out));
+    }
+    return primitives;
+}
+
+std::string vehicle_diagnostic_text(
+    const animus::vehicle_core::VehicleRegistryDiagnostic &diagnostic)
+{
+    return std::string(animus::vehicle_core::to_string(diagnostic.severity)) + ": " +
+           diagnostic.package_path.string() + ": " + diagnostic.message;
+}
+
+VehicleRenderState load_vehicle_render_state()
+{
+    VehicleRenderState state;
+    const std::filesystem::path vehicles_root =
+        std::filesystem::path(ANIMUS_SOURCE_DIR) / "assets" / "vehicles";
+    state.registry = animus::vehicle_core::VehicleRegistry::load_from_directory(vehicles_root);
+    state.default_definition = state.registry.default_definition();
+    state.status.registry_package_count = state.registry.package_count();
+    for (const auto &diagnostic : state.registry.diagnostics())
+    {
+        state.status.diagnostics.push_back(vehicle_diagnostic_text(diagnostic));
+    }
+
+    if (state.default_definition == nullptr)
+    {
+        state.status.default_vehicle_id = animus::vehicle_core::VehicleRegistry::default_vehicle_id;
+        state.status.model_status = "default descriptor missing";
+        state.status.diagnostics.push_back("error: default vehicle descriptor missing");
+        return state;
+    }
+
+    state.status.default_vehicle_id = state.default_definition->id;
+    state.status.default_vehicle_name = state.default_definition->display_name;
+    state.status.default_vehicle_type =
+        std::string(animus::vehicle_core::to_string(state.default_definition->type));
+    try
+    {
+        const animus::vehicle_core::VehicleModelCpu cpu_model =
+            animus::vehicle_core::load_glb_model(state.default_definition->model_path);
+        const auto render_primitives = to_render_model_primitives(cpu_model);
+        state.default_model = std::make_unique<animus::render_core::ModelMesh>(render_primitives);
+        state.status.model_loaded = true;
+        state.status.model_status = "loaded";
+    }
+    catch (const std::exception &error)
+    {
+        state.status.model_loaded = false;
+        state.status.model_status = "fallback icon";
+        state.status.diagnostics.push_back(std::string("error: model load failed: ") +
+                                           error.what());
+    }
+    return state;
+}
+
+Mat4 selected_vehicle_model_matrix(
+    const animus::vehicle_core::VehicleDefinition &definition,
+    const Vec3 world,
+    const std::optional<float> heading)
+{
+    constexpr float deg_to_rad = 3.1415926535F / 180.0F;
+    const Mat4 pose_rotation = rotation_y(heading.value_or(0.0F));
+    const Mat4 descriptor_rotation =
+        multiply(rotation_y(definition.orientation.yaw_deg * deg_to_rad),
+                 multiply(rotation_x(definition.orientation.pitch_deg * deg_to_rad),
+                          rotation_z(definition.orientation.roll_deg * deg_to_rad)));
+    return multiply(translation(world),
+                    multiply(pose_rotation,
+                             multiply(descriptor_rotation,
+                                      uniform_scale(definition.model_scale))));
 }
 
 struct LiveDebugCsv
@@ -1033,8 +1223,11 @@ draw_telemetry_overlay(const Options &options,
 void render_frame(const animus::render_core::GlfwWindow &window,
                   const animus::render_core::ShaderProgram &program,
                   const animus::render_core::ShaderProgram &overlay_program,
+                  const animus::render_core::ShaderProgram &model_program,
                   const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
                   const std::vector<animus::terrain_core::TileRenderDecision> &visible_tiles,
+                  const animus::render_core::ModelMesh *selected_model,
+                  const Mat4 &selected_model_matrix,
                   const Camera &camera,
                   float height_scale,
                   bool state_colors,
@@ -1070,6 +1263,26 @@ void render_frame(const animus::render_core::GlfwWindow &window,
         tile.imagery.bind_to_unit(0);
         tile.height_texture.bind_to_unit(1);
         tile.mesh.draw();
+    }
+
+    if (selected_model != nullptr)
+    {
+        model_program.use();
+        glUniformMatrix4fv(glGetUniformLocation(model_program.id(), "view_projection"),
+                           1,
+                           GL_FALSE,
+                           mvp.data.data());
+        glUniformMatrix4fv(glGetUniformLocation(model_program.id(), "model"),
+                           1,
+                           GL_FALSE,
+                           selected_model_matrix.data.data());
+        for (const auto &primitive : selected_model->primitives())
+        {
+            glUniform4fv(glGetUniformLocation(model_program.id(), "base_color"),
+                         1,
+                         primitive.base_color().data());
+            primitive.draw();
+        }
     }
 
     glEnable(GL_BLEND);
@@ -1186,6 +1399,9 @@ int run(const Options &options)
     const animus::render_core::ShaderProgram program(vertex_shader, fragment_shader);
     const animus::render_core::ShaderProgram overlay_program(vertex_shader,
                                                              overlay_fragment_shader);
+    const animus::render_core::ShaderProgram selected_model_program(model_vertex_shader,
+                                                                    model_fragment_shader);
+    VehicleRenderState vehicle_render = load_vehicle_render_state();
     TerrainStreamer streamer({
         options.min_z,
         options.max_z,
@@ -1434,11 +1650,41 @@ int run(const Options &options)
         }
         streamer.update_l0_stats(tiles.size(), resident_gpu_bytes);
 
+        const animus::render_core::ModelMesh *selected_model = nullptr;
+        Mat4 selected_model_matrix_value = identity();
+        if (vehicle_render.default_definition != nullptr && vehicle_render.default_model &&
+            ui_state.telemetry_entity_selected)
+        {
+            const auto sample =
+                telemetry.timeline.sample_at(telemetry.selected_entity, telemetry.clock.time_s());
+            if (sample && telemetry_sample_placeable(*sample))
+            {
+                bool terrain_unavailable = false;
+                bool unknown_datum = false;
+                bool geoid_unavailable = false;
+                const Vec3 world = telemetry_world_position(options,
+                                                            tiles,
+                                                            geoid_grid,
+                                                            *sample,
+                                                            terrain_unavailable,
+                                                            unknown_datum,
+                                                            geoid_unavailable);
+                selected_model_matrix_value =
+                    selected_vehicle_model_matrix(*vehicle_render.default_definition,
+                                                  world,
+                                                  telemetry_heading_rad(*sample));
+                selected_model = vehicle_render.default_model.get();
+            }
+        }
+
         render_frame(window,
                      program,
                      overlay_program,
+                     selected_model_program,
                      tiles,
                      visible_tiles,
+                     selected_model,
+                     selected_model_matrix_value,
                      input.camera,
                      options.height_scale,
                      state_colors,
@@ -1469,6 +1715,7 @@ int run(const Options &options)
                                mesh_uploads_used,
                                resident_gpu_bytes,
                                telemetry,
+                               vehicle_render.status,
                                screenshot_tool,
                                mp4_recorder,
                                ui_state,
