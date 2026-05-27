@@ -66,6 +66,9 @@ struct InputState
     bool left_drag = false;
     bool middle_drag = false;
     bool was_reset_pressed = false;
+    bool was_follow_pressed = false;
+    bool was_space_pressed = false;
+    bool was_escape_pressed = false;
     double last_x = 0.0;
     double last_y = 0.0;
     double pending_scroll_y = 0.0;
@@ -336,11 +339,12 @@ Mat4 camera_mvp(const Camera &camera, int width, int height)
                     look_at(camera_eye(camera), camera.target, {0.0F, 1.0F, 0.0F}));
 }
 
-void update_camera(GLFWwindow *window,
+bool update_camera(GLFWwindow *window,
                    InputState &input,
                    const bool camera_mouse_enabled,
                    const bool camera_keyboard_enabled)
 {
+    bool target_panned = false;
     double x = 0.0;
     double y = 0.0;
     glfwGetCursorPos(window, &x, &y);
@@ -365,6 +369,7 @@ void update_camera(GLFWwindow *window,
         const float scale = input.camera.distance * 0.0015F;
         input.camera.target = input.camera.target + right * static_cast<float>(-dx * scale) +
                               up_plane * static_cast<float>(dy * scale);
+        target_panned = true;
     }
 
     if (camera_mouse_enabled && input.pending_scroll_y != 0.0)
@@ -383,8 +388,10 @@ void update_camera(GLFWwindow *window,
     if (camera_keyboard_enabled && reset_pressed && !input.was_reset_pressed)
     {
         input.camera = Camera{};
+        target_panned = true;
     }
     input.was_reset_pressed = camera_keyboard_enabled && reset_pressed;
+    return target_panned;
 }
 
 void scroll_callback(GLFWwindow *window, double, double yoffset)
@@ -591,6 +598,40 @@ struct TelemetryOverlayDrawStats
     double draw_ms = 0.0;
     std::size_t rendered_trail_points = 0;
 };
+
+std::string entity_label(const animus::telemetry_core::EntityId id)
+{
+    return std::to_string(id.system_id) + ":" + std::to_string(id.component_id);
+}
+
+bool telemetry_sample_placeable(const animus::telemetry_core::TelemetrySample &sample)
+{
+    return sample.fields.position;
+}
+
+bool telemetry_sample_stale(const TelemetryPlaybackState &playback,
+                            const animus::telemetry_core::TelemetrySample &sample)
+{
+    if (!playback.live)
+    {
+        return false;
+    }
+    return playback.receiver_stats.stale || (playback.timeline.end_time_s > sample.time_s &&
+                                             playback.timeline.end_time_s - sample.time_s > 2.0);
+}
+
+std::optional<float> telemetry_heading_rad(const animus::telemetry_core::TelemetrySample &sample)
+{
+    if (sample.heading_deg)
+    {
+        return static_cast<float>(*sample.heading_deg * 3.1415926535 / 180.0);
+    }
+    if (sample.yaw_rad)
+    {
+        return static_cast<float>(*sample.yaw_rad);
+    }
+    return std::nullopt;
+}
 
 struct LiveDebugCsv
 {
@@ -803,16 +844,17 @@ draw_telemetry_overlay(const Options &options,
         return stats;
     }
     const auto current =
-        playback.timeline.sample_at(playback.selected_entity, playback.clock.time_s());
-    if (!current)
-    {
-        return stats;
-    }
+        ui_state.telemetry_entity_selected
+            ? playback.timeline.sample_at(playback.selected_entity, playback.clock.time_s())
+            : std::optional<animus::telemetry_core::TelemetrySample>{};
 
     ImDrawList *draw = ImGui::GetBackgroundDrawList();
     const Mat4 mvp = camera_mvp(camera, framebuffer_width, framebuffer_height);
-    const auto *track = playback.timeline.track_for(playback.selected_entity);
-    if (track != nullptr && track->samples.size() >= 2U)
+    const auto *track = ui_state.telemetry_entity_selected
+                            ? playback.timeline.track_for(playback.selected_entity)
+                            : nullptr;
+    if (current && telemetry_sample_placeable(*current) && track != nullptr &&
+        track->samples.size() >= 2U)
     {
         const std::size_t max_points =
             playback.live ? options.telemetry_live_render_max_points : track->samples.size();
@@ -836,7 +878,7 @@ draw_telemetry_overlay(const Options &options,
                 project_to_screen(mvp, world, framebuffer_width, framebuffer_height);
             if (point.visible && previous)
             {
-                draw->AddLine(*previous, point.screen, IM_COL32(255, 214, 82, 210), 2.0F);
+                draw->AddLine(*previous, point.screen, IM_COL32(103, 181, 219, 178), 2.0F);
             }
             previous = point.visible ? std::optional<ImVec2>(point.screen) : std::nullopt;
         }
@@ -855,7 +897,7 @@ draw_telemetry_overlay(const Options &options,
                 break;
             }
             const auto event_sample = playback.timeline.sample_at(event.entity_id, event.time_s);
-            if (!event_sample)
+            if (!event_sample || !telemetry_sample_placeable(*event_sample))
             {
                 continue;
             }
@@ -874,27 +916,115 @@ draw_telemetry_overlay(const Options &options,
             if (event_point.visible)
             {
                 draw->AddTriangleFilled(
-                    ImVec2(event_point.screen.x, event_point.screen.y - 10.0F),
-                    ImVec2(event_point.screen.x - 6.0F, event_point.screen.y + 2.0F),
-                    ImVec2(event_point.screen.x + 6.0F, event_point.screen.y + 2.0F),
-                    IM_COL32(96, 220, 255, 235));
+                    ImVec2(event_point.screen.x, event_point.screen.y - 8.0F),
+                    ImVec2(event_point.screen.x - 5.0F, event_point.screen.y + 2.0F),
+                    ImVec2(event_point.screen.x + 5.0F, event_point.screen.y + 2.0F),
+                    IM_COL32(116, 206, 232, 196));
             }
         }
     }
 
-    const Vec3 world = telemetry_world_position(options,
-                                                tiles,
-                                                geoid_grid,
-                                                *current,
-                                                playback.terrain_height_unavailable,
-                                                playback.unknown_datum_relative_fallback,
-                                                playback.geoid_correction_unavailable);
-    const ProjectedPoint point =
-        project_to_screen(mvp, world, framebuffer_width, framebuffer_height);
-    if (point.visible)
+    const bool compact_labels = playback.timeline.entities.size() > 5U;
+    std::size_t visible_labels = 0U;
+    for (const auto &entity : playback.timeline.entities)
     {
-        draw->AddCircleFilled(point.screen, 7.0F, IM_COL32(255, 80, 64, 255), 18);
-        draw->AddCircle(point.screen, 11.0F, IM_COL32(255, 255, 255, 230), 18, 2.0F);
+        const auto sample = playback.timeline.sample_at(entity.id, playback.clock.time_s());
+        if (!sample || !telemetry_sample_placeable(*sample))
+        {
+            continue;
+        }
+        bool terrain_unavailable = false;
+        bool unknown_datum = false;
+        bool geoid_unavailable = false;
+        const Vec3 world = telemetry_world_position(options,
+                                                    tiles,
+                                                    geoid_grid,
+                                                    *sample,
+                                                    terrain_unavailable,
+                                                    unknown_datum,
+                                                    geoid_unavailable);
+        playback.terrain_height_unavailable =
+            playback.terrain_height_unavailable || terrain_unavailable;
+        playback.unknown_datum_relative_fallback =
+            playback.unknown_datum_relative_fallback || unknown_datum;
+        playback.geoid_correction_unavailable =
+            playback.geoid_correction_unavailable || geoid_unavailable;
+        const ProjectedPoint point =
+            project_to_screen(mvp, world, framebuffer_width, framebuffer_height);
+        if (!point.visible)
+        {
+            continue;
+        }
+
+        const bool selected =
+            ui_state.telemetry_entity_selected && entity.id == playback.selected_entity;
+        const bool stale = telemetry_sample_stale(playback, *sample);
+        const ImU32 fill =
+            stale ? IM_COL32(202, 132, 61, selected ? 238 : 188)
+                  : (selected ? IM_COL32(74, 172, 226, 255) : IM_COL32(236, 198, 83, 208));
+        const ImU32 stroke =
+            stale ? IM_COL32(238, 189, 125, selected ? 240 : 164)
+                  : (selected ? IM_COL32(220, 244, 255, 246) : IM_COL32(255, 239, 171, 154));
+        const float radius = selected ? 7.5F : 5.0F;
+        draw->AddCircleFilled(point.screen, radius + 2.0F, IM_COL32(10, 16, 18, 128), 20);
+        draw->AddCircleFilled(point.screen, radius, fill, 20);
+        draw->AddCircle(point.screen, radius + 0.5F, stroke, 20, selected ? 1.6F : 1.0F);
+        if (selected)
+        {
+            draw->AddCircle(point.screen, 13.5F, IM_COL32(118, 210, 255, 216), 28, 2.2F);
+            draw->AddCircle(point.screen, 17.0F, IM_COL32(118, 210, 255, 68), 32, 3.0F);
+        }
+
+        if (const auto heading = telemetry_heading_rad(*sample))
+        {
+            const float length = selected ? 30.0F : 16.0F;
+            const ImVec2 end(point.screen.x + std::sin(*heading) * length,
+                             point.screen.y - std::cos(*heading) * length);
+            draw->AddLine(point.screen,
+                          end,
+                          selected ? IM_COL32(164, 225, 255, 238) : IM_COL32(238, 242, 244, 132),
+                          selected ? 2.2F : 1.2F);
+            if (selected)
+            {
+                draw->AddCircleFilled(end, 2.6F, IM_COL32(164, 225, 255, 238), 10);
+            }
+        }
+
+        const bool draw_label = selected || !compact_labels || visible_labels < 3U || stale;
+        if (!draw_label)
+        {
+            continue;
+        }
+        ++visible_labels;
+        std::string label = entity_label(entity.id);
+        if (stale)
+        {
+            label += " stale";
+        }
+        const ImVec2 text_size = ImGui::CalcTextSize(label.c_str());
+        ImVec2 label_min(point.screen.x + 12.0F, point.screen.y - text_size.y - 9.0F);
+        label_min.x = std::clamp(
+            label_min.x, 8.0F, static_cast<float>(framebuffer_width) - text_size.x - 22.0F);
+        label_min.y = std::clamp(
+            label_min.y, 46.0F, static_cast<float>(framebuffer_height) - text_size.y - 12.0F);
+        const ImVec2 label_max(label_min.x + text_size.x + 12.0F, label_min.y + text_size.y + 7.0F);
+        draw->AddRectFilled(label_min,
+                            label_max,
+                            selected
+                                ? IM_COL32(18, 36, 46, 224)
+                                : (stale ? IM_COL32(54, 39, 28, 194) : IM_COL32(16, 20, 23, 166)),
+                            6.0F);
+        draw->AddRect(label_min,
+                      label_max,
+                      selected ? IM_COL32(107, 195, 238, 176) : IM_COL32(255, 255, 255, 34),
+                      6.0F,
+                      0,
+                      1.0F);
+        draw->AddText(ImVec2(label_min.x + 6.0F, label_min.y + 3.0F),
+                      selected
+                          ? IM_COL32(236, 248, 255, 255)
+                          : (stale ? IM_COL32(248, 220, 184, 232) : IM_COL32(226, 232, 236, 214)),
+                      label.c_str());
     }
     stats.draw_ms = (steady_time_s() - draw_start_s) * 1000.0;
     return stats;
@@ -1094,6 +1224,7 @@ int run(const Options &options)
     ScreenshotToolState screenshot_tool;
     Mp4RecorderState mp4_recorder;
     UiState ui_state;
+    ui_state.telemetry_entity_selected = !telemetry.timeline.entities.empty();
     std::snprintf(screenshot_tool.png_path.data(),
                   screenshot_tool.png_path.size(),
                   "%s",
@@ -1170,7 +1301,13 @@ int run(const Options &options)
                     if (!selected_present)
                     {
                         telemetry.selected_entity = telemetry.timeline.entities.front().id;
+                        ui_state.telemetry_entity_selected = true;
                     }
+                }
+                else
+                {
+                    ui_state.telemetry_entity_selected = false;
+                    ui_state.follow_selected_entity = false;
                 }
             }
         }
@@ -1179,7 +1316,63 @@ int run(const Options &options)
             debug_layer == nullptr || !debug_layer->wants_mouse_capture();
         const bool camera_keyboard_enabled =
             debug_layer == nullptr || !debug_layer->wants_keyboard_capture();
-        update_camera(window.native_handle(), input, camera_mouse_enabled, camera_keyboard_enabled);
+        const bool camera_target_panned = update_camera(
+            window.native_handle(), input, camera_mouse_enabled, camera_keyboard_enabled);
+        if (camera_target_panned)
+        {
+            ui_state.follow_selected_entity = false;
+        }
+        const bool follow_pressed = glfwGetKey(window.native_handle(), GLFW_KEY_F) == GLFW_PRESS;
+        if (camera_keyboard_enabled && follow_pressed && !input.was_follow_pressed)
+        {
+            ui_state.follow_selected_entity =
+                ui_state.telemetry_entity_selected && !ui_state.follow_selected_entity;
+        }
+        input.was_follow_pressed = camera_keyboard_enabled && follow_pressed;
+
+        const bool space_pressed = glfwGetKey(window.native_handle(), GLFW_KEY_SPACE) == GLFW_PRESS;
+        if (camera_keyboard_enabled && space_pressed && !input.was_space_pressed &&
+            telemetry.loaded && !telemetry.live)
+        {
+            telemetry.clock.set_paused(!telemetry.clock.paused());
+        }
+        input.was_space_pressed = camera_keyboard_enabled && space_pressed;
+
+        const bool escape_pressed =
+            glfwGetKey(window.native_handle(), GLFW_KEY_ESCAPE) == GLFW_PRESS;
+        if (camera_keyboard_enabled && escape_pressed && !input.was_escape_pressed)
+        {
+            if (ui_state.active_mode == animus::app::UiNavigationMode::Telemetry)
+            {
+                ui_state.follow_selected_entity = false;
+                ui_state.telemetry_entity_selected = false;
+                ui_state.inspector_target = animus::app::InspectorTarget::TelemetrySource;
+            }
+            else
+            {
+                window.request_close();
+            }
+        }
+        input.was_escape_pressed = camera_keyboard_enabled && escape_pressed;
+
+        if (ui_state.follow_selected_entity && ui_state.telemetry_entity_selected)
+        {
+            const auto followed =
+                telemetry.timeline.sample_at(telemetry.selected_entity, telemetry.clock.time_s());
+            if (followed && telemetry_sample_placeable(*followed))
+            {
+                bool terrain_unavailable = false;
+                bool unknown_datum = false;
+                bool geoid_unavailable = false;
+                input.camera.target = telemetry_world_position(options,
+                                                               tiles,
+                                                               geoid_grid,
+                                                               *followed,
+                                                               terrain_unavailable,
+                                                               unknown_datum,
+                                                               geoid_unavailable);
+            }
+        }
 
         const int selected_zoom = animus::terrain_core::select_zoom_for_distance(
             input.camera.distance, options.min_z, options.max_z);
@@ -1287,8 +1480,10 @@ int run(const Options &options)
         }
         if (live_debug_csv.enabled() && telemetry.live)
         {
-            const auto current =
-                telemetry.timeline.sample_at(telemetry.selected_entity, telemetry.clock.time_s());
+            const auto current = ui_state.telemetry_entity_selected
+                                     ? telemetry.timeline.sample_at(telemetry.selected_entity,
+                                                                    telemetry.clock.time_s())
+                                     : std::optional<animus::telemetry_core::TelemetrySample>{};
             live_debug_csv.output << stats.frame_count() << ','
                                   << (steady_time_s() - live_debug_start_s) << ','
                                   << telemetry.receiver_stats.last_drain_datagrams << ','
@@ -1383,10 +1578,6 @@ int run(const Options &options)
         window.swap_buffers();
         stats.frame_finished();
 
-        if (window.escape_pressed())
-        {
-            window.request_close();
-        }
         if (options.frames > 0 && stats.frame_count() >= options.frames)
         {
             window.request_close();

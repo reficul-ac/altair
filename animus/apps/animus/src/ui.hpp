@@ -103,6 +103,10 @@ struct UiState
     UiNavigationMode active_mode = UiNavigationMode::View;
     InspectorTarget inspector_target = InspectorTarget::Terrain;
     bool developer_diagnostics_visible = false;
+    bool telemetry_diagnostics_visible = false;
+    bool telemetry_entity_selected = false;
+    bool follow_selected_entity = false;
+    std::array<char, 64> telemetry_entity_filter{};
     TelemetryEventFilters telemetry_event_filters;
 };
 

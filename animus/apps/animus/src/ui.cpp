@@ -8,12 +8,31 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <cstdio>
+#include <optional>
+#include <string>
 
 namespace animus::app
 {
 namespace
 {
+
+constexpr float status_bar_height = 38.0F;
+constexpr float chrome_margin = 12.0F;
+constexpr float nav_width = 128.0F;
+constexpr float panel_gap = 10.0F;
+constexpr float inspector_width = 316.0F;
+const ImVec4 text_muted(0.64F, 0.68F, 0.72F, 1.0F);
+const ImVec4 panel_bg(0.075F, 0.088F, 0.098F, 0.92F);
+const ImVec4 panel_border(0.18F, 0.21F, 0.23F, 0.90F);
+const ImVec4 accent_blue(0.30F, 0.64F, 0.90F, 1.0F);
+const ImVec4 live_green(0.34F, 0.76F, 0.52F, 1.0F);
+const ImVec4 stale_amber(0.93F, 0.60F, 0.28F, 1.0F);
+const ImVec4 quiet_gray(0.46F, 0.49F, 0.52F, 1.0F);
+
+const char *altitude_datum_label(animus::telemetry_core::AltitudeDatum datum);
 
 const char *mode_label(const UiNavigationMode mode)
 {
@@ -33,12 +52,90 @@ const char *mode_label(const UiNavigationMode mode)
     return "View";
 }
 
+std::string format_value(const char *format, const double value)
+{
+    char buffer[64]{};
+    std::snprintf(buffer, sizeof(buffer), format, value);
+    return buffer;
+}
+
+std::string format_altitude(const std::optional<double> altitude,
+                            const animus::telemetry_core::AltitudeDatum datum)
+{
+    if (!altitude)
+    {
+        return "alt n/a";
+    }
+    return format_value("%.0f m", *altitude) + " " + altitude_datum_label(datum);
+}
+
+std::string format_speed(const std::optional<double> speed_mps)
+{
+    return speed_mps ? format_value("%.1f m/s", *speed_mps) : std::string("speed n/a");
+}
+
+std::string format_age(const double age_s)
+{
+    if (age_s < 1.0)
+    {
+        return format_value("%.0f ms", age_s * 1000.0);
+    }
+    return format_value("%.1f s", age_s);
+}
+
+void muted_text(const char *text)
+{
+    ImGui::TextColored(text_muted, "%s", text);
+}
+
+void draw_status_dot(const ImVec4 color)
+{
+    const ImVec2 cursor = ImGui::GetCursorScreenPos();
+    const float radius = 4.0F;
+    ImGui::Dummy(ImVec2(radius * 2.0F + 2.0F, radius * 2.0F + 2.0F));
+    ImGui::GetWindowDrawList()->AddCircleFilled(
+        ImVec2(cursor.x + radius + 1.0F, cursor.y + radius + 1.0F),
+        radius,
+        ImGui::ColorConvertFloat4ToU32(color),
+        16);
+}
+
+void draw_status_pill(const char *label, const ImVec4 color, const char *value = nullptr)
+{
+    const std::string text =
+        value == nullptr ? std::string(label) : std::string(label) + " " + value;
+    const ImVec2 text_size = ImGui::CalcTextSize(text.c_str());
+    const ImVec2 cursor = ImGui::GetCursorScreenPos();
+    const ImVec2 size(text_size.x + 22.0F, 23.0F);
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    draw->AddRectFilled(
+        cursor, ImVec2(cursor.x + size.x, cursor.y + size.y), IM_COL32(26, 31, 35, 214), 6.0F);
+    draw->AddCircleFilled(ImVec2(cursor.x + 10.0F, cursor.y + 11.5F),
+                          3.5F,
+                          ImGui::ColorConvertFloat4ToU32(color),
+                          14);
+    draw->AddText(
+        ImVec2(cursor.x + 17.0F, cursor.y + 4.0F), IM_COL32(219, 226, 232, 242), text.c_str());
+    ImGui::Dummy(size);
+}
+
 void nav_button(UiState &ui_state, UiNavigationMode mode)
 {
     const bool selected = ui_state.active_mode == mode;
+    ImGui::PushID(mode_label(mode));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12.0F, 8.0F));
     if (selected)
     {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20F, 0.38F, 0.46F, 1.0F));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15F, 0.29F, 0.37F, 0.96F));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.18F, 0.36F, 0.45F, 1.0F));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.86F, 0.94F, 0.98F, 1.0F));
+    }
+    else
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.09F, 0.105F, 0.115F, 0.0F));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15F, 0.17F, 0.18F, 0.88F));
+        ImGui::PushStyleColor(ImGuiCol_Text, text_muted);
     }
     if (ImGui::Button(mode_label(mode), ImVec2(-1.0F, 0.0F)))
     {
@@ -48,10 +145,9 @@ void nav_button(UiState &ui_state, UiNavigationMode mode)
             ui_state.developer_diagnostics_visible = true;
         }
     }
-    if (selected)
-    {
-        ImGui::PopStyleColor();
-    }
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar(2);
+    ImGui::PopID();
 }
 
 const char *telemetry_state_label(const TelemetryPlaybackState &playback)
@@ -71,6 +167,108 @@ const char *telemetry_state_label(const TelemetryPlaybackState &playback)
     return playback.receiver_stats.stale ? "live stale" : "live connected";
 }
 
+ImVec4 telemetry_state_color(const TelemetryPlaybackState &playback)
+{
+    if (!playback.loaded)
+    {
+        return ImVec4(0.55F, 0.58F, 0.61F, 1.0F);
+    }
+    if (!playback.live)
+    {
+        return playback.clock.paused() ? ImVec4(0.42F, 0.62F, 0.82F, 1.0F)
+                                       : ImVec4(0.38F, 0.78F, 0.58F, 1.0F);
+    }
+    if (!playback.receiver_stats.connected)
+    {
+        return ImVec4(0.55F, 0.58F, 0.61F, 1.0F);
+    }
+    return playback.receiver_stats.stale ? ImVec4(0.95F, 0.58F, 0.22F, 1.0F)
+                                         : ImVec4(0.38F, 0.78F, 0.58F, 1.0F);
+}
+
+std::string entity_label(const animus::telemetry_core::EntityId id)
+{
+    return std::to_string(id.system_id) + ":" + std::to_string(id.component_id);
+}
+
+std::string lower_ascii(std::string text)
+{
+    std::transform(text.begin(),
+                   text.end(),
+                   text.begin(),
+                   [](const unsigned char value)
+                   { return static_cast<char>(std::tolower(value)); });
+    return text;
+}
+
+bool entity_matches_filter(const animus::telemetry_core::Entity &entity, const char *filter)
+{
+    const std::string needle = lower_ascii(filter == nullptr ? std::string() : std::string(filter));
+    if (needle.empty())
+    {
+        return true;
+    }
+    const std::string haystack = lower_ascii(entity_label(entity.id) + " generic vehicle");
+    return haystack.find(needle) != std::string::npos;
+}
+
+const char *altitude_datum_label(const animus::telemetry_core::AltitudeDatum datum)
+{
+    switch (datum)
+    {
+    case animus::telemetry_core::AltitudeDatum::Unknown:
+        return "unknown";
+    case animus::telemetry_core::AltitudeDatum::MslOrthometric:
+        return "MSL";
+    case animus::telemetry_core::AltitudeDatum::Ellipsoid:
+        return "ellipsoid";
+    case animus::telemetry_core::AltitudeDatum::TerrainRelative:
+        return "terrain";
+    }
+    return "unknown";
+}
+
+std::optional<double> sample_altitude_m(const animus::telemetry_core::TelemetrySample &sample)
+{
+    if (sample.altitude_relative_m)
+    {
+        return sample.altitude_relative_m;
+    }
+    return sample.altitude_msl_m;
+}
+
+std::optional<animus::telemetry_core::TelemetrySample>
+current_entity_sample(const TelemetryPlaybackState &playback,
+                      const animus::telemetry_core::EntityId id)
+{
+    return playback.timeline.sample_at(id, playback.clock.time_s());
+}
+
+double entity_age_s(const TelemetryPlaybackState &playback,
+                    const animus::telemetry_core::TelemetrySample &sample)
+{
+    if (playback.timeline.end_time_s <= 0.0)
+    {
+        return 0.0;
+    }
+    return std::max(0.0, playback.timeline.end_time_s - sample.time_s);
+}
+
+bool entity_stale(const TelemetryPlaybackState &playback,
+                  const animus::telemetry_core::TelemetrySample &sample)
+{
+    if (!playback.live)
+    {
+        return false;
+    }
+    return playback.receiver_stats.stale || entity_age_s(playback, sample) > 2.0;
+}
+
+bool entity_degraded(const animus::telemetry_core::TelemetrySample &sample)
+{
+    return !sample.fields.position;
+}
+
 void draw_top_status_bar(const Options &options,
                          const animus::render_core::RenderStats &stats,
                          const animus::terrain_core::TerrainStreamSnapshot &snapshot,
@@ -78,43 +276,59 @@ void draw_top_status_bar(const Options &options,
                          const Mp4RecorderState &recorder)
 {
     ImGui::SetNextWindowPos(ImVec2(0.0F, 0.0F), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x, 34.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x, status_bar_height),
+                             ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                              ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize;
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055F, 0.065F, 0.073F, 0.94F));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 7.0F));
     ImGui::Begin("Animus Status", nullptr, flags);
-    ImGui::TextUnformatted("Animus");
+    ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Animus");
     ImGui::SameLine();
-    ImGui::Text("%s", telemetry_state_label(playback));
+    draw_status_pill(telemetry_state_label(playback), telemetry_state_color(playback));
     ImGui::SameLine();
-    ImGui::Text("tiles %zu/%zu", snapshot.resident_gpu_tiles, snapshot.tiles.size());
+    draw_status_pill("terrain", live_green, std::to_string(snapshot.resident_gpu_tiles).c_str());
     ImGui::SameLine();
-    ImGui::Text("frame %.2f ms", stats.last_frame_seconds() * 1000.0);
+    const std::string frame_ms = format_value("%.1f ms", stats.last_frame_seconds() * 1000.0);
+    draw_status_pill("frame", quiet_gray, frame_ms.c_str());
     ImGui::SameLine();
-    ImGui::Text("source %s",
-                options.telemetry_live_udp_enabled
-                    ? "Live UDP"
-                    : (!options.telemetry.empty() ? "Log" : "Terrain"));
+    muted_text(options.telemetry_live_udp_enabled
+                   ? "Live UDP"
+                   : (!options.telemetry.empty() ? "Log" : "Terrain"));
     if (recorder.recording)
     {
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1.0F, 0.34F, 0.30F, 1.0F), "recording %d", recorder.frame_count);
+        ImGui::TextColored(ImVec4(1.0F, 0.42F, 0.38F, 1.0F), "recording %d", recorder.frame_count);
     }
     ImGui::End();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
 }
 
 void draw_nav(UiState &ui_state)
 {
-    ImGui::SetNextWindowPos(ImVec2(12.0F, 46.0F), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(116.0F, 214.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(chrome_margin, status_bar_height + chrome_margin),
+                            ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(nav_width, 246.0F), ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
+    ImGui::PushStyleColor(ImGuiCol_Border, panel_border);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0F, 12.0F));
     ImGui::Begin("Navigate", nullptr, flags);
     nav_button(ui_state, UiNavigationMode::View);
+    ImGui::Dummy(ImVec2(0.0F, 2.0F));
     nav_button(ui_state, UiNavigationMode::Layers);
+    ImGui::Dummy(ImVec2(0.0F, 2.0F));
     nav_button(ui_state, UiNavigationMode::Telemetry);
+    ImGui::Dummy(ImVec2(0.0F, 2.0F));
     nav_button(ui_state, UiNavigationMode::Capture);
+    ImGui::Separator();
     nav_button(ui_state, UiNavigationMode::Developer);
     ImGui::End();
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
 }
 
 void draw_view_panel(const Options &options,
@@ -196,40 +410,105 @@ void draw_timeline_controls(TelemetryPlaybackState &playback)
     }
 }
 
-void draw_entity_selector(TelemetryPlaybackState &playback)
+void draw_entity_list(TelemetryPlaybackState &playback, UiState &ui)
 {
     if (playback.timeline.entities.empty())
     {
+        muted_text("No telemetry entities.");
         return;
     }
-    int selected_index = 0;
-    for (std::size_t index = 0U; index < playback.timeline.entities.size(); ++index)
+
+    ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Entities");
+    ImGui::SameLine();
+    ImGui::TextColored(text_muted, "%zu", playback.timeline.entities.size());
+    ImGui::SetNextItemWidth(-1.0F);
+    ImGui::InputTextWithHint("##entity_filter",
+                             "Filter system:component or type",
+                             ui.telemetry_entity_filter.data(),
+                             ui.telemetry_entity_filter.size());
+    ImGui::Dummy(ImVec2(0.0F, 2.0F));
+    std::size_t visible_count = 0U;
+    for (const auto &entity : playback.timeline.entities)
     {
-        if (playback.timeline.entities[index].id == playback.selected_entity)
+        if (!entity_matches_filter(entity, ui.telemetry_entity_filter.data()))
         {
-            selected_index = static_cast<int>(index);
+            continue;
         }
+        ++visible_count;
+        const auto sample = current_entity_sample(playback, entity.id);
+        const bool selected = ui.telemetry_entity_selected && entity.id == playback.selected_entity;
+        const bool stale = sample ? entity_stale(playback, *sample) : true;
+        const bool degraded = !sample || entity_degraded(*sample);
+        const ImVec4 state_color = degraded || stale ? stale_amber : live_green;
+        const std::string id = entity_label(entity.id);
+        ImGui::PushID(id.c_str());
+        const float row_width = ImGui::GetContentRegionAvail().x;
+        const ImVec2 row_size(row_width, 54.0F);
+        ImGui::InvisibleButton("entity_row", row_size);
+        if (ImGui::IsItemClicked())
+        {
+            playback.selected_entity = entity.id;
+            ui.telemetry_entity_selected = true;
+        }
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+        {
+            playback.selected_entity = entity.id;
+            ui.telemetry_entity_selected = true;
+            ui.follow_selected_entity = true;
+        }
+        const ImVec2 row_min = ImGui::GetItemRectMin();
+        const ImVec2 row_max = ImGui::GetItemRectMax();
+        ImDrawList *draw = ImGui::GetWindowDrawList();
+        draw->AddRectFilled(row_min,
+                            row_max,
+                            selected ? IM_COL32(28, 55, 68, 232) : IM_COL32(18, 22, 25, 118),
+                            7.0F);
+        if (selected)
+        {
+            draw->AddRect(
+                row_min, row_max, ImGui::ColorConvertFloat4ToU32(accent_blue), 7.0F, 0, 1.2F);
+        }
+        draw->AddCircleFilled(ImVec2(row_min.x + 14.0F, row_min.y + 18.0F),
+                              4.0F,
+                              ImGui::ColorConvertFloat4ToU32(state_color),
+                              16);
+        draw->AddText(ImVec2(row_min.x + 26.0F, row_min.y + 9.0F),
+                      selected ? IM_COL32(238, 247, 252, 255) : IM_COL32(224, 229, 233, 242),
+                      id.c_str());
+        draw->AddText(ImVec2(row_min.x + row_width - 58.0F, row_min.y + 9.0F),
+                      IM_COL32(151, 159, 166, 232),
+                      "generic");
+        std::string secondary = "no current pose";
+        if (sample)
+        {
+            secondary = format_altitude(sample_altitude_m(*sample), sample->altitude_datum) +
+                        "    " + format_speed(sample->ground_speed_mps);
+            if (stale)
+            {
+                secondary += "    last " + format_age(entity_age_s(playback, *sample));
+            }
+            else if (degraded)
+            {
+                secondary += "    degraded";
+            }
+        }
+        draw->AddText(ImVec2(row_min.x + 26.0F, row_min.y + 31.0F),
+                      degraded || stale ? IM_COL32(226, 181, 125, 242)
+                                        : IM_COL32(164, 174, 181, 235),
+                      secondary.c_str());
+        if (sample && sample->heading_deg)
+        {
+            const std::string heading = format_value("%.0f deg", *sample->heading_deg);
+            draw->AddText(ImVec2(row_min.x + row_width - 58.0F, row_min.y + 31.0F),
+                          IM_COL32(151, 159, 166, 220),
+                          heading.c_str());
+        }
+        ImGui::PopID();
+        ImGui::Dummy(ImVec2(0.0F, 2.0F));
     }
-    const std::string current = std::to_string(playback.selected_entity.system_id) + ":" +
-                                std::to_string(playback.selected_entity.component_id);
-    if (ImGui::BeginCombo("Entity", current.c_str()))
+    if (visible_count == 0U)
     {
-        for (std::size_t index = 0U; index < playback.timeline.entities.size(); ++index)
-        {
-            const auto id = playback.timeline.entities[index].id;
-            const std::string label =
-                std::to_string(id.system_id) + ":" + std::to_string(id.component_id);
-            const bool selected = static_cast<int>(index) == selected_index;
-            if (ImGui::Selectable(label.c_str(), selected))
-            {
-                playback.selected_entity = id;
-            }
-            if (selected)
-            {
-                ImGui::SetItemDefaultFocus();
-            }
-        }
-        ImGui::EndCombo();
+        muted_text("No entities match the filter.");
     }
 }
 
@@ -237,18 +516,18 @@ void draw_telemetry_panel(const Options &options, TelemetryPlaybackState &playba
 {
     if (!playback.loaded)
     {
-        ImGui::TextUnformatted("No telemetry source is active.");
+        muted_text("No telemetry source is active.");
         return;
     }
 
     if (playback.live)
     {
-        ImGui::Text("Live UDP");
-        ImGui::TextWrapped("%s", playback.live_endpoint.c_str());
-        ImGui::Text("state %s",
-                    playback.receiver_stats.connected
-                        ? (playback.receiver_stats.stale ? "stale" : "connected")
-                        : "waiting");
+        ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Live UDP");
+        ImGui::TextColored(text_muted, "%s", playback.live_endpoint.c_str());
+        draw_status_pill(playback.receiver_stats.connected
+                             ? (playback.receiver_stats.stale ? "stale" : "connected")
+                             : "waiting",
+                         telemetry_state_color(playback));
         ImGui::Text("datagrams %llu  age %.3f s",
                     static_cast<unsigned long long>(playback.receiver_stats.datagrams),
                     playback.receiver_stats.last_packet_age_s);
@@ -261,16 +540,13 @@ void draw_telemetry_panel(const Options &options, TelemetryPlaybackState &playba
         draw_timeline_controls(playback);
     }
     ImGui::Separator();
-    draw_entity_selector(playback);
-    ImGui::Text("entities %zu  samples %zu  events %zu",
-                playback.timeline.entities.size(),
-                playback.timeline.samples.size(),
-                playback.timeline.events.size());
-    ImGui::Checkbox("Info events", &ui.telemetry_event_filters.show_info);
-    ImGui::SameLine();
-    ImGui::Checkbox("Warnings", &ui.telemetry_event_filters.show_warnings);
-    ImGui::SameLine();
-    ImGui::Checkbox("Errors", &ui.telemetry_event_filters.show_errors);
+    draw_entity_list(playback, ui);
+    ImGui::Separator();
+    ImGui::TextColored(text_muted,
+                       "entities %zu  samples %zu  events %zu",
+                       playback.timeline.entities.size(),
+                       playback.timeline.samples.size(),
+                       playback.timeline.events.size());
     ImGui::Text("terrain height %s",
                 playback.terrain_height_unavailable ? "unavailable for some samples" : "available");
     if (playback.unknown_datum_relative_fallback)
@@ -281,6 +557,18 @@ void draw_telemetry_panel(const Options &options, TelemetryPlaybackState &playba
     {
         ImGui::TextWrapped("warning: ellipsoid altitude datum needs a configured geoid grid");
     }
+
+    ImGui::Checkbox("Diagnostics", &ui.telemetry_diagnostics_visible);
+    if (!ui.telemetry_diagnostics_visible)
+    {
+        return;
+    }
+
+    ImGui::Checkbox("Info events", &ui.telemetry_event_filters.show_info);
+    ImGui::SameLine();
+    ImGui::Checkbox("Warnings", &ui.telemetry_event_filters.show_warnings);
+    ImGui::SameLine();
+    ImGui::Checkbox("Errors", &ui.telemetry_event_filters.show_errors);
 
     if (!playback.timeline.events.empty())
     {
@@ -535,37 +823,96 @@ void draw_developer_panel(
 
 void draw_inspector(TelemetryPlaybackState &playback, UiState &ui_state)
 {
-    if (!playback.loaded || ui_state.inspector_target == InspectorTarget::None ||
-        ImGui::GetIO().DisplaySize.x < 980.0F)
+    if (ui_state.inspector_target == InspectorTarget::None || ImGui::GetIO().DisplaySize.x < 980.0F)
     {
         return;
     }
-    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 304.0F, 46.0F), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(292.0F, 230.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - inspector_width - chrome_margin,
+                                   status_bar_height + chrome_margin),
+                            ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(inspector_width, 330.0F), ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
+    ImGui::PushStyleColor(ImGuiCol_Border, panel_border);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 12.0F));
     ImGui::Begin("Inspector", nullptr, flags);
-    if (ui_state.inspector_target == InspectorTarget::Entity)
+    if (!playback.loaded)
     {
+        ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Telemetry");
+        muted_text("No telemetry loaded.");
+    }
+    else if (ui_state.inspector_target == InspectorTarget::Entity)
+    {
+        if (!ui_state.telemetry_entity_selected)
+        {
+            ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Telemetry");
+            muted_text("No entity selected.");
+            ImGui::Text("source %s", playback.live ? "Live UDP" : "Playback");
+            ImGui::Text("entities %zu", playback.timeline.entities.size());
+            ImGui::End();
+            ImGui::PopStyleVar(2);
+            ImGui::PopStyleColor(2);
+            return;
+        }
         const auto sample =
             playback.timeline.sample_at(playback.selected_entity, playback.clock.time_s());
-        draw_entity_selector(playback);
+        const bool degraded = !sample || entity_degraded(*sample);
+        const bool stale = sample ? entity_stale(playback, *sample) : false;
+        ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F),
+                           "Vehicle %s",
+                           entity_label(playback.selected_entity).c_str());
+        ImGui::SameLine();
+        draw_status_dot(degraded || stale ? stale_amber : live_green);
+        ImGui::TextColored(
+            degraded || stale ? stale_amber : live_green,
+            "%s",
+            !sample ? "no current sample"
+                    : (degraded ? "invalid position" : (stale ? "stale" : "telemetry valid")));
+        muted_text("generic fallback icon");
+        ImGui::Checkbox("Follow selected", &ui_state.follow_selected_entity);
         if (sample)
         {
-            ImGui::Text("lat/lon %.7f %.7f", sample->lat_deg, sample->lon_deg);
+            ImGui::SeparatorText("Summary");
             ImGui::Text(
-                "alt msl %s  rel %s",
-                sample->altitude_msl_m ? std::to_string(*sample->altitude_msl_m).c_str() : "n/a",
-                sample->altitude_relative_m ? std::to_string(*sample->altitude_relative_m).c_str()
+                "Altitude  %s",
+                format_altitude(sample_altitude_m(*sample), sample->altitude_datum).c_str());
+            ImGui::Text("Speed     %s", format_speed(sample->ground_speed_mps).c_str());
+            ImGui::Text("Age       %s", format_age(entity_age_s(playback, *sample)).c_str());
+            ImGui::SeparatorText("Details");
+            ImGui::Text("Lat/Lon   %.7f  %.7f", sample->lat_deg, sample->lon_deg);
+            ImGui::Text("Datum     %s", altitude_datum_label(sample->altitude_datum));
+            ImGui::Text("Heading   %s",
+                        sample->heading_deg ? format_value("%.1f deg", *sample->heading_deg).c_str()
                                             : "n/a");
-            ImGui::Text("att roll %s pitch %s yaw %s",
-                        sample->roll_rad ? std::to_string(*sample->roll_rad).c_str() : "n/a",
-                        sample->pitch_rad ? std::to_string(*sample->pitch_rad).c_str() : "n/a",
-                        sample->yaw_rad ? std::to_string(*sample->yaw_rad).c_str() : "n/a");
-            ImGui::Text("speed %s heading %s",
-                        sample->ground_speed_mps ? std::to_string(*sample->ground_speed_mps).c_str()
-                                                 : "n/a",
-                        sample->heading_deg ? std::to_string(*sample->heading_deg).c_str() : "n/a");
+            ImGui::Text("Roll      %s",
+                        sample->roll_rad ? format_value("%.3f rad", *sample->roll_rad).c_str()
+                                         : "n/a");
+            ImGui::Text("Pitch     %s",
+                        sample->pitch_rad ? format_value("%.3f rad", *sample->pitch_rad).c_str()
+                                          : "n/a");
+            ImGui::Text("Yaw       %s",
+                        sample->yaw_rad ? format_value("%.3f rad", *sample->yaw_rad).c_str()
+                                        : "n/a");
+            ImGui::Text("Sample    %.3f s", sample->time_s);
+            if (stale || degraded)
+            {
+                ImGui::SeparatorText("Warnings");
+                if (stale)
+                {
+                    ImGui::TextColored(stale_amber, "Telemetry is stale");
+                }
+                if (degraded)
+                {
+                    ImGui::TextColored(stale_amber, "Invalid position");
+                }
+            }
+        }
+        else
+        {
+            ImGui::Separator();
+            muted_text("No current sample for the selected entity.");
         }
     }
     else if (ui_state.inspector_target == InspectorTarget::TelemetrySource)
@@ -579,26 +926,58 @@ void draw_inspector(TelemetryPlaybackState &playback, UiState &ui_state)
         ImGui::TextUnformatted("Terrain view");
     }
     ImGui::End();
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
 }
 
-void draw_bottom_timeline(TelemetryPlaybackState &playback)
+void draw_bottom_timeline(TelemetryPlaybackState &playback, const UiState &ui_state)
 {
-    if (!playback.loaded || playback.live)
+    if (!playback.loaded)
     {
         return;
     }
-    const float available_width = ImGui::GetIO().DisplaySize.x - 448.0F;
+    const float left = chrome_margin + nav_width + panel_gap;
+    const float right_reserve =
+        ImGui::GetIO().DisplaySize.x >= 980.0F ? inspector_width + 36.0F : 24.0F;
+    const float available_width = ImGui::GetIO().DisplaySize.x - left - right_reserve;
     if (available_width < 260.0F)
     {
         return;
     }
-    ImGui::SetNextWindowPos(ImVec2(144.0F, ImGui::GetIO().DisplaySize.y - 88.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(left, ImGui::GetIO().DisplaySize.y - 82.0F), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(available_width, 76.0F), ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                              ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize;
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055F, 0.064F, 0.072F, 0.88F));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 10.0F));
     ImGui::Begin("Timeline", nullptr, flags);
-    draw_timeline_controls(playback);
+    if (playback.live)
+    {
+        ImGui::TextColored(
+            ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Live %.3f s", playback.timeline.end_time_s);
+        ImGui::SameLine();
+        ImGui::TextColored(text_muted,
+                           "samples %llu",
+                           static_cast<unsigned long long>(playback.live_stats.produced_samples));
+        ImGui::SameLine();
+        ImGui::TextColored(text_muted,
+                           "selected %s",
+                           ui_state.telemetry_entity_selected
+                               ? entity_label(playback.selected_entity).c_str()
+                               : "none");
+        ImGui::SameLine();
+        ImGui::TextColored(playback.receiver_stats.stale ? stale_amber : live_green,
+                           "%s",
+                           playback.receiver_stats.stale ? "stale" : "tracking latest");
+    }
+    else
+    {
+        draw_timeline_controls(playback);
+    }
     ImGui::End();
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
 }
 
 } // namespace
@@ -705,12 +1084,19 @@ void draw_app_workspace(const Options &options,
     draw_top_status_bar(options, stats, snapshot, playback, mp4_recorder);
     draw_nav(ui_state);
 
-    const float inspector_reserve = ImGui::GetIO().DisplaySize.x >= 980.0F ? 332.0F : 24.0F;
+    const float panel_left = chrome_margin + nav_width + panel_gap;
+    const float panel_top = status_bar_height + chrome_margin;
+    const float inspector_reserve =
+        ImGui::GetIO().DisplaySize.x >= 980.0F ? inspector_width + 36.0F : 24.0F;
     const float main_width =
-        std::clamp(ImGui::GetIO().DisplaySize.x - 144.0F - inspector_reserve, 300.0F, 460.0F);
-    ImGui::SetNextWindowPos(ImVec2(144.0F, 46.0F), ImGuiCond_Always);
+        std::clamp(ImGui::GetIO().DisplaySize.x - panel_left - inspector_reserve, 320.0F, 470.0F);
+    ImGui::SetNextWindowPos(ImVec2(panel_left, panel_top), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(main_width, 390.0F), ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
+    ImGui::PushStyleColor(ImGuiCol_Border, panel_border);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 12.0F));
     ImGui::Begin(mode_label(ui_state.active_mode), nullptr, flags);
     switch (ui_state.active_mode)
     {
@@ -748,9 +1134,11 @@ void draw_app_workspace(const Options &options,
         break;
     }
     ImGui::End();
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
 
     draw_inspector(playback, ui_state);
-    draw_bottom_timeline(playback);
+    draw_bottom_timeline(playback, ui_state);
 }
 
 } // namespace animus::app

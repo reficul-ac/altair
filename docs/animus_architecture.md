@@ -219,6 +219,27 @@ Stage 5: advanced terrain/data features
 - geoid/datum correction
 - video/export workflows
 
+Stage 6: operator UI and telemetry entity workflow
+
+- keep the native app and existing terrain renderer
+- turn the app shell into a polished operator UI with compact status, entity
+  list, selected inspector, bottom live/timeline strip, and clear viewport
+  labels
+- keep developer diagnostics available but hidden behind explicit Developer mode
+- support selected entity state, stale/degraded/live indicators, follow selected,
+  and fallback icon rendering before 3D vehicle models exist
+
+Stage 7: vehicle asset system and model rendering
+
+- add a vehicle asset package format based on `.glb` plus
+  `vehicle.animus.yaml`
+- add a vehicle registry/definition layer before broad GLB rendering
+- use GLB/glTF 2.0 as the runtime vehicle model format
+- attach vehicle models to telemetry entities with safe icon fallback on missing
+  or failed assets
+- add model orientation correction, origin offsets, scale, LOD policy, labels,
+  selected state, and later node-based animation
+
 ## 6. Terrain Tile Model
 
 Tile identity should be independent of rendering:
