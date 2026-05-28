@@ -97,6 +97,8 @@ const char *mode_label(const UiNavigationMode mode)
         return "Layers";
     case UiNavigationMode::Telemetry:
         return "Telemetry";
+    case UiNavigationMode::Signals:
+        return "Signals";
     case UiNavigationMode::Capture:
         return "Capture";
     case UiNavigationMode::Settings:
@@ -1028,7 +1030,7 @@ void draw_nav(UiState &ui_state)
     sanitize_active_mode(ui_state);
     ImGui::SetNextWindowPos(ImVec2(chrome_margin, status_bar_height + chrome_margin),
                             ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(nav_width, 382.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(nav_width, 424.0F), ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
@@ -1048,6 +1050,8 @@ void draw_nav(UiState &ui_state)
     }
     ImGui::Dummy(ImVec2(0.0F, 2.0F));
     nav_button(ui_state, UiNavigationMode::Telemetry);
+    ImGui::Dummy(ImVec2(0.0F, 2.0F));
+    nav_button(ui_state, UiNavigationMode::Signals);
     ImGui::Dummy(ImVec2(0.0F, 2.0F));
     nav_button(ui_state, UiNavigationMode::Capture);
     ImGui::Dummy(ImVec2(0.0F, 2.0F));
@@ -1707,6 +1711,177 @@ void draw_telemetry_panel(const Options &options,
             ImGui::EndTable();
         }
     }
+}
+
+const char *
+mavlink_observation_label(const animus::telemetry_core::MavlinkFieldObservationStatus status)
+{
+    switch (status)
+    {
+    case animus::telemetry_core::MavlinkFieldObservationStatus::Unsupported:
+        return "unsupported";
+    case animus::telemetry_core::MavlinkFieldObservationStatus::SupportedNotObserved:
+        return "supported, not observed";
+    case animus::telemetry_core::MavlinkFieldObservationStatus::ObservedNumeric:
+        return "observed numeric";
+    case animus::telemetry_core::MavlinkFieldObservationStatus::ObservedNonNumeric:
+        return "observed non-numeric";
+    }
+    return "supported, not observed";
+}
+
+bool signal_matches_filter(const SignalInfo &signal, const char *filter)
+{
+    const std::string needle = lower_ascii(filter == nullptr ? std::string() : std::string(filter));
+    if (needle.empty())
+    {
+        return true;
+    }
+    const std::string haystack = lower_ascii(signal.display_name + " " + signal.ref.field_path +
+                                             " " + signal.ref.mavlink_message + " " +
+                                             signal.ref.mavlink_field + " " + signal.unit);
+    return haystack.find(needle) != std::string::npos;
+}
+
+std::string signal_latest_value(const SignalCatalog &catalog,
+                                const SignalInfo &signal,
+                                const TelemetryPlaybackState &playback,
+                                const RuntimeSignalInputs &runtime)
+{
+    const double now_s = playback.live ? playback.timeline.end_time_s : playback.clock.time_s();
+    SignalSample sample{.time_s = now_s, .status = SignalSampleStatus::Unavailable};
+    if (signal.ref.source == SignalSource::Sample && playback.loaded &&
+        !playback.timeline.samples.empty())
+    {
+        const std::optional<animus::telemetry_core::TelemetrySample> current =
+            playback.timeline.sample_at(playback.selected_entity, now_s);
+        if (current)
+        {
+            sample = catalog.extract_sample(signal.ref, *current, signal.default_transform);
+        }
+    }
+    else if (signal.ref.source == SignalSource::Derived ||
+             signal.ref.source == SignalSource::Runtime)
+    {
+        sample = catalog.extract_runtime(signal.ref, runtime, now_s, signal.default_transform);
+    }
+    else if (signal.ref.source == SignalSource::Mavlink)
+    {
+        SignalRef ref = signal.ref;
+        ref.entity_id = playback.selected_entity;
+        sample =
+            catalog.extract_mavlink(ref, playback.mavlink_values, now_s, signal.default_transform);
+    }
+
+    if (sample.status != SignalSampleStatus::Valid)
+    {
+        return SignalCatalog::status_name(sample.status);
+    }
+    return signal.unit.empty() ? format_value("%.3f", sample.value)
+                               : format_value("%.3f", sample.value) + " " + signal.unit;
+}
+
+std::string signal_availability(const SignalInfo &signal, const TelemetryPlaybackState &playback)
+{
+    if (signal.ref.source != SignalSource::Mavlink)
+    {
+        if (playback.live && !signal.live_available)
+        {
+            return "offline only";
+        }
+        if (!playback.live && !signal.offline_available)
+        {
+            return "live only";
+        }
+        return "available";
+    }
+
+    const std::uint32_t message_id = mavlink_message_id(signal.ref.mavlink_message);
+    const auto *definition =
+        animus::telemetry_core::mavlink_field_definition(message_id, signal.ref.mavlink_field);
+    if (definition == nullptr)
+    {
+        return "unsupported";
+    }
+    if (!signal.numeric)
+    {
+        const MavlinkValueStats stats = playback.mavlink_values.stats(playback.selected_entity,
+                                                                      message_id,
+                                                                      signal.ref.mavlink_field,
+                                                                      playback.timeline.end_time_s);
+        return mavlink_observation_label(stats.status);
+    }
+    const MavlinkValueStats stats = playback.mavlink_values.stats(playback.selected_entity,
+                                                                  message_id,
+                                                                  signal.ref.mavlink_field,
+                                                                  playback.timeline.end_time_s);
+    return mavlink_observation_label(stats.status);
+}
+
+void draw_signal_catalog_table(const char *label,
+                               const SignalSource source,
+                               const SignalCatalog &catalog,
+                               const TelemetryPlaybackState &playback,
+                               const RuntimeSignalInputs &runtime,
+                               UiState &ui)
+{
+    if (!ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        return;
+    }
+    if (!ImGui::BeginTable(label,
+                           6,
+                           ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders |
+                               ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY,
+                           ImVec2(0.0F, 168.0F)))
+    {
+        return;
+    }
+    ImGui::TableSetupColumn("path");
+    ImGui::TableSetupColumn("name");
+    ImGui::TableSetupColumn("unit");
+    ImGui::TableSetupColumn("transform");
+    ImGui::TableSetupColumn("status");
+    ImGui::TableSetupColumn("latest");
+    ImGui::TableHeadersRow();
+    for (const SignalInfo &signal : catalog.signals())
+    {
+        if (signal.ref.source != source || !signal_matches_filter(signal, ui.signal_filter.data()))
+        {
+            continue;
+        }
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted(signal.ref.field_path.c_str());
+        ImGui::TableSetColumnIndex(1);
+        ImGui::TextUnformatted(signal.display_name.c_str());
+        ImGui::TableSetColumnIndex(2);
+        ImGui::TextUnformatted(signal.unit.c_str());
+        ImGui::TableSetColumnIndex(3);
+        ImGui::TextUnformatted(SignalCatalog::transform_name(signal.default_transform));
+        ImGui::TableSetColumnIndex(4);
+        ImGui::TextUnformatted(signal_availability(signal, playback).c_str());
+        ImGui::TableSetColumnIndex(5);
+        ImGui::TextUnformatted(signal_latest_value(catalog, signal, playback, runtime).c_str());
+    }
+    ImGui::EndTable();
+}
+
+void draw_signals_panel(TelemetryPlaybackState &playback,
+                        const RuntimeSignalInputs &runtime,
+                        UiState &ui)
+{
+    const SignalCatalog catalog;
+    ImGui::InputText("Search", ui.signal_filter.data(), ui.signal_filter.size());
+    ImGui::TextColored(text_muted,
+                       "signals %zu  selected entity %s",
+                       catalog.signals().size(),
+                       entity_label(playback.selected_entity).c_str());
+    ImGui::Separator();
+    draw_signal_catalog_table("Sample", SignalSource::Sample, catalog, playback, runtime, ui);
+    draw_signal_catalog_table("Derived", SignalSource::Derived, catalog, playback, runtime, ui);
+    draw_signal_catalog_table("Runtime", SignalSource::Runtime, catalog, playback, runtime, ui);
+    draw_signal_catalog_table("MAVLink", SignalSource::Mavlink, catalog, playback, runtime, ui);
 }
 
 void draw_capture_panel(ScreenshotToolState &screenshot_tool,
@@ -2384,6 +2559,25 @@ void draw_app_workspace(const Options &options,
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 12.0F));
     ImGui::Begin(mode_label(ui_state.active_mode), nullptr, flags);
     const bool advanced_workspace = ui_state.workspace_mode != WorkspaceMode::Operator;
+    RuntimeSignalInputs runtime_signals;
+    runtime_signals.terrain_elevation_m = playback.selected_entity_terrain.terrain_elevation_m;
+    runtime_signals.terrain_clearance_m = playback.selected_entity_terrain.terrain_clearance_m;
+    runtime_signals.telemetry_age_s =
+        playback.live ? std::optional<double>(playback.receiver_stats.last_packet_age_s)
+                      : std::nullopt;
+    runtime_signals.telemetry_gap_s =
+        playback.live ? runtime_signals.telemetry_age_s : std::nullopt;
+    runtime_signals.packet_count = playback.receiver_stats.datagrams;
+    runtime_signals.drop_count =
+        playback.receiver_stats.dropped_datagrams + playback.live_stats.dropped_samples;
+    runtime_signals.frame_time_ms = stats.last_frame_seconds() * 1000.0;
+    runtime_signals.resident_tile_count = snapshot.resident_gpu_tiles;
+    runtime_signals.upload_bytes_this_frame = upload_bytes_used;
+    if (playback.live && playback.timeline.end_time_s > playback.timeline.start_time_s)
+    {
+        runtime_signals.link_hz = static_cast<double>(playback.live_stats.parsed_messages) /
+                                  (playback.timeline.end_time_s - playback.timeline.start_time_s);
+    }
     switch (ui_state.active_mode)
     {
     case UiNavigationMode::View:
@@ -2417,6 +2611,10 @@ void draw_app_workspace(const Options &options,
         ui_state.inspector_target =
             playback.loaded ? InspectorTarget::Entity : InspectorTarget::TelemetrySource;
         draw_telemetry_panel(options, playback, ui_state, advanced_workspace);
+        break;
+    case UiNavigationMode::Signals:
+        ui_state.inspector_target = InspectorTarget::TelemetrySource;
+        draw_signals_panel(playback, runtime_signals, ui_state);
         break;
     case UiNavigationMode::Capture:
         ui_state.inspector_target = InspectorTarget::None;

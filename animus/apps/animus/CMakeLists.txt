@@ -10,6 +10,7 @@ add_executable(
     src/layer_offline.cpp
     src/options.cpp
     src/plan_visualization.cpp
+    src/telemetry_signal_catalog.cpp
     src/timeline_review.cpp
     src/ui.cpp
     src/vehicle_visual_style.cpp

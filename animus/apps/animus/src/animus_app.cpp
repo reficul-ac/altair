@@ -12,6 +12,7 @@
 #include "animus/render_core/texture.hpp"
 #include "animus/render_core/window.hpp"
 #include "animus/telemetry_core/telemetry.hpp"
+#include "animus/telemetry_core/mavlink.hpp"
 #include "animus/telemetry_live/live_telemetry_buffer.hpp"
 #include "animus/telemetry_live/trail_decimation.hpp"
 #include "animus/telemetry_live/udp_mavlink_receiver.hpp"
@@ -259,6 +260,10 @@ UiNavigationMode panel_mode_from_config_value(const std::string &value)
     {
         return UiNavigationMode::Telemetry;
     }
+    if (value == "signals")
+    {
+        return UiNavigationMode::Signals;
+    }
     if (value == "capture")
     {
         return UiNavigationMode::Capture;
@@ -284,6 +289,8 @@ std::string panel_config_value(const UiNavigationMode mode)
         return "layers";
     case UiNavigationMode::Telemetry:
         return "telemetry";
+    case UiNavigationMode::Signals:
+        return "signals";
     case UiNavigationMode::Capture:
         return "capture";
     case UiNavigationMode::Settings:
@@ -2928,6 +2935,18 @@ int run(Options options)
         {
             telemetry.selected_entity = telemetry.timeline.entities.front().id;
         }
+        if (options.telemetry_format == animus::telemetry_core::TelemetryImportFormat::Tlog)
+        {
+            std::ifstream input(options.telemetry, std::ios::binary);
+            if (input)
+            {
+                const std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(input)),
+                                                      std::istreambuf_iterator<char>());
+                const animus::telemetry_core::MavlinkParseResult parsed =
+                    animus::telemetry_core::parse_mavlink_stream(bytes);
+                telemetry.mavlink_values.ingest_messages(parsed.messages);
+            }
+        }
         std::cout << "Loaded telemetry "
                   << animus::telemetry_core::to_string(telemetry.timeline.source_format) << ": "
                   << options.telemetry << " entities " << telemetry.timeline.entities.size()
@@ -3082,7 +3101,18 @@ int run(Options options)
             telemetry.live_frame_batch_samples = 0U;
             if (!datagrams.empty())
             {
-                live_buffer->ingest(datagrams);
+                std::vector<animus::telemetry_live::ParsedUdpMavlinkDatagram> parsed_datagrams;
+                parsed_datagrams.reserve(datagrams.size());
+                for (const animus::telemetry_live::UdpMavlinkDatagram &datagram : datagrams)
+                {
+                    animus::telemetry_live::ParsedUdpMavlinkDatagram parsed;
+                    parsed.receive_time_s = datagram.receive_time_s;
+                    parsed.byte_count = datagram.bytes.size();
+                    parsed.parsed = animus::telemetry_core::parse_mavlink_stream(datagram.bytes);
+                    parsed_datagrams.push_back(std::move(parsed));
+                }
+                telemetry.mavlink_values.ingest(parsed_datagrams);
+                live_buffer->ingest_parsed(parsed_datagrams);
                 batch_samples = live_buffer->stats().last_batch_samples;
             }
             telemetry.receiver_stats = live_receiver->stats();

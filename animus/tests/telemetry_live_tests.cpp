@@ -154,6 +154,38 @@ TEST(TelemetryLiveBuffer, BatchIngestKeepsLatestTrackSemantics)
     EXPECT_EQ(batch.stats().last_batch_samples, 3U);
 }
 
+TEST(TelemetryLiveBuffer, ParsedBatchIngestKeepsLatestTrackSemantics)
+{
+    std::vector<animus::telemetry_live::UdpMavlinkDatagram> datagrams;
+    datagrams.push_back(animus::telemetry_live::UdpMavlinkDatagram{
+        frame_v1(1, 33, global_position_payload(1000, 39.0)), 1.0});
+    datagrams.push_back(animus::telemetry_live::UdpMavlinkDatagram{
+        frame_v1(2, 33, global_position_payload(2000, 39.1)), 2.0});
+
+    std::vector<animus::telemetry_live::ParsedUdpMavlinkDatagram> parsed_datagrams;
+    for (const auto &datagram : datagrams)
+    {
+        animus::telemetry_live::ParsedUdpMavlinkDatagram parsed;
+        parsed.receive_time_s = datagram.receive_time_s;
+        parsed.byte_count = datagram.bytes.size();
+        parsed.parsed = animus::telemetry_core::parse_mavlink_stream(datagram.bytes);
+        parsed_datagrams.push_back(std::move(parsed));
+    }
+
+    animus::telemetry_live::LiveTelemetryBuffer raw;
+    raw.ingest(datagrams);
+
+    animus::telemetry_live::LiveTelemetryBuffer parsed;
+    parsed.ingest_parsed(parsed_datagrams);
+
+    ASSERT_EQ(parsed.timeline().samples.size(), raw.timeline().samples.size());
+    ASSERT_EQ(parsed.timeline().tracks.size(), raw.timeline().tracks.size());
+    EXPECT_DOUBLE_EQ(parsed.timeline().end_time_s, raw.timeline().end_time_s);
+    EXPECT_EQ(parsed.stats().last_batch_datagrams, datagrams.size());
+    EXPECT_EQ(parsed.stats().last_batch_messages, datagrams.size());
+    EXPECT_EQ(parsed.stats().last_batch_samples, 2U);
+}
+
 TEST(TelemetryLiveBuffer, DoesNotPreservePacketMessagesAsTrajectoryEvents)
 {
     animus::telemetry_live::LiveTelemetryBuffer buffer;

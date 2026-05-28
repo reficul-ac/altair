@@ -27,6 +27,10 @@ using animus::telemetry_core::load_tlog;
 using animus::telemetry_core::load_tlog_bytes;
 using animus::telemetry_core::mavlink_crc_extra;
 using animus::telemetry_core::mavlink_crc_x25;
+using animus::telemetry_core::mavlink_decode_numeric_field;
+using animus::telemetry_core::mavlink_field_definition;
+using animus::telemetry_core::mavlink_field_status;
+using animus::telemetry_core::mavlink_supported_fields;
 using animus::telemetry_core::parse_mavlink_stream;
 using animus::telemetry_core::reduce_mavlink_messages;
 
@@ -456,6 +460,62 @@ TEST(TelemetryCoreMavlink, PreservesUnknownMessagesAsEvents)
     const auto timeline = load_tlog_bytes(unknown);
     EXPECT_EQ(timeline.events.size(), 1U);
     EXPECT_EQ(timeline.diagnostics.unsupported_messages, 1U);
+}
+
+TEST(TelemetryCoreMavlinkFields, ListsSupportedFieldDefinitions)
+{
+    const auto fields = mavlink_supported_fields();
+
+    ASSERT_FALSE(fields.empty());
+    const auto *roll = mavlink_field_definition("ATTITUDE", "roll");
+    ASSERT_NE(roll, nullptr);
+    EXPECT_EQ(roll->message_id, 30U);
+    EXPECT_EQ(roll->unit, "rad");
+    EXPECT_TRUE(roll->numeric);
+
+    const auto *groundspeed = mavlink_field_definition("VFR_HUD", "groundspeed");
+    ASSERT_NE(groundspeed, nullptr);
+    EXPECT_EQ(groundspeed->message_id, 74U);
+    EXPECT_EQ(groundspeed->unit, "m/s");
+    EXPECT_TRUE(groundspeed->numeric);
+
+    EXPECT_EQ(mavlink_field_definition("SYS_STATUS", "voltage_battery"), nullptr);
+    EXPECT_EQ(mavlink_field_definition(33U, "unknown"), nullptr);
+}
+
+TEST(TelemetryCoreMavlinkFields, DecodesKnownNumericPayloads)
+{
+    const auto attitude = frame_v1(1, 1, 1, 30, attitude_payload(2500U, 0.25F, -0.5F, 1.25F));
+    const auto parsed_attitude = parse_mavlink_stream(attitude);
+    ASSERT_EQ(parsed_attitude.messages.size(), 1U);
+    EXPECT_NEAR(
+        *mavlink_decode_numeric_field(parsed_attitude.messages.front(), "roll"), 0.25, 1.0e-6);
+    EXPECT_NEAR(
+        *mavlink_decode_numeric_field(parsed_attitude.messages.front(), "pitch"), -0.5, 1.0e-6);
+
+    const auto global =
+        frame_v1(2, 1, 1, 33, global_position_payload(1000U, 39.25, -120.5, 1500000, 120000));
+    const auto parsed_global = parse_mavlink_stream(global);
+    ASSERT_EQ(parsed_global.messages.size(), 1U);
+    EXPECT_NEAR(
+        *mavlink_decode_numeric_field(parsed_global.messages.front(), "lat"), 39.25, 1.0e-7);
+    EXPECT_NEAR(*mavlink_decode_numeric_field(parsed_global.messages.front(), "relative_alt"),
+                120.0,
+                1.0e-6);
+}
+
+TEST(TelemetryCoreMavlinkFields, IdentifiesNonNumericFields)
+{
+    const auto parsed = parse_mavlink_stream(frame_v1(1, 1, 1, 0, heartbeat_payload()));
+    ASSERT_EQ(parsed.messages.size(), 1U);
+
+    EXPECT_EQ(mavlink_field_status(parsed.messages.front(), "type"),
+              animus::telemetry_core::MavlinkFieldObservationStatus::ObservedNonNumeric);
+    EXPECT_FALSE(mavlink_decode_numeric_field(parsed.messages.front(), "type"));
+    EXPECT_EQ(mavlink_field_status(parsed.messages.front(), "custom_mode"),
+              animus::telemetry_core::MavlinkFieldObservationStatus::ObservedNumeric);
+    EXPECT_EQ(mavlink_field_status(parsed.messages.front(), "not_a_field"),
+              animus::telemetry_core::MavlinkFieldObservationStatus::Unsupported);
 }
 
 TEST(TelemetryCoreTlog, DecodesHeartbeatGpsRawIntAndUntimedVfrHud)

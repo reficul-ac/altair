@@ -1,5 +1,6 @@
 #pragma once
 
+#include "animus/telemetry_core/mavlink.hpp"
 #include "animus/telemetry_core/mavlink_reducer.hpp"
 #include "animus/telemetry_core/telemetry.hpp"
 #include "animus/telemetry_live/udp_mavlink_receiver.hpp"
@@ -33,6 +34,13 @@ struct LiveTelemetryBufferStats
     animus::telemetry_core::ParserDiagnostics parser_diagnostics;
 };
 
+struct ParsedUdpMavlinkDatagram
+{
+    double receive_time_s = 0.0;
+    std::size_t byte_count = 0U;
+    animus::telemetry_core::MavlinkParseResult parsed;
+};
+
 class LiveTelemetryBuffer
 {
   public:
@@ -40,6 +48,8 @@ class LiveTelemetryBuffer
 
     void ingest(const UdpMavlinkDatagram &datagram);
     void ingest(std::span<const UdpMavlinkDatagram> datagrams);
+    void ingest_parsed(const ParsedUdpMavlinkDatagram &datagram);
+    void ingest_parsed(std::span<const ParsedUdpMavlinkDatagram> datagrams);
 
     [[nodiscard]] const animus::telemetry_core::Timeline &timeline() const;
     [[nodiscard]] LiveTelemetryBufferStats stats() const;

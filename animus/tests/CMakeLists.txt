@@ -85,6 +85,18 @@ animus_enable_warnings(animus_timeline_review_tests)
 gtest_discover_tests(animus_timeline_review_tests)
 
 add_executable(
+    animus_telemetry_signal_catalog_tests ../apps/animus/src/telemetry_signal_catalog.cpp
+                                          telemetry_signal_catalog_tests.cpp
+)
+target_include_directories(animus_telemetry_signal_catalog_tests PRIVATE ../apps/animus/src)
+target_link_libraries(
+    animus_telemetry_signal_catalog_tests PRIVATE animus_telemetry_core animus_telemetry_live
+                                                  GTest::gtest_main
+)
+animus_enable_warnings(animus_telemetry_signal_catalog_tests)
+gtest_discover_tests(animus_telemetry_signal_catalog_tests)
+
+add_executable(
     animus_vehicle_visual_style_tests ../apps/animus/src/vehicle_visual_style.cpp
                                       vehicle_visual_style_tests.cpp
 )

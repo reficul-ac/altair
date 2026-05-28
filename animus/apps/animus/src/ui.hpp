@@ -8,6 +8,7 @@
 #include "animus/terrain_core/terrain_stream.hpp"
 #include "options.hpp"
 #include "plan_visualization.hpp"
+#include "telemetry_signal_catalog.hpp"
 #include "timeline_review.hpp"
 
 #include <array>
@@ -98,6 +99,7 @@ struct TelemetryPlaybackState
     std::string live_endpoint;
     animus::telemetry_live::UdpMavlinkReceiverStats receiver_stats;
     animus::telemetry_live::LiveTelemetryBufferStats live_stats;
+    MavlinkValueStore mavlink_values;
     double live_snapshot_elapsed_s = 0.0;
     double live_ingest_ms = 0.0;
     double live_prune_finalize_ms = 0.0;
@@ -124,6 +126,7 @@ enum class UiNavigationMode
     View,
     Layers,
     Telemetry,
+    Signals,
     Capture,
     Settings,
     Developer,
@@ -171,6 +174,7 @@ struct UiState
     bool request_home_view = false;
     int zoom_steps = 0;
     std::array<char, 64> telemetry_entity_filter{};
+    std::array<char, 96> signal_filter{};
     TelemetryEventFilters telemetry_event_filters;
     std::vector<TimelineBookmark> timeline_bookmarks;
 };

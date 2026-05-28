@@ -3,6 +3,7 @@
 #include "animus/telemetry_core/mavlink.hpp"
 
 #include <chrono>
+#include <vector>
 
 namespace animus::telemetry_live
 {
@@ -27,22 +28,11 @@ LiveTelemetryBuffer::LiveTelemetryBuffer(LiveTelemetryBufferConfig config)
 
 void LiveTelemetryBuffer::ingest(const UdpMavlinkDatagram &datagram)
 {
-    ++stats_.datagrams;
-    stats_.bytes += datagram.bytes.size();
-    const double ingest_start_s = steady_time_s();
-    const auto parsed = animus::telemetry_core::parse_mavlink_stream(datagram.bytes);
-    const std::size_t samples = reducer_.ingest_parse_result(parsed, datagram.receive_time_s);
-    const double prune_start_s = steady_time_s();
-    stats_.parsed_messages += parsed.messages.size();
-    stats_.produced_samples += samples;
-    stats_.last_batch_datagrams = 1U;
-    stats_.last_batch_messages = parsed.messages.size();
-    stats_.last_batch_samples = samples;
-    stats_.dropped_samples += reducer_.prune(config_.history_seconds, config_.max_samples);
-    stats_.last_batch_ingest_ms = (prune_start_s - ingest_start_s) * 1000.0;
-    stats_.last_batch_prune_finalize_ms = (steady_time_s() - prune_start_s) * 1000.0;
-    stats_.parser_diagnostics = reducer_.timeline().diagnostics;
-    stats_.retained_samples = reducer_.timeline().samples.size();
+    ParsedUdpMavlinkDatagram parsed;
+    parsed.receive_time_s = datagram.receive_time_s;
+    parsed.byte_count = datagram.bytes.size();
+    parsed.parsed = animus::telemetry_core::parse_mavlink_stream(datagram.bytes);
+    ingest_parsed(parsed);
 }
 
 void LiveTelemetryBuffer::ingest(std::span<const UdpMavlinkDatagram> datagrams)
@@ -51,16 +41,39 @@ void LiveTelemetryBuffer::ingest(std::span<const UdpMavlinkDatagram> datagrams)
     {
         return;
     }
+    std::vector<ParsedUdpMavlinkDatagram> parsed_datagrams;
+    parsed_datagrams.reserve(datagrams.size());
+    for (const UdpMavlinkDatagram &datagram : datagrams)
+    {
+        ParsedUdpMavlinkDatagram parsed;
+        parsed.receive_time_s = datagram.receive_time_s;
+        parsed.byte_count = datagram.bytes.size();
+        parsed.parsed = animus::telemetry_core::parse_mavlink_stream(datagram.bytes);
+        parsed_datagrams.push_back(std::move(parsed));
+    }
+    ingest_parsed(parsed_datagrams);
+}
+
+void LiveTelemetryBuffer::ingest_parsed(const ParsedUdpMavlinkDatagram &datagram)
+{
+    ingest_parsed(std::span<const ParsedUdpMavlinkDatagram>(&datagram, 1U));
+}
+
+void LiveTelemetryBuffer::ingest_parsed(std::span<const ParsedUdpMavlinkDatagram> datagrams)
+{
+    if (datagrams.empty())
+    {
+        return;
+    }
     std::size_t batch_messages = 0U;
     std::size_t batch_samples = 0U;
     const double ingest_start_s = steady_time_s();
-    for (const UdpMavlinkDatagram &datagram : datagrams)
+    for (const ParsedUdpMavlinkDatagram &datagram : datagrams)
     {
         ++stats_.datagrams;
-        stats_.bytes += datagram.bytes.size();
-        const auto parsed = animus::telemetry_core::parse_mavlink_stream(datagram.bytes);
-        batch_messages += parsed.messages.size();
-        batch_samples += reducer_.ingest_parse_result(parsed, datagram.receive_time_s);
+        stats_.bytes += datagram.byte_count;
+        batch_messages += datagram.parsed.messages.size();
+        batch_samples += reducer_.ingest_parse_result(datagram.parsed, datagram.receive_time_s);
     }
     const double prune_start_s = steady_time_s();
     stats_.parsed_messages += batch_messages;

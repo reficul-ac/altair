@@ -189,8 +189,8 @@ bool valid_view_mode(std::string_view value)
 
 bool valid_active_panel(std::string_view value)
 {
-    return value == "view" || value == "layers" || value == "telemetry" || value == "capture" ||
-           value == "developer" || value == "settings";
+    return value == "view" || value == "layers" || value == "telemetry" || value == "signals" ||
+           value == "capture" || value == "developer" || value == "settings";
 }
 
 bool valid_map_orientation(std::string_view value)
