@@ -125,6 +125,7 @@ enum class UiNavigationMode
     Layers,
     Telemetry,
     Capture,
+    Settings,
     Developer,
 };
 
@@ -161,6 +162,10 @@ struct UiState
     bool request_center_selected_entity = false;
     bool request_fit_selected_entity = false;
     bool request_jump_latest_sample = false;
+    bool request_config_save = false;
+    bool request_config_save_default = false;
+    bool request_config_reload = false;
+    bool request_config_reset = false;
     std::optional<double> request_review_jump_time_s;
     std::optional<std::size_t> selected_review_marker_index;
     bool request_home_view = false;

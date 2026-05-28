@@ -1,6 +1,7 @@
 #include "options.hpp"
 #include "layer_offline.hpp"
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -85,20 +86,18 @@ TEST(AnimusOptions, RejectsInvalidViewMode)
 TEST(AnimusOptions, LoadsAndSavesWorkspaceMode)
 {
     const std::filesystem::path path =
-        std::filesystem::temp_directory_path() / "animus_options_workspace_test.json";
+        std::filesystem::temp_directory_path() / "animus_options_workspace_test.yaml";
     {
         std::ofstream output(path);
-        output << "{\n"
-               << "  \"schema\": \"animus.app_config.v1\",\n"
-               << "  \"workspace_mode\": \"advanced\"\n"
-               << "}\n";
+        output << "version: 1\napp:\n  workspace: advanced\n";
     }
 
     auto options = parse({"animus", "--config", path.string().c_str()});
     EXPECT_EQ(options.workspace_mode, animus::app::WorkspaceMode::Advanced);
 
     options.workspace_mode = animus::app::WorkspaceMode::Developer;
-    animus::app::save_app_config(options);
+    const auto save = animus::app::save_app_config(options);
+    EXPECT_TRUE(save.saved);
 
     const auto restored = parse({"animus", "--config", path.string().c_str()});
     EXPECT_EQ(restored.workspace_mode, animus::app::WorkspaceMode::Developer);
@@ -109,23 +108,100 @@ TEST(AnimusOptions, LoadsAndSavesWorkspaceMode)
 TEST(AnimusOptions, LoadsAndSavesViewMode)
 {
     const std::filesystem::path path =
-        std::filesystem::temp_directory_path() / "animus_options_view_mode_test.json";
+        std::filesystem::temp_directory_path() / "animus_options_view_mode_test.yaml";
     {
         std::ofstream output(path);
-        output << "{\n"
-               << "  \"schema\": \"animus.app_config.v1\",\n"
-               << "  \"view_mode\": \"map2d\"\n"
-               << "}\n";
+        output << "version: 1\nview:\n  mode: map2d\n";
     }
 
     auto options = parse({"animus", "--config", path.string().c_str()});
     EXPECT_EQ(options.view_mode, animus::app::ViewMode::Map2D);
 
     options.view_mode = animus::app::ViewMode::Terrain3D;
-    animus::app::save_app_config(options);
+    const auto save = animus::app::save_app_config(options);
+    EXPECT_TRUE(save.saved);
 
     const auto restored = parse({"animus", "--config", path.string().c_str()});
     EXPECT_EQ(restored.view_mode, animus::app::ViewMode::Terrain3D);
+
+    std::filesystem::remove(path);
+}
+
+TEST(AnimusOptions, ResolvesDefaultConfigPathFromXdg)
+{
+    setenv("XDG_CONFIG_HOME", "/tmp/animus-xdg", 1);
+
+    const auto options = parse({"animus", "--no-load-config"});
+
+    EXPECT_EQ(options.config_path.string(), "/tmp/animus-xdg/animus/animus.yaml");
+    EXPECT_FALSE(options.load_config);
+    EXPECT_EQ(options.config_load_status, "skipped");
+}
+
+TEST(AnimusOptions, NoLoadConfigSkipsExistingFileButKeepsSavePath)
+{
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "animus_options_no_load.yaml";
+    {
+        std::ofstream output(path);
+        output << "version: 1\napp:\n  workspace: developer\n";
+    }
+
+    const auto options = parse({"animus", "--config", path.string().c_str(), "--no-load-config"});
+
+    EXPECT_EQ(options.config_path, path);
+    EXPECT_FALSE(options.load_config);
+    EXPECT_EQ(options.workspace_mode, animus::app::WorkspaceMode::Operator);
+    EXPECT_EQ(options.config_load_status, "skipped");
+
+    std::filesystem::remove(path);
+}
+
+TEST(AnimusOptions, DuplicateConfigUsesLastPath)
+{
+    const std::filesystem::path first =
+        std::filesystem::temp_directory_path() / "animus_options_first.yaml";
+    const std::filesystem::path second =
+        std::filesystem::temp_directory_path() / "animus_options_second.yaml";
+    {
+        std::ofstream output(first);
+        output << "version: 1\napp:\n  workspace: advanced\n";
+    }
+    {
+        std::ofstream output(second);
+        output << "version: 1\napp:\n  workspace: developer\n";
+    }
+
+    const auto options =
+        parse({"animus", "--config", first.string().c_str(), "--config", second.string().c_str()});
+
+    EXPECT_EQ(options.config_path, second);
+    EXPECT_EQ(options.workspace_mode, animus::app::WorkspaceMode::Developer);
+
+    std::filesystem::remove(first);
+    std::filesystem::remove(second);
+}
+
+TEST(AnimusOptions, CliOverridesLoadedConfig)
+{
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "animus_options_cli_precedence.yaml";
+    {
+        std::ofstream output(path);
+        output << "version: 1\nview:\n  mode: map2d\ntelemetry:\n  live_udp_port: 14560\n";
+    }
+
+    const auto options = parse({"animus",
+                                "--config",
+                                path.string().c_str(),
+                                "--view-mode",
+                                "terrain3d",
+                                "--telemetry-live-udp",
+                                "127.0.0.1:14570"});
+
+    EXPECT_EQ(options.view_mode, animus::app::ViewMode::Terrain3D);
+    EXPECT_TRUE(options.telemetry_live_udp_enabled);
+    EXPECT_EQ(options.telemetry_live_udp_port, 14570U);
 
     std::filesystem::remove(path);
 }

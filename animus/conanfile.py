@@ -44,6 +44,7 @@ class AnimusRecipe(ConanFile):
         self.requires("libcurl/8.16.0")
         self.requires("libjpeg-turbo/3.1.2")
         self.requires("asio/1.36.0")
+        self.requires("yaml-cpp/0.8.0")
         self.requires("gdal/3.12.1")
         self.requires("protobuf/7.35.0")
         self.requires("hdf5/1.14.6", override=True)

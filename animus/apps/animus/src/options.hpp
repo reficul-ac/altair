@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "app_config.hpp"
 #include "animus/telemetry_core/telemetry.hpp"
 
 namespace animus::app
@@ -58,8 +59,19 @@ struct Options
     std::filesystem::path geoid_grid;
     std::filesystem::path config_path;
     bool load_config = true;
+    std::string config_load_status = "not loaded";
+    std::string config_save_status = "not saved";
+    bool config_dirty = false;
+    std::vector<std::string> config_diagnostics;
     WorkspaceMode workspace_mode = WorkspaceMode::Operator;
     ViewMode view_mode = ViewMode::Terrain3D;
+    std::string active_panel = "view";
+    bool follow_selected_entity = false;
+    std::string map_orientation = "north_up";
+    bool telemetry_tracks_visible = true;
+    bool telemetry_labels_visible = true;
+    bool developer_diagnostics_visible = false;
+    bool telemetry_diagnostics_visible = false;
     bool developer_workspace = false;
     std::filesystem::path capture_ppm;
     std::filesystem::path capture_png;
@@ -99,6 +111,9 @@ struct Options
 };
 
 Options parse_options(int argc, char **argv);
-void save_app_config(const Options &options);
+std::filesystem::path default_app_config_path();
+void apply_app_config_to_options(Options &options, const AppConfig &config);
+AppConfig app_config_from_options(const Options &options);
+AppConfigSaveResult save_app_config(Options &options);
 
 } // namespace animus::app

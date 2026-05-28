@@ -62,6 +62,7 @@ using animus::app::PlanVisualizationState;
 using animus::app::ScreenshotToolState;
 using animus::app::TelemetryPlaybackState;
 using animus::app::ToolMode;
+using animus::app::UiNavigationMode;
 using animus::app::UiState;
 using animus::app::Vec3;
 using animus::app::VehicleRuntimeStatus;
@@ -246,6 +247,120 @@ std::filesystem::path resolve_pack_root(const std::filesystem::path &requested)
         }
     }
     throw std::runtime_error("Terrain pack root does not exist: " + requested.string());
+}
+
+UiNavigationMode panel_mode_from_config_value(const std::string &value)
+{
+    if (value == "layers")
+    {
+        return UiNavigationMode::Layers;
+    }
+    if (value == "telemetry")
+    {
+        return UiNavigationMode::Telemetry;
+    }
+    if (value == "capture")
+    {
+        return UiNavigationMode::Capture;
+    }
+    if (value == "settings")
+    {
+        return UiNavigationMode::Settings;
+    }
+    if (value == "developer")
+    {
+        return UiNavigationMode::Developer;
+    }
+    return UiNavigationMode::View;
+}
+
+std::string panel_config_value(const UiNavigationMode mode)
+{
+    switch (mode)
+    {
+    case UiNavigationMode::View:
+        return "view";
+    case UiNavigationMode::Layers:
+        return "layers";
+    case UiNavigationMode::Telemetry:
+        return "telemetry";
+    case UiNavigationMode::Capture:
+        return "capture";
+    case UiNavigationMode::Settings:
+        return "settings";
+    case UiNavigationMode::Developer:
+        return "developer";
+    }
+    return "view";
+}
+
+MapOrientationMode map_orientation_from_config_value(const std::string &value)
+{
+    if (value == "track_up")
+    {
+        return MapOrientationMode::TrackUp;
+    }
+    if (value == "free_rotate")
+    {
+        return MapOrientationMode::FreeRotate;
+    }
+    return MapOrientationMode::NorthUp;
+}
+
+std::string map_orientation_config_value(const MapOrientationMode mode)
+{
+    switch (mode)
+    {
+    case MapOrientationMode::NorthUp:
+        return "north_up";
+    case MapOrientationMode::TrackUp:
+        return "track_up";
+    case MapOrientationMode::FreeRotate:
+        return "free_rotate";
+    }
+    return "north_up";
+}
+
+void apply_options_to_ui(const Options &options, UiState &ui_state, Map2DCamera &map_camera)
+{
+    ui_state.workspace_mode = options.workspace_mode;
+    ui_state.view_mode = options.view_mode;
+    ui_state.active_mode = panel_mode_from_config_value(options.active_panel);
+    ui_state.follow_selected_entity = options.follow_selected_entity;
+    ui_state.telemetry_tracks_visible = options.telemetry_tracks_visible;
+    ui_state.telemetry_labels_visible = options.telemetry_labels_visible;
+    ui_state.bathymetry_enabled = options.use_bathymetry;
+    ui_state.developer_diagnostics_visible = options.developer_diagnostics_visible;
+    ui_state.telemetry_diagnostics_visible = options.telemetry_diagnostics_visible;
+    map_camera.orientation = map_orientation_from_config_value(options.map_orientation);
+}
+
+void sync_options_from_ui(Options &options,
+                          const UiState &ui_state,
+                          const Map2DCamera &map_camera,
+                          bool overlay_enabled,
+                          float overlay_opacity)
+{
+    options.workspace_mode = ui_state.workspace_mode;
+    options.view_mode = ui_state.view_mode;
+    options.active_panel = panel_config_value(ui_state.active_mode);
+    options.follow_selected_entity = ui_state.follow_selected_entity;
+    options.map_orientation = map_orientation_config_value(map_camera.orientation);
+    options.telemetry_tracks_visible = ui_state.telemetry_tracks_visible;
+    options.telemetry_labels_visible = ui_state.telemetry_labels_visible;
+    options.use_bathymetry = ui_state.bathymetry_enabled;
+    options.developer_diagnostics_visible = ui_state.developer_diagnostics_visible;
+    options.telemetry_diagnostics_visible = ui_state.telemetry_diagnostics_visible;
+    options.overlay_enabled = overlay_enabled;
+    options.overlay_opacity = overlay_opacity;
+    for (animus::app::OverlayLayerConfig &layer : options.overlays)
+    {
+        if (layer.path == options.overlay_geotiff)
+        {
+            layer.enabled = overlay_enabled;
+            layer.opacity = overlay_opacity;
+        }
+    }
 }
 
 std::vector<animus::render_core::TerrainVertex>
@@ -2796,7 +2911,7 @@ void render_frame(const animus::render_core::GlfwWindow &window,
     glDisable(GL_BLEND);
 }
 
-int run(const Options &options)
+int run(Options options)
 {
     const std::filesystem::path pack_root = resolve_pack_root(options.pack_root);
     const animus::terrain_core::GeoidCorrectionGrid geoid_grid(options.geoid_grid);
@@ -2908,14 +3023,13 @@ int run(const Options &options)
     PlanVisualizationState plan_state;
     MapToolState map_tools;
     std::optional<MapToolPoint> map_context_point;
-    ui_state.workspace_mode = options.workspace_mode;
-    ui_state.view_mode = options.view_mode;
-    ui_state.bathymetry_enabled = options.use_bathymetry;
+    apply_options_to_ui(options, ui_state, input.map_camera);
     if (options.developer_workspace && options.debug_overlay)
     {
         ui_state.workspace_mode = animus::app::WorkspaceMode::Developer;
         ui_state.developer_diagnostics_visible = true;
     }
+    animus::app::AppConfig saved_config_baseline = animus::app::app_config_from_options(options);
     ui_state.telemetry_entity_selected = !telemetry.timeline.entities.empty();
     if (!options.plan.empty())
     {
@@ -3451,6 +3565,61 @@ int run(const Options &options)
                                overlay_opacity);
             debug_layer->end_frame();
         }
+        sync_options_from_ui(options, ui_state, input.map_camera, overlay_enabled, overlay_opacity);
+        options.config_dirty =
+            !(animus::app::app_config_from_options(options) == saved_config_baseline);
+        if (ui_state.request_config_reset)
+        {
+            animus::app::apply_app_config_to_options(options, animus::app::default_app_config());
+            options.config_load_status = "reset to defaults";
+            options.config_save_status = "not saved";
+            options.config_dirty = true;
+            options.config_diagnostics.push_back("reset preferences to defaults");
+            overlay_enabled = options.overlay_enabled;
+            overlay_opacity = options.overlay_opacity;
+            apply_options_to_ui(options, ui_state, input.map_camera);
+            ui_state.request_config_reset = false;
+        }
+        if (ui_state.request_config_reload)
+        {
+            const animus::app::AppConfigLoadResult result =
+                animus::app::load_app_config_file(options.config_path);
+            options.config_load_status = animus::app::app_config_load_status_label(result.status);
+            options.config_diagnostics.insert(options.config_diagnostics.end(),
+                                              result.diagnostics.begin(),
+                                              result.diagnostics.end());
+            if (result.status == animus::app::AppConfigLoadStatus::Loaded ||
+                result.status == animus::app::AppConfigLoadStatus::LoadedLegacy)
+            {
+                animus::app::apply_app_config_to_options(options, result.config);
+                overlay_enabled = options.overlay_enabled;
+                overlay_opacity = options.overlay_opacity;
+                apply_options_to_ui(options, ui_state, input.map_camera);
+                options.config_dirty = false;
+                saved_config_baseline = animus::app::app_config_from_options(options);
+            }
+            ui_state.request_config_reload = false;
+        }
+        if (ui_state.request_config_save || ui_state.request_config_save_default)
+        {
+            const std::filesystem::path original_path = options.config_path;
+            if (ui_state.request_config_save_default)
+            {
+                options.config_path = animus::app::default_app_config_path();
+            }
+            const animus::app::AppConfigSaveResult save_result =
+                animus::app::save_app_config(options);
+            if (save_result.saved)
+            {
+                saved_config_baseline = animus::app::app_config_from_options(options);
+            }
+            if (ui_state.request_config_save_default)
+            {
+                options.config_path = original_path;
+            }
+            ui_state.request_config_save = false;
+            ui_state.request_config_save_default = false;
+        }
         if (live_debug_csv.enabled() && telemetry.live)
         {
             const auto current = ui_state.telemetry_entity_selected
@@ -3573,10 +3742,6 @@ int run(const Options &options)
     std::cout << "Rendered frames: " << stats.frame_count()
               << "\nLast frame seconds: " << stats.last_frame_seconds()
               << "\nTotal render seconds: " << stats.total_seconds() << '\n';
-    Options saved_options = options;
-    saved_options.workspace_mode = ui_state.workspace_mode;
-    saved_options.view_mode = ui_state.view_mode;
-    animus::app::save_app_config(saved_options);
     return 0;
 }
 

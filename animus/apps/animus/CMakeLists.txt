@@ -1,7 +1,9 @@
 find_package(PNG REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 add_executable(
     animus
+    src/app_config.cpp
     src/main.cpp
     src/animus_app.cpp
     src/capture.cpp
@@ -22,6 +24,7 @@ target_link_libraries(
             animus_telemetry_live
             animus_vehicle_core
             PNG::PNG
+            yaml-cpp::yaml-cpp
 )
 
 target_compile_definitions(animus PRIVATE ANIMUS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")

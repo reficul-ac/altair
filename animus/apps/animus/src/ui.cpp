@@ -99,6 +99,8 @@ const char *mode_label(const UiNavigationMode mode)
         return "Telemetry";
     case UiNavigationMode::Capture:
         return "Capture";
+    case UiNavigationMode::Settings:
+        return "Settings";
     case UiNavigationMode::Developer:
         return "Developer";
     }
@@ -1026,7 +1028,7 @@ void draw_nav(UiState &ui_state)
     sanitize_active_mode(ui_state);
     ImGui::SetNextWindowPos(ImVec2(chrome_margin, status_bar_height + chrome_margin),
                             ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(nav_width, 342.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(nav_width, 382.0F), ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
@@ -1048,6 +1050,8 @@ void draw_nav(UiState &ui_state)
     nav_button(ui_state, UiNavigationMode::Telemetry);
     ImGui::Dummy(ImVec2(0.0F, 2.0F));
     nav_button(ui_state, UiNavigationMode::Capture);
+    ImGui::Dummy(ImVec2(0.0F, 2.0F));
+    nav_button(ui_state, UiNavigationMode::Settings);
     if (mode_visible_in_workspace(UiNavigationMode::Developer, ui_state.workspace_mode))
     {
         ImGui::Separator();
@@ -1056,6 +1060,44 @@ void draw_nav(UiState &ui_state)
     ImGui::End();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
+}
+
+void draw_settings_panel(const Options &options, UiState &ui_state)
+{
+    ImGui::Text("Config");
+    ImGui::TextWrapped("%s", options.config_path.string().c_str());
+    ImGui::Separator();
+    ImGui::Text("load %s", options.config_load_status.c_str());
+    ImGui::Text("save %s", options.config_save_status.c_str());
+    ImGui::Text("dirty %s", options.config_dirty ? "yes" : "no");
+    if (ImGui::Button("Save"))
+    {
+        ui_state.request_config_save = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save As Default"))
+    {
+        ui_state.request_config_save_default = true;
+    }
+    if (ImGui::Button("Reload"))
+    {
+        ui_state.request_config_reload = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset"))
+    {
+        ui_state.request_config_reset = true;
+    }
+    if (!options.config_diagnostics.empty())
+    {
+        ImGui::SeparatorText("Warnings");
+        const std::size_t first =
+            options.config_diagnostics.size() > 8U ? options.config_diagnostics.size() - 8U : 0U;
+        for (std::size_t index = first; index < options.config_diagnostics.size(); ++index)
+        {
+            ImGui::TextWrapped("%s", options.config_diagnostics[index].c_str());
+        }
+    }
 }
 
 void draw_view_panel(const Options &options,
@@ -2379,6 +2421,10 @@ void draw_app_workspace(const Options &options,
     case UiNavigationMode::Capture:
         ui_state.inspector_target = InspectorTarget::None;
         draw_capture_panel(screenshot_tool, mp4_recorder, advanced_workspace);
+        break;
+    case UiNavigationMode::Settings:
+        ui_state.inspector_target = InspectorTarget::None;
+        draw_settings_panel(options, ui_state);
         break;
     case UiNavigationMode::Developer:
         ui_state.inspector_target = InspectorTarget::TelemetrySource;

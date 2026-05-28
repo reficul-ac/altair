@@ -2,9 +2,7 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -179,223 +177,44 @@ std::string_view next_arg(int argc, char **argv, int &index, std::string_view op
     return argv[index];
 }
 
-std::optional<std::string> json_string_field(const std::string &text, const std::string &field)
+bool valid_workspace(std::string_view value)
 {
-    const std::string key = "\"" + field + "\"";
-    const std::size_t key_pos = text.find(key);
-    if (key_pos == std::string::npos)
-    {
-        return std::nullopt;
-    }
-    const std::size_t colon = text.find(':', key_pos + key.size());
-    const std::size_t first_quote = text.find('"', colon == std::string::npos ? key_pos : colon);
-    const std::size_t second_quote =
-        first_quote == std::string::npos ? std::string::npos : text.find('"', first_quote + 1U);
-    if (first_quote == std::string::npos || second_quote == std::string::npos)
-    {
-        return std::nullopt;
-    }
-    return text.substr(first_quote + 1U, second_quote - first_quote - 1U);
+    return value == "operator" || value == "advanced" || value == "developer";
 }
 
-std::optional<float> json_float_field(const std::string &text, const std::string &field)
+bool valid_view_mode(std::string_view value)
 {
-    const std::string key = "\"" + field + "\"";
-    const std::size_t key_pos = text.find(key);
-    if (key_pos == std::string::npos)
-    {
-        return std::nullopt;
-    }
-    const std::size_t colon = text.find(':', key_pos + key.size());
-    if (colon == std::string::npos)
-    {
-        return std::nullopt;
-    }
-    try
-    {
-        return std::stof(text.substr(colon + 1U));
-    }
-    catch (const std::exception &)
-    {
-        return std::nullopt;
-    }
+    return value == "terrain3d" || value == "map2d";
 }
 
-std::optional<int> json_int_field(const std::string &text, const std::string &field)
+bool valid_active_panel(std::string_view value)
 {
-    const std::string key = "\"" + field + "\"";
-    const std::size_t key_pos = text.find(key);
-    if (key_pos == std::string::npos)
-    {
-        return std::nullopt;
-    }
-    const std::size_t colon = text.find(':', key_pos + key.size());
-    if (colon == std::string::npos)
-    {
-        return std::nullopt;
-    }
-    try
-    {
-        return std::stoi(text.substr(colon + 1U));
-    }
-    catch (const std::exception &)
-    {
-        return std::nullopt;
-    }
+    return value == "view" || value == "layers" || value == "telemetry" || value == "capture" ||
+           value == "developer" || value == "settings";
 }
 
-std::optional<bool> json_bool_field(const std::string &text, const std::string &field)
+bool valid_map_orientation(std::string_view value)
 {
-    const std::string key = "\"" + field + "\"";
-    const std::size_t key_pos = text.find(key);
-    if (key_pos == std::string::npos)
-    {
-        return std::nullopt;
-    }
-    const std::size_t colon = text.find(':', key_pos + key.size());
-    if (colon == std::string::npos)
-    {
-        return std::nullopt;
-    }
-    const std::string_view value(text.data() + colon + 1U, text.size() - colon - 1U);
-    const std::size_t first = value.find_first_not_of(" \t\r\n");
-    if (first == std::string_view::npos)
-    {
-        return std::nullopt;
-    }
-    if (value.substr(first, 4) == "true")
-    {
-        return true;
-    }
-    if (value.substr(first, 5) == "false")
-    {
-        return false;
-    }
-    return std::nullopt;
-}
-
-std::vector<OverlayLayerConfig> json_overlay_layers(const std::string &text)
-{
-    const std::string key = "\"overlays\"";
-    const std::size_t key_pos = text.find(key);
-    const std::size_t array_begin =
-        key_pos == std::string::npos ? std::string::npos : text.find('[', key_pos + key.size());
-    const std::size_t array_end =
-        array_begin == std::string::npos ? std::string::npos : text.find(']', array_begin + 1U);
-    if (array_begin == std::string::npos || array_end == std::string::npos)
-    {
-        return {};
-    }
-
-    std::vector<OverlayLayerConfig> layers;
-    std::size_t cursor = array_begin + 1U;
-    while (cursor < array_end)
-    {
-        const std::size_t object_begin = text.find('{', cursor);
-        if (object_begin == std::string::npos || object_begin >= array_end)
-        {
-            break;
-        }
-        const std::size_t object_end = text.find('}', object_begin + 1U);
-        if (object_end == std::string::npos || object_end > array_end)
-        {
-            break;
-        }
-        const std::string object = text.substr(object_begin, object_end - object_begin + 1U);
-        OverlayLayerConfig layer;
-        if (const auto value = json_string_field(object, "path"))
-        {
-            layer.path = *value;
-        }
-        if (const auto value = json_bool_field(object, "enabled"))
-        {
-            layer.enabled = *value;
-        }
-        if (const auto value = json_float_field(object, "opacity"))
-        {
-            layer.opacity = std::clamp(*value, 0.0F, 1.0F);
-        }
-        if (const auto value = json_int_field(object, "draw_order"))
-        {
-            layer.draw_order = *value;
-        }
-        if (const auto value = json_string_field(object, "cache_identity"))
-        {
-            layer.cache_identity = *value;
-        }
-        if (!layer.path.empty())
-        {
-            layers.push_back(std::move(layer));
-        }
-        cursor = object_end + 1U;
-    }
-    return layers;
+    return value == "north_up" || value == "track_up" || value == "free_rotate";
 }
 
 void load_app_config(Options &options)
 {
-    if (!options.load_config || options.config_path.empty() ||
-        !std::filesystem::exists(options.config_path))
+    if (!options.load_config)
     {
+        options.config_load_status = "skipped";
+        options.config_diagnostics.push_back("config load skipped by --no-load-config");
         return;
     }
-    std::ifstream input(options.config_path);
-    if (!input)
+
+    const AppConfigLoadResult result = load_app_config_file(options.config_path);
+    options.config_load_status = app_config_load_status_label(result.status);
+    options.config_diagnostics.insert(
+        options.config_diagnostics.end(), result.diagnostics.begin(), result.diagnostics.end());
+    if (result.status == AppConfigLoadStatus::Loaded ||
+        result.status == AppConfigLoadStatus::LoadedLegacy)
     {
-        std::cerr << "failed to load config: " << options.config_path << '\n';
-        return;
-    }
-    const std::string text((std::istreambuf_iterator<char>(input)),
-                           std::istreambuf_iterator<char>());
-    if (const auto value = json_string_field(text, "cache_root"))
-    {
-        options.cache_root = *value;
-    }
-    if (const auto value = json_string_field(text, "pack_root"))
-    {
-        options.pack_root = *value;
-    }
-    if (const auto value = json_string_field(text, "overlay_geotiff"))
-    {
-        options.overlay_geotiff = *value;
-    }
-    if (const auto value = json_string_field(text, "geoid_grid"))
-    {
-        options.geoid_grid = *value;
-    }
-    if (const auto value = json_float_field(text, "overlay_opacity"))
-    {
-        options.overlay_opacity = std::clamp(*value, 0.0F, 1.0F);
-    }
-    if (auto overlays = json_overlay_layers(text); !overlays.empty())
-    {
-        options.overlays = std::move(overlays);
-    }
-    if (const auto value = json_string_field(text, "workspace_mode"))
-    {
-        try
-        {
-            options.workspace_mode = parse_workspace_mode(*value);
-        }
-        catch (const std::invalid_argument &)
-        {
-            std::cerr << "ignoring invalid workspace_mode in config: " << *value << '\n';
-        }
-    }
-    if (const auto value = json_string_field(text, "view_mode"))
-    {
-        try
-        {
-            options.view_mode = parse_view_mode(*value);
-            if (options.view_mode == ViewMode::Oblique25D)
-            {
-                options.view_mode = ViewMode::Terrain3D;
-            }
-        }
-        catch (const std::invalid_argument &)
-        {
-            std::cerr << "ignoring invalid view_mode in config: " << *value << '\n';
-        }
+        apply_app_config_to_options(options, result.config);
     }
 }
 
@@ -445,9 +264,23 @@ void sort_overlays(Options &options)
 
 } // namespace
 
+std::filesystem::path default_app_config_path()
+{
+    if (const char *xdg = std::getenv("XDG_CONFIG_HOME"); xdg != nullptr && xdg[0] != '\0')
+    {
+        return std::filesystem::path(xdg) / "animus" / "animus.yaml";
+    }
+    if (const char *home = std::getenv("HOME"); home != nullptr && home[0] != '\0')
+    {
+        return std::filesystem::path(home) / ".config" / "animus" / "animus.yaml";
+    }
+    return std::filesystem::path(".config") / "animus" / "animus.yaml";
+}
+
 Options parse_options(int argc, char **argv)
 {
     Options options;
+    options.config_path = default_app_config_path();
 
     for (int index = 1; index < argc; ++index)
     {
@@ -776,50 +609,127 @@ Options parse_options(int argc, char **argv)
     return options;
 }
 
-void save_app_config(const Options &options)
+void apply_app_config_to_options(Options &options, const AppConfig &config)
 {
+    if (valid_workspace(config.workspace_mode))
+    {
+        options.workspace_mode = parse_workspace_mode(config.workspace_mode);
+    }
+    else
+    {
+        options.config_diagnostics.push_back("invalid config value for app.workspace: " +
+                                             config.workspace_mode);
+    }
+    if (valid_view_mode(config.view_mode))
+    {
+        options.view_mode = parse_view_mode(config.view_mode);
+    }
+    else
+    {
+        options.config_diagnostics.push_back("invalid config value for view.mode: " +
+                                             config.view_mode);
+    }
+    if (valid_active_panel(config.active_panel))
+    {
+        options.active_panel = config.active_panel;
+    }
+    else
+    {
+        options.config_diagnostics.push_back("invalid config value for panels.active: " +
+                                             config.active_panel);
+    }
+    if (valid_map_orientation(config.map_orientation))
+    {
+        options.map_orientation = config.map_orientation;
+    }
+    else
+    {
+        options.config_diagnostics.push_back("invalid config value for view.map_orientation: " +
+                                             config.map_orientation);
+    }
+
+    options.width = config.window_width;
+    options.height = config.window_height;
+    options.follow_selected_entity = config.follow_selected;
+    options.telemetry_tracks_visible = config.telemetry_tracks_visible;
+    options.telemetry_labels_visible = config.telemetry_labels_visible;
+    options.use_bathymetry = config.bathymetry_enabled;
+    options.developer_diagnostics_visible = config.developer_diagnostics_visible;
+    options.telemetry_diagnostics_visible = config.telemetry_diagnostics_visible;
+    options.overlay_enabled = config.overlay_enabled;
+    options.overlay_opacity = config.overlay_opacity;
+    options.overlays.clear();
+    for (const AppConfigOverlay &overlay : config.overlays)
+    {
+        options.overlays.push_back({overlay.path,
+                                    overlay.enabled,
+                                    overlay.opacity,
+                                    overlay.draw_order,
+                                    {},
+                                    overlay.cache_identity});
+    }
+    options.telemetry_live_udp_host = config.telemetry_live_udp_host;
+    options.telemetry_live_udp_port = config.telemetry_live_udp_port;
+    options.telemetry_live_buffer_s = config.telemetry_live_buffer_s;
+    options.telemetry_live_max_samples = config.telemetry_live_max_samples;
+    options.telemetry_live_render_max_points = config.telemetry_live_render_max_points;
+}
+
+AppConfig app_config_from_options(const Options &options)
+{
+    AppConfig config;
+    config.workspace_mode = workspace_mode_config_value(options.workspace_mode);
+    config.active_panel = options.active_panel;
+    config.window_width = options.width;
+    config.window_height = options.height;
+    config.view_mode = view_mode_config_value(options.view_mode);
+    config.follow_selected = options.follow_selected_entity;
+    config.map_orientation = options.map_orientation;
+    config.telemetry_tracks_visible = options.telemetry_tracks_visible;
+    config.telemetry_labels_visible = options.telemetry_labels_visible;
+    config.bathymetry_enabled = options.use_bathymetry;
+    config.developer_diagnostics_visible = options.developer_diagnostics_visible;
+    config.telemetry_diagnostics_visible = options.telemetry_diagnostics_visible;
+    config.overlay_enabled = options.overlay_enabled;
+    config.overlay_opacity = options.overlay_opacity;
+    for (const OverlayLayerConfig &overlay : options.overlays)
+    {
+        config.overlays.push_back({overlay.path,
+                                   overlay.enabled,
+                                   overlay.opacity,
+                                   overlay.draw_order,
+                                   overlay.cache_identity});
+    }
+    config.telemetry_live_udp_host = options.telemetry_live_udp_host;
+    config.telemetry_live_udp_port = options.telemetry_live_udp_port;
+    config.telemetry_live_buffer_s = options.telemetry_live_buffer_s;
+    config.telemetry_live_max_samples = options.telemetry_live_max_samples;
+    config.telemetry_live_render_max_points = options.telemetry_live_render_max_points;
+    return config;
+}
+
+AppConfigSaveResult save_app_config(Options &options)
+{
+    AppConfigSaveResult result;
     if (options.config_path.empty())
     {
-        return;
+        options.config_save_status = "save failed";
+        options.config_diagnostics.push_back("config path is empty");
+        return result;
     }
-    if (!options.config_path.parent_path().empty())
+    result = save_app_config_file(options.config_path, app_config_from_options(options));
+    options.config_save_status = result.saved ? "saved" : "save failed";
+    options.config_dirty = !result.saved;
+    options.config_diagnostics.insert(
+        options.config_diagnostics.end(), result.diagnostics.begin(), result.diagnostics.end());
+    if (!result.saved)
     {
-        std::filesystem::create_directories(options.config_path.parent_path());
+        for (const std::string &diagnostic : result.diagnostics)
+        {
+            std::cerr << diagnostic << '\n';
+        }
     }
-    std::ofstream output(options.config_path);
-    if (!output)
-    {
-        std::cerr << "failed to save config: " << options.config_path << '\n';
-        return;
-    }
-    output << "{\n"
-           << "  \"schema\": \"animus.app_config.v1\",\n"
-           << "  \"pack_root\": \"" << options.pack_root.generic_string() << "\",\n"
-           << "  \"cache_root\": \"" << options.cache_root.generic_string() << "\",\n"
-           << "  \"overlay_geotiff\": \"" << options.overlay_geotiff.generic_string() << "\",\n"
-           << "  \"overlay_opacity\": " << options.overlay_opacity << ",\n"
-           << "  \"overlay_order\": " << options.overlay_order << ",\n"
-           << "  \"geoid_grid\": \"" << options.geoid_grid.generic_string() << "\",\n"
-           << "  \"overlays\": [\n";
-    for (std::size_t index = 0; index < options.overlays.size(); ++index)
-    {
-        const OverlayLayerConfig &layer = options.overlays[index];
-        output << "    {\"path\": \"" << layer.path.generic_string()
-               << "\", \"enabled\": " << (layer.enabled ? "true" : "false")
-               << ", \"opacity\": " << layer.opacity << ", \"draw_order\": " << layer.draw_order
-               << ", \"cache_identity\": \"" << layer.cache_identity << "\"}";
-        output << (index + 1U == options.overlays.size() ? "\n" : ",\n");
-    }
-    output << "  ],\n"
-           << "  \"workspace_mode\": \"" << workspace_mode_config_value(options.workspace_mode)
-           << "\",\n"
-           << "  \"view_mode\": \"" << view_mode_config_value(options.view_mode) << "\",\n"
-           << "  \"debug_overlay\": " << (options.debug_overlay ? "true" : "false") << ",\n"
-           << "  \"capture_path\": \"" << options.capture_png.generic_string() << "\",\n"
-           << "  \"capture_sequence_dir\": \"" << options.capture_sequence_dir.generic_string()
-           << "\",\n"
-           << "  \"capture_sequence_fps\": " << options.capture_sequence_fps << "\n"
-           << "}\n";
+    return result;
 }
 
 } // namespace animus::app
