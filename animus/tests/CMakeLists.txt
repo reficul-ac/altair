@@ -45,15 +45,18 @@ add_executable(
     ../apps/animus/src/layer_offline.cpp
     ../apps/animus/src/options.cpp
     ../apps/animus/src/plot_config.cpp
+    ../apps/animus/src/status_ribbon.cpp
     ../apps/animus/src/telemetry_signal_catalog.cpp
     app_config_tests.cpp
     options_tests.cpp
     plot_config_tests.cpp
+    status_ribbon_tests.cpp
 )
 target_include_directories(animus_options_tests PRIVATE ../apps/animus/src)
 target_link_libraries(
     animus_options_tests
     PRIVATE animus_geo_core
+            animus_render_core
             animus_terrain_core
             animus_telemetry_core
             animus_telemetry_live

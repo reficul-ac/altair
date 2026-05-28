@@ -72,6 +72,7 @@ struct Options
     bool telemetry_labels_visible = true;
     bool developer_diagnostics_visible = false;
     bool telemetry_diagnostics_visible = false;
+    AppConfigStatusThresholds status_thresholds;
     bool developer_workspace = false;
     std::filesystem::path capture_ppm;
     std::filesystem::path capture_png;

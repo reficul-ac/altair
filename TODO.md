@@ -47,6 +47,8 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Add selected-entity overlay preferences for label visibility, trail
   visibility, and tail length after the overlay renderer has app-local
   preference wiring.
+- [ ] Expose MAVLink heartbeat age to the Animus operator status ribbon once
+  heartbeat observation is available outside Developer diagnostics.
 
 ## Workflow, Artifacts, And Verification
 

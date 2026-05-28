@@ -127,6 +127,28 @@ TEST(AnimusOptions, LoadsAndSavesViewMode)
     std::filesystem::remove(path);
 }
 
+TEST(AnimusOptions, LoadsAndSavesStatusThresholds)
+{
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "animus_options_status_thresholds_test.yaml";
+    {
+        std::ofstream output(path);
+        output << "version: 1\nstatus_thresholds:\n  frame_time_warning_ms: 41\n";
+    }
+
+    auto options = parse({"animus", "--config", path.string().c_str()});
+    EXPECT_DOUBLE_EQ(options.status_thresholds.frame_time_warning_ms, 41.0);
+
+    options.status_thresholds.frame_time_warning_ms = 25.0;
+    const auto save = animus::app::save_app_config(options);
+    EXPECT_TRUE(save.saved);
+
+    const auto restored = parse({"animus", "--config", path.string().c_str()});
+    EXPECT_DOUBLE_EQ(restored.status_thresholds.frame_time_warning_ms, 25.0);
+
+    std::filesystem::remove(path);
+}
+
 TEST(AnimusOptions, ResolvesDefaultConfigPathFromXdg)
 {
     setenv("XDG_CONFIG_HOME", "/tmp/animus-xdg", 1);

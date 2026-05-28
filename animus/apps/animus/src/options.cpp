@@ -658,6 +658,7 @@ void apply_app_config_to_options(Options &options, const AppConfig &config)
     options.telemetry_diagnostics_visible = config.telemetry_diagnostics_visible;
     options.overlay_enabled = config.overlay_enabled;
     options.overlay_opacity = config.overlay_opacity;
+    options.status_thresholds = config.status_thresholds;
     options.overlays.clear();
     for (const AppConfigOverlay &overlay : config.overlays)
     {
@@ -706,6 +707,7 @@ AppConfig app_config_from_options(const Options &options)
     config.telemetry_live_buffer_s = options.telemetry_live_buffer_s;
     config.telemetry_live_max_samples = options.telemetry_live_max_samples;
     config.telemetry_live_render_max_points = options.telemetry_live_render_max_points;
+    config.status_thresholds = options.status_thresholds;
     config.plots = options.plots;
     return config;
 }
