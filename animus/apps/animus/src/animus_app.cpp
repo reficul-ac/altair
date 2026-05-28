@@ -2,6 +2,7 @@
 #include "map_tools.hpp"
 #include "options.hpp"
 #include "ui.hpp"
+#include "vehicle_visual_style.hpp"
 
 #include "animus/render_core/gl_info.hpp"
 #include "animus/render_core/imgui_layer.hpp"
@@ -838,11 +839,6 @@ struct VehicleRenderState
     VehicleRuntimeStatus status;
 };
 
-std::string entity_label(const animus::telemetry_core::EntityId id)
-{
-    return std::to_string(id.system_id) + ":" + std::to_string(id.component_id);
-}
-
 bool telemetry_sample_placeable(const animus::telemetry_core::TelemetrySample &sample)
 {
     return sample.fields.position;
@@ -870,6 +866,166 @@ std::optional<float> telemetry_heading_rad(const animus::telemetry_core::Telemet
         return static_cast<float>(*sample.yaw_rad);
     }
     return std::nullopt;
+}
+
+ImU32 im_color(const animus::app::VehicleVisualColor color)
+{
+    return IM_COL32(color.r, color.g, color.b, color.a);
+}
+
+ImVec2 rotated_icon_point(const ImVec2 center,
+                          const float heading,
+                          const float scale,
+                          const float local_x,
+                          const float local_y)
+{
+    const float c = std::cos(heading);
+    const float s = std::sin(heading);
+    return ImVec2(center.x + (local_x * c - local_y * s) * scale,
+                  center.y + (local_x * s + local_y * c) * scale);
+}
+
+void draw_fixed_wing_icon(ImDrawList *draw,
+                          const ImVec2 center,
+                          const float heading,
+                          const float scale,
+                          const ImU32 fill,
+                          const ImU32 stroke,
+                          const float stroke_thickness)
+{
+    const std::array<ImVec2, 3> wing = {
+        rotated_icon_point(center, heading, scale, 0.0F, -9.5F),
+        rotated_icon_point(center, heading, scale, -9.0F, 2.0F),
+        rotated_icon_point(center, heading, scale, 9.0F, 2.0F),
+    };
+    const std::array<ImVec2, 3> tail = {
+        rotated_icon_point(center, heading, scale, 0.0F, 2.0F),
+        rotated_icon_point(center, heading, scale, -4.5F, 7.5F),
+        rotated_icon_point(center, heading, scale, 4.5F, 7.5F),
+    };
+    draw->AddTriangleFilled(wing[0], wing[1], wing[2], fill);
+    draw->AddTriangleFilled(tail[0], tail[1], tail[2], fill);
+    draw->AddPolyline(
+        wing.data(), static_cast<int>(wing.size()), stroke, ImDrawFlags_Closed, stroke_thickness);
+    draw->AddPolyline(
+        tail.data(), static_cast<int>(tail.size()), stroke, ImDrawFlags_Closed, stroke_thickness);
+    draw->AddLine(rotated_icon_point(center, heading, scale, 0.0F, -8.0F),
+                  rotated_icon_point(center, heading, scale, 0.0F, 7.0F),
+                  stroke,
+                  stroke_thickness);
+}
+
+void draw_quadcopter_icon(ImDrawList *draw,
+                          const ImVec2 center,
+                          const float heading,
+                          const float scale,
+                          const ImU32 fill,
+                          const ImU32 stroke,
+                          const float stroke_thickness)
+{
+    constexpr std::array<std::pair<float, float>, 4> rotors = {
+        std::pair{-6.5F, -6.5F},
+        std::pair{6.5F, -6.5F},
+        std::pair{6.5F, 6.5F},
+        std::pair{-6.5F, 6.5F},
+    };
+    for (const auto &[x, y] : rotors)
+    {
+        draw->AddLine(
+            center, rotated_icon_point(center, heading, scale, x, y), stroke, stroke_thickness);
+    }
+    for (const auto &[x, y] : rotors)
+    {
+        const ImVec2 rotor = rotated_icon_point(center, heading, scale, x, y);
+        draw->AddCircleFilled(rotor, 2.9F * scale, fill, 14);
+        draw->AddCircle(rotor, 3.3F * scale, stroke, 14, stroke_thickness);
+    }
+    draw->AddCircleFilled(center, 3.8F * scale, fill, 16);
+    draw->AddCircle(center, 4.3F * scale, stroke, 16, stroke_thickness);
+}
+
+void draw_rover_icon(ImDrawList *draw,
+                     const ImVec2 center,
+                     const float heading,
+                     const float scale,
+                     const ImU32 fill,
+                     const ImU32 stroke,
+                     const float stroke_thickness)
+{
+    const std::array<ImVec2, 4> body = {
+        rotated_icon_point(center, heading, scale, -6.5F, -7.5F),
+        rotated_icon_point(center, heading, scale, 6.5F, -7.5F),
+        rotated_icon_point(center, heading, scale, 6.5F, 7.5F),
+        rotated_icon_point(center, heading, scale, -6.5F, 7.5F),
+    };
+    draw->AddConvexPolyFilled(body.data(), static_cast<int>(body.size()), fill);
+    draw->AddPolyline(
+        body.data(), static_cast<int>(body.size()), stroke, ImDrawFlags_Closed, stroke_thickness);
+    constexpr std::array<std::pair<float, float>, 4> wheels = {
+        std::pair{-8.0F, -4.5F},
+        std::pair{8.0F, -4.5F},
+        std::pair{-8.0F, 4.5F},
+        std::pair{8.0F, 4.5F},
+    };
+    for (const auto &[x, y] : wheels)
+    {
+        draw->AddCircleFilled(
+            rotated_icon_point(center, heading, scale, x, y), 2.1F * scale, stroke, 10);
+    }
+}
+
+void draw_surface_boat_icon(ImDrawList *draw,
+                            const ImVec2 center,
+                            const float heading,
+                            const float scale,
+                            const ImU32 fill,
+                            const ImU32 stroke,
+                            const float stroke_thickness)
+{
+    const std::array<ImVec2, 4> hull = {
+        rotated_icon_point(center, heading, scale, 0.0F, -10.0F),
+        rotated_icon_point(center, heading, scale, 6.5F, 0.0F),
+        rotated_icon_point(center, heading, scale, 0.0F, 8.0F),
+        rotated_icon_point(center, heading, scale, -6.5F, 0.0F),
+    };
+    draw->AddConvexPolyFilled(hull.data(), static_cast<int>(hull.size()), fill);
+    draw->AddPolyline(
+        hull.data(), static_cast<int>(hull.size()), stroke, ImDrawFlags_Closed, stroke_thickness);
+}
+
+void draw_vehicle_visual_icon(ImDrawList *draw,
+                              const animus::app::VehicleVisualStyle &style,
+                              const animus::app::VehicleVisualVariant &variant,
+                              const ImVec2 screen,
+                              const std::optional<float> heading)
+{
+    const float heading_rad = heading.value_or(0.0F);
+    const float scale = variant.scale;
+    const ImU32 fill = im_color(variant.fill);
+    const ImU32 stroke = im_color(variant.stroke);
+    draw->AddCircleFilled(screen, 9.5F * scale, im_color(variant.shadow), 20);
+    switch (style.icon_shape)
+    {
+    case animus::app::VehicleVisualIconShape::FixedWing:
+        draw_fixed_wing_icon(
+            draw, screen, heading_rad, scale, fill, stroke, variant.stroke_thickness);
+        break;
+    case animus::app::VehicleVisualIconShape::Quadcopter:
+        draw_quadcopter_icon(
+            draw, screen, heading_rad, scale, fill, stroke, variant.stroke_thickness);
+        break;
+    case animus::app::VehicleVisualIconShape::Rover:
+        draw_rover_icon(draw, screen, heading_rad, scale, fill, stroke, variant.stroke_thickness);
+        break;
+    case animus::app::VehicleVisualIconShape::SurfaceBoat:
+        draw_surface_boat_icon(
+            draw, screen, heading_rad, scale, fill, stroke, variant.stroke_thickness);
+        break;
+    case animus::app::VehicleVisualIconShape::Circle:
+        draw->AddCircleFilled(screen, 5.5F * scale, fill, 20);
+        draw->AddCircle(screen, 6.0F * scale, stroke, 20, variant.stroke_thickness);
+        break;
+    }
 }
 
 std::vector<animus::render_core::ModelPrimitive>
@@ -2007,7 +2163,8 @@ draw_telemetry_overlay(const Options &options,
                        const Camera &camera,
                        const Map2DCamera &map_camera,
                        const int framebuffer_width,
-                       const int framebuffer_height)
+                       const int framebuffer_height,
+                       const bool selected_model_visible)
 {
     const double draw_start_s = steady_time_s();
     TelemetryOverlayDrawStats stats;
@@ -2022,6 +2179,8 @@ draw_telemetry_overlay(const Options &options,
         ui_state.telemetry_entity_selected
             ? playback.timeline.sample_at(playback.selected_entity, playback.clock.time_s())
             : std::optional<animus::telemetry_core::TelemetrySample>{};
+    const animus::app::VehicleVisualRegistry &visual_registry =
+        animus::app::VehicleVisualRegistry::defaults();
 
     ImDrawList *draw = ImGui::GetBackgroundDrawList();
     const Mat4 mvp = active_view_projection(
@@ -2032,6 +2191,15 @@ draw_telemetry_overlay(const Options &options,
     if (ui_state.telemetry_tracks_visible && current && telemetry_sample_placeable(*current) &&
         track != nullptr && track->samples.size() >= 2U)
     {
+        const auto selected_entity =
+            std::find_if(playback.timeline.entities.begin(),
+                         playback.timeline.entities.end(),
+                         [&](const animus::telemetry_core::Entity &entity)
+                         { return entity.id == playback.selected_entity; });
+        const animus::app::VehicleVisualStyle &trail_style =
+            selected_entity == playback.timeline.entities.end()
+                ? visual_registry.default_style()
+                : animus::app::resolve_entity_visual_style(visual_registry, *selected_entity);
         const std::size_t max_points =
             playback.live ? options.telemetry_live_render_max_points : track->samples.size();
         const std::vector<std::size_t> trail_indices =
@@ -2054,7 +2222,10 @@ draw_telemetry_overlay(const Options &options,
                 project_to_screen(mvp, world, framebuffer_width, framebuffer_height);
             if (point.visible && previous)
             {
-                draw->AddLine(*previous, point.screen, IM_COL32(103, 181, 219, 178), 2.0F);
+                draw->AddLine(*previous,
+                              point.screen,
+                              im_color(trail_style.trail_color),
+                              trail_style.trail_thickness);
             }
             previous = point.visible ? std::optional<ImVec2>(point.screen) : std::nullopt;
         }
@@ -2135,34 +2306,33 @@ draw_telemetry_overlay(const Options &options,
         const bool selected =
             ui_state.telemetry_entity_selected && entity.id == playback.selected_entity;
         const bool stale = telemetry_sample_stale(playback, *sample);
-        const ImU32 fill =
-            stale ? IM_COL32(202, 132, 61, selected ? 238 : 188)
-                  : (selected ? IM_COL32(74, 172, 226, 255) : IM_COL32(236, 198, 83, 208));
-        const ImU32 stroke =
-            stale ? IM_COL32(238, 189, 125, selected ? 240 : 164)
-                  : (selected ? IM_COL32(220, 244, 255, 246) : IM_COL32(255, 239, 171, 154));
-        const float radius = selected ? 7.5F : 5.0F;
-        draw->AddCircleFilled(point.screen, radius + 2.0F, IM_COL32(10, 16, 18, 128), 20);
-        draw->AddCircleFilled(point.screen, radius, fill, 20);
-        draw->AddCircle(point.screen, radius + 0.5F, stroke, 20, selected ? 1.6F : 1.0F);
-        if (selected)
+        const bool degraded = terrain_unavailable || geoid_unavailable;
+        const animus::app::VehicleVisualStyle &style =
+            animus::app::resolve_entity_visual_style(visual_registry, entity);
+        const animus::app::VehicleVisualVariant &variant =
+            visual_registry.variant(style, {selected, stale, degraded});
+        const std::optional<float> heading = telemetry_heading_rad(*sample);
+        const bool suppress_selected_fallback_marker = selected && selected_model_visible;
+        if (!suppress_selected_fallback_marker)
         {
-            draw->AddCircle(point.screen, 13.5F, IM_COL32(118, 210, 255, 216), 28, 2.2F);
-            draw->AddCircle(point.screen, 17.0F, IM_COL32(118, 210, 255, 68), 32, 3.0F);
-        }
-
-        if (const auto heading = telemetry_heading_rad(*sample))
-        {
-            const float length = selected ? 30.0F : 16.0F;
-            const ImVec2 end(point.screen.x + std::sin(*heading) * length,
-                             point.screen.y - std::cos(*heading) * length);
-            draw->AddLine(point.screen,
-                          end,
-                          selected ? IM_COL32(164, 225, 255, 238) : IM_COL32(238, 242, 244, 132),
-                          selected ? 2.2F : 1.2F);
+            draw_vehicle_visual_icon(draw, style, variant, point.screen, heading);
             if (selected)
             {
-                draw->AddCircleFilled(end, 2.6F, IM_COL32(164, 225, 255, 238), 10);
+                draw->AddCircle(point.screen, 13.5F, IM_COL32(118, 210, 255, 216), 28, 2.2F);
+                draw->AddCircle(point.screen, 17.0F, IM_COL32(118, 210, 255, 68), 32, 3.0F);
+            }
+
+            if (heading &&
+                style.heading_indicator == animus::app::VehicleVisualHeadingIndicator::NoseLine)
+            {
+                const float length = selected ? 30.0F : 16.0F;
+                const ImVec2 end(point.screen.x + std::sin(*heading) * length,
+                                 point.screen.y - std::cos(*heading) * length);
+                draw->AddLine(point.screen, end, im_color(variant.heading), selected ? 2.2F : 1.2F);
+                if (selected)
+                {
+                    draw->AddCircleFilled(end, 2.6F, im_color(variant.heading), 10);
+                }
             }
         }
 
@@ -2173,11 +2343,7 @@ draw_telemetry_overlay(const Options &options,
             continue;
         }
         ++visible_labels;
-        std::string label = entity_label(entity.id);
-        if (stale)
-        {
-            label += " stale";
-        }
+        const std::string label = animus::app::vehicle_visual_label(style, entity.id, stale);
         const ImVec2 text_size = ImGui::CalcTextSize(label.c_str());
         ImVec2 label_min(point.screen.x + 12.0F, point.screen.y - text_size.y - 9.0F);
         label_min.x = std::clamp(
@@ -2185,22 +2351,10 @@ draw_telemetry_overlay(const Options &options,
         label_min.y = std::clamp(
             label_min.y, 46.0F, static_cast<float>(framebuffer_height) - text_size.y - 12.0F);
         const ImVec2 label_max(label_min.x + text_size.x + 12.0F, label_min.y + text_size.y + 7.0F);
-        draw->AddRectFilled(label_min,
-                            label_max,
-                            selected
-                                ? IM_COL32(18, 36, 46, 224)
-                                : (stale ? IM_COL32(54, 39, 28, 194) : IM_COL32(16, 20, 23, 166)),
-                            6.0F);
-        draw->AddRect(label_min,
-                      label_max,
-                      selected ? IM_COL32(107, 195, 238, 176) : IM_COL32(255, 255, 255, 34),
-                      6.0F,
-                      0,
-                      1.0F);
+        draw->AddRectFilled(label_min, label_max, im_color(variant.label_background), 6.0F);
+        draw->AddRect(label_min, label_max, im_color(variant.label_stroke), 6.0F, 0, 1.0F);
         draw->AddText(ImVec2(label_min.x + 6.0F, label_min.y + 3.0F),
-                      selected
-                          ? IM_COL32(236, 248, 255, 255)
-                          : (stale ? IM_COL32(248, 220, 184, 232) : IM_COL32(226, 232, 236, 214)),
+                      im_color(variant.label_text),
                       label.c_str());
     }
     stats.draw_ms = (steady_time_s() - draw_start_s) * 1000.0;
@@ -2574,7 +2728,7 @@ void render_frame(const animus::render_core::GlfwWindow &window,
         tile.mesh.draw();
     }
 
-    if (selected_model != nullptr)
+    if (selected_model != nullptr && !map_mode)
     {
         model_program.use();
         glUniformMatrix4fv(glGetUniformLocation(model_program.id(), "view_projection"),
@@ -3184,7 +3338,8 @@ int run(const Options &options)
 
         const animus::render_core::ModelMesh *selected_model = nullptr;
         Mat4 selected_model_matrix_value = identity();
-        if (vehicle_render.default_definition != nullptr && vehicle_render.default_model &&
+        if (ui_state.view_mode == animus::app::ViewMode::Terrain3D &&
+            vehicle_render.default_definition != nullptr && vehicle_render.default_model &&
             ui_state.telemetry_entity_selected)
         {
             const auto sample =
@@ -3232,7 +3387,8 @@ int run(const Options &options)
                                        input.camera,
                                        input.map_camera,
                                        window.framebuffer_width(),
-                                       window.framebuffer_height());
+                                       window.framebuffer_height(),
+                                       selected_model != nullptr);
             telemetry.live_overlay_draw_ms = overlay_stats.draw_ms;
             telemetry.live_rendered_trail_points = overlay_stats.rendered_trail_points;
             draw_plan_overlay(options,

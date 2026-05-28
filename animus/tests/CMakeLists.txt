@@ -74,6 +74,17 @@ target_link_libraries(animus_timeline_review_tests PRIVATE animus_telemetry_core
 animus_enable_warnings(animus_timeline_review_tests)
 gtest_discover_tests(animus_timeline_review_tests)
 
+add_executable(
+    animus_vehicle_visual_style_tests ../apps/animus/src/vehicle_visual_style.cpp
+                                      vehicle_visual_style_tests.cpp
+)
+target_include_directories(animus_vehicle_visual_style_tests PRIVATE ../apps/animus/src)
+target_link_libraries(
+    animus_vehicle_visual_style_tests PRIVATE animus_telemetry_core GTest::gtest_main
+)
+animus_enable_warnings(animus_vehicle_visual_style_tests)
+gtest_discover_tests(animus_vehicle_visual_style_tests)
+
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 add_test(NAME animus_python_tool_tests COMMAND ${Python3_EXECUTABLE} -m unittest discover -s

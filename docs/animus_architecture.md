@@ -494,28 +494,28 @@ before any richer model-loading work.
 
 Checklist:
 
-- [ ] Add an entity/vehicle visual style registry in `apps/animus` first unless
+- [x] Add an entity/vehicle visual style registry in `apps/animus` first unless
   shared policy clearly justifies `vehicle_core`.
-- [ ] Add fallback icons or billboards for quadcopter, fixed wing, rover,
+- [x] Add fallback icons or billboards for quadcopter, fixed wing, rover,
   boat/surface, and unknown entities.
-- [ ] Define per-style icon shape, label template, trail style, heading
+- [x] Define per-style icon shape, label template, trail style, heading
   indicator style, and optional scale.
-- [ ] Preserve current telemetry markers when style lookup fails.
-- [ ] Keep stale/degraded, selection, label, and track behavior identical or
+- [x] Preserve current telemetry markers when style lookup fails.
+- [x] Keep stale/degraded, selection, label, and track behavior identical or
   improved.
 
 Acceptance:
 
-- [ ] Entities look better in both 2D and 3D with fallback visuals.
-- [ ] Unknown entities still render.
-- [ ] GLB absence is not an error.
-- [ ] No vehicle policy moves into `telemetry_core`.
-- [ ] `render_core` does not learn telemetry semantics.
+- [x] Entities look better in both 2D and 3D with fallback visuals.
+- [x] Unknown entities still render.
+- [x] GLB absence is not an error.
+- [x] No vehicle policy moves into `telemetry_core`.
+- [x] `render_core` does not learn telemetry semantics.
 
 Validation:
 
-- [ ] `python3 animus/tools/verify_animus.py --screenshot-smoke --artifact-bundle`
-- [ ] `python3 animus/tools/verify_animus.py --live-udp-smoke`
+- [x] `python3 animus/tools/verify_animus.py --screenshot-smoke --artifact-bundle`
+- [x] `python3 animus/tools/verify_animus.py --live-udp-smoke`
 
 Deferred:
 

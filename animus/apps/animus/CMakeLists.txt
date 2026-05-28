@@ -10,6 +10,7 @@ add_executable(
     src/plan_visualization.cpp
     src/timeline_review.cpp
     src/ui.cpp
+    src/vehicle_visual_style.cpp
 )
 
 target_link_libraries(
