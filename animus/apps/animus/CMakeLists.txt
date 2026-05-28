@@ -13,6 +13,7 @@ add_executable(
     src/plot_series_buffer.cpp
     src/plot_ui.cpp
     src/plan_visualization.cpp
+    src/selected_vehicle_card.cpp
     src/telemetry_signal_catalog.cpp
     src/status_ribbon.cpp
     src/timeline_review.cpp

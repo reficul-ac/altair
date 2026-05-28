@@ -3,6 +3,7 @@
 #include "capture.hpp"
 #include "layer_offline.hpp"
 #include "plot_ui.hpp"
+#include "selected_vehicle_card.hpp"
 #include "status_ribbon.hpp"
 
 #include "animus/terrain_core/contracts.hpp"
@@ -147,11 +148,6 @@ std::string format_route_distance(const double distance_m)
     return format_value("%.0f m", distance_m);
 }
 
-std::string format_rate_mps(const std::optional<double> rate_mps)
-{
-    return rate_mps ? format_value("%.1f m/s", *rate_mps) : std::string("n/a");
-}
-
 std::string format_age(const double age_s)
 {
     if (age_s < 1.0)
@@ -176,24 +172,6 @@ void draw_status_dot(const ImVec4 color)
         radius,
         ImGui::ColorConvertFloat4ToU32(color),
         16);
-}
-
-const char *terrain_confidence_label(const TelemetryPlaybackState::TerrainConfidence confidence)
-{
-    switch (confidence)
-    {
-    case TelemetryPlaybackState::TerrainConfidence::ExactResidentTile:
-        return "exact resident tile";
-    case TelemetryPlaybackState::TerrainConfidence::FallbackResidentTile:
-        return "fallback resident tile";
-    case TelemetryPlaybackState::TerrainConfidence::SyntheticResidentTile:
-        return "synthetic resident tile";
-    case TelemetryPlaybackState::TerrainConfidence::Unavailable:
-        return "unavailable";
-    case TelemetryPlaybackState::TerrainConfidence::DatumUncertain:
-        return "datum uncertain";
-    }
-    return "unavailable";
 }
 
 ImVec4 pill_state_color(const PillState state)
@@ -1976,42 +1954,51 @@ void metric_row(const char *label, const std::string &value)
     ImGui::TextWrapped("%s", value.c_str());
 }
 
-void metric_row(const char *label, const char *value)
+ImVec4 selected_vehicle_status_color(const SelectedVehicleCardStatus status)
 {
-    metric_row(label, std::string(value));
+    switch (status)
+    {
+    case SelectedVehicleCardStatus::Ok:
+        return live_green;
+    case SelectedVehicleCardStatus::Caution:
+        return stale_amber;
+    case SelectedVehicleCardStatus::Warning:
+        return ImVec4(0.94F, 0.28F, 0.28F, 1.0F);
+    case SelectedVehicleCardStatus::Unknown:
+        return quiet_gray;
+    }
+    return quiet_gray;
+}
+
+void metric_grid(const char *id, const std::vector<SelectedVehicleCardMetric> &metrics)
+{
+    if (ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingStretchSame))
+    {
+        for (const auto &metric : metrics)
+        {
+            ImGui::TableNextColumn();
+            ImGui::TextColored(text_muted, "%s", metric.label.c_str());
+            ImGui::TextUnformatted(metric.value.c_str());
+        }
+        ImGui::EndTable();
+    }
 }
 
 void draw_selected_entity_card(TelemetryPlaybackState &playback,
                                const VehicleRuntimeStatus &vehicle_status,
+                               const AppConfigStatusThresholds &thresholds,
                                UiState &ui_state)
 {
-    if (!ui_state.telemetry_entity_selected)
-    {
-        ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Selected Entity");
-        muted_text("No entity selected.");
-        ImGui::Text("source %s", playback.live ? "Live UDP" : "Playback");
-        ImGui::Text("entities %zu", playback.timeline.entities.size());
-        return;
-    }
-
-    const auto sample =
-        playback.timeline.sample_at(playback.selected_entity, playback.clock.time_s());
-    const bool degraded = !sample || entity_degraded(*sample);
-    const bool stale = sample ? entity_stale(playback, *sample) : false;
-    const ImVec4 state_color = degraded || stale ? stale_amber : live_green;
-    ImGui::TextColored(
-        ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "%s", entity_label(playback.selected_entity).c_str());
+    const SelectedVehicleCardModel card =
+        build_selected_vehicle_card_model(playback, ui_state, vehicle_status, thresholds);
+    const ImVec4 state_color = selected_vehicle_status_color(card.status);
+    ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "%s", card.entity_label.c_str());
     ImGui::SameLine();
     draw_status_dot(state_color);
-    ImGui::TextColored(state_color,
-                       "%s",
-                       !sample ? "no current sample"
-                               : (degraded ? "degraded position" : (stale ? "stale" : "valid")));
-    ImGui::TextColored(text_muted,
-                       "%s / %s / model %s",
-                       vehicle_status.default_vehicle_name.c_str(),
-                       vehicle_status.default_vehicle_type.c_str(),
-                       vehicle_status.model_status.c_str());
+    ImGui::TextColored(state_color, "%s", card.status_label.c_str());
+    ImGui::TextColored(text_muted, "%s", card.visual_assignment.c_str());
+    ImGui::TextColored(text_muted, "model %s", card.visual_status.c_str());
+
     ImGui::SeparatorText("Controls");
     ImGui::Checkbox("Follow selected", &ui_state.follow_selected_entity);
     if (ImGui::Button("Center"))
@@ -2023,60 +2010,40 @@ void draw_selected_entity_card(TelemetryPlaybackState &playback,
     {
         ui_state.request_fit_selected_entity = true;
     }
+    ImGui::SameLine();
+    ImGui::Checkbox("Labels", &ui_state.telemetry_labels_visible);
+    ImGui::SameLine();
+    ImGui::Checkbox("Tracks", &ui_state.telemetry_tracks_visible);
 
-    if (!sample)
-    {
-        ImGui::Separator();
-        muted_text("No current sample for the selected entity.");
-        return;
-    }
+    ImGui::SeparatorText("Test");
+    metric_row("Test", card.test);
+    metric_row("Phase", card.phase);
+    metric_row("Target", card.target);
+
+    ImGui::SeparatorText("Telemetry");
+    metric_row("Mode", card.mode);
+    metric_row("State", card.telemetry_state);
+    metric_row("Age", card.telemetry_age);
+    metric_row("Confidence", card.terrain_confidence);
 
     ImGui::SeparatorText("Position");
-    metric_row("State", playback.live ? "live UDP" : "offline playback");
-    metric_row("Age", format_age(entity_age_s(playback, *sample)));
-    metric_row("Lat/Lon",
-               format_value("%.7f", sample->lat_deg) + "  " +
-                   format_value("%.7f", sample->lon_deg));
-    metric_row("Altitude MSL", format_distance_m(sample->altitude_msl_m));
-    metric_row("Relative Alt", format_distance_m(sample->altitude_relative_m));
-    metric_row("Datum", altitude_datum_label(sample->altitude_datum));
-    metric_row("Terrain", format_distance_m(playback.selected_entity_terrain.terrain_elevation_m));
-    metric_row("Clearance",
-               format_distance_m(playback.selected_entity_terrain.terrain_clearance_m));
-    metric_row("Confidence", terrain_confidence_label(playback.selected_entity_terrain.confidence));
-
+    metric_grid("##selected_vehicle_position_metrics", card.position_metrics);
     ImGui::SeparatorText("Motion");
-    metric_row("Ground Speed", format_speed(sample->ground_speed_mps));
-    metric_row("Climb", format_rate_mps(sample->climb_rate_mps));
-    metric_row("Heading",
-               sample->heading_deg ? format_value("%.1f deg", *sample->heading_deg) : "n/a");
-    metric_row("Roll", sample->roll_rad ? format_value("%.3f rad", *sample->roll_rad) : "n/a");
-    metric_row("Pitch", sample->pitch_rad ? format_value("%.3f rad", *sample->pitch_rad) : "n/a");
-    metric_row("Yaw", sample->yaw_rad ? format_value("%.3f rad", *sample->yaw_rad) : "n/a");
+    metric_grid("##selected_vehicle_motion_metrics", card.motion_metrics);
 
-    if (stale || degraded ||
-        playback.selected_entity_terrain.confidence ==
-            TelemetryPlaybackState::TerrainConfidence::DatumUncertain)
+    if (!card.warnings.empty())
     {
         ImGui::SeparatorText("Warnings");
-        if (stale)
+        for (const std::string &warning : card.warnings)
         {
-            ImGui::TextColored(stale_amber, "Telemetry is stale");
-        }
-        if (degraded)
-        {
-            ImGui::TextColored(stale_amber, "Position is degraded");
-        }
-        if (playback.selected_entity_terrain.confidence ==
-            TelemetryPlaybackState::TerrainConfidence::DatumUncertain)
-        {
-            ImGui::TextColored(stale_amber, "Altitude datum is uncertain");
+            ImGui::TextColored(stale_amber, "%s", warning.c_str());
         }
     }
 }
 
 void draw_inspector(TelemetryPlaybackState &playback,
                     const VehicleRuntimeStatus &vehicle_status,
+                    const AppConfigStatusThresholds &thresholds,
                     UiState &ui_state)
 {
     if (ui_state.inspector_target == InspectorTarget::None || ImGui::GetIO().DisplaySize.x < 980.0F)
@@ -2101,7 +2068,7 @@ void draw_inspector(TelemetryPlaybackState &playback,
     }
     else if (ui_state.inspector_target == InspectorTarget::Entity)
     {
-        draw_selected_entity_card(playback, vehicle_status, ui_state);
+        draw_selected_entity_card(playback, vehicle_status, thresholds, ui_state);
     }
     else if (ui_state.inspector_target == InspectorTarget::TelemetrySource)
     {
@@ -2491,7 +2458,7 @@ void draw_app_workspace(Options &options,
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
 
-    draw_inspector(playback, vehicle_status, ui_state);
+    draw_inspector(playback, vehicle_status, options.status_thresholds, ui_state);
     draw_plot_shelf(options, playback, runtime_signals, ui_state.plot_ui);
     draw_bottom_timeline(playback, ui_state);
 }

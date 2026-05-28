@@ -44,9 +44,11 @@ Reusable Bayek framework follow-up is tracked separately in
   path after the operator UI/entity overlay foundation is stable.
 - [ ] Add per-entity Animus vehicle assignment policy and UI after the default
   Generic RC Plane model path is exercised in operator workflows.
-- [ ] Add selected-entity overlay preferences for label visibility, trail
-  visibility, and tail length after the overlay renderer has app-local
-  preference wiring.
+- [ ] Add selected-entity tail length preference once the overlay renderer has
+  app-local tail-length wiring.
+- [ ] Add persisted Animus selected-vehicle test metadata for test name, phase,
+  and target values once the display-only flight-test card placeholders are
+  exercised.
 - [ ] Expose MAVLink heartbeat age to the Animus operator status ribbon once
   heartbeat observation is available outside Developer diagnostics.
 

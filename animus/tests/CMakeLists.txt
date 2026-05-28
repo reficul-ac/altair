@@ -45,11 +45,13 @@ add_executable(
     ../apps/animus/src/layer_offline.cpp
     ../apps/animus/src/options.cpp
     ../apps/animus/src/plot_config.cpp
+    ../apps/animus/src/selected_vehicle_card.cpp
     ../apps/animus/src/status_ribbon.cpp
     ../apps/animus/src/telemetry_signal_catalog.cpp
     app_config_tests.cpp
     options_tests.cpp
     plot_config_tests.cpp
+    selected_vehicle_card_tests.cpp
     status_ribbon_tests.cpp
 )
 target_include_directories(animus_options_tests PRIVATE ../apps/animus/src)

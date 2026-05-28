@@ -216,6 +216,779 @@ enum class ToolMode {
 };
 ```
 
+### Animus Test Flight View V1: Persistent Config, User Plots, And Operator Tools
+
+Status: planned roadmap only. This section documents future implementation
+work; it does not mark any feature below as implemented.
+
+This roadmap builds on the current Animus foundations:
+
+- native C++20/OpenGL/Dear ImGui app shell
+- app-owned UI/runtime policy
+- existing app config persistence hooks
+- 2D/3D terrain modes
+- live/offline telemetry
+- timeline and capture hooks
+- vehicle visual/fallback policy
+- live MAVLink ingestion through `telemetry_live`
+
+Non-negotiable architecture rules for every phase:
+
+- `apps/animus` owns UI, runtime policy, plot configuration, layout presets,
+  selected entity behavior, app config, vehicle visual assignment, and operator
+  workflows.
+- `telemetry_core` owns deterministic telemetry models, MAVLink frame parsing,
+  reducers, offline imports, and parser/import diagnostics. It must stay
+  vehicle-agnostic.
+- `telemetry_live` owns UDP receive, live buffers, dropped datagram/sample
+  stats, bounded history, and render-thread draining.
+- `render_core` remains rendering primitives only. It must not understand
+  MAVLink, entities, vehicle policy, or app UI.
+- `terrain_core` owns terrain streaming/cache/source contracts. It must not own
+  UI state.
+- `vehicle_core` owns reusable descriptors, registry validation, and CPU-side
+  asset loading. It must not own selected-entity UI policy.
+- New runtime histories must be bounded. Do not add unbounded plot history or
+  MAVLink field history.
+- Do not add command/control UI. Animus is a terrain/test-flight viewer, not a
+  GCS command authority surface.
+
+Future work must preserve these current capabilities:
+
+- 2D and 3D terrain view modes
+- live/offline telemetry
+- entity markers, labels, tracks/tails, heading indicators, stale/degraded
+  states
+- follow-selected camera behavior
+- offline playback timeline
+- live telemetry status strip
+- terrain/layer controls
+- capture controls
+- developer diagnostics
+- vehicle fallback icons and selected Generic RC Plane GLB behavior
+- `--config PATH` and `--no-load-config`
+
+#### Phase 0: Recon And Guardrails
+
+Status: planned prerequisite.
+
+Required tasks:
+
+- Inspect current config implementation: `--config`, `--no-load-config`, config
+  save/load, existing parser style, and vehicle descriptor YAML handling.
+- Inspect UI state: navigation modes, panel visibility, selected entity,
+  camera/follow state, layer toggles, and timeline playback.
+- Inspect telemetry flow: raw MAVLink parse, reduction into `TelemetrySample`,
+  live render-thread drain, parser diagnostics, message counters, and whether
+  raw decoded fields are retained.
+- Run baseline verification before behavior changes:
+
+```bash
+python3 animus/tools/verify_animus.py
+```
+
+Acceptance:
+
+- Current config path and parser support are understood.
+- App-local runtime UI state storage point is identified.
+- Plot data feed hook is identified without blocking UDP receive or render.
+- Baseline tests pass before behavior changes.
+
+Audit artifact: [Animus Test Flight View Phase 0 Audit](animus_test_flight_view_phase0_audit.md).
+
+#### Phase 1: Broader Persistent YAML App Config
+
+Status: planned.
+
+Goal: add broader user-editable YAML app config so a user can configure view,
+panels, plot layout, map mode, thresholds, and preferred defaults, save them,
+relaunch, and get the same setup.
+
+Likely files:
+
+- Add `animus/apps/animus/src/app_config.hpp`
+- Add `animus/apps/animus/src/app_config.cpp`
+- Update `animus/apps/animus/src/options.hpp`
+- Update `animus/apps/animus/src/options.cpp`
+- Update `animus/apps/animus/src/animus_app.cpp`
+- Update `animus/apps/animus/src/ui.cpp`
+- Add `animus/tests/app_config_tests.cpp`
+- Extend `animus/tests/options_tests.cpp`
+
+Config path policy:
+
+- Support `--config PATH`.
+- Support `--no-load-config`.
+- Default Linux path: `$XDG_CONFIG_HOME/animus/animus.yaml`.
+- Fallback: `~/.config/animus/animus.yaml`.
+- Explicit smoke/test path is allowed:
+  `animus/build/apps/animus/animus --config artifacts/animus/test-config.yaml`.
+
+Config behavior:
+
+- Use a versioned schema with `version: 1`.
+- Unknown keys are ignored with warnings, not fatal.
+- Missing keys use safe defaults.
+- Bad config does not prevent startup; show warning and continue.
+- Save atomically through temp file, flush/close, and rename.
+- Do not write every frame.
+- Save only intentional user preferences, not live counters, frame timing, or
+  packet stats.
+- Save no unsafe command/control state.
+- Add Settings UI with config path, load status, dirty indicator, Save, Save As
+  Default, Reload, and Reset.
+- Optional later actions: Open Config Location, Export Profile, and Import
+  Profile.
+
+Initial schema groups:
+
+- `app`: workspace, operator/developer mode, demo window flag
+- `window`: size and optional position
+- `view`: terrain view mode, camera preset, follow-selected, north-up/track-up,
+  cursor/elevation display, height scale
+- `panels`: status ribbon, selected vehicle card, plot shelf, timeline, layer
+  stack, MAVLink inspector, terrain probe, capture, developer diagnostics
+- `layers`: vehicle icons/labels, track tail, heading vectors, planned route,
+  geofence, terrain confidence, clearance overlay, tile debug, fallback
+  highlight
+- `telemetry`: preferred source, live UDP host/port, live buffer seconds, max
+  samples, render max points, selected entity, stale/degraded thresholds
+- `status_thresholds`: terrain clearance, roll/pitch, frame time, link Hz,
+  telemetry gap
+- `vehicle_visuals`: per-system/component assignments
+- `plots`: plot shelf defaults and user-authored strips
+
+Acceptance:
+
+- Launch with no config uses defaults.
+- Launch with `--config PATH` loads config.
+- Launch with `--no-load-config` ignores config.
+- Saving writes readable YAML.
+- Relaunch restores workspace, view mode, panels, follow-selected, selected
+  entity if available, layer toggles, plot definitions, and thresholds.
+- CLI flags override loaded config for that launch.
+- Tests cover defaults, load/save round trip, unknown keys, bad values, and
+  CLI/config precedence.
+
+#### Phase 2: Telemetry Signal Catalog And Field Access Layer
+
+Status: planned.
+
+Goal: create a unified plottable signal catalog so UI can list fields and users
+can build Desmos-style plots with source -> message/sample/derived -> field ->
+transform -> unit.
+
+Likely files:
+
+- Add `animus/apps/animus/src/telemetry_signal_catalog.hpp`
+- Add `animus/apps/animus/src/telemetry_signal_catalog.cpp`
+- Add telemetry-core MAVLink catalog support only if truly reusable and
+  vehicle-agnostic.
+
+Core types:
+
+- `SignalRef`: source, MAVLink message name, field name, optional future entity
+  filter
+- `SignalInfo`: display name, unit, default scale/offset, numeric flag,
+  live/offline availability
+- `SignalSample`: time, value, valid
+- `SignalCatalog`: list and lookup signals
+
+Initial sample fields:
+
+- `time_s`
+- `lat_deg`
+- `lon_deg`
+- `altitude_msl_m`
+- `altitude_relative_m`
+- `roll_rad`
+- `pitch_rad`
+- `yaw_rad`
+- `ground_speed_mps`
+- `climb_rate_mps`
+- `heading_deg`
+
+Transforms:
+
+- `none`
+- `rad_to_deg`
+- `deg_to_rad`
+- `meters_to_feet`
+- `mps_to_kts`
+- `mps_to_mph`
+- `abs`
+- `negate`
+
+Derived fields:
+
+- terrain elevation
+- terrain clearance
+- forward clearance at 5/10/20/30 seconds
+- link Hz
+- telemetry age/gap
+- packet/drop counts
+- frame time
+- resident tile count
+- upload bytes this frame
+
+Supported MAVLink fields:
+
+- Start with decoded messages: `HEARTBEAT`, `GLOBAL_POSITION_INT`,
+  `GPS_RAW_INT`, `ATTITUDE`, `VFR_HUD`.
+- Design for future additions: `SYS_STATUS`, `BATTERY_STATUS`, `RC_CHANNELS`,
+  `STATUSTEXT`, `MISSION_CURRENT`, `NAV_CONTROLLER_OUTPUT`,
+  `LOCAL_POSITION_NED`, `SYSTEM_TIME`.
+- Do not fake unavailable fields. UI must distinguish unsupported, not decoded,
+  not observed yet, and not numeric.
+
+Raw MAVLink observation path:
+
+- Add bounded `MavlinkValueStore` in app or `telemetry_core` if reusable.
+- Update/store on render-thread drain when possible.
+- Do not lock UDP receive on UI structures.
+- Do not parse every field into strings every frame.
+- Track latest numeric value and bounded history per
+  sysid/component/message/field.
+
+Acceptance:
+
+- UI can list plottable sample fields.
+- UI can list supported MAVLink message fields.
+- UI can distinguish supported-but-not-observed from unsupported.
+- No receive/render slowdown.
+- Tests cover signal listing, lookup, unknown field rejection, and transform
+  correctness.
+
+#### Phase 3: User-Defined Real-Time Strip Plot System
+
+Status: planned.
+
+Goal: build lightweight user-defined strip plots where users can add a plot,
+choose sources/fields/transforms, and see live data. Plots must not be
+hardcoded widgets.
+
+Likely files:
+
+- Add `animus/apps/animus/src/plot_config.hpp`
+- Add `animus/apps/animus/src/plot_config.cpp`
+- Add `animus/apps/animus/src/plot_series_buffer.hpp`
+- Add `animus/apps/animus/src/plot_series_buffer.cpp`
+- Add `animus/apps/animus/src/plot_ui.hpp`
+- Add `animus/apps/animus/src/plot_ui.cpp`
+- Add `animus/tests/plot_config_tests.cpp`
+- Add `animus/tests/plot_series_buffer_tests.cpp`
+
+Core behavior:
+
+- V1 supports time on X-axis only, but stores X config for future XY plots.
+- Bound buffers by both time window and max point count.
+- Downsample draw if point count exceeds configured render limit.
+- Use ImGui draw lists or existing ImGui primitives. Do not add ImPlot unless
+  separately approved/adopted.
+- Avoid expensive hot-loop allocations beyond normal ImGui use.
+
+Strip plot UI:
+
+- Plot Shelf bottom docked by default.
+- Collapsible and resizable.
+- Multiple stacked strips.
+- Live mode follows latest sample.
+- Offline mode follows playback time.
+- Pause plot shelf without pausing telemetry.
+- Clear plot history without clearing telemetry buffer.
+- Show title, Y min/max, time window, current value, pause/live toggle,
+  clear/edit buttons, series enable toggles, and unavailable signal warnings.
+
+Desmos-style editor:
+
+- `+ Add Plot`
+- `+ Add Series`
+- Duplicate Plot
+- Delete Plot
+- Save Plot Preset
+- Reset to Defaults
+- Source dropdown: sample, derived, MAVLink, runtime
+- MAVLink message dropdown when needed
+- Field dropdown/search
+- Transform dropdown
+- Scale, offset, unit
+- Selected entity or sysid/component selector for MAVLink
+- Search messages and fields
+- One-click presets: Altitude/Clearance, Speed/Climb, Attitude, Link Quality,
+  Plan Error, Performance, Custom MAVLink
+
+Default plots:
+
+- Altitude / Clearance: MSL altitude, relative altitude, terrain clearance
+- Speed / Climb: ground speed, climb rate
+- Attitude: roll/pitch/yaw transformed to degrees
+- Link Quality: link Hz, telemetry age, telemetry gap
+- Render Health: frame time, resident tiles
+
+Acceptance:
+
+- User can add plot and series from UI.
+- User can choose telemetry sample fields.
+- User can choose supported/observed MAVLink fields.
+- User can rename plot and series.
+- User can choose transforms like rad-to-deg.
+- Plots update live.
+- Plot definitions save to YAML and restore on relaunch.
+- Tests cover config serialization and ring buffer pruning.
+
+#### Phase 4: QGC-Like Operator Status Ribbon
+
+Status: planned.
+
+Goal: add a compact QGC-inspired status ribbon focused on Animus as a
+terrain/test-flight viewer, not a full GCS.
+
+Pills:
+
+- `TEST`
+- `LINK`
+- `VEHICLE`
+- `TERRAIN`
+- `PLAN`
+- `REC`
+- `PERF`
+- `DATA`
+
+Pill behavior:
+
+- State: OK, Caution, Warning, Unknown
+- Compact summary
+- Click popover with details and suggested action
+- Thresholds driven by config
+- No command/control actions
+
+Status sources:
+
+- TEST: live/offline/idle, paused/stale/no entity, run time, last event
+- LINK: packet age, estimated Hz, datagram drops, sample drops, parser rejects,
+  heartbeat age
+- VEHICLE: selected entity, detected type, assigned visual, model/icon/fallback,
+  stale/degraded
+- TERRAIN: elevation source, cache tier, fallback/synthetic status,
+  datum/geoid state, clearance, confidence
+- PLAN: loaded/not loaded, deviation/geofence/clearance warning if available
+- REC: screenshot/MP4/recording status
+- PERF: frame time, upload pressure, resident tiles, GPU memory if available
+- DATA: parsed messages, unsupported/skipped records, signed-v2 rejects, CRC
+  failures, import diagnostics
+
+Acceptance:
+
+- Ribbon visible in operator mode.
+- Developer diagnostics remain available but not front-and-center.
+- Popovers explain actionable reasons.
+- Thresholds persist in YAML.
+
+#### Phase 5: Selected Vehicle / Flight Test Card
+
+Status: planned, reusing existing selected-entity UI where possible.
+
+Goal: add a compact selected vehicle card optimized for flight testing.
+
+Displayed values:
+
+- Entity sysid/component
+- Visual assignment and fallback/model status
+- Live/offline mode
+- Telemetry age
+- Alt MSL, alt relative
+- Terrain elevation and clearance
+- Ground speed and climb
+- Heading
+- Attitude roll/pitch/yaw
+- Status badge
+
+Optional test metadata:
+
+- Test name
+- Manual phase: Climb, Cruise, Turn, Descent, Loiter, Landing, Manual
+- Target: speed, altitude, heading
+
+Warnings:
+
+- stale telemetry
+- degraded telemetry
+- low terrain clearance
+- terrain fallback/synthetic
+- model fallback
+- high roll/pitch
+- low link rate
+
+Acceptance:
+
+- Card updates live and offline.
+- Uses selected entity.
+- Missing values show `--`, not zero.
+- Terrain clearance confidence shown.
+- Visibility/preferences persist.
+
+#### Phase 6: Timeline Flight Tape And Event Bookmarks
+
+Status: planned, extending existing timeline review/bookmark code.
+
+Automatic event types:
+
+- telemetry gap
+- heartbeat missing
+- low link Hz
+- low terrain clearance
+- terrain fallback/synthetic under vehicle
+- roll/pitch threshold exceeded
+- speed/climb threshold exceeded
+- plan deviation threshold exceeded
+- geofence warning
+- frame time threshold exceeded
+- recording started/stopped
+- screenshot captured
+- model fallback used
+
+Manual bookmarks:
+
+- Add bookmark at current time.
+- Add text note.
+- Severity: info/caution/warning.
+- Optional category.
+
+Timeline rows:
+
+- time ruler
+- telemetry gaps
+- test phases
+- warnings
+- terrain confidence
+- plan deviation
+- user bookmarks
+- capture markers
+
+Acceptance:
+
+- At least telemetry gaps, low clearance, high roll/pitch, and frame-time events
+  work.
+- Events appear on timeline.
+- User can jump previous/next.
+- User can filter severity/category.
+- Manual bookmark creation works.
+- Thresholds are config-driven.
+
+#### Phase 7: Terrain Confidence And Forward Clearance
+
+Status: planned, reusing existing selected-entity terrain state where possible.
+
+Terrain-under-vehicle fields:
+
+- terrain elevation
+- terrain source
+- cache tier
+- fallback parent/synthetic state
+- geoid/datum state if available
+- clearance AGL
+- confidence: high/medium/low/unknown
+
+Confidence heuristic:
+
+- High: exact resident terrain/elevation source
+- Medium: parent fallback or lower-resolution cached terrain
+- Low: synthetic tile or uncertain datum
+- Unknown: no valid terrain sample
+
+Visual marker:
+
+- solid ring: high
+- dashed ring: medium
+- dotted ring: low
+- hollow/gray ring: unknown
+- 2D first is acceptable; 3D if existing primitives support it.
+
+Forward clearance:
+
+- Project along current heading and ground speed at 5/10/20/30 seconds.
+- Compute lat/lon, terrain elevation, predicted clearance, and confidence.
+- Render line and ticks ahead of selected vehicle.
+- Show caution/warning if thresholds are crossed.
+
+Acceptance:
+
+- Confidence appears in ribbon and card.
+- Ring renders at least in 2D.
+- Forward clearance updates live.
+- Low-confidence terrain affects status messaging.
+- No terrain worker/render-thread boundary violation.
+
+#### Phase 8: MAVLink Inspector Lite
+
+Status: planned.
+
+Goal: add lightweight QGC-like MAVLink Inspector for debugging and quick plot
+creation.
+
+Message table:
+
+- Message name
+- Hz
+- Last age
+- Count
+- Field count
+- Status
+
+Field table:
+
+- Field
+- Current
+- Min
+- Max
+- Last changed
+
+Right-click actions:
+
+- Plot this
+- Add to existing plot
+- Copy field path
+- Copy current value
+
+Field path examples:
+
+- `mavlink.ATTITUDE.roll`
+- `mavlink.VFR_HUD.groundspeed`
+- `sample.roll_rad`
+- `derived.terrain_clearance_m`
+
+Acceptance:
+
+- Inspector shows observed decoded messages.
+- Shows Hz, age, count, numeric fields.
+- Plot this creates a strip plot series.
+- Visibility persists.
+- Unsupported messages are not faked.
+
+#### Phase 9: Operator Workspaces And Layout Presets
+
+Status: planned.
+
+Target workspaces:
+
+- Fly/Test
+- Plan
+- Analyze
+- Terrain
+- Developer
+
+Preset behavior:
+
+- Fly/Test: status ribbon, vehicle card, plot shelf, mini timeline, dominant map
+- Plan: plan overlays, geofence/rally, terrain profile if available
+- Analyze: timeline, expanded plots, event list, inspector, capture/export
+- Terrain: layer stack, terrain probe, confidence, tile/source status
+- Developer: existing diagnostics, tile runtime table, parser diagnostics,
+  budgets, cache counters
+
+Acceptance:
+
+- User can switch workspaces.
+- Workspace selection persists.
+- Developer diagnostics remain available.
+- Existing tabs are retained or mapped cleanly.
+
+#### Phase 10: Layer Stack 2.0
+
+Status: planned.
+
+Layer stack rows:
+
+- Vehicle icons
+- Vehicle labels
+- Track tail
+- Heading vectors
+- Planned route
+- Geofence
+- Terrain confidence
+- Terrain clearance heatmap
+- GeoTIFF overlay with opacity
+- Bathymetry with opacity
+- Hillshade
+- Tile state debug
+
+Row controls:
+
+- visibility toggle
+- opacity when applicable
+- warning badge if source has errors/fallbacks
+- source/status popover
+- optional draw order controls
+
+Presets:
+
+- Operator Clean
+- Terrain Analysis
+- Mission Review
+- Debug Tiles
+- Capture Mode
+
+Acceptance:
+
+- Existing layer functionality still works.
+- Layer choices persist.
+- Warnings appear for source failures/fallbacks when stats exist.
+- No heavy rendering changes required.
+
+#### Phase 12: Vehicle Assignment And Model Lifecycle UI
+
+Status: planned.
+
+UI:
+
+- Entity
+- Detected type
+- Assigned model
+- 2D icon
+- 3D model loaded/fallback state
+- Force icon-only
+- Scale
+- Heading source
+- Altitude placement
+- Model load errors
+- Fallback reason
+
+Actions:
+
+- assign model per sysid/component
+- assign default by vehicle type
+- force icon-only
+- persist assignment in config
+
+Acceptance:
+
+- Assignment is app-owned.
+- No vehicle policy in `telemetry_core`.
+- No telemetry semantics in `render_core`.
+- Fallback icons always work.
+- 2D remains icon-first.
+- Assignment persists.
+
+#### Phase 11: Plan-vs-Actual And Ghost Replay Foundation
+
+Status: planned after Phases 1-10 and 12.
+
+Plan-vs-actual:
+
+- active segment display
+- cross-track error when route geometry exists
+- altitude error when planned altitude exists
+- waypoint progress
+- low terrain clearance along planned path
+- route coverage by offline terrain pack if feasible
+
+Ghost replay:
+
+- load second telemetry run as baseline later
+- compare duration, max speed, min clearance, max roll/pitch, telemetry gaps,
+  p95 frame time, fallback/synthetic terrain percent, route deviation
+
+Acceptance:
+
+- Keep P2/P3 after config/plots/status are robust.
+- Avoid empty distracting panels.
+
+#### Phase 13: Report / Export V1
+
+Status: planned.
+
+Output bundle:
+
+- `summary.yaml`
+- `summary.md`
+- `events.csv`
+- plot CSVs under `plots/`
+- screenshots under `screenshots/`
+- later clips only if video export is already available
+
+Summary fields:
+
+- run source
+- duration
+- entities
+- min terrain clearance
+- max roll/pitch/speed
+- telemetry gaps
+- terrain fallback/synthetic percent
+- worst frame time
+- event count by severity
+- config profile used
+
+Acceptance:
+
+- First pass exports YAML/Markdown/CSV.
+- Screenshot export reuses existing capture path.
+- No new FFmpeg requirement unless already available.
+
+Implementation order:
+
+1. Phase 0: Recon and baseline verification.
+2. Phase 1: Persistent YAML app config.
+3. Phase 2: Signal catalog and field access.
+4. Phase 3: User-defined plot shelf.
+5. Phase 4: Operator status ribbon.
+6. Phase 5: Selected vehicle/test-flight card.
+7. Phase 6: Timeline events/bookmarks.
+8. Phase 7: Terrain confidence and forward clearance.
+9. Phase 8: MAVLink Inspector Lite.
+10. Phase 9: Workspaces/layout presets.
+11. Phase 10: Layer Stack 2.0.
+12. Phase 12: Vehicle assignment UI.
+13. Phase 11: Plan-vs-actual / ghost replay.
+14. Phase 13: Report/export.
+
+Rationale:
+
+- Config first prevents UI state from becoming throwaway.
+- Signal catalog before plots prevents hardcoded plot widgets.
+- Plot shelf before Inspector lets Inspector use "Plot this."
+- Status/card/timeline consume config and signal infrastructure.
+- Vehicle assignment and ghost replay are valuable but should not delay core
+  flight-test UX.
+
+Minimum viable deliverable:
+
+- YAML app config load/save for workspace, panels, layers, thresholds, and
+  plots.
+- Signal catalog for `TelemetrySample`, terrain clearance, and basic link
+  quality.
+- Plot Shelf v1 with add/delete plot, add/delete series,
+  source/field/transform dropdowns, live plotting, and save/restore.
+- Status ribbon: `TEST`, `LINK`, `VEHICLE`, `TERRAIN`, `PERF`.
+- Selected vehicle card: speed, altitude, attitude, terrain clearance,
+  telemetry age.
+- Basic events: telemetry gap, low terrain clearance, high roll/pitch, high
+  frame time.
+
+Future verification:
+
+```bash
+python3 animus/tools/verify_animus.py
+ctest --test-dir animus/build --output-on-failure
+python3 animus/tools/verify_animus.py --live-udp-smoke
+xvfb-run -a animus/build/apps/animus/animus --smoke --frames 120 --capture-png /tmp/animus_test_flight_view.png
+```
+
+Performance rules:
+
+- No blocking file I/O on render path except explicit save/load.
+- No config writes every frame.
+- No unbounded plot or MAVLink field history.
+- No expensive string parsing in hot render loops.
+- Do not lock UDP receive on UI data structures.
+- Preserve terrain streamer budgets.
+- Add draw budgets for plot points, labels, events, and trails.
+
+Known formatting caveat: `python3 tools/python/format_repo.py --check` may
+still report the existing backlog item for
+`animus/apps/animus/src/layer_offline.cpp` and
+`animus/apps/animus/src/layer_offline.hpp` until separately handled.
+
 ### Phase 1: Operator Shell
 
 Objective: make Animus open into an operator-first terrain viewer while keeping
