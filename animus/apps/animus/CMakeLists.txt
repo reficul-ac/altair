@@ -9,6 +9,9 @@ add_executable(
     src/capture.cpp
     src/layer_offline.cpp
     src/options.cpp
+    src/plot_config.cpp
+    src/plot_series_buffer.cpp
+    src/plot_ui.cpp
     src/plan_visualization.cpp
     src/telemetry_signal_catalog.cpp
     src/timeline_review.cpp

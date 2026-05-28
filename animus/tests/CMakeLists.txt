@@ -44,8 +44,11 @@ add_executable(
     ../apps/animus/src/app_config.cpp
     ../apps/animus/src/layer_offline.cpp
     ../apps/animus/src/options.cpp
+    ../apps/animus/src/plot_config.cpp
+    ../apps/animus/src/telemetry_signal_catalog.cpp
     app_config_tests.cpp
     options_tests.cpp
+    plot_config_tests.cpp
 )
 target_include_directories(animus_options_tests PRIVATE ../apps/animus/src)
 target_link_libraries(
@@ -53,6 +56,7 @@ target_link_libraries(
     PRIVATE animus_geo_core
             animus_terrain_core
             animus_telemetry_core
+            animus_telemetry_live
             GTest::gtest_main
             yaml-cpp::yaml-cpp
 )
@@ -95,6 +99,18 @@ target_link_libraries(
 )
 animus_enable_warnings(animus_telemetry_signal_catalog_tests)
 gtest_discover_tests(animus_telemetry_signal_catalog_tests)
+
+add_executable(
+    animus_plot_series_buffer_tests ../apps/animus/src/plot_series_buffer.cpp
+                                    plot_series_buffer_tests.cpp
+)
+target_include_directories(animus_plot_series_buffer_tests PRIVATE ../apps/animus/src)
+target_link_libraries(
+    animus_plot_series_buffer_tests PRIVATE animus_telemetry_core animus_telemetry_live
+                                            GTest::gtest_main
+)
+animus_enable_warnings(animus_plot_series_buffer_tests)
+gtest_discover_tests(animus_plot_series_buffer_tests)
 
 add_executable(
     animus_vehicle_visual_style_tests ../apps/animus/src/vehicle_visual_style.cpp

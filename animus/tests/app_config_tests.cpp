@@ -36,6 +36,7 @@ TEST(AnimusAppConfig, DefaultsAreVersioned)
     EXPECT_EQ(config.workspace_mode, "operator");
     EXPECT_EQ(config.view_mode, "terrain3d");
     EXPECT_EQ(config.telemetry_live_udp_port, 14550U);
+    EXPECT_EQ(config.plots.plots.size(), 5U);
 }
 
 TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
@@ -52,6 +53,8 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     config.telemetry_live_udp_host = "0.0.0.0";
     config.telemetry_live_udp_port = 14560U;
     config.overlays.push_back({"overlay.tif", true, 0.5F, 3, "geotiff:overlay.tif"});
+    config.plots.paused = true;
+    config.plots.plots.front().title = "Round Trip Plot";
 
     const auto save = animus::app::save_app_config_file(path, config);
     ASSERT_TRUE(save.saved);
@@ -69,6 +72,8 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     EXPECT_EQ(load.config.overlays.front().path.string(), "overlay.tif");
     EXPECT_EQ(load.config.telemetry_live_udp_host, "0.0.0.0");
     EXPECT_EQ(load.config.telemetry_live_udp_port, 14560U);
+    EXPECT_TRUE(load.config.plots.paused);
+    EXPECT_EQ(load.config.plots.plots.front().title, "Round Trip Plot");
 
     std::filesystem::remove(path);
 }

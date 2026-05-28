@@ -326,6 +326,28 @@ MavlinkValueStore::latest(const animus::telemetry_core::EntityId &entity_id,
                                .value = *found->second.latest_value};
 }
 
+void MavlinkValueStore::for_each_sample(
+    const animus::telemetry_core::EntityId &entity_id,
+    const std::uint32_t message_id,
+    const std::string &field_name,
+    const std::function<void(const MavlinkStoredSample &)> &callback) const
+{
+    const MavlinkFieldKey key{
+        .entity_id = entity_id,
+        .message_id = message_id,
+        .field_name = field_name,
+    };
+    const auto found = fields_.find(key);
+    if (found == fields_.end())
+    {
+        return;
+    }
+    for (const MavlinkStoredSample &sample : found->second.history)
+    {
+        callback(sample);
+    }
+}
+
 void MavlinkValueStore::record_numeric(const MavlinkFieldKey &key,
                                        const double time_s,
                                        const double value)

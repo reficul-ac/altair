@@ -2,6 +2,7 @@
 
 #include "capture.hpp"
 #include "layer_offline.hpp"
+#include "plot_ui.hpp"
 
 #include "animus/terrain_core/contracts.hpp"
 #include "animus/terrain_core/terrain_cache.hpp"
@@ -2509,7 +2510,7 @@ bool telemetry_event_visible(const animus::telemetry_core::Event &event,
     return true;
 }
 
-void draw_app_workspace(const Options &options,
+void draw_app_workspace(Options &options,
                         const std::filesystem::path &pack_root,
                         const animus::render_core::GlInfo &gl_info,
                         const animus::render_core::RenderStats &stats,
@@ -2645,6 +2646,7 @@ void draw_app_workspace(const Options &options,
     ImGui::PopStyleColor(2);
 
     draw_inspector(playback, vehicle_status, ui_state);
+    draw_plot_shelf(options, playback, runtime_signals, ui_state.plot_ui);
     draw_bottom_timeline(playback, ui_state);
 }
 

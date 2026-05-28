@@ -673,6 +673,7 @@ void apply_app_config_to_options(Options &options, const AppConfig &config)
     options.telemetry_live_buffer_s = config.telemetry_live_buffer_s;
     options.telemetry_live_max_samples = config.telemetry_live_max_samples;
     options.telemetry_live_render_max_points = config.telemetry_live_render_max_points;
+    options.plots = config.plots;
 }
 
 AppConfig app_config_from_options(const Options &options)
@@ -705,6 +706,7 @@ AppConfig app_config_from_options(const Options &options)
     config.telemetry_live_buffer_s = options.telemetry_live_buffer_s;
     config.telemetry_live_max_samples = options.telemetry_live_max_samples;
     config.telemetry_live_render_max_points = options.telemetry_live_render_max_points;
+    config.plots = options.plots;
     return config;
 }
 

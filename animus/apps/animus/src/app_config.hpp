@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "plot_config.hpp"
+
 namespace animus::app
 {
 
@@ -58,6 +60,7 @@ struct AppConfig
     std::size_t telemetry_live_max_samples = 20000U;
     std::size_t telemetry_live_render_max_points = 1000U;
     AppConfigStatusThresholds status_thresholds;
+    PlotShelfConfig plots = default_plot_shelf_config();
 
     bool operator==(const AppConfig &) const = default;
 };

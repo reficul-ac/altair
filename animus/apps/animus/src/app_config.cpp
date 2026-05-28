@@ -551,6 +551,8 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
                          result.config.status_thresholds.telemetry_gap_critical_s,
                          result.diagnostics);
 
+    result.config.plots = read_plot_shelf_config(root["plots"], result.diagnostics);
+
     result.status = AppConfigLoadStatus::Loaded;
     return result;
 }
@@ -646,7 +648,8 @@ AppConfigSaveResult save_app_config_file(const std::filesystem::path &path, cons
         << config.status_thresholds.telemetry_gap_critical_s;
     out << YAML::EndMap;
     out << YAML::Key << "vehicle_visuals" << YAML::Value << YAML::BeginMap << YAML::EndMap;
-    out << YAML::Key << "plots" << YAML::Value << YAML::BeginMap << YAML::EndMap;
+    out << YAML::Key << "plots" << YAML::Value;
+    write_plot_shelf_config(out, config.plots);
     out << YAML::EndMap;
 
     const std::filesystem::path temp_path =

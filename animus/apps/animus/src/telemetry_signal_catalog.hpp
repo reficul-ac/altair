@@ -11,6 +11,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <functional>
 #include <vector>
 
 namespace animus::app
@@ -51,6 +52,8 @@ struct SignalRef
     std::string mavlink_message;
     std::string mavlink_field;
     std::optional<animus::telemetry_core::EntityId> entity_id;
+
+    bool operator==(const SignalRef &) const = default;
 };
 
 struct SignalInfo
@@ -138,6 +141,10 @@ class MavlinkValueStore
     latest(const animus::telemetry_core::EntityId &entity_id,
            std::uint32_t message_id,
            const std::string &field_name) const;
+    void for_each_sample(const animus::telemetry_core::EntityId &entity_id,
+                         std::uint32_t message_id,
+                         const std::string &field_name,
+                         const std::function<void(const MavlinkStoredSample &)> &callback) const;
 
   private:
     struct FieldState

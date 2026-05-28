@@ -7,6 +7,7 @@
 #include "animus/telemetry_live/udp_mavlink_receiver.hpp"
 #include "animus/terrain_core/terrain_stream.hpp"
 #include "options.hpp"
+#include "plot_ui.hpp"
 #include "plan_visualization.hpp"
 #include "telemetry_signal_catalog.hpp"
 #include "timeline_review.hpp"
@@ -177,6 +178,7 @@ struct UiState
     std::array<char, 96> signal_filter{};
     TelemetryEventFilters telemetry_event_filters;
     std::vector<TimelineBookmark> timeline_bookmarks;
+    PlotUiState plot_ui;
 };
 
 struct PlanVisualizationState
@@ -196,7 +198,7 @@ void finish_mp4_recording(Mp4RecorderState &recorder);
 [[nodiscard]] bool telemetry_event_visible(const animus::telemetry_core::Event &event,
                                            const TelemetryEventFilters &filters);
 
-void draw_app_workspace(const Options &options,
+void draw_app_workspace(Options &options,
                         const std::filesystem::path &pack_root,
                         const animus::render_core::GlInfo &gl_info,
                         const animus::render_core::RenderStats &stats,

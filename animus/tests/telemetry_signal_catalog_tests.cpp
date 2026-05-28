@@ -223,6 +223,16 @@ TEST(TelemetrySignalCatalog, MavlinkValueStoreBoundsHistoryAndStats)
     EXPECT_NEAR(stats.approximate_hz, 1.0, 1.0e-9);
     EXPECT_NEAR(*stats.min_value, 100.0, 1.0e-9);
     EXPECT_NEAR(*stats.max_value, 103.0, 1.0e-9);
+
+    std::vector<animus::app::MavlinkStoredSample> retained;
+    store.for_each_sample({1U, 1U},
+                          33U,
+                          "relative_alt",
+                          [&retained](const animus::app::MavlinkStoredSample &sample)
+                          { retained.push_back(sample); });
+    ASSERT_EQ(retained.size(), 2U);
+    EXPECT_NEAR(retained.front().value, 102.0, 1.0e-9);
+    EXPECT_NEAR(retained.back().value, 103.0, 1.0e-9);
 }
 
 TEST(TelemetrySignalCatalog, MavlinkExtractionRejectsNonNumeric)
