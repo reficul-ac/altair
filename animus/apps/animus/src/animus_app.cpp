@@ -3427,12 +3427,22 @@ int run(Options options)
         update_selected_entity_terrain_state(options, tiles, geoid_grid, telemetry, ui_state);
         if (telemetry.loaded && !telemetry.live && ui_state.telemetry_entity_selected)
         {
+            const animus::app::TimelineReviewThresholds review_thresholds{
+                options.status_thresholds.terrain_clearance_warning_m,
+                options.status_thresholds.terrain_clearance_critical_m,
+                options.status_thresholds.roll_warning_deg,
+                options.status_thresholds.pitch_warning_deg,
+                options.status_thresholds.frame_time_warning_ms,
+                options.status_thresholds.telemetry_gap_warning_s,
+                options.status_thresholds.telemetry_gap_critical_s};
             telemetry.review = animus::app::build_timeline_review(
                 telemetry.timeline,
                 telemetry.selected_entity,
                 ui_state.timeline_bookmarks,
                 build_review_clearance_samples(
                     options, tiles, geoid_grid, telemetry.timeline, telemetry.selected_entity),
+                ui_state.timeline_frame_time_markers,
+                review_thresholds,
                 animus::app::default_timeline_review_sample_cap);
         }
         else
@@ -3749,6 +3759,22 @@ int run(Options options)
         }
         window.swap_buffers();
         stats.frame_finished();
+        if (telemetry.loaded && !telemetry.live)
+        {
+            const animus::app::TimelineReviewThresholds review_thresholds{
+                options.status_thresholds.terrain_clearance_warning_m,
+                options.status_thresholds.terrain_clearance_critical_m,
+                options.status_thresholds.roll_warning_deg,
+                options.status_thresholds.pitch_warning_deg,
+                options.status_thresholds.frame_time_warning_ms,
+                options.status_thresholds.telemetry_gap_warning_s,
+                options.status_thresholds.telemetry_gap_critical_s};
+            animus::app::observe_timeline_frame_time(ui_state.timeline_frame_time_state,
+                                                     ui_state.timeline_frame_time_markers,
+                                                     telemetry.clock.time_s(),
+                                                     stats.last_frame_seconds() * 1000.0,
+                                                     review_thresholds);
+        }
 
         if (options.frames > 0 && stats.frame_count() >= options.frames)
         {

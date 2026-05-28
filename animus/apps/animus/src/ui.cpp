@@ -47,6 +47,7 @@ enum class PillState
 };
 
 const char *altitude_datum_label(animus::telemetry_core::AltitudeDatum datum);
+void draw_review_filters(TimelineReviewFilterState &filters);
 
 const char *workspace_label(const WorkspaceMode mode)
 {
@@ -647,6 +648,12 @@ ImU32 marker_color(const TimelineReviewMarkerCategory category)
         return IM_COL32(93, 214, 145, 255);
     case TimelineReviewMarkerCategory::MaxSpeed:
         return IM_COL32(187, 142, 255, 255);
+    case TimelineReviewMarkerCategory::LowClearance:
+        return IM_COL32(238, 186, 74, 255);
+    case TimelineReviewMarkerCategory::Attitude:
+        return IM_COL32(235, 122, 92, 255);
+    case TimelineReviewMarkerCategory::FrameTime:
+        return IM_COL32(170, 188, 204, 255);
     }
     return IM_COL32(180, 186, 192, 255);
 }
@@ -666,6 +673,16 @@ void request_review_marker_jump(UiState &ui,
     }
     ui.selected_review_marker_index = index;
     ui.request_review_jump_time_s = markers[index].time_s;
+}
+
+std::size_t visible_review_marker_count(const std::vector<TimelineReviewMarker> &markers,
+                                        const TimelineReviewFilterState &filters)
+{
+    return static_cast<std::size_t>(
+        std::count_if(markers.begin(),
+                      markers.end(),
+                      [&filters](const TimelineReviewMarker &marker)
+                      { return timeline_review_marker_visible(marker, filters); }));
 }
 
 void draw_series_chart(const TimelineReviewSeries &series, const ImVec2 size)
@@ -1463,6 +1480,7 @@ void draw_telemetry_panel(const Options &options,
         if (ui.telemetry_entity_selected)
         {
             draw_review_jump_buttons(playback.review, ui);
+            draw_review_filters(ui.timeline_review_filters);
             draw_review_charts(playback.review);
         }
     }
@@ -2085,6 +2103,49 @@ void draw_inspector(TelemetryPlaybackState &playback,
     ImGui::PopStyleColor(2);
 }
 
+bool marker_in_tape_row(const TimelineReviewMarkerCategory category, const int row)
+{
+    switch (row)
+    {
+    case 0:
+        return category == TimelineReviewMarkerCategory::Gap;
+    case 1:
+        return category == TimelineReviewMarkerCategory::LowClearance ||
+               category == TimelineReviewMarkerCategory::MinClearance;
+    case 2:
+        return category == TimelineReviewMarkerCategory::Attitude ||
+               category == TimelineReviewMarkerCategory::FrameTime ||
+               category == TimelineReviewMarkerCategory::Degraded ||
+               category == TimelineReviewMarkerCategory::ImportWarning ||
+               category == TimelineReviewMarkerCategory::ImportError ||
+               category == TimelineReviewMarkerCategory::MaxSpeed;
+    case 3:
+        return category == TimelineReviewMarkerCategory::Bookmark;
+    }
+    return false;
+}
+
+void draw_timeline_filter_toggle(const char *label, bool &value)
+{
+    ImGui::Checkbox(label, &value);
+    ImGui::SameLine();
+}
+
+void draw_review_filters(TimelineReviewFilterState &filters)
+{
+    draw_timeline_filter_toggle("Info", filters.show_info);
+    draw_timeline_filter_toggle("Caution", filters.show_caution);
+    draw_timeline_filter_toggle("Warning", filters.show_warning);
+    draw_timeline_filter_toggle("Gaps", filters.show_gap);
+    draw_timeline_filter_toggle("Terrain", filters.show_clearance);
+    draw_timeline_filter_toggle("Attitude", filters.show_attitude);
+    draw_timeline_filter_toggle("Frame", filters.show_frame_time);
+    draw_timeline_filter_toggle("Bookmarks", filters.show_bookmark);
+    draw_timeline_filter_toggle("Degraded", filters.show_degraded);
+    draw_timeline_filter_toggle("Min/max", filters.show_min_max);
+    ImGui::Checkbox("Import", &filters.show_import);
+}
+
 void draw_review_tape(TelemetryPlaybackState &playback, UiState &ui_state, const float width)
 {
     const double start = playback.timeline.start_time_s;
@@ -2092,22 +2153,82 @@ void draw_review_tape(TelemetryPlaybackState &playback, UiState &ui_state, const
     const double duration = std::max(1.0e-6, end - start);
     ImDrawList *draw = ImGui::GetWindowDrawList();
     const ImVec2 tape_min = ImGui::GetCursorScreenPos();
-    const ImVec2 tape_size(width, 22.0F);
+    const ImVec2 tape_size(width, 58.0F);
     const ImVec2 tape_max(tape_min.x + tape_size.x, tape_min.y + tape_size.y);
     ImGui::InvisibleButton("review_tape", tape_size);
     draw->AddRectFilled(tape_min, tape_max, IM_COL32(12, 15, 18, 235), 5.0F);
     draw->AddRect(tape_min, tape_max, IM_COL32(65, 73, 80, 230), 5.0F);
+    constexpr int row_count = 4;
+    constexpr float ruler_height = 10.0F;
+    const float row_height = (tape_size.y - ruler_height - 4.0F) / static_cast<float>(row_count);
+    for (int tick = 0; tick <= 4; ++tick)
+    {
+        const float x = tape_min.x + tape_size.x * static_cast<float>(tick) / 4.0F;
+        draw->AddLine(ImVec2(x, tape_min.y + 2.0F),
+                      ImVec2(x, tape_max.y - 3.0F),
+                      IM_COL32(55, 62, 68, 180),
+                      1.0F);
+        const double tick_time = start + duration * static_cast<double>(tick) / 4.0;
+        const std::string label = format_value("%.1f", tick_time);
+        draw->AddText(
+            ImVec2(x + 3.0F, tape_min.y + 1.0F), IM_COL32(122, 130, 137, 220), label.c_str());
+    }
+    const char *row_labels[row_count] = {"gap", "terrain", "warning", "bookmark"};
+    for (int row = 0; row < row_count; ++row)
+    {
+        const float y = tape_min.y + ruler_height + static_cast<float>(row) * row_height;
+        draw->AddLine(
+            ImVec2(tape_min.x, y), ImVec2(tape_max.x, y), IM_COL32(43, 49, 54, 210), 1.0F);
+        draw->AddText(
+            ImVec2(tape_min.x + 5.0F, y + 1.0F), IM_COL32(120, 128, 135, 210), row_labels[row]);
+    }
     for (std::size_t index = 0U; index < playback.review.markers.size(); ++index)
     {
         const auto &marker = playback.review.markers[index];
+        if (!timeline_review_marker_visible(marker, ui_state.timeline_review_filters))
+        {
+            continue;
+        }
         const float x =
             tape_min.x + static_cast<float>((marker.time_s - start) / duration) * tape_size.x;
         const bool selected = ui_state.selected_review_marker_index &&
                               *ui_state.selected_review_marker_index == index;
-        draw->AddLine(ImVec2(x, tape_min.y + 3.0F),
-                      ImVec2(x, tape_max.y - 3.0F),
-                      marker_color(marker.category),
-                      selected ? 3.2F : (marker.end_time_s ? 2.4F : 1.5F));
+        for (int row = 0; row < row_count; ++row)
+        {
+            if (!marker_in_tape_row(marker.category, row))
+            {
+                continue;
+            }
+            const float row_min_y =
+                tape_min.y + ruler_height + static_cast<float>(row) * row_height;
+            const float row_max_y = row_min_y + row_height;
+            const ImU32 color = marker_color(marker.category);
+            if (marker.end_time_s)
+            {
+                const float end_x =
+                    tape_min.x +
+                    static_cast<float>((*marker.end_time_s - start) / duration) * tape_size.x;
+                draw->AddRectFilled(ImVec2(x, row_min_y + 3.0F),
+                                    ImVec2(std::max(x + 2.0F, end_x), row_max_y - 2.0F),
+                                    color,
+                                    2.0F);
+            }
+            else
+            {
+                draw->AddLine(ImVec2(x, row_min_y + 3.0F),
+                              ImVec2(x, row_max_y - 2.0F),
+                              color,
+                              selected ? 3.2F : 1.7F);
+            }
+            if (selected)
+            {
+                draw->AddCircle(ImVec2(x, (row_min_y + row_max_y) * 0.5F),
+                                5.0F,
+                                IM_COL32(245, 250, 255, 255),
+                                16,
+                                1.4F);
+            }
+        }
     }
     const float current_x =
         tape_min.x + static_cast<float>((playback.clock.time_s() - start) / duration) * tape_size.x;
@@ -2127,6 +2248,73 @@ void draw_review_tape(TelemetryPlaybackState &playback, UiState &ui_state, const
     }
 }
 
+TimelineReviewSeverity bookmark_severity_from_index(const int index)
+{
+    switch (index)
+    {
+    case 1:
+        return TimelineReviewSeverity::Caution;
+    case 2:
+        return TimelineReviewSeverity::Warning;
+    default:
+        return TimelineReviewSeverity::Info;
+    }
+}
+
+TimelineReviewMarkerCategory bookmark_category_from_index(const int index)
+{
+    switch (index)
+    {
+    case 1:
+        return TimelineReviewMarkerCategory::Gap;
+    case 2:
+        return TimelineReviewMarkerCategory::LowClearance;
+    case 3:
+        return TimelineReviewMarkerCategory::Attitude;
+    case 4:
+        return TimelineReviewMarkerCategory::FrameTime;
+    default:
+        return TimelineReviewMarkerCategory::Bookmark;
+    }
+}
+
+void draw_bookmark_popup(TelemetryPlaybackState &playback, UiState &ui_state)
+{
+    if (ImGui::Button("Bookmark..."))
+    {
+        ImGui::OpenPopup("Bookmark note");
+    }
+    if (ImGui::BeginPopup("Bookmark note"))
+    {
+        ImGui::SetNextItemWidth(260.0F);
+        ImGui::InputTextWithHint("Note",
+                                 "Session note",
+                                 ui_state.timeline_bookmark_note.data(),
+                                 ui_state.timeline_bookmark_note.size());
+        const char *severities[] = {"Info", "Caution", "Warning"};
+        ImGui::Combo("Severity", &ui_state.timeline_bookmark_severity, severities, 3);
+        const char *categories[] = {"Bookmark", "Gap", "Terrain", "Attitude", "Frame"};
+        ImGui::Combo("Category", &ui_state.timeline_bookmark_category, categories, 5);
+        if (ImGui::Button("Add"))
+        {
+            TimelineBookmark bookmark;
+            bookmark.time_s = playback.clock.time_s();
+            bookmark.note = ui_state.timeline_bookmark_note.data();
+            bookmark.severity = bookmark_severity_from_index(ui_state.timeline_bookmark_severity);
+            bookmark.category = bookmark_category_from_index(ui_state.timeline_bookmark_category);
+            add_timeline_bookmark(ui_state.timeline_bookmarks, std::move(bookmark));
+            ui_state.timeline_bookmark_note.fill('\0');
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel"))
+        {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+}
+
 void draw_bottom_timeline(TelemetryPlaybackState &playback, UiState &ui_state)
 {
     if (!playback.loaded)
@@ -2141,8 +2329,8 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback, UiState &ui_state)
     {
         return;
     }
-    ImGui::SetNextWindowPos(ImVec2(left, ImGui::GetIO().DisplaySize.y - 112.0F), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(available_width, 106.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(left, ImGui::GetIO().DisplaySize.y - 150.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(available_width, 144.0F), ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                              ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055F, 0.064F, 0.072F, 0.88F));
@@ -2181,15 +2369,20 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback, UiState &ui_state)
                                ? entity_label(playback.selected_entity).c_str()
                                : "none");
         ImGui::SameLine();
-        ImGui::TextColored(text_muted, "markers %zu", playback.review.markers.size());
+        ImGui::TextColored(
+            text_muted,
+            "markers %zu/%zu",
+            visible_review_marker_count(playback.review.markers, ui_state.timeline_review_filters),
+            playback.review.markers.size());
         draw_review_tape(playback, ui_state, ImGui::GetContentRegionAvail().x);
+        draw_review_filters(ui_state.timeline_review_filters);
         if (ImGui::Button(playback.clock.paused() ? "Play" : "Pause"))
         {
             playback.clock.set_paused(!playback.clock.paused());
         }
         ImGui::SameLine();
-        const auto previous =
-            previous_review_marker(playback.review.markers, playback.clock.time_s());
+        const auto previous = previous_review_marker(
+            playback.review.markers, playback.clock.time_s(), ui_state.timeline_review_filters);
         if (!previous)
         {
             ImGui::BeginDisabled();
@@ -2203,7 +2396,8 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback, UiState &ui_state)
             ImGui::EndDisabled();
         }
         ImGui::SameLine();
-        const auto next = next_review_marker(playback.review.markers, playback.clock.time_s());
+        const auto next = next_review_marker(
+            playback.review.markers, playback.clock.time_s(), ui_state.timeline_review_filters);
         if (!next)
         {
             ImGui::BeginDisabled();
@@ -2221,6 +2415,8 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback, UiState &ui_state)
         {
             add_timeline_bookmark(ui_state.timeline_bookmarks, playback.clock.time_s());
         }
+        ImGui::SameLine();
+        draw_bookmark_popup(playback, ui_state);
         ImGui::SameLine();
         bool looping = playback.clock.looping();
         if (ImGui::Checkbox("Loop", &looping))

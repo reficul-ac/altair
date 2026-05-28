@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <optional>
 #include <string_view>
 
 namespace animus::app
@@ -24,28 +25,56 @@ std::optional<double> review_altitude_m(const animus::telemetry_core::TelemetryS
     return sample.altitude_msl_m;
 }
 
-double selected_track_gap_threshold_s(const animus::telemetry_core::Track &track)
+double rad_to_deg(const double radians)
 {
-    std::vector<double> deltas;
-    deltas.reserve(track.samples.size());
-    for (std::size_t index = 1U; index < track.samples.size(); ++index)
+    constexpr double pi = 3.14159265358979323846;
+    return radians * 180.0 / pi;
+}
+
+TimelineReviewSeverity warning_or_caution(const double value, const double critical_value)
+{
+    return value >= critical_value ? TimelineReviewSeverity::Warning
+                                   : TimelineReviewSeverity::Caution;
+}
+
+TimelineReviewSeverity clearance_severity(const double clearance_m,
+                                          const TimelineReviewThresholds &thresholds)
+{
+    return clearance_m <= thresholds.terrain_clearance_critical_m ? TimelineReviewSeverity::Warning
+                                                                  : TimelineReviewSeverity::Caution;
+}
+
+TimelineReviewSeverity import_severity(const animus::telemetry_core::EventSeverity severity)
+{
+    return severity == animus::telemetry_core::EventSeverity::Error
+               ? TimelineReviewSeverity::Warning
+               : TimelineReviewSeverity::Caution;
+}
+
+std::optional<TimelineReviewMarker>
+attitude_marker(const animus::telemetry_core::TelemetrySample &sample,
+                const animus::telemetry_core::EntityId selected_entity,
+                const char *axis,
+                const std::optional<double> value_rad,
+                const double threshold_deg)
+{
+    if (!value_rad || threshold_deg <= 0.0)
     {
-        const double dt = track.samples[index].time_s - track.samples[index - 1U].time_s;
-        if (dt > 0.0 && std::isfinite(dt))
-        {
-            deltas.push_back(dt);
-        }
+        return std::nullopt;
     }
-    if (deltas.empty())
+    const double value_deg = std::abs(rad_to_deg(*value_rad));
+    if (value_deg < threshold_deg)
     {
-        return 2.0;
+        return std::nullopt;
     }
-    std::sort(deltas.begin(), deltas.end());
-    const double median =
-        deltas.size() % 2U == 1U
-            ? deltas[deltas.size() / 2U]
-            : (deltas[deltas.size() / 2U - 1U] + deltas[deltas.size() / 2U]) * 0.5;
-    return std::max(2.0, median * 3.0);
+    TimelineReviewMarker marker;
+    marker.category = TimelineReviewMarkerCategory::Attitude;
+    marker.severity = warning_or_caution(value_deg, threshold_deg * 1.5);
+    marker.time_s = sample.time_s;
+    marker.entity_id = selected_entity;
+    marker.label = std::string("high ") + axis;
+    marker.value = value_deg;
+    return marker;
 }
 
 std::string bookmark_label(const std::size_t count)
@@ -68,6 +97,53 @@ void sort_markers(std::vector<TimelineReviewMarker> &markers)
                          }
                          return lhs.time_s < rhs.time_s;
                      });
+}
+
+void append_low_clearance_markers(std::vector<TimelineReviewMarker> &markers,
+                                  const std::vector<TerrainClearanceSample> &samples,
+                                  const animus::telemetry_core::EntityId selected_entity,
+                                  const TimelineReviewThresholds &thresholds)
+{
+    std::optional<TimelineReviewMarker> active;
+    for (const TerrainClearanceSample &sample : samples)
+    {
+        if (sample.clearance_m <= thresholds.terrain_clearance_warning_m)
+        {
+            if (!active)
+            {
+                TimelineReviewMarker marker;
+                marker.category = TimelineReviewMarkerCategory::LowClearance;
+                marker.severity = clearance_severity(sample.clearance_m, thresholds);
+                marker.time_s = sample.time_s;
+                marker.entity_id = selected_entity;
+                marker.label = "low clearance";
+                marker.value = sample.clearance_m;
+                active = marker;
+            }
+            else
+            {
+                active->end_time_s = sample.time_s;
+                if (sample.clearance_m < *active->value)
+                {
+                    active->value = sample.clearance_m;
+                }
+                if (clearance_severity(sample.clearance_m, thresholds) ==
+                    TimelineReviewSeverity::Warning)
+                {
+                    active->severity = TimelineReviewSeverity::Warning;
+                }
+            }
+        }
+        else if (active)
+        {
+            markers.push_back(*active);
+            active.reset();
+        }
+    }
+    if (active)
+    {
+        markers.push_back(*active);
+    }
 }
 
 } // namespace
@@ -103,7 +179,16 @@ void add_timeline_bookmark(std::vector<TimelineBookmark> &bookmarks, const doubl
     TimelineBookmark bookmark;
     bookmark.time_s = time_s;
     bookmark.label = bookmark_label(bookmarks.size() + 1U);
-    bookmarks.push_back(bookmark);
+    add_timeline_bookmark(bookmarks, std::move(bookmark));
+}
+
+void add_timeline_bookmark(std::vector<TimelineBookmark> &bookmarks, TimelineBookmark bookmark)
+{
+    if (bookmark.label.empty())
+    {
+        bookmark.label = bookmark_label(bookmarks.size() + 1U);
+    }
+    bookmarks.push_back(std::move(bookmark));
     std::stable_sort(bookmarks.begin(),
                      bookmarks.end(),
                      [](const TimelineBookmark &lhs, const TimelineBookmark &rhs)
@@ -114,11 +199,47 @@ void add_timeline_bookmark(std::vector<TimelineBookmark> &bookmarks, const doubl
     }
 }
 
+void observe_timeline_frame_time(TimelineFrameTimeReviewState &state,
+                                 std::vector<TimelineReviewMarker> &markers,
+                                 const double time_s,
+                                 const double frame_time_ms,
+                                 const TimelineReviewThresholds &thresholds)
+{
+    if (frame_time_ms < thresholds.frame_time_warning_ms)
+    {
+        state.slow_segment_active = false;
+        return;
+    }
+
+    if (state.slow_segment_active && !markers.empty() &&
+        markers.back().category == TimelineReviewMarkerCategory::FrameTime)
+    {
+        markers.back().end_time_s = time_s;
+        if (!markers.back().value || frame_time_ms > *markers.back().value)
+        {
+            markers.back().value = frame_time_ms;
+        }
+        return;
+    }
+
+    TimelineReviewMarker marker;
+    marker.category = TimelineReviewMarkerCategory::FrameTime;
+    marker.severity = TimelineReviewSeverity::Caution;
+    marker.time_s = time_s;
+    marker.entity_id = {};
+    marker.label = "slow frame";
+    marker.value = frame_time_ms;
+    markers.push_back(marker);
+    state.slow_segment_active = true;
+}
+
 TimelineReviewData
 build_timeline_review(const animus::telemetry_core::Timeline &timeline,
                       const animus::telemetry_core::EntityId selected_entity,
                       const std::vector<TimelineBookmark> &bookmarks,
                       const std::vector<TerrainClearanceSample> &terrain_clearance_samples,
+                      const std::vector<TimelineReviewMarker> &frame_time_markers,
+                      const TimelineReviewThresholds &thresholds,
                       const std::size_t max_series_points)
 {
     TimelineReviewData review;
@@ -132,7 +253,6 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
     const auto *track = timeline.track_for(selected_entity);
     if (track != nullptr)
     {
-        const double gap_threshold_s = selected_track_gap_threshold_s(*track);
         std::optional<TimelineReviewMarker> max_speed;
         for (std::size_t index = 0U; index < track->samples.size(); ++index)
         {
@@ -148,6 +268,7 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
                 {
                     TimelineReviewMarker marker;
                     marker.category = TimelineReviewMarkerCategory::MaxSpeed;
+                    marker.severity = TimelineReviewSeverity::Info;
                     marker.time_s = sample.time_s;
                     marker.entity_id = selected_entity;
                     marker.label = "max speed";
@@ -159,18 +280,33 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
             {
                 TimelineReviewMarker marker;
                 marker.category = TimelineReviewMarkerCategory::Degraded;
+                marker.severity = TimelineReviewSeverity::Caution;
                 marker.time_s = sample.time_s;
                 marker.entity_id = selected_entity;
                 marker.label = "degraded";
                 review.markers.push_back(marker);
             }
+            if (const auto marker = attitude_marker(
+                    sample, selected_entity, "roll", sample.roll_rad, thresholds.roll_warning_deg))
+            {
+                review.markers.push_back(*marker);
+            }
+            if (const auto marker = attitude_marker(sample,
+                                                    selected_entity,
+                                                    "pitch",
+                                                    sample.pitch_rad,
+                                                    thresholds.pitch_warning_deg))
+            {
+                review.markers.push_back(*marker);
+            }
             if (index > 0U)
             {
                 const double dt = sample.time_s - track->samples[index - 1U].time_s;
-                if (dt > gap_threshold_s)
+                if (dt >= thresholds.telemetry_gap_warning_s)
                 {
                     TimelineReviewMarker marker;
                     marker.category = TimelineReviewMarkerCategory::Gap;
+                    marker.severity = warning_or_caution(dt, thresholds.telemetry_gap_critical_s);
                     marker.time_s = track->samples[index - 1U].time_s;
                     marker.end_time_s = sample.time_s;
                     marker.entity_id = selected_entity;
@@ -195,6 +331,7 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
         {
             TimelineReviewMarker marker;
             marker.category = TimelineReviewMarkerCategory::MinClearance;
+            marker.severity = TimelineReviewSeverity::Info;
             marker.time_s = clearance.time_s;
             marker.entity_id = selected_entity;
             marker.label = "min clearance";
@@ -206,6 +343,8 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
     {
         review.markers.push_back(*review.min_clearance_marker);
     }
+    append_low_clearance_markers(
+        review.markers, terrain_clearance_samples, selected_entity, thresholds);
 
     for (const auto &event : timeline.events)
     {
@@ -217,6 +356,7 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
         marker.category = event.severity == animus::telemetry_core::EventSeverity::Error
                               ? TimelineReviewMarkerCategory::ImportError
                               : TimelineReviewMarkerCategory::ImportWarning;
+        marker.severity = import_severity(event.severity);
         marker.time_s = event.time_s;
         marker.entity_id = event.entity_id;
         marker.label =
@@ -227,10 +367,16 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
     for (const auto &bookmark : bookmarks)
     {
         TimelineReviewMarker marker;
-        marker.category = TimelineReviewMarkerCategory::Bookmark;
+        marker.category = bookmark.category;
+        marker.severity = bookmark.severity;
         marker.time_s = bookmark.time_s;
         marker.entity_id = selected_entity;
         marker.label = bookmark.label;
+        marker.note = bookmark.note;
+        review.markers.push_back(marker);
+    }
+    for (const TimelineReviewMarker &marker : frame_time_markers)
+    {
         review.markers.push_back(marker);
     }
 
@@ -244,14 +390,65 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
     return review;
 }
 
+bool timeline_review_marker_visible(const TimelineReviewMarker &marker,
+                                    const TimelineReviewFilterState &filters)
+{
+    switch (marker.severity)
+    {
+    case TimelineReviewSeverity::Info:
+        if (!filters.show_info)
+        {
+            return false;
+        }
+        break;
+    case TimelineReviewSeverity::Caution:
+        if (!filters.show_caution)
+        {
+            return false;
+        }
+        break;
+    case TimelineReviewSeverity::Warning:
+        if (!filters.show_warning)
+        {
+            return false;
+        }
+        break;
+    }
+
+    switch (marker.category)
+    {
+    case TimelineReviewMarkerCategory::Gap:
+        return filters.show_gap;
+    case TimelineReviewMarkerCategory::Degraded:
+        return filters.show_degraded;
+    case TimelineReviewMarkerCategory::ImportWarning:
+    case TimelineReviewMarkerCategory::ImportError:
+        return filters.show_import;
+    case TimelineReviewMarkerCategory::Bookmark:
+        return filters.show_bookmark;
+    case TimelineReviewMarkerCategory::MinClearance:
+    case TimelineReviewMarkerCategory::MaxSpeed:
+        return filters.show_min_max;
+    case TimelineReviewMarkerCategory::LowClearance:
+        return filters.show_clearance;
+    case TimelineReviewMarkerCategory::Attitude:
+        return filters.show_attitude;
+    case TimelineReviewMarkerCategory::FrameTime:
+        return filters.show_frame_time;
+    }
+    return true;
+}
+
 std::optional<std::size_t> previous_review_marker(const std::vector<TimelineReviewMarker> &markers,
-                                                  const double current_time_s)
+                                                  const double current_time_s,
+                                                  const TimelineReviewFilterState &filters)
 {
     constexpr double epsilon_s = 1.0e-6;
     for (std::size_t reverse_index = markers.size(); reverse_index > 0U; --reverse_index)
     {
         const std::size_t index = reverse_index - 1U;
-        if (markers[index].time_s < current_time_s - epsilon_s)
+        if (timeline_review_marker_visible(markers[index], filters) &&
+            markers[index].time_s < current_time_s - epsilon_s)
         {
             return index;
         }
@@ -260,12 +457,14 @@ std::optional<std::size_t> previous_review_marker(const std::vector<TimelineRevi
 }
 
 std::optional<std::size_t> next_review_marker(const std::vector<TimelineReviewMarker> &markers,
-                                              const double current_time_s)
+                                              const double current_time_s,
+                                              const TimelineReviewFilterState &filters)
 {
     constexpr double epsilon_s = 1.0e-6;
     for (std::size_t index = 0U; index < markers.size(); ++index)
     {
-        if (markers[index].time_s > current_time_s + epsilon_s)
+        if (timeline_review_marker_visible(markers[index], filters) &&
+            markers[index].time_s > current_time_s + epsilon_s)
         {
             return index;
         }
@@ -291,8 +490,28 @@ const char *timeline_review_marker_label(const TimelineReviewMarkerCategory cate
         return "min clearance";
     case TimelineReviewMarkerCategory::MaxSpeed:
         return "max speed";
+    case TimelineReviewMarkerCategory::LowClearance:
+        return "low clearance";
+    case TimelineReviewMarkerCategory::Attitude:
+        return "attitude";
+    case TimelineReviewMarkerCategory::FrameTime:
+        return "frame time";
     }
     return "marker";
+}
+
+const char *timeline_review_severity_label(const TimelineReviewSeverity severity)
+{
+    switch (severity)
+    {
+    case TimelineReviewSeverity::Info:
+        return "info";
+    case TimelineReviewSeverity::Caution:
+        return "caution";
+    case TimelineReviewSeverity::Warning:
+        return "warning";
+    }
+    return "info";
 }
 
 } // namespace animus::app

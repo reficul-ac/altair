@@ -51,6 +51,10 @@ Reusable Bayek framework follow-up is tracked separately in
   exercised.
 - [ ] Expose MAVLink heartbeat age to the Animus operator status ribbon once
   heartbeat observation is available outside Developer diagnostics.
+- [ ] Add Animus review-tape marker sources for low link Hz, terrain
+  fallback/synthetic-under-vehicle, speed/climb excursions, plan deviation,
+  geofence, capture events, and model fallback when those runtime/session
+  sources are available.
 
 ## Workflow, Artifacts, And Verification
 

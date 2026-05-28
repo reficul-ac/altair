@@ -178,6 +178,12 @@ struct UiState
     std::array<char, 96> signal_filter{};
     TelemetryEventFilters telemetry_event_filters;
     std::vector<TimelineBookmark> timeline_bookmarks;
+    std::vector<TimelineReviewMarker> timeline_frame_time_markers;
+    TimelineFrameTimeReviewState timeline_frame_time_state;
+    TimelineReviewFilterState timeline_review_filters;
+    std::array<char, 96> timeline_bookmark_note{};
+    int timeline_bookmark_severity = 0;
+    int timeline_bookmark_category = 0;
     PlotUiState plot_ui;
 };
 
