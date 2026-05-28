@@ -677,7 +677,8 @@ Acceptance:
 
 #### Phase 7: Terrain Confidence And Forward Clearance
 
-Status: planned, reusing existing selected-entity terrain state where possible.
+Status: complete. Implemented as app-owned selected-entity terrain state,
+resident terrain sampling, 2D map overlays, and operator card/ribbon status.
 
 Terrain-under-vehicle fields:
 
@@ -713,11 +714,11 @@ Forward clearance:
 
 Acceptance:
 
-- Confidence appears in ribbon and card.
-- Ring renders at least in 2D.
-- Forward clearance updates live.
-- Low-confidence terrain affects status messaging.
-- No terrain worker/render-thread boundary violation.
+- [x] Confidence appears in ribbon and card.
+- [x] Ring renders at least in 2D.
+- [x] Forward clearance updates live.
+- [x] Low-confidence terrain affects status messaging.
+- [x] No terrain worker/render-thread boundary violation.
 
 #### Phase 8: MAVLink Inspector Lite
 

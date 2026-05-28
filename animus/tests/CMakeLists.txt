@@ -42,6 +42,7 @@ gtest_discover_tests(animus_contract_tests)
 add_executable(
     animus_options_tests
     ../apps/animus/src/app_config.cpp
+    ../apps/animus/src/forward_clearance.cpp
     ../apps/animus/src/layer_offline.cpp
     ../apps/animus/src/options.cpp
     ../apps/animus/src/plot_config.cpp

@@ -2043,6 +2043,7 @@ void draw_selected_entity_card(TelemetryPlaybackState &playback,
     metric_row("State", card.telemetry_state);
     metric_row("Age", card.telemetry_age);
     metric_row("Confidence", card.terrain_confidence);
+    metric_row("Forward", card.forward_clearance_summary);
 
     ImGui::SeparatorText("Position");
     metric_grid("##selected_vehicle_position_metrics", card.position_metrics);

@@ -1,5 +1,7 @@
 #include "status_ribbon.hpp"
 
+#include "forward_clearance.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -272,6 +274,38 @@ StatusRibbonPill make_terrain_pill(const Options &options,
     {
         pill.summary = elevation_configured ? "elevation ready" : "terrain unknown";
     }
+    const TelemetryPlaybackState::TerrainClearanceStatus current_confidence_status =
+        runtime.terrain_clearance_m
+            ? terrain_confidence_status(playback.selected_entity_terrain.confidence)
+            : TelemetryPlaybackState::TerrainClearanceStatus::Unknown;
+    if (current_confidence_status == TelemetryPlaybackState::TerrainClearanceStatus::Warning)
+    {
+        pill.level = StatusRibbonLevel::Warning;
+    }
+    else if (current_confidence_status == TelemetryPlaybackState::TerrainClearanceStatus::Caution)
+    {
+        pill.level = worst(pill.level, StatusRibbonLevel::Caution);
+    }
+    const TelemetryPlaybackState::TerrainClearanceStatus forward_status =
+        worst_forward_clearance_status(playback.selected_entity_terrain.forward_clearance);
+    if (forward_status == TelemetryPlaybackState::TerrainClearanceStatus::Warning)
+    {
+        pill.level = StatusRibbonLevel::Warning;
+        if (!runtime.terrain_clearance_m ||
+            *runtime.terrain_clearance_m > thresholds.terrain_clearance_critical_m)
+        {
+            pill.summary = "forward clearance critical";
+        }
+    }
+    else if (forward_status == TelemetryPlaybackState::TerrainClearanceStatus::Caution)
+    {
+        pill.level = worst(pill.level, StatusRibbonLevel::Caution);
+        if (!runtime.terrain_clearance_m ||
+            *runtime.terrain_clearance_m > thresholds.terrain_clearance_warning_m)
+        {
+            pill.summary = "forward clearance low";
+        }
+    }
     pill.action = pill.level == StatusRibbonLevel::Ok ? "Monitor terrain clearance."
                                                       : "Verify elevation source and datum.";
     pill.details.push_back("resident tiles: " + std::to_string(snapshot.resident_gpu_tiles));
@@ -282,6 +316,10 @@ StatusRibbonPill make_terrain_pill(const Options &options,
                            (playback.unknown_datum_relative_fallback ? "datum fallback"
                             : playback.geoid_correction_unavailable  ? "geoid unavailable"
                                                                      : "nominal"));
+    pill.details.push_back("confidence: " + std::string(terrain_confidence_label(
+                                                playback.selected_entity_terrain.confidence)));
+    pill.details.push_back("forward: " +
+                           std::string(terrain_clearance_status_label(forward_status)));
     return pill;
 }
 

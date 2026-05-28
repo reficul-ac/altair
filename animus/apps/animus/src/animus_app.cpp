@@ -1,4 +1,5 @@
 #include "capture.hpp"
+#include "forward_clearance.hpp"
 #include "map_tools.hpp"
 #include "options.hpp"
 #include "ui.hpp"
@@ -1710,6 +1711,7 @@ void update_selected_entity_terrain_state(
     const Options &options,
     const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
     const animus::terrain_core::GeoidCorrectionGrid &geoid_grid,
+    const animus::app::AppConfigStatusThresholds &thresholds,
     TelemetryPlaybackState &playback,
     const UiState &ui_state)
 {
@@ -1724,6 +1726,32 @@ void update_selected_entity_terrain_state(
     {
         return;
     }
+    const auto terrain_sampler =
+        [&](const double lat_deg,
+            const double lon_deg) -> std::optional<animus::app::ForwardClearanceTerrainSample>
+    {
+        const auto resident_sample = sample_resident_terrain(options, tiles, lat_deg, lon_deg);
+        if (!resident_sample)
+        {
+            return std::nullopt;
+        }
+        return animus::app::ForwardClearanceTerrainSample{
+            resident_sample->height_m,
+            resident_sample->confidence,
+        };
+    };
+    const auto clearance_calculator =
+        [&](const animus::telemetry_core::TelemetrySample &predicted_sample,
+            const double terrain_elevation_m,
+            bool &forward_datum_uncertain) -> std::optional<double>
+    {
+        return selected_entity_clearance_m(
+            geoid_grid, predicted_sample, terrain_elevation_m, forward_datum_uncertain);
+    };
+    playback.selected_entity_terrain.forward_clearance =
+        animus::app::build_forward_clearance_samples(
+            *sample, terrain_sampler, clearance_calculator, thresholds);
+
     const auto terrain = sample_resident_terrain(options, tiles, sample->lat_deg, sample->lon_deg);
     if (!terrain)
     {
@@ -2276,6 +2304,135 @@ void draw_map_tool_popup(MapToolState &tools,
     ImGui::EndPopup();
 }
 
+ImU32 forward_clearance_color(const TelemetryPlaybackState::TerrainClearanceStatus status)
+{
+    switch (status)
+    {
+    case TelemetryPlaybackState::TerrainClearanceStatus::Ok:
+        return IM_COL32(92, 221, 156, 232);
+    case TelemetryPlaybackState::TerrainClearanceStatus::Caution:
+        return IM_COL32(248, 181, 83, 238);
+    case TelemetryPlaybackState::TerrainClearanceStatus::Warning:
+        return IM_COL32(248, 91, 91, 244);
+    case TelemetryPlaybackState::TerrainClearanceStatus::Unknown:
+        return IM_COL32(150, 160, 166, 178);
+    }
+    return IM_COL32(150, 160, 166, 178);
+}
+
+void draw_segmented_circle(ImDrawList *draw,
+                           const ImVec2 center,
+                           const float radius,
+                           const ImU32 color,
+                           const int segment_count,
+                           const bool dots)
+{
+    constexpr float two_pi = 6.28318530717958647692F;
+    for (int segment = 0; segment < segment_count; ++segment)
+    {
+        const float a0 = two_pi * static_cast<float>(segment) / static_cast<float>(segment_count);
+        if (dots)
+        {
+            draw->AddCircleFilled(
+                ImVec2(center.x + std::cos(a0) * radius, center.y + std::sin(a0) * radius),
+                1.6F,
+                color,
+                8);
+            continue;
+        }
+        const float a1 = a0 + two_pi * 0.55F / static_cast<float>(segment_count);
+        draw->AddLine(ImVec2(center.x + std::cos(a0) * radius, center.y + std::sin(a0) * radius),
+                      ImVec2(center.x + std::cos(a1) * radius, center.y + std::sin(a1) * radius),
+                      color,
+                      2.0F);
+    }
+}
+
+void draw_selected_terrain_confidence_ring(
+    ImDrawList *draw,
+    const ImVec2 center,
+    const TelemetryPlaybackState::TerrainConfidence confidence)
+{
+    constexpr float radius = 22.0F;
+    switch (confidence)
+    {
+    case TelemetryPlaybackState::TerrainConfidence::ExactResidentTile:
+        draw->AddCircle(center, radius, IM_COL32(92, 221, 156, 230), 42, 2.2F);
+        break;
+    case TelemetryPlaybackState::TerrainConfidence::FallbackResidentTile:
+        draw_segmented_circle(draw, center, radius, IM_COL32(248, 181, 83, 230), 18, false);
+        break;
+    case TelemetryPlaybackState::TerrainConfidence::SyntheticResidentTile:
+    case TelemetryPlaybackState::TerrainConfidence::DatumUncertain:
+        draw_segmented_circle(draw, center, radius, IM_COL32(248, 181, 83, 230), 26, true);
+        break;
+    case TelemetryPlaybackState::TerrainConfidence::Unavailable:
+        draw->AddCircle(center, radius, IM_COL32(150, 160, 166, 150), 42, 1.8F);
+        break;
+    }
+}
+
+void draw_forward_clearance_overlay(
+    const Options &options,
+    ImDrawList *draw,
+    const Mat4 &mvp,
+    const ImVec2 selected_screen,
+    const std::vector<TelemetryPlaybackState::ForwardClearanceSample> &samples,
+    const int framebuffer_width,
+    const int framebuffer_height)
+{
+    if (samples.empty())
+    {
+        return;
+    }
+    std::vector<ImVec2> points;
+    points.reserve(samples.size() + 1U);
+    points.push_back(selected_screen);
+    TelemetryPlaybackState::TerrainClearanceStatus worst_status =
+        TelemetryPlaybackState::TerrainClearanceStatus::Ok;
+    for (const auto &sample : samples)
+    {
+        const std::optional<float> terrain_m =
+            sample.terrain_elevation_m
+                ? std::optional<float>(static_cast<float>(*sample.terrain_elevation_m))
+                : std::nullopt;
+        const ProjectedPoint projected = project_to_screen(
+            mvp,
+            terrain_world_position(options, sample.lat_deg, sample.lon_deg, terrain_m),
+            framebuffer_width,
+            framebuffer_height);
+        if (!projected.visible)
+        {
+            points.push_back(ImVec2(-100000.0F, -100000.0F));
+            continue;
+        }
+        points.push_back(projected.screen);
+        worst_status = animus::app::worst_terrain_clearance_status(worst_status, sample.status);
+    }
+    const ImU32 line_color = forward_clearance_color(worst_status);
+    for (std::size_t index = 1U; index < points.size(); ++index)
+    {
+        if (points[index - 1U].x < -99999.0F || points[index].x < -99999.0F)
+        {
+            continue;
+        }
+        draw->AddLine(points[index - 1U], points[index], line_color, 2.0F);
+    }
+    for (std::size_t index = 0U; index < samples.size(); ++index)
+    {
+        const ImVec2 point = points[index + 1U];
+        if (point.x < -99999.0F)
+        {
+            continue;
+        }
+        draw->AddCircleFilled(point, 4.0F, forward_clearance_color(samples[index].status), 16);
+        draw->AddCircle(point, 6.0F, IM_COL32(12, 18, 22, 216), 18, 1.5F);
+        char label[16]{};
+        std::snprintf(label, sizeof(label), "%.0fs", samples[index].horizon_s);
+        draw->AddText(ImVec2(point.x + 7.0F, point.y - 7.0F), IM_COL32(226, 232, 236, 224), label);
+    }
+}
+
 TelemetryOverlayDrawStats
 draw_telemetry_overlay(const Options &options,
                        const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
@@ -2442,6 +2599,19 @@ draw_telemetry_overlay(const Options &options,
             {
                 draw->AddCircle(point.screen, 13.5F, IM_COL32(118, 210, 255, 216), 28, 2.2F);
                 draw->AddCircle(point.screen, 17.0F, IM_COL32(118, 210, 255, 68), 32, 3.0F);
+                if (ui_state.view_mode == animus::app::ViewMode::Map2D)
+                {
+                    draw_selected_terrain_confidence_ring(
+                        draw, point.screen, playback.selected_entity_terrain.confidence);
+                    draw_forward_clearance_overlay(
+                        options,
+                        draw,
+                        mvp,
+                        point.screen,
+                        playback.selected_entity_terrain.forward_clearance,
+                        framebuffer_width,
+                        framebuffer_height);
+                }
             }
 
             if (heading &&
@@ -3424,7 +3594,8 @@ int run(Options options)
             resident_gpu_bytes += tile.estimated_gpu_bytes;
         }
         streamer.update_l0_stats(tiles.size(), resident_gpu_bytes);
-        update_selected_entity_terrain_state(options, tiles, geoid_grid, telemetry, ui_state);
+        update_selected_entity_terrain_state(
+            options, tiles, geoid_grid, options.status_thresholds, telemetry, ui_state);
         if (telemetry.loaded && !telemetry.live && ui_state.telemetry_entity_selected)
         {
             const animus::app::TimelineReviewThresholds review_thresholds{

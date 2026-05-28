@@ -88,11 +88,29 @@ struct TelemetryPlaybackState
         Unavailable,
         DatumUncertain,
     };
+    enum class TerrainClearanceStatus
+    {
+        Ok,
+        Caution,
+        Warning,
+        Unknown,
+    };
+    struct ForwardClearanceSample
+    {
+        double horizon_s = 0.0;
+        double lat_deg = 0.0;
+        double lon_deg = 0.0;
+        std::optional<double> terrain_elevation_m;
+        std::optional<double> terrain_clearance_m;
+        TerrainConfidence confidence = TerrainConfidence::Unavailable;
+        TerrainClearanceStatus status = TerrainClearanceStatus::Unknown;
+    };
     struct SelectedEntityTerrain
     {
         std::optional<double> terrain_elevation_m;
         std::optional<double> terrain_clearance_m;
         TerrainConfidence confidence = TerrainConfidence::Unavailable;
+        std::vector<ForwardClearanceSample> forward_clearance;
     };
     SelectedEntityTerrain selected_entity_terrain;
     TimelineReviewData review;

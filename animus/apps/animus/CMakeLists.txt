@@ -7,6 +7,7 @@ add_executable(
     src/main.cpp
     src/animus_app.cpp
     src/capture.cpp
+    src/forward_clearance.cpp
     src/layer_offline.cpp
     src/options.cpp
     src/plot_config.cpp

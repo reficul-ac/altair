@@ -37,6 +37,7 @@ struct SelectedVehicleCardModel
     std::string phase = "--";
     std::string target = "--";
     std::string terrain_confidence = "--";
+    std::string forward_clearance_summary = "--";
     std::vector<SelectedVehicleCardMetric> position_metrics;
     std::vector<SelectedVehicleCardMetric> motion_metrics;
     std::vector<std::string> warnings;

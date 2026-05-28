@@ -1,5 +1,7 @@
 #include "selected_vehicle_card.hpp"
 
+#include "forward_clearance.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -85,24 +87,6 @@ void add_warning(SelectedVehicleCardModel &model,
     model.warnings.push_back(std::move(warning));
 }
 
-const char *terrain_confidence_label(const TelemetryPlaybackState::TerrainConfidence confidence)
-{
-    switch (confidence)
-    {
-    case TelemetryPlaybackState::TerrainConfidence::ExactResidentTile:
-        return "exact resident tile";
-    case TelemetryPlaybackState::TerrainConfidence::FallbackResidentTile:
-        return "fallback resident tile";
-    case TelemetryPlaybackState::TerrainConfidence::SyntheticResidentTile:
-        return "synthetic resident tile";
-    case TelemetryPlaybackState::TerrainConfidence::Unavailable:
-        return "unavailable";
-    case TelemetryPlaybackState::TerrainConfidence::DatumUncertain:
-        return "datum uncertain";
-    }
-    return "unavailable";
-}
-
 void add_attitude_warning(SelectedVehicleCardModel &model,
                           const char *name,
                           const std::optional<double> radians,
@@ -155,6 +139,38 @@ std::vector<SelectedVehicleCardMetric> default_motion_metrics()
     };
 }
 
+std::string forward_clearance_summary(
+    const std::vector<TelemetryPlaybackState::ForwardClearanceSample> &samples)
+{
+    if (samples.empty())
+    {
+        return "unavailable";
+    }
+    const auto worst_sample =
+        std::min_element(samples.begin(),
+                         samples.end(),
+                         [](const TelemetryPlaybackState::ForwardClearanceSample &lhs,
+                            const TelemetryPlaybackState::ForwardClearanceSample &rhs)
+                         {
+                             if (!lhs.terrain_clearance_m)
+                             {
+                                 return false;
+                             }
+                             if (!rhs.terrain_clearance_m)
+                             {
+                                 return true;
+                             }
+                             return *lhs.terrain_clearance_m < *rhs.terrain_clearance_m;
+                         });
+    if (worst_sample == samples.end() || !worst_sample->terrain_clearance_m)
+    {
+        return "terrain unavailable";
+    }
+    return fmt("%.0f m", *worst_sample->terrain_clearance_m) + " at " +
+           fmt("%.0f s", worst_sample->horizon_s) + " / " +
+           terrain_clearance_status_label(worst_forward_clearance_status(samples));
+}
+
 } // namespace
 
 const char *selected_vehicle_card_status_label(const SelectedVehicleCardStatus status)
@@ -186,6 +202,8 @@ build_selected_vehicle_card_model(const TelemetryPlaybackState &playback,
     model.visual_status = vehicle_status.model_status.empty() ? "--" : vehicle_status.model_status;
     model.terrain_confidence =
         terrain_confidence_label(playback.selected_entity_terrain.confidence);
+    model.forward_clearance_summary =
+        forward_clearance_summary(playback.selected_entity_terrain.forward_clearance);
     model.position_metrics = default_position_metrics();
     model.motion_metrics = default_motion_metrics();
 
@@ -259,6 +277,18 @@ build_selected_vehicle_card_model(const TelemetryPlaybackState &playback,
         {
             add_warning(model, SelectedVehicleCardStatus::Caution, "Terrain clearance low");
         }
+    }
+
+    const TelemetryPlaybackState::TerrainClearanceStatus forward_status =
+        worst_forward_clearance_status(playback.selected_entity_terrain.forward_clearance);
+    if (forward_status == TelemetryPlaybackState::TerrainClearanceStatus::Warning)
+    {
+        add_warning(
+            model, SelectedVehicleCardStatus::Warning, "Forward terrain clearance critical");
+    }
+    else if (forward_status == TelemetryPlaybackState::TerrainClearanceStatus::Caution)
+    {
+        add_warning(model, SelectedVehicleCardStatus::Caution, "Forward terrain clearance low");
     }
 
     switch (playback.selected_entity_terrain.confidence)

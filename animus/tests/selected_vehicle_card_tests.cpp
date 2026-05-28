@@ -1,5 +1,7 @@
 #include "selected_vehicle_card.hpp"
 
+#include "forward_clearance.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -96,6 +98,23 @@ bool has_warning(const animus::app::SelectedVehicleCardModel &model, const std::
                        { return warning.find(needle) != std::string::npos; });
 }
 
+TelemetryPlaybackState::ForwardClearanceSample
+forward_sample(const double horizon_s,
+               const double clearance_m,
+               const TelemetryPlaybackState::TerrainConfidence confidence =
+                   TelemetryPlaybackState::TerrainConfidence::ExactResidentTile)
+{
+    TelemetryPlaybackState::ForwardClearanceSample value;
+    value.horizon_s = horizon_s;
+    value.lat_deg = 39.0;
+    value.lon_deg = -120.0;
+    value.terrain_elevation_m = 1380.0;
+    value.terrain_clearance_m = clearance_m;
+    value.confidence = confidence;
+    value.status = animus::app::terrain_clearance_status(clearance_m, confidence, {});
+    return value;
+}
+
 std::string metric_value(const std::vector<animus::app::SelectedVehicleCardMetric> &metrics,
                          const std::string &label)
 {
@@ -139,12 +158,33 @@ TEST(SelectedVehicleCard, ValidSelectedEntityFormatsTelemetry)
     EXPECT_EQ(model.visual_assignment, "Generic RC Plane / fixed_wing");
     EXPECT_EQ(model.visual_status, "loaded");
     EXPECT_EQ(model.terrain_confidence, "exact resident tile");
+    EXPECT_EQ(model.forward_clearance_summary, "unavailable");
     EXPECT_EQ(metric_value(model.position_metrics, "Alt MSL"), "1500 m");
     EXPECT_EQ(metric_value(model.position_metrics, "Clearance"), "120 m");
     EXPECT_EQ(metric_value(model.motion_metrics, "Ground"), "22.5 m/s");
     EXPECT_EQ(metric_value(model.motion_metrics, "Roll"), "10.0 deg");
     EXPECT_EQ(metric_value(model.motion_metrics, "Pitch"), "-5.0 deg");
     EXPECT_EQ(metric_value(model.motion_metrics, "Yaw"), "90.0 deg");
+}
+
+TEST(SelectedVehicleCard, TerrainConfidenceLabelsCoverAllStates)
+{
+    TelemetryPlaybackState playback = playback_with_sample();
+    playback.selected_entity_terrain.confidence =
+        TelemetryPlaybackState::TerrainConfidence::FallbackResidentTile;
+    EXPECT_EQ(build(playback, selected_ui()).terrain_confidence, "fallback resident tile");
+
+    playback.selected_entity_terrain.confidence =
+        TelemetryPlaybackState::TerrainConfidence::SyntheticResidentTile;
+    EXPECT_EQ(build(playback, selected_ui()).terrain_confidence, "synthetic resident tile");
+
+    playback.selected_entity_terrain.confidence =
+        TelemetryPlaybackState::TerrainConfidence::DatumUncertain;
+    EXPECT_EQ(build(playback, selected_ui()).terrain_confidence, "datum uncertain");
+
+    playback.selected_entity_terrain.confidence =
+        TelemetryPlaybackState::TerrainConfidence::Unavailable;
+    EXPECT_EQ(build(playback, selected_ui()).terrain_confidence, "unavailable");
 }
 
 TEST(SelectedVehicleCard, MissingOptionalTelemetryUsesDashPlaceholders)
@@ -186,6 +226,40 @@ TEST(SelectedVehicleCard, LowTerrainClearanceUsesConfiguredThresholds)
     const auto model = build(playback, selected_ui());
     EXPECT_EQ(model.status, SelectedVehicleCardStatus::Warning);
     EXPECT_TRUE(has_warning(model, "critical"));
+}
+
+TEST(SelectedVehicleCard, ForwardClearanceSummaryUsesWorstPredictedPoint)
+{
+    TelemetryPlaybackState playback = playback_with_sample();
+    playback.selected_entity_terrain.forward_clearance = {
+        forward_sample(5.0, 90.0),
+        forward_sample(10.0, 45.0),
+        forward_sample(20.0, 18.0),
+        forward_sample(30.0, 60.0),
+    };
+
+    const auto model = build(playback, selected_ui());
+
+    EXPECT_EQ(model.status, SelectedVehicleCardStatus::Caution);
+    EXPECT_EQ(model.forward_clearance_summary, "18 m at 20 s / Caution");
+    EXPECT_TRUE(has_warning(model, "Forward terrain clearance low"));
+}
+
+TEST(SelectedVehicleCard, ForwardClearanceCriticalRaisesWarning)
+{
+    TelemetryPlaybackState playback = playback_with_sample();
+    playback.selected_entity_terrain.forward_clearance = {
+        forward_sample(5.0, 90.0),
+        forward_sample(10.0, 4.0),
+        forward_sample(20.0, 18.0),
+        forward_sample(30.0, 60.0),
+    };
+
+    const auto model = build(playback, selected_ui());
+
+    EXPECT_EQ(model.status, SelectedVehicleCardStatus::Warning);
+    EXPECT_EQ(model.forward_clearance_summary, "4 m at 10 s / Warning");
+    EXPECT_TRUE(has_warning(model, "Forward terrain clearance critical"));
 }
 
 TEST(SelectedVehicleCard, TerrainConfidenceWarningsReflectFallbacks)
@@ -251,4 +325,86 @@ TEST(SelectedVehicleCard, LowLinkRateRaisesCaution)
 
     EXPECT_EQ(model.status, SelectedVehicleCardStatus::Caution);
     EXPECT_TRUE(has_warning(model, "Link rate"));
+}
+
+TEST(ForwardClearance, MissingHeadingOrSpeedProducesNoSamples)
+{
+    TelemetrySample value = sample(10.0);
+    const auto terrain = [](double,
+                            double) -> std::optional<animus::app::ForwardClearanceTerrainSample>
+    {
+        return animus::app::ForwardClearanceTerrainSample{
+            1000.0, TelemetryPlaybackState::TerrainConfidence::ExactResidentTile};
+    };
+    const auto clearance = [](const TelemetrySample &, double, bool &) -> std::optional<double>
+    { return 100.0; };
+
+    value.heading_deg.reset();
+    value.yaw_rad.reset();
+    EXPECT_TRUE(
+        animus::app::build_forward_clearance_samples(value, terrain, clearance, {}).empty());
+
+    value.heading_deg = 90.0;
+    value.ground_speed_mps.reset();
+    EXPECT_TRUE(
+        animus::app::build_forward_clearance_samples(value, terrain, clearance, {}).empty());
+}
+
+TEST(ForwardClearance, ProjectsConfiguredHorizonsDeterministically)
+{
+    TelemetrySample value = sample(10.0);
+    value.lat_deg = 0.0;
+    value.lon_deg = 0.0;
+    value.heading_deg = 90.0;
+    value.ground_speed_mps = 10.0;
+    const auto terrain = [](double,
+                            double) -> std::optional<animus::app::ForwardClearanceTerrainSample>
+    {
+        return animus::app::ForwardClearanceTerrainSample{
+            1000.0, TelemetryPlaybackState::TerrainConfidence::ExactResidentTile};
+    };
+    const auto clearance = [](const TelemetrySample &, double, bool &) -> std::optional<double>
+    { return 100.0; };
+
+    const auto samples =
+        animus::app::build_forward_clearance_samples(value, terrain, clearance, {});
+
+    ASSERT_EQ(samples.size(), 4U);
+    EXPECT_DOUBLE_EQ(samples[0].horizon_s, 5.0);
+    EXPECT_DOUBLE_EQ(samples[1].horizon_s, 10.0);
+    EXPECT_DOUBLE_EQ(samples[2].horizon_s, 20.0);
+    EXPECT_DOUBLE_EQ(samples[3].horizon_s, 30.0);
+    EXPECT_NEAR(samples[0].lat_deg, 0.0, 1.0e-8);
+    EXPECT_GT(samples[3].lon_deg, samples[2].lon_deg);
+    EXPECT_EQ(samples[0].status, TelemetryPlaybackState::TerrainClearanceStatus::Ok);
+}
+
+TEST(ForwardClearance, PropagatesTerrainFailuresAndDatumUncertainty)
+{
+    TelemetrySample value = sample(10.0);
+    const auto terrain =
+        [](double, double lon_deg) -> std::optional<animus::app::ForwardClearanceTerrainSample>
+    {
+        if (lon_deg > -119.995)
+        {
+            return std::nullopt;
+        }
+        return animus::app::ForwardClearanceTerrainSample{
+            1000.0, TelemetryPlaybackState::TerrainConfidence::FallbackResidentTile};
+    };
+    const auto clearance =
+        [](const TelemetrySample &, double, bool &datum_uncertain) -> std::optional<double>
+    {
+        datum_uncertain = true;
+        return 100.0;
+    };
+
+    const auto samples =
+        animus::app::build_forward_clearance_samples(value, terrain, clearance, {});
+
+    ASSERT_EQ(samples.size(), 4U);
+    EXPECT_EQ(samples[0].confidence, TelemetryPlaybackState::TerrainConfidence::DatumUncertain);
+    EXPECT_EQ(samples[0].status, TelemetryPlaybackState::TerrainClearanceStatus::Warning);
+    EXPECT_EQ(samples[3].confidence, TelemetryPlaybackState::TerrainConfidence::Unavailable);
+    EXPECT_EQ(samples[3].status, TelemetryPlaybackState::TerrainClearanceStatus::Unknown);
 }

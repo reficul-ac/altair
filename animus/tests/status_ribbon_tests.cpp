@@ -1,5 +1,7 @@
 #include "status_ribbon.hpp"
 
+#include "forward_clearance.hpp"
+
 #include <algorithm>
 
 #include <gtest/gtest.h>
@@ -74,6 +76,22 @@ StatusRibbonModel build(const animus::app::Options &options,
                                                   0U);
 }
 
+TelemetryPlaybackState::ForwardClearanceSample
+forward_sample(const double clearance_m,
+               const TelemetryPlaybackState::TerrainConfidence confidence =
+                   TelemetryPlaybackState::TerrainConfidence::ExactResidentTile)
+{
+    TelemetryPlaybackState::ForwardClearanceSample value;
+    value.horizon_s = 10.0;
+    value.lat_deg = 39.0;
+    value.lon_deg = -120.0;
+    value.terrain_elevation_m = 1380.0;
+    value.terrain_clearance_m = clearance_m;
+    value.confidence = confidence;
+    value.status = animus::app::terrain_clearance_status(clearance_m, confidence, {});
+    return value;
+}
+
 } // namespace
 
 TEST(AnimusStatusRibbon, LinkStatesFromRateGapAndDrops)
@@ -132,6 +150,63 @@ TEST(AnimusStatusRibbon, TerrainStatesFromClearanceConfidenceAndTiles)
     snapshot.failed_tiles = 1U;
     EXPECT_EQ(pill(build(options, thresholds, snapshot, runtime, playback), "TERRAIN").level,
               StatusRibbonLevel::Warning);
+}
+
+TEST(AnimusStatusRibbon, TerrainEscalatesFromForwardClearance)
+{
+    animus::app::Options options;
+    animus::app::AppConfigStatusThresholds thresholds;
+    animus::terrain_core::TerrainStreamSnapshot snapshot;
+    RuntimeSignalInputs runtime;
+    TelemetryPlaybackState playback = loaded_playback();
+    snapshot.resident_gpu_tiles = 4U;
+    runtime.terrain_clearance_m = 80.0;
+
+    playback.selected_entity_terrain.forward_clearance = {forward_sample(20.0)};
+    auto terrain = pill(build(options, thresholds, snapshot, runtime, playback), "TERRAIN");
+    EXPECT_EQ(terrain.level, StatusRibbonLevel::Caution);
+    EXPECT_EQ(terrain.summary, "forward clearance low");
+
+    playback.selected_entity_terrain.forward_clearance = {forward_sample(5.0)};
+    terrain = pill(build(options, thresholds, snapshot, runtime, playback), "TERRAIN");
+    EXPECT_EQ(terrain.level, StatusRibbonLevel::Warning);
+    EXPECT_EQ(terrain.summary, "forward clearance critical");
+}
+
+TEST(AnimusStatusRibbon, CurrentCriticalClearanceKeepsPrecedenceOverForward)
+{
+    animus::app::Options options;
+    animus::app::AppConfigStatusThresholds thresholds;
+    animus::terrain_core::TerrainStreamSnapshot snapshot;
+    RuntimeSignalInputs runtime;
+    TelemetryPlaybackState playback = loaded_playback();
+    snapshot.resident_gpu_tiles = 4U;
+    runtime.terrain_clearance_m = 5.0;
+    playback.selected_entity_terrain.forward_clearance = {forward_sample(20.0)};
+
+    const auto terrain = pill(build(options, thresholds, snapshot, runtime, playback), "TERRAIN");
+
+    EXPECT_EQ(terrain.level, StatusRibbonLevel::Warning);
+    EXPECT_EQ(terrain.summary, "5 m clearance");
+}
+
+TEST(AnimusStatusRibbon, UnavailableForwardProjectionDoesNotWarn)
+{
+    animus::app::Options options;
+    animus::app::AppConfigStatusThresholds thresholds;
+    animus::terrain_core::TerrainStreamSnapshot snapshot;
+    RuntimeSignalInputs runtime;
+    TelemetryPlaybackState playback = loaded_playback();
+    snapshot.resident_gpu_tiles = 4U;
+    runtime.terrain_clearance_m = 80.0;
+    TelemetryPlaybackState::ForwardClearanceSample unavailable;
+    unavailable.horizon_s = 10.0;
+    playback.selected_entity_terrain.forward_clearance = {unavailable};
+
+    const auto terrain = pill(build(options, thresholds, snapshot, runtime, playback), "TERRAIN");
+
+    EXPECT_EQ(terrain.level, StatusRibbonLevel::Ok);
+    EXPECT_EQ(terrain.summary, "80 m clearance");
 }
 
 TEST(AnimusStatusRibbon, VehicleReflectsSelectionStaleDataAndModelFallback)
