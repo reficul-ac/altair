@@ -1,6 +1,7 @@
 #pragma once
 
 #include "animus/telemetry_core/telemetry.hpp"
+#include "plan_visualization.hpp"
 
 #include <cstddef>
 #include <optional>
@@ -29,6 +30,8 @@ enum class TimelineReviewMarkerCategory
     LowClearance,
     Attitude,
     FrameTime,
+    PlanDeviation,
+    PlanAltitude,
 };
 
 struct TimelineReviewMarker
@@ -69,6 +72,7 @@ struct TerrainClearanceSample
 {
     double time_s = 0.0;
     double clearance_m = 0.0;
+    bool planned_path = false;
 };
 
 struct TimelineReviewData
@@ -93,6 +97,7 @@ struct TimelineReviewFilterState
     bool show_clearance = true;
     bool show_attitude = true;
     bool show_frame_time = true;
+    bool show_plan = true;
     bool show_min_max = true;
 };
 
@@ -105,6 +110,8 @@ struct TimelineReviewThresholds
     double frame_time_warning_ms = 33.0;
     double telemetry_gap_warning_s = 2.0;
     double telemetry_gap_critical_s = 5.0;
+    double plan_deviation_warning_m = 50.0;
+    double plan_altitude_error_warning_m = 25.0;
 };
 
 struct TimelineFrameTimeReviewState
@@ -134,6 +141,7 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
                       const std::vector<TerrainClearanceSample> &terrain_clearance_samples,
                       const std::vector<TimelineReviewMarker> &frame_time_markers,
                       const TimelineReviewThresholds &thresholds,
+                      const PlanVisualizationData *plan = nullptr,
                       std::size_t max_series_points = default_timeline_review_sample_cap);
 
 [[nodiscard]] bool timeline_review_marker_visible(const TimelineReviewMarker &marker,

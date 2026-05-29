@@ -61,11 +61,64 @@ struct PlanTrackComparison
     std::optional<double> last_waypoint_nearest_track_m;
 };
 
+struct PlanActualRouteProgress
+{
+    std::size_t segment_index = 0U;
+    std::size_t from_waypoint_index = 0U;
+    std::size_t to_waypoint_index = 0U;
+    double segment_fraction = 0.0;
+    double along_route_m = 0.0;
+    double route_completion_ratio = 0.0;
+    std::size_t next_waypoint_index = 0U;
+};
+
+struct PlanActualDeviation
+{
+    double time_s = 0.0;
+    PlanGeoPoint nearest_route_point;
+    PlanActualRouteProgress progress;
+    double cross_track_error_m = 0.0;
+    std::optional<double> altitude_error_m;
+};
+
+struct PlanActualAggregate
+{
+    double planned_route_m = 0.0;
+    double selected_track_m = 0.0;
+    std::size_t compared_samples = 0U;
+    std::optional<PlanActualDeviation> current;
+    std::optional<double> average_cross_track_error_m;
+    std::optional<double> max_cross_track_error_m;
+    std::optional<double> max_cross_track_error_time_s;
+    std::optional<double> average_altitude_error_m;
+    std::optional<double> max_altitude_error_m;
+    std::optional<double> max_altitude_error_time_s;
+    double route_completion_ratio = 0.0;
+    double route_completion_m = 0.0;
+};
+
+struct GhostReplayCurrentRunSummary
+{
+    bool baseline_loaded = false;
+    double selected_track_m = 0.0;
+    double route_completion_ratio = 0.0;
+    std::optional<double> max_cross_track_error_m;
+    std::optional<double> max_altitude_error_m;
+};
+
 [[nodiscard]] PlanVisualizationLoadResult
 load_plan_visualization(const std::filesystem::path &path);
 
 [[nodiscard]] PlanTrackComparison compare_plan_to_track(const PlanVisualizationData &plan,
                                                         const animus::telemetry_core::Track &track);
+[[nodiscard]] PlanActualAggregate compare_plan_actual(const PlanVisualizationData &plan,
+                                                      const animus::telemetry_core::Track &track,
+                                                      double current_time_s);
+[[nodiscard]] std::optional<PlanActualDeviation>
+plan_actual_deviation_at(const PlanVisualizationData &plan,
+                         const animus::telemetry_core::TelemetrySample &sample);
+[[nodiscard]] GhostReplayCurrentRunSummary
+ghost_replay_current_run_summary(const PlanActualAggregate &comparison);
 
 [[nodiscard]] double plan_route_distance_m(const std::vector<PlanWaypoint> &waypoints);
 [[nodiscard]] double

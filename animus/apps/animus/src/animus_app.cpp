@@ -1845,6 +1845,43 @@ build_review_clearance_samples(const Options &options,
     return samples;
 }
 
+std::vector<animus::app::TerrainClearanceSample>
+build_planned_path_clearance_samples(const Options &options,
+                                     const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
+                                     const PlanVisualizationState &plan_state,
+                                     const animus::telemetry_core::Timeline &timeline)
+{
+    std::vector<animus::app::TerrainClearanceSample> samples;
+    if (!plan_state.data || plan_state.data->mission_waypoints.empty())
+    {
+        return samples;
+    }
+
+    const auto &waypoints = plan_state.data->mission_waypoints;
+    samples.reserve(waypoints.size());
+    const double duration_s = std::max(0.0, timeline.end_time_s - timeline.start_time_s);
+    const std::size_t last_index = waypoints.size() - 1U;
+    for (std::size_t index = 0U; index < waypoints.size(); ++index)
+    {
+        const PlanGeoPoint &point = waypoints[index].point;
+        if (!point.alt_m)
+        {
+            continue;
+        }
+        const auto terrain = sample_resident_terrain(options, tiles, point.lat_deg, point.lon_deg);
+        if (!terrain)
+        {
+            continue;
+        }
+        const double fraction =
+            last_index == 0U ? 0.0 : static_cast<double>(index) / static_cast<double>(last_index);
+        samples.push_back({timeline.start_time_s + duration_s * fraction,
+                           *point.alt_m - terrain->height_m,
+                           true});
+    }
+    return samples;
+}
+
 std::optional<Vec3>
 selected_entity_world_position(const Options &options,
                                const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
@@ -3654,16 +3691,30 @@ int run(Options options)
                 options.status_thresholds.pitch_warning_deg,
                 options.status_thresholds.frame_time_warning_ms,
                 options.status_thresholds.telemetry_gap_warning_s,
-                options.status_thresholds.telemetry_gap_critical_s};
-            telemetry.review = animus::app::build_timeline_review(
-                telemetry.timeline,
-                telemetry.selected_entity,
-                ui_state.timeline_bookmarks,
+                options.status_thresholds.telemetry_gap_critical_s,
+                options.status_thresholds.plan_deviation_warning_m,
+                options.status_thresholds.plan_altitude_error_warning_m};
+            std::vector<animus::app::TerrainClearanceSample> review_clearance =
                 build_review_clearance_samples(
-                    options, tiles, geoid_grid, telemetry.timeline, telemetry.selected_entity),
-                ui_state.timeline_frame_time_markers,
-                review_thresholds,
-                animus::app::default_timeline_review_sample_cap);
+                    options, tiles, geoid_grid, telemetry.timeline, telemetry.selected_entity);
+            std::vector<animus::app::TerrainClearanceSample> planned_clearance =
+                build_planned_path_clearance_samples(
+                    options, tiles, plan_state, telemetry.timeline);
+            review_clearance.insert(
+                review_clearance.end(), planned_clearance.begin(), planned_clearance.end());
+            std::stable_sort(review_clearance.begin(),
+                             review_clearance.end(),
+                             [](const auto &lhs, const auto &rhs)
+                             { return lhs.time_s < rhs.time_s; });
+            telemetry.review =
+                animus::app::build_timeline_review(telemetry.timeline,
+                                                   telemetry.selected_entity,
+                                                   ui_state.timeline_bookmarks,
+                                                   review_clearance,
+                                                   ui_state.timeline_frame_time_markers,
+                                                   review_thresholds,
+                                                   plan_state.data ? &*plan_state.data : nullptr,
+                                                   animus::app::default_timeline_review_sample_cap);
         }
         else
         {

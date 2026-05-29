@@ -805,7 +805,9 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
                        "frame_time_warning_ms",
                        "link_hz_warning",
                        "telemetry_gap_warning_s",
-                       "telemetry_gap_critical_s"},
+                       "telemetry_gap_critical_s",
+                       "plan_deviation_warning_m",
+                       "plan_altitude_error_warning_m"},
                       "status_thresholds.",
                       result.diagnostics);
     read_positive_double(thresholds,
@@ -839,6 +841,14 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
     read_positive_double(thresholds,
                          "telemetry_gap_critical_s",
                          result.config.status_thresholds.telemetry_gap_critical_s,
+                         result.diagnostics);
+    read_positive_double(thresholds,
+                         "plan_deviation_warning_m",
+                         result.config.status_thresholds.plan_deviation_warning_m,
+                         result.diagnostics);
+    read_positive_double(thresholds,
+                         "plan_altitude_error_warning_m",
+                         result.config.status_thresholds.plan_altitude_error_warning_m,
                          result.diagnostics);
 
     result.config.plots = read_plot_shelf_config(root["plots"], result.diagnostics);
@@ -968,6 +978,10 @@ AppConfigSaveResult save_app_config_file(const std::filesystem::path &path, cons
         << config.status_thresholds.telemetry_gap_warning_s;
     out << YAML::Key << "telemetry_gap_critical_s" << YAML::Value
         << config.status_thresholds.telemetry_gap_critical_s;
+    out << YAML::Key << "plan_deviation_warning_m" << YAML::Value
+        << config.status_thresholds.plan_deviation_warning_m;
+    out << YAML::Key << "plan_altitude_error_warning_m" << YAML::Value
+        << config.status_thresholds.plan_altitude_error_warning_m;
     out << YAML::EndMap;
     out << YAML::Key << "vehicle_visuals" << YAML::Value << YAML::BeginMap << YAML::EndMap;
     out << YAML::Key << "plots" << YAML::Value;

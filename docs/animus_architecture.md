@@ -883,27 +883,28 @@ Acceptance:
 
 #### Phase 11: Plan-vs-Actual And Ghost Replay Foundation
 
-Status: planned after Phases 1-10 and 12.
+Status: complete as a foundation-only Phase 11 slice after Phases 1-10. Baseline
+loading, second-run comparison, and ghost rendering remain future Phase 12 work.
 
 Plan-vs-actual:
 
 - active segment display
 - cross-track error when route geometry exists
 - altitude error when planned altitude exists
-- waypoint progress
-- low terrain clearance along planned path
+- waypoint progress and route completion estimate
+- low terrain clearance along planned path when resident terrain is available
 - route coverage by offline terrain pack if feasible
 
 Ghost replay:
 
-- load second telemetry run as baseline later
+- baseline telemetry loading is not part of Phase 11
 - compare duration, max speed, min clearance, max roll/pitch, telemetry gaps,
   p95 frame time, fallback/synthetic terrain percent, route deviation
 
 Acceptance:
 
-- Keep P2/P3 after config/plots/status are robust.
-- Avoid empty distracting panels.
+- [x] Keep P2/P3 after config/plots/status are robust.
+- [x] Avoid empty distracting panels.
 
 #### Phase 13: Report / Export V1
 

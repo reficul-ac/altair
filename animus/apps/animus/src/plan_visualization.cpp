@@ -20,6 +20,7 @@ namespace
 {
 
 constexpr double earth_radius_m = 6371008.8;
+constexpr double deg_to_rad = 3.14159265358979323846 / 180.0;
 
 struct JsonValue;
 using JsonArray = std::vector<JsonValue>;
@@ -677,6 +678,15 @@ double track_distance_m(const animus::telemetry_core::Track &track)
     return total;
 }
 
+std::optional<double> sample_altitude_m(const animus::telemetry_core::TelemetrySample &sample)
+{
+    if (sample.altitude_relative_m)
+    {
+        return sample.altitude_relative_m;
+    }
+    return sample.altitude_msl_m;
+}
+
 std::optional<double> nearest_track_distance_m(const PlanGeoPoint &point,
                                                const animus::telemetry_core::Track &track)
 {
@@ -694,6 +704,171 @@ std::optional<double> nearest_track_distance_m(const PlanGeoPoint &point,
     return nearest;
 }
 
+struct LocalPoint
+{
+    double x_m = 0.0;
+    double y_m = 0.0;
+};
+
+LocalPoint to_local_point(const PlanGeoPoint &origin, const double lat_deg, const double lon_deg)
+{
+    const double mean_lat = (origin.lat_deg + lat_deg) * 0.5 * deg_to_rad;
+    return {earth_radius_m * (lon_deg - origin.lon_deg) * deg_to_rad * std::cos(mean_lat),
+            earth_radius_m * (lat_deg - origin.lat_deg) * deg_to_rad};
+}
+
+double local_distance_m(const LocalPoint a, const LocalPoint b)
+{
+    const double dx = b.x_m - a.x_m;
+    const double dy = b.y_m - a.y_m;
+    return std::hypot(dx, dy);
+}
+
+PlanGeoPoint
+interpolate_point(const PlanGeoPoint &from, const PlanGeoPoint &to, const double fraction)
+{
+    PlanGeoPoint point;
+    point.lat_deg = from.lat_deg + (to.lat_deg - from.lat_deg) * fraction;
+    point.lon_deg = from.lon_deg + (to.lon_deg - from.lon_deg) * fraction;
+    if (from.alt_m && to.alt_m)
+    {
+        point.alt_m = *from.alt_m + (*to.alt_m - *from.alt_m) * fraction;
+    }
+    else if (fraction <= 0.0 && from.alt_m)
+    {
+        point.alt_m = from.alt_m;
+    }
+    else if (fraction >= 1.0 && to.alt_m)
+    {
+        point.alt_m = to.alt_m;
+    }
+    return point;
+}
+
+struct RouteSegmentCandidate
+{
+    std::size_t segment_index = 0U;
+    double clamped_fraction = 0.0;
+    double unclamped_fraction = 0.0;
+    double cross_track_error_m = 0.0;
+    double along_route_m = 0.0;
+    PlanGeoPoint nearest_point;
+};
+
+std::vector<double> cumulative_route_distances(const std::vector<PlanWaypoint> &waypoints)
+{
+    std::vector<double> distances(waypoints.size(), 0.0);
+    for (std::size_t index = 1U; index < waypoints.size(); ++index)
+    {
+        distances[index] =
+            distances[index - 1U] + geo_distance_m(waypoints[index - 1U].point.lat_deg,
+                                                   waypoints[index - 1U].point.lon_deg,
+                                                   waypoints[index].point.lat_deg,
+                                                   waypoints[index].point.lon_deg);
+    }
+    return distances;
+}
+
+std::optional<RouteSegmentCandidate>
+nearest_route_segment(const std::vector<PlanWaypoint> &waypoints,
+                      const std::vector<double> &cumulative_distances,
+                      const animus::telemetry_core::TelemetrySample &sample)
+{
+    if (!sample.fields.position || waypoints.size() < 2U)
+    {
+        return std::nullopt;
+    }
+
+    std::optional<RouteSegmentCandidate> nearest;
+    const PlanGeoPoint &origin = waypoints.front().point;
+    const LocalPoint sample_point = to_local_point(origin, sample.lat_deg, sample.lon_deg);
+    for (std::size_t index = 1U; index < waypoints.size(); ++index)
+    {
+        const PlanGeoPoint &from = waypoints[index - 1U].point;
+        const PlanGeoPoint &to = waypoints[index].point;
+        const LocalPoint a = to_local_point(origin, from.lat_deg, from.lon_deg);
+        const LocalPoint b = to_local_point(origin, to.lat_deg, to.lon_deg);
+        const double dx = b.x_m - a.x_m;
+        const double dy = b.y_m - a.y_m;
+        const double length_sq = dx * dx + dy * dy;
+        if (length_sq <= 0.0)
+        {
+            continue;
+        }
+        const double raw_fraction =
+            ((sample_point.x_m - a.x_m) * dx + (sample_point.y_m - a.y_m) * dy) / length_sq;
+        const double fraction = std::clamp(raw_fraction, 0.0, 1.0);
+        const LocalPoint projected{a.x_m + dx * fraction, a.y_m + dy * fraction};
+        const double error_m = local_distance_m(sample_point, projected);
+        const double segment_m = cumulative_distances[index] - cumulative_distances[index - 1U];
+        RouteSegmentCandidate candidate;
+        candidate.segment_index = index - 1U;
+        candidate.clamped_fraction = fraction;
+        candidate.unclamped_fraction = raw_fraction;
+        candidate.cross_track_error_m = error_m;
+        candidate.along_route_m = cumulative_distances[index - 1U] + segment_m * fraction;
+        candidate.nearest_point = interpolate_point(from, to, fraction);
+        if (!nearest || candidate.cross_track_error_m < nearest->cross_track_error_m)
+        {
+            nearest = candidate;
+        }
+    }
+    return nearest;
+}
+
+PlanActualDeviation make_deviation(const std::vector<PlanWaypoint> &waypoints,
+                                   const std::vector<double> &cumulative_distances,
+                                   const double route_distance_m,
+                                   const animus::telemetry_core::TelemetrySample &sample)
+{
+    const auto nearest = nearest_route_segment(waypoints, cumulative_distances, sample);
+    PlanActualDeviation deviation;
+    deviation.time_s = sample.time_s;
+    if (!nearest)
+    {
+        return deviation;
+    }
+    deviation.nearest_route_point = nearest->nearest_point;
+    deviation.cross_track_error_m = nearest->cross_track_error_m;
+    deviation.progress.segment_index = nearest->segment_index;
+    deviation.progress.from_waypoint_index = nearest->segment_index;
+    deviation.progress.to_waypoint_index = nearest->segment_index + 1U;
+    deviation.progress.segment_fraction = nearest->clamped_fraction;
+    deviation.progress.along_route_m = nearest->along_route_m;
+    deviation.progress.route_completion_ratio =
+        route_distance_m > 0.0 ? nearest->along_route_m / route_distance_m : 0.0;
+    deviation.progress.next_waypoint_index = nearest->segment_index + 1U;
+    if (deviation.nearest_route_point.alt_m)
+    {
+        if (const auto altitude = sample_altitude_m(sample))
+        {
+            deviation.altitude_error_m = *altitude - *deviation.nearest_route_point.alt_m;
+        }
+    }
+    return deviation;
+}
+
+std::optional<animus::telemetry_core::TelemetrySample>
+track_sample_at(const animus::telemetry_core::Track &track, const double current_time_s)
+{
+    std::optional<animus::telemetry_core::TelemetrySample> selected;
+    double selected_delta_s = 0.0;
+    for (const auto &sample : track.samples)
+    {
+        const double delta_s = std::abs(sample.time_s - current_time_s);
+        if (!selected || delta_s < selected_delta_s)
+        {
+            selected = sample;
+            selected_delta_s = delta_s;
+        }
+        if (sample.time_s > current_time_s && delta_s > selected_delta_s)
+        {
+            break;
+        }
+    }
+    return selected;
+}
+
 } // namespace
 
 double geo_distance_m(const double a_lat_deg,
@@ -701,7 +876,6 @@ double geo_distance_m(const double a_lat_deg,
                       const double b_lat_deg,
                       const double b_lon_deg)
 {
-    constexpr double deg_to_rad = 3.14159265358979323846 / 180.0;
     const double lat1 = a_lat_deg * deg_to_rad;
     const double lat2 = b_lat_deg * deg_to_rad;
     const double dlat = (b_lat_deg - a_lat_deg) * deg_to_rad;
@@ -762,6 +936,105 @@ PlanTrackComparison compare_plan_to_track(const PlanVisualizationData &plan,
             nearest_track_distance_m(plan.mission_waypoints.back().point, track);
     }
     return comparison;
+}
+
+PlanActualAggregate compare_plan_actual(const PlanVisualizationData &plan,
+                                        const animus::telemetry_core::Track &track,
+                                        const double current_time_s)
+{
+    PlanActualAggregate aggregate;
+    aggregate.planned_route_m = plan.route_distance_m;
+    aggregate.selected_track_m = track_distance_m(track);
+    if (plan.mission_waypoints.size() < 2U || plan.route_distance_m <= 0.0)
+    {
+        return aggregate;
+    }
+
+    const std::vector<double> cumulative_distances =
+        cumulative_route_distances(plan.mission_waypoints);
+    double cross_track_total = 0.0;
+    double altitude_error_total = 0.0;
+    std::size_t altitude_error_count = 0U;
+    for (const auto &sample : track.samples)
+    {
+        if (!sample.fields.position)
+        {
+            continue;
+        }
+        const PlanActualDeviation deviation = make_deviation(
+            plan.mission_waypoints, cumulative_distances, plan.route_distance_m, sample);
+        cross_track_total += deviation.cross_track_error_m;
+        ++aggregate.compared_samples;
+        if (!aggregate.max_cross_track_error_m ||
+            deviation.cross_track_error_m > *aggregate.max_cross_track_error_m)
+        {
+            aggregate.max_cross_track_error_m = deviation.cross_track_error_m;
+            aggregate.max_cross_track_error_time_s = sample.time_s;
+        }
+        if (deviation.altitude_error_m)
+        {
+            const double abs_error = std::abs(*deviation.altitude_error_m);
+            altitude_error_total += abs_error;
+            ++altitude_error_count;
+            if (!aggregate.max_altitude_error_m || abs_error > *aggregate.max_altitude_error_m)
+            {
+                aggregate.max_altitude_error_m = abs_error;
+                aggregate.max_altitude_error_time_s = sample.time_s;
+            }
+        }
+        if (deviation.progress.along_route_m > aggregate.route_completion_m)
+        {
+            aggregate.route_completion_m = deviation.progress.along_route_m;
+            aggregate.route_completion_ratio = deviation.progress.route_completion_ratio;
+        }
+    }
+    if (aggregate.compared_samples > 0U)
+    {
+        aggregate.average_cross_track_error_m =
+            cross_track_total / static_cast<double>(aggregate.compared_samples);
+    }
+    if (altitude_error_count > 0U)
+    {
+        aggregate.average_altitude_error_m =
+            altitude_error_total / static_cast<double>(altitude_error_count);
+    }
+    if (const auto current_sample = track_sample_at(track, current_time_s))
+    {
+        if (current_sample->fields.position)
+        {
+            aggregate.current = make_deviation(plan.mission_waypoints,
+                                               cumulative_distances,
+                                               plan.route_distance_m,
+                                               *current_sample);
+        }
+    }
+    aggregate.route_completion_ratio = std::clamp(aggregate.route_completion_ratio, 0.0, 1.0);
+    return aggregate;
+}
+
+std::optional<PlanActualDeviation>
+plan_actual_deviation_at(const PlanVisualizationData &plan,
+                         const animus::telemetry_core::TelemetrySample &sample)
+{
+    if (!sample.fields.position || plan.mission_waypoints.size() < 2U ||
+        plan.route_distance_m <= 0.0)
+    {
+        return std::nullopt;
+    }
+    const std::vector<double> cumulative_distances =
+        cumulative_route_distances(plan.mission_waypoints);
+    return make_deviation(
+        plan.mission_waypoints, cumulative_distances, plan.route_distance_m, sample);
+}
+
+GhostReplayCurrentRunSummary ghost_replay_current_run_summary(const PlanActualAggregate &comparison)
+{
+    GhostReplayCurrentRunSummary summary;
+    summary.selected_track_m = comparison.selected_track_m;
+    summary.route_completion_ratio = comparison.route_completion_ratio;
+    summary.max_cross_track_error_m = comparison.max_cross_track_error_m;
+    summary.max_altitude_error_m = comparison.max_altitude_error_m;
+    return summary;
 }
 
 } // namespace animus::app

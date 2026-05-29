@@ -173,6 +173,11 @@ std::string format_route_distance(const double distance_m)
     return format_value("%.0f m", distance_m);
 }
 
+std::string format_percent(const double ratio)
+{
+    return format_value("%.0f%%", std::clamp(ratio, 0.0, 1.0) * 100.0);
+}
+
 std::string format_age(const double age_s)
 {
     if (age_s < 1.0)
@@ -677,12 +682,29 @@ void draw_plan_controls(PlanVisualizationState &plan_state,
         const auto *track = playback.timeline.track_for(playback.selected_entity);
         if (track != nullptr)
         {
-            const PlanTrackComparison comparison = compare_plan_to_track(plan, *track);
+            const PlanActualAggregate comparison =
+                compare_plan_actual(plan, *track, playback.clock.time_s());
             ImGui::Text("selected track %s",
                         format_route_distance(comparison.selected_track_m).c_str());
-            ImGui::Text("first/last nearest %s / %s",
-                        format_distance_m(comparison.first_waypoint_nearest_track_m).c_str(),
-                        format_distance_m(comparison.last_waypoint_nearest_track_m).c_str());
+            ImGui::Text("route completion %s  compared %zu",
+                        format_percent(comparison.route_completion_ratio).c_str(),
+                        comparison.compared_samples);
+            ImGui::Text("cross-track avg/max %s / %s",
+                        format_distance_m(comparison.average_cross_track_error_m).c_str(),
+                        format_distance_m(comparison.max_cross_track_error_m).c_str());
+            if (comparison.current)
+            {
+                const PlanActualDeviation &current = *comparison.current;
+                ImGui::Text("active leg %zu->%zu  current error %s",
+                            current.progress.from_waypoint_index + 1U,
+                            current.progress.to_waypoint_index + 1U,
+                            format_distance_m(current.cross_track_error_m).c_str());
+                if (current.altitude_error_m)
+                {
+                    ImGui::Text("altitude error %s",
+                                format_distance_m(std::abs(*current.altitude_error_m)).c_str());
+                }
+            }
         }
     }
     for (const std::string &diagnostic : plan_state.diagnostics)
@@ -812,6 +834,9 @@ ImU32 marker_color(const TimelineReviewMarkerCategory category)
         return IM_COL32(235, 122, 92, 255);
     case TimelineReviewMarkerCategory::FrameTime:
         return IM_COL32(170, 188, 204, 255);
+    case TimelineReviewMarkerCategory::PlanDeviation:
+    case TimelineReviewMarkerCategory::PlanAltitude:
+        return IM_COL32(236, 186, 82, 255);
     }
     return IM_COL32(180, 186, 192, 255);
 }
@@ -909,6 +934,34 @@ void draw_review_charts(const TimelineReviewData &review)
     draw_series_chart(review.altitude, ImVec2(width, 76.0F));
     draw_series_chart(review.ground_speed, ImVec2(width, 76.0F));
     draw_series_chart(review.terrain_clearance, ImVec2(width, 76.0F));
+}
+
+void draw_ghost_replay_foundation(const PlanVisualizationState &plan_state,
+                                  const TelemetryPlaybackState &playback,
+                                  const UiState &ui)
+{
+    if (!plan_state.data || !playback.loaded || !ui.telemetry_entity_selected)
+    {
+        muted_text("Plan-vs-actual and ghost replay unavailable.");
+        return;
+    }
+    const auto *track = playback.timeline.track_for(playback.selected_entity);
+    if (track == nullptr)
+    {
+        muted_text("Plan-vs-actual and ghost replay unavailable.");
+        return;
+    }
+
+    const PlanActualAggregate comparison =
+        compare_plan_actual(*plan_state.data, *track, playback.clock.time_s());
+    const GhostReplayCurrentRunSummary ghost = ghost_replay_current_run_summary(comparison);
+    ImGui::SeparatorText("Ghost replay");
+    muted_text("Baseline not loaded in Phase 11.");
+    ImGui::Text("current run track %s", format_route_distance(ghost.selected_track_m).c_str());
+    ImGui::Text("route completion %s", format_percent(ghost.route_completion_ratio).c_str());
+    ImGui::Text("max route/alt error %s / %s",
+                format_distance_m(ghost.max_cross_track_error_m).c_str(),
+                format_distance_m(ghost.max_altitude_error_m).c_str());
 }
 
 void draw_review_jump_buttons(const TimelineReviewData &review, UiState &ui)
@@ -1621,6 +1674,7 @@ void draw_entity_list(TelemetryPlaybackState &playback, UiState &ui)
 void draw_telemetry_panel(const Options &options,
                           TelemetryPlaybackState &playback,
                           UiState &ui,
+                          const PlanVisualizationState &plan_state,
                           bool diagnostics_available)
 {
     if (!playback.loaded)
@@ -1653,6 +1707,10 @@ void draw_telemetry_panel(const Options &options,
             draw_review_jump_buttons(playback.review, ui);
             draw_review_filters(ui.timeline_review_filters);
             draw_review_charts(playback.review);
+        }
+        if (ui.workspace_mode == WorkspaceMode::Analyze)
+        {
+            draw_ghost_replay_foundation(plan_state, playback, ui);
         }
     }
     ImGui::Separator();
@@ -2429,7 +2487,9 @@ bool marker_in_tape_row(const TimelineReviewMarkerCategory category, const int r
         return category == TimelineReviewMarkerCategory::Gap;
     case 1:
         return category == TimelineReviewMarkerCategory::LowClearance ||
-               category == TimelineReviewMarkerCategory::MinClearance;
+               category == TimelineReviewMarkerCategory::MinClearance ||
+               category == TimelineReviewMarkerCategory::PlanDeviation ||
+               category == TimelineReviewMarkerCategory::PlanAltitude;
     case 2:
         return category == TimelineReviewMarkerCategory::Attitude ||
                category == TimelineReviewMarkerCategory::FrameTime ||
@@ -2456,6 +2516,7 @@ void draw_review_filters(TimelineReviewFilterState &filters)
     draw_timeline_filter_toggle("Warning", filters.show_warning);
     draw_timeline_filter_toggle("Gaps", filters.show_gap);
     draw_timeline_filter_toggle("Terrain", filters.show_clearance);
+    draw_timeline_filter_toggle("Plan", filters.show_plan);
     draw_timeline_filter_toggle("Attitude", filters.show_attitude);
     draw_timeline_filter_toggle("Frame", filters.show_frame_time);
     draw_timeline_filter_toggle("Bookmarks", filters.show_bookmark);
@@ -2965,7 +3026,7 @@ void draw_app_workspace(Options &options,
     case UiNavigationMode::Telemetry:
         ui_state.inspector_target =
             playback.loaded ? InspectorTarget::Entity : InspectorTarget::TelemetrySource;
-        draw_telemetry_panel(options, playback, ui_state, advanced_workspace);
+        draw_telemetry_panel(options, playback, ui_state, plan_state, advanced_workspace);
         break;
     case UiNavigationMode::Signals:
         ui_state.inspector_target = InspectorTarget::TelemetrySource;

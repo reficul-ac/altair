@@ -116,7 +116,7 @@ void append_low_clearance_markers(std::vector<TimelineReviewMarker> &markers,
                 marker.severity = clearance_severity(sample.clearance_m, thresholds);
                 marker.time_s = sample.time_s;
                 marker.entity_id = selected_entity;
-                marker.label = "low clearance";
+                marker.label = sample.planned_path ? "low planned clearance" : "low clearance";
                 marker.value = sample.clearance_m;
                 active = marker;
             }
@@ -144,6 +144,119 @@ void append_low_clearance_markers(std::vector<TimelineReviewMarker> &markers,
     {
         markers.push_back(*active);
     }
+}
+
+void append_plan_actual_markers(std::vector<TimelineReviewMarker> &markers,
+                                const PlanVisualizationData &plan,
+                                const animus::telemetry_core::Track &track,
+                                const animus::telemetry_core::EntityId selected_entity,
+                                const TimelineReviewThresholds &thresholds)
+{
+    if (plan.mission_waypoints.size() < 2U || (thresholds.plan_deviation_warning_m <= 0.0 &&
+                                               thresholds.plan_altitude_error_warning_m <= 0.0))
+    {
+        return;
+    }
+
+    std::optional<TimelineReviewMarker> active_deviation;
+    std::optional<TimelineReviewMarker> active_altitude;
+    const auto finish_marker = [&markers](std::optional<TimelineReviewMarker> &marker)
+    {
+        if (marker)
+        {
+            markers.push_back(*marker);
+            marker.reset();
+        }
+    };
+
+    for (const auto &sample : track.samples)
+    {
+        if (!sample.fields.position)
+        {
+            finish_marker(active_deviation);
+            finish_marker(active_altitude);
+            continue;
+        }
+        const auto current_deviation = plan_actual_deviation_at(plan, sample);
+        if (!current_deviation)
+        {
+            finish_marker(active_deviation);
+            finish_marker(active_altitude);
+            continue;
+        }
+        const PlanActualDeviation &current = *current_deviation;
+        if (thresholds.plan_deviation_warning_m > 0.0 &&
+            current.cross_track_error_m >= thresholds.plan_deviation_warning_m)
+        {
+            if (!active_deviation)
+            {
+                TimelineReviewMarker marker;
+                marker.category = TimelineReviewMarkerCategory::PlanDeviation;
+                marker.severity = warning_or_caution(current.cross_track_error_m,
+                                                     thresholds.plan_deviation_warning_m * 2.0);
+                marker.time_s = sample.time_s;
+                marker.entity_id = selected_entity;
+                marker.label = "plan deviation";
+                marker.value = current.cross_track_error_m;
+                active_deviation = marker;
+            }
+            else
+            {
+                active_deviation->end_time_s = sample.time_s;
+                if (current.cross_track_error_m > *active_deviation->value)
+                {
+                    active_deviation->value = current.cross_track_error_m;
+                }
+                if (warning_or_caution(current.cross_track_error_m,
+                                       thresholds.plan_deviation_warning_m * 2.0) ==
+                    TimelineReviewSeverity::Warning)
+                {
+                    active_deviation->severity = TimelineReviewSeverity::Warning;
+                }
+            }
+        }
+        else
+        {
+            finish_marker(active_deviation);
+        }
+
+        if (thresholds.plan_altitude_error_warning_m > 0.0 && current.altitude_error_m &&
+            std::abs(*current.altitude_error_m) >= thresholds.plan_altitude_error_warning_m)
+        {
+            const double abs_error = std::abs(*current.altitude_error_m);
+            if (!active_altitude)
+            {
+                TimelineReviewMarker marker;
+                marker.category = TimelineReviewMarkerCategory::PlanAltitude;
+                marker.severity =
+                    warning_or_caution(abs_error, thresholds.plan_altitude_error_warning_m * 2.0);
+                marker.time_s = sample.time_s;
+                marker.entity_id = selected_entity;
+                marker.label = "plan altitude";
+                marker.value = abs_error;
+                active_altitude = marker;
+            }
+            else
+            {
+                active_altitude->end_time_s = sample.time_s;
+                if (abs_error > *active_altitude->value)
+                {
+                    active_altitude->value = abs_error;
+                }
+                if (warning_or_caution(abs_error, thresholds.plan_altitude_error_warning_m * 2.0) ==
+                    TimelineReviewSeverity::Warning)
+                {
+                    active_altitude->severity = TimelineReviewSeverity::Warning;
+                }
+            }
+        }
+        else
+        {
+            finish_marker(active_altitude);
+        }
+    }
+    finish_marker(active_deviation);
+    finish_marker(active_altitude);
 }
 
 } // namespace
@@ -240,6 +353,7 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
                       const std::vector<TerrainClearanceSample> &terrain_clearance_samples,
                       const std::vector<TimelineReviewMarker> &frame_time_markers,
                       const TimelineReviewThresholds &thresholds,
+                      const PlanVisualizationData *plan,
                       const std::size_t max_series_points)
 {
     TimelineReviewData review;
@@ -320,6 +434,10 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
         {
             review.max_speed_marker = max_speed;
             review.markers.push_back(*max_speed);
+        }
+        if (plan != nullptr)
+        {
+            append_plan_actual_markers(review.markers, *plan, *track, selected_entity, thresholds);
         }
     }
 
@@ -435,6 +553,9 @@ bool timeline_review_marker_visible(const TimelineReviewMarker &marker,
         return filters.show_attitude;
     case TimelineReviewMarkerCategory::FrameTime:
         return filters.show_frame_time;
+    case TimelineReviewMarkerCategory::PlanDeviation:
+    case TimelineReviewMarkerCategory::PlanAltitude:
+        return filters.show_plan;
     }
     return true;
 }
@@ -496,6 +617,10 @@ const char *timeline_review_marker_label(const TimelineReviewMarkerCategory cate
         return "attitude";
     case TimelineReviewMarkerCategory::FrameTime:
         return "frame time";
+    case TimelineReviewMarkerCategory::PlanDeviation:
+        return "plan deviation";
+    case TimelineReviewMarkerCategory::PlanAltitude:
+        return "plan altitude";
     }
     return "marker";
 }

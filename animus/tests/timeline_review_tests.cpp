@@ -48,10 +48,11 @@ build_review(const animus::telemetry_core::Timeline &timeline,
              const std::vector<animus::app::TimelineBookmark> &bookmarks = {},
              const std::vector<animus::app::TerrainClearanceSample> &clearance = {},
              const std::vector<animus::app::TimelineReviewMarker> &frame_time_markers = {},
-             const animus::app::TimelineReviewThresholds &status_thresholds = thresholds())
+             const animus::app::TimelineReviewThresholds &status_thresholds = thresholds(),
+             const animus::app::PlanVisualizationData *plan = nullptr)
 {
     return animus::app::build_timeline_review(
-        timeline, entity_id(), bookmarks, clearance, frame_time_markers, status_thresholds);
+        timeline, entity_id(), bookmarks, clearance, frame_time_markers, status_thresholds, plan);
 }
 
 animus::telemetry_core::Timeline
@@ -70,6 +71,15 @@ timeline_with_samples(const std::vector<animus::telemetry_core::TelemetrySample>
         timeline.end_time_s = samples.back().time_s;
     }
     return timeline;
+}
+
+animus::app::PlanVisualizationData plan_for_review()
+{
+    animus::app::PlanVisualizationData plan;
+    plan.mission_waypoints.push_back({{39.0, -120.0, 100.0}, "1"});
+    plan.mission_waypoints.push_back({{39.001, -120.0, 110.0}, "2"});
+    plan.route_distance_m = animus::app::plan_route_distance_m(plan.mission_waypoints);
+    return plan;
 }
 
 } // namespace
@@ -156,6 +166,21 @@ TEST(TimelineReviewTests, CreatesLowClearanceSegmentsWithWarningPromotion)
     EXPECT_DOUBLE_EQ(low_clearance[1].time_s, 4.0);
     EXPECT_FALSE(low_clearance[1].end_time_s);
     EXPECT_EQ(low_clearance[1].severity, animus::app::TimelineReviewSeverity::Caution);
+}
+
+TEST(TimelineReviewTests, LabelsPlannedPathLowClearanceMarkers)
+{
+    const auto timeline = timeline_with_samples({sample(0.0)});
+    const auto review = build_review(timeline, {}, {{0.0, 8.0, true}});
+
+    const auto marker = std::find_if(
+        review.markers.begin(),
+        review.markers.end(),
+        [](const animus::app::TimelineReviewMarker &candidate)
+        { return candidate.category == animus::app::TimelineReviewMarkerCategory::LowClearance; });
+
+    ASSERT_NE(marker, review.markers.end());
+    EXPECT_EQ(marker->label, "low planned clearance");
 }
 
 TEST(TimelineReviewTests, CreatesHighRollAndPitchMarkersWithDegreeThresholds)
@@ -358,4 +383,68 @@ TEST(TimelineReviewTests, IncludesParserWarningsAndErrors)
                                       animus::app::TimelineReviewMarkerCategory::ImportError;
                            }),
               review.markers.end());
+}
+
+TEST(TimelineReviewTests, CreatesPlanDeviationAndAltitudeMarkersAboveThreshold)
+{
+    auto off_route = sample(1.0);
+    off_route.lon_deg = -119.998;
+    off_route.altitude_relative_m = 160.0;
+    const auto timeline = timeline_with_samples({sample(0.0), off_route, sample(2.0)});
+    auto status_thresholds = thresholds();
+    status_thresholds.plan_deviation_warning_m = 50.0;
+    status_thresholds.plan_altitude_error_warning_m = 20.0;
+    const auto plan = plan_for_review();
+
+    const auto review = build_review(timeline, {}, {}, {}, status_thresholds, &plan);
+
+    EXPECT_NE(std::find_if(review.markers.begin(),
+                           review.markers.end(),
+                           [](const animus::app::TimelineReviewMarker &marker) {
+                               return marker.category ==
+                                      animus::app::TimelineReviewMarkerCategory::PlanDeviation;
+                           }),
+              review.markers.end());
+    EXPECT_NE(std::find_if(review.markers.begin(),
+                           review.markers.end(),
+                           [](const animus::app::TimelineReviewMarker &marker) {
+                               return marker.category ==
+                                      animus::app::TimelineReviewMarkerCategory::PlanAltitude;
+                           }),
+              review.markers.end());
+}
+
+TEST(TimelineReviewTests, OmitsPlanMarkersWhenGeometryUnavailable)
+{
+    const auto timeline = timeline_with_samples({sample(0.0), sample(1.0)});
+    auto status_thresholds = thresholds();
+    status_thresholds.plan_deviation_warning_m = 1.0;
+    animus::app::PlanVisualizationData plan;
+    plan.mission_waypoints.push_back({{39.0, -120.0, std::nullopt}, "1"});
+
+    const auto review = build_review(timeline, {}, {}, {}, status_thresholds, &plan);
+
+    EXPECT_EQ(std::find_if(review.markers.begin(),
+                           review.markers.end(),
+                           [](const animus::app::TimelineReviewMarker &marker) {
+                               return marker.category ==
+                                      animus::app::TimelineReviewMarkerCategory::PlanDeviation;
+                           }),
+              review.markers.end());
+}
+
+TEST(TimelineReviewTests, PlanMarkersRespectLabelsAndFilters)
+{
+    animus::app::TimelineReviewMarker deviation;
+    deviation.category = animus::app::TimelineReviewMarkerCategory::PlanDeviation;
+    deviation.severity = animus::app::TimelineReviewSeverity::Caution;
+
+    EXPECT_STREQ(animus::app::timeline_review_marker_label(
+                     animus::app::TimelineReviewMarkerCategory::PlanDeviation),
+                 "plan deviation");
+    EXPECT_TRUE(animus::app::timeline_review_marker_visible(deviation, {}));
+
+    animus::app::TimelineReviewFilterState filters;
+    filters.show_plan = false;
+    EXPECT_FALSE(animus::app::timeline_review_marker_visible(deviation, filters));
 }

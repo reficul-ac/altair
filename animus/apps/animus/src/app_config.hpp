@@ -56,6 +56,8 @@ struct AppConfigStatusThresholds
     double link_hz_warning = 2.0;
     double telemetry_gap_warning_s = 2.0;
     double telemetry_gap_critical_s = 5.0;
+    double plan_deviation_warning_m = 50.0;
+    double plan_altitude_error_warning_m = 25.0;
 
     bool operator==(const AppConfigStatusThresholds &) const = default;
 };
