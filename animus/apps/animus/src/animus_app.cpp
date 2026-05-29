@@ -302,6 +302,24 @@ std::string panel_config_value(const UiNavigationMode mode)
     return "view";
 }
 
+std::string workspace_config_value(const animus::app::WorkspaceMode mode)
+{
+    switch (mode)
+    {
+    case animus::app::WorkspaceMode::FlyTest:
+        return "fly_test";
+    case animus::app::WorkspaceMode::Plan:
+        return "plan";
+    case animus::app::WorkspaceMode::Analyze:
+        return "analyze";
+    case animus::app::WorkspaceMode::Terrain:
+        return "terrain";
+    case animus::app::WorkspaceMode::Developer:
+        return "developer";
+    }
+    return "fly_test";
+}
+
 MapOrientationMode map_orientation_from_config_value(const std::string &value)
 {
     if (value == "track_up")
@@ -341,6 +359,8 @@ void apply_options_to_ui(const Options &options, UiState &ui_state, Map2DCamera 
     ui_state.developer_diagnostics_visible = options.developer_diagnostics_visible;
     ui_state.telemetry_diagnostics_visible = options.telemetry_diagnostics_visible;
     ui_state.mavlink_inspector_visible = options.mavlink_inspector_visible;
+    ui_state.workspace_layouts = options.workspace_layouts;
+    ui_state.workspace_layout_applied = false;
     map_camera.orientation = map_orientation_from_config_value(options.map_orientation);
 }
 
@@ -361,6 +381,7 @@ void sync_options_from_ui(Options &options,
     options.developer_diagnostics_visible = ui_state.developer_diagnostics_visible;
     options.telemetry_diagnostics_visible = ui_state.telemetry_diagnostics_visible;
     options.mavlink_inspector_visible = ui_state.mavlink_inspector_visible;
+    options.workspace_layouts = ui_state.workspace_layouts;
     options.overlay_enabled = overlay_enabled;
     options.overlay_opacity = overlay_opacity;
     for (animus::app::OverlayLayerConfig &layer : options.overlays)
@@ -3219,6 +3240,7 @@ int run(Options options)
     {
         ui_state.workspace_mode = animus::app::WorkspaceMode::Developer;
         ui_state.developer_diagnostics_visible = true;
+        ui_state.workspace_layout_applied = false;
     }
     animus::app::AppConfig saved_config_baseline = animus::app::app_config_from_options(options);
     ui_state.telemetry_entity_selected = !telemetry.timeline.entities.empty();
@@ -3792,6 +3814,17 @@ int run(Options options)
             overlay_opacity = options.overlay_opacity;
             apply_options_to_ui(options, ui_state, input.map_camera);
             ui_state.request_config_reset = false;
+        }
+        if (ui_state.request_workspace_layout_reset)
+        {
+            const std::string workspace_id = workspace_config_value(ui_state.workspace_mode);
+            ui_state.workspace_layouts[workspace_id] =
+                animus::app::default_workspace_layout(workspace_id);
+            ui_state.workspace_layout_applied = false;
+            options.config_dirty = true;
+            options.config_save_status = "not saved";
+            options.config_diagnostics.push_back("reset current workspace layout to defaults");
+            ui_state.request_workspace_layout_reset = false;
         }
         if (ui_state.request_config_reload)
         {

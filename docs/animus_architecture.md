@@ -192,8 +192,10 @@ specific unchecked items in place.
 
 ```cpp
 enum class WorkspaceMode {
-  Operator,
-  Advanced,
+  FlyTest,
+  Plan,
+  Analyze,
+  Terrain,
   Developer
 };
 ```
@@ -768,7 +770,7 @@ Acceptance:
 
 #### Phase 9: Operator Workspaces And Layout Presets
 
-Status: planned.
+Status: implemented.
 
 Target workspaces:
 
@@ -789,10 +791,17 @@ Preset behavior:
 
 Acceptance:
 
-- User can switch workspaces.
-- Workspace selection persists.
-- Developer diagnostics remain available.
-- Existing tabs are retained or mapped cleanly.
+- [x] User can switch workspaces.
+- [x] Workspace selection persists with `fly_test`, `plan`, `analyze`,
+  `terrain`, and `developer` config IDs.
+- [x] Legacy `operator`, `advanced`, and `developer` workspace IDs load through
+  compatibility aliases.
+- [x] Each workspace has an independent default layout preset and persisted
+  content-panel geometry.
+- [x] Settings can reset the current workspace layout without resetting other
+  preferences.
+- [x] Developer diagnostics remain available.
+- [x] Existing tabs are retained or mapped cleanly.
 
 #### Phase 10: Layer Stack 2.0
 

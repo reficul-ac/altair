@@ -14,8 +14,10 @@ namespace animus::app
 
 enum class WorkspaceMode
 {
-    Operator,
-    Advanced,
+    FlyTest,
+    Plan,
+    Analyze,
+    Terrain,
     Developer,
 };
 
@@ -63,7 +65,7 @@ struct Options
     std::string config_save_status = "not saved";
     bool config_dirty = false;
     std::vector<std::string> config_diagnostics;
-    WorkspaceMode workspace_mode = WorkspaceMode::Operator;
+    WorkspaceMode workspace_mode = WorkspaceMode::FlyTest;
     ViewMode view_mode = ViewMode::Terrain3D;
     std::string active_panel = "view";
     bool follow_selected_entity = false;
@@ -74,6 +76,7 @@ struct Options
     bool telemetry_diagnostics_visible = false;
     bool mavlink_inspector_visible = true;
     AppConfigStatusThresholds status_thresholds;
+    std::map<std::string, AppWorkspaceLayout> workspace_layouts;
     bool developer_workspace = false;
     std::filesystem::path capture_ppm;
     std::filesystem::path capture_png;

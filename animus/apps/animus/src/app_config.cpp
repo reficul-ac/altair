@@ -11,6 +11,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <unordered_set>
 
@@ -126,6 +127,22 @@ void read_unit_float(const YAML::Node &node,
     {
         diagnostics.push_back(std::string("invalid config value for ") + key +
                               ": expected value in 0..1");
+        return;
+    }
+    target = value;
+}
+
+void read_positive_float(const YAML::Node &node,
+                         const char *key,
+                         float &target,
+                         std::vector<std::string> &diagnostics)
+{
+    float value = target;
+    read_value(node, key, value, diagnostics);
+    if (value <= 0.0F)
+    {
+        diagnostics.push_back(std::string("invalid config value for ") + key +
+                              ": expected positive number");
         return;
     }
     target = value;
@@ -292,7 +309,8 @@ AppConfigLoadResult load_legacy_json_like(const std::string &text)
     result.status = AppConfigLoadStatus::LoadedLegacy;
     if (const auto value = json_string_field(text, "workspace_mode"))
     {
-        result.config.workspace_mode = *value;
+        const std::string canonical = canonical_workspace_id(*value);
+        result.config.workspace_mode = canonical.empty() ? *value : canonical;
     }
     if (const auto value = json_string_field(text, "view_mode"))
     {
@@ -354,9 +372,108 @@ void read_overlays(const YAML::Node &node,
     }
 }
 
+void read_window_rect(const YAML::Node &node,
+                      const std::string &key,
+                      AppWindowRect &target,
+                      std::vector<std::string> &diagnostics)
+{
+    if (!node)
+    {
+        return;
+    }
+    if (!node.IsMap())
+    {
+        diagnostics.push_back("invalid config value for workspaces." + key + ": expected map");
+        return;
+    }
+    warn_unknown_keys(node, {"x", "y", "width", "height"}, "workspaces." + key + ".", diagnostics);
+    read_value(node, "x", target.x, diagnostics);
+    read_value(node, "y", target.y, diagnostics);
+    read_positive_float(node, "width", target.width, diagnostics);
+    read_positive_float(node, "height", target.height, diagnostics);
+}
+
+void read_workspace_layouts(const YAML::Node &node,
+                            std::map<std::string, AppWorkspaceLayout> &layouts,
+                            std::vector<std::string> &diagnostics)
+{
+    if (!node)
+    {
+        return;
+    }
+    if (!node.IsMap())
+    {
+        diagnostics.push_back("invalid config value for workspaces: expected map");
+        return;
+    }
+    layouts.clear();
+    for (const auto &entry : node)
+    {
+        const std::string raw_id = entry.first.as<std::string>();
+        const std::string id = canonical_workspace_id(raw_id);
+        if (id.empty())
+        {
+            diagnostics.push_back("unknown workspace layout key: " + raw_id);
+            continue;
+        }
+        const YAML::Node layout_node = entry.second;
+        if (!layout_node.IsMap())
+        {
+            diagnostics.push_back("invalid config value for workspaces." + raw_id +
+                                  ": expected map");
+            continue;
+        }
+        warn_unknown_keys(layout_node,
+                          {"active_panel",
+                           "view_mode",
+                           "map_orientation",
+                           "plot_shelf_visible",
+                           "plot_shelf_height_px",
+                           "timeline_visible",
+                           "timeline_height_px",
+                           "inspector_visible",
+                           "main_panel",
+                           "inspector",
+                           "timeline",
+                           "plot_shelf"},
+                          "workspaces." + raw_id + ".",
+                          diagnostics);
+        AppWorkspaceLayout layout = default_workspace_layout(id);
+        read_value(layout_node, "active_panel", layout.active_panel, diagnostics);
+        read_value(layout_node, "view_mode", layout.view_mode, diagnostics);
+        read_value(layout_node, "map_orientation", layout.map_orientation, diagnostics);
+        read_value(layout_node, "plot_shelf_visible", layout.plot_shelf_visible, diagnostics);
+        read_positive_float(
+            layout_node, "plot_shelf_height_px", layout.plot_shelf_height_px, diagnostics);
+        read_value(layout_node, "timeline_visible", layout.timeline_visible, diagnostics);
+        read_positive_float(
+            layout_node, "timeline_height_px", layout.timeline_height_px, diagnostics);
+        read_value(layout_node, "inspector_visible", layout.inspector_visible, diagnostics);
+        read_window_rect(
+            layout_node["main_panel"], raw_id + ".main_panel", layout.main_panel, diagnostics);
+        read_window_rect(
+            layout_node["inspector"], raw_id + ".inspector", layout.inspector, diagnostics);
+        read_window_rect(
+            layout_node["timeline"], raw_id + ".timeline", layout.timeline, diagnostics);
+        read_window_rect(
+            layout_node["plot_shelf"], raw_id + ".plot_shelf", layout.plot_shelf, diagnostics);
+        layouts[id] = std::move(layout);
+    }
+}
+
 void write_string(YAML::Emitter &out, const char *key, const std::string &value)
 {
     out << YAML::Key << key << YAML::Value << value;
+}
+
+void write_window_rect(YAML::Emitter &out, const char *key, const AppWindowRect &rect)
+{
+    out << YAML::Key << key << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "x" << YAML::Value << rect.x;
+    out << YAML::Key << "y" << YAML::Value << rect.y;
+    out << YAML::Key << "width" << YAML::Value << rect.width;
+    out << YAML::Key << "height" << YAML::Value << rect.height;
+    out << YAML::EndMap;
 }
 
 } // namespace
@@ -364,6 +481,88 @@ void write_string(YAML::Emitter &out, const char *key, const std::string &value)
 AppConfig default_app_config()
 {
     return AppConfig{};
+}
+
+std::string canonical_workspace_id(const std::string_view value)
+{
+    if (value == "fly_test" || value == "operator")
+    {
+        return "fly_test";
+    }
+    if (value == "plan")
+    {
+        return "plan";
+    }
+    if (value == "analyze" || value == "advanced")
+    {
+        return "analyze";
+    }
+    if (value == "terrain")
+    {
+        return "terrain";
+    }
+    if (value == "developer")
+    {
+        return "developer";
+    }
+    return {};
+}
+
+AppWorkspaceLayout default_workspace_layout(const std::string_view workspace_id)
+{
+    const std::string id = canonical_workspace_id(workspace_id);
+    AppWorkspaceLayout layout;
+    layout.main_panel = {150.0F, 50.0F, 440.0F, 430.0F};
+    layout.inspector = {952.0F, 50.0F, 316.0F, 520.0F};
+    layout.timeline = {150.0F, 570.0F, 766.0F, 144.0F};
+    layout.plot_shelf = {150.0F, 350.0F, 766.0F, 210.0F};
+    if (id == "plan")
+    {
+        layout.active_panel = "view";
+        layout.view_mode = "map2d";
+        layout.map_orientation = "north_up";
+        layout.plot_shelf_visible = false;
+        layout.timeline_visible = false;
+        layout.inspector_visible = false;
+    }
+    else if (id == "analyze")
+    {
+        layout.active_panel = "telemetry";
+        layout.view_mode = "terrain3d";
+        layout.plot_shelf_visible = true;
+        layout.plot_shelf_height_px = 300.0F;
+        layout.timeline_visible = true;
+        layout.timeline_height_px = 190.0F;
+        layout.inspector_visible = true;
+    }
+    else if (id == "terrain")
+    {
+        layout.active_panel = "layers";
+        layout.view_mode = "terrain3d";
+        layout.plot_shelf_visible = false;
+        layout.timeline_visible = false;
+        layout.inspector_visible = true;
+    }
+    else if (id == "developer")
+    {
+        layout.active_panel = "developer";
+        layout.view_mode = "terrain3d";
+        layout.plot_shelf_visible = false;
+        layout.timeline_visible = false;
+        layout.inspector_visible = true;
+    }
+    else
+    {
+        layout.active_panel = "telemetry";
+        layout.view_mode = "terrain3d";
+        layout.plot_shelf_visible = true;
+        layout.timeline_visible = true;
+        layout.timeline_height_px = 116.0F;
+        layout.inspector_visible = true;
+    }
+    layout.plot_shelf.height = layout.plot_shelf_height_px;
+    layout.timeline.height = layout.timeline_height_px;
+    return layout;
 }
 
 AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
@@ -414,6 +613,7 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
                        "window",
                        "view",
                        "panels",
+                       "workspaces",
                        "layers",
                        "telemetry",
                        "status_thresholds",
@@ -433,6 +633,11 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
     const YAML::Node app = root["app"];
     warn_unknown_keys(app, {"workspace"}, "app.", result.diagnostics);
     read_value(app, "workspace", result.config.workspace_mode, result.diagnostics);
+    const std::string canonical_workspace = canonical_workspace_id(result.config.workspace_mode);
+    if (!canonical_workspace.empty())
+    {
+        result.config.workspace_mode = canonical_workspace;
+    }
 
     const YAML::Node window = root["window"];
     warn_unknown_keys(window, {"width", "height"}, "window.", result.diagnostics);
@@ -557,6 +762,7 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
                          result.diagnostics);
 
     result.config.plots = read_plot_shelf_config(root["plots"], result.diagnostics);
+    read_workspace_layouts(root["workspaces"], result.config.workspace_layouts, result.diagnostics);
 
     result.status = AppConfigLoadStatus::Loaded;
     return result;
@@ -587,7 +793,8 @@ AppConfigSaveResult save_app_config_file(const std::filesystem::path &path, cons
     out << YAML::BeginMap;
     out << YAML::Key << "version" << YAML::Value << 1;
     out << YAML::Key << "app" << YAML::Value << YAML::BeginMap;
-    write_string(out, "workspace", config.workspace_mode);
+    const std::string workspace = canonical_workspace_id(config.workspace_mode);
+    write_string(out, "workspace", workspace.empty() ? std::string("fly_test") : workspace);
     out << YAML::EndMap;
     out << YAML::Key << "window" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "width" << YAML::Value << config.window_width;
@@ -657,6 +864,30 @@ AppConfigSaveResult save_app_config_file(const std::filesystem::path &path, cons
     out << YAML::Key << "vehicle_visuals" << YAML::Value << YAML::BeginMap << YAML::EndMap;
     out << YAML::Key << "plots" << YAML::Value;
     write_plot_shelf_config(out, config.plots);
+    out << YAML::Key << "workspaces" << YAML::Value << YAML::BeginMap;
+    for (const auto &[id, layout] : config.workspace_layouts)
+    {
+        const std::string canonical_id = canonical_workspace_id(id);
+        if (canonical_id.empty())
+        {
+            continue;
+        }
+        out << YAML::Key << canonical_id << YAML::Value << YAML::BeginMap;
+        write_string(out, "active_panel", layout.active_panel);
+        write_string(out, "view_mode", layout.view_mode);
+        write_string(out, "map_orientation", layout.map_orientation);
+        out << YAML::Key << "plot_shelf_visible" << YAML::Value << layout.plot_shelf_visible;
+        out << YAML::Key << "plot_shelf_height_px" << YAML::Value << layout.plot_shelf_height_px;
+        out << YAML::Key << "timeline_visible" << YAML::Value << layout.timeline_visible;
+        out << YAML::Key << "timeline_height_px" << YAML::Value << layout.timeline_height_px;
+        out << YAML::Key << "inspector_visible" << YAML::Value << layout.inspector_visible;
+        write_window_rect(out, "main_panel", layout.main_panel);
+        write_window_rect(out, "inspector", layout.inspector);
+        write_window_rect(out, "timeline", layout.timeline);
+        write_window_rect(out, "plot_shelf", layout.plot_shelf);
+        out << YAML::EndMap;
+    }
+    out << YAML::EndMap;
     out << YAML::EndMap;
 
     const std::filesystem::path temp_path =

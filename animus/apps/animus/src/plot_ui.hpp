@@ -12,6 +12,7 @@ namespace animus::app
 {
 
 struct Options;
+struct AppWindowRect;
 struct TelemetryPlaybackState;
 struct RuntimeSignalInputs;
 
@@ -39,6 +40,7 @@ struct PlotUiState
 void draw_plot_shelf(Options &options,
                      TelemetryPlaybackState &playback,
                      const RuntimeSignalInputs &runtime,
-                     PlotUiState &state);
+                     PlotUiState &state,
+                     AppWindowRect &rect);
 
 } // namespace animus::app

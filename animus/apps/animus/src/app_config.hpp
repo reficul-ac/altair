@@ -3,7 +3,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "plot_config.hpp"
@@ -36,10 +38,38 @@ struct AppConfigStatusThresholds
     bool operator==(const AppConfigStatusThresholds &) const = default;
 };
 
+struct AppWindowRect
+{
+    float x = 0.0F;
+    float y = 0.0F;
+    float width = 0.0F;
+    float height = 0.0F;
+
+    bool operator==(const AppWindowRect &) const = default;
+};
+
+struct AppWorkspaceLayout
+{
+    std::string active_panel = "view";
+    std::string view_mode = "terrain3d";
+    std::string map_orientation = "north_up";
+    bool plot_shelf_visible = true;
+    float plot_shelf_height_px = 220.0F;
+    bool timeline_visible = true;
+    float timeline_height_px = 144.0F;
+    bool inspector_visible = true;
+    AppWindowRect main_panel;
+    AppWindowRect inspector;
+    AppWindowRect timeline;
+    AppWindowRect plot_shelf;
+
+    bool operator==(const AppWorkspaceLayout &) const = default;
+};
+
 struct AppConfig
 {
     int version = 1;
-    std::string workspace_mode = "operator";
+    std::string workspace_mode = "fly_test";
     std::string active_panel = "view";
     int window_width = 1280;
     int window_height = 720;
@@ -62,6 +92,7 @@ struct AppConfig
     std::size_t telemetry_live_render_max_points = 1000U;
     AppConfigStatusThresholds status_thresholds;
     PlotShelfConfig plots = default_plot_shelf_config();
+    std::map<std::string, AppWorkspaceLayout> workspace_layouts;
 
     bool operator==(const AppConfig &) const = default;
 };
@@ -89,6 +120,8 @@ struct AppConfigSaveResult
 };
 
 [[nodiscard]] AppConfig default_app_config();
+[[nodiscard]] std::string canonical_workspace_id(std::string_view value);
+[[nodiscard]] AppWorkspaceLayout default_workspace_layout(std::string_view workspace_id);
 [[nodiscard]] AppConfigLoadResult load_app_config_file(const std::filesystem::path &path);
 [[nodiscard]] AppConfigSaveResult save_app_config_file(const std::filesystem::path &path,
                                                        const AppConfig &config);

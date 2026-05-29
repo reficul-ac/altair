@@ -15,6 +15,7 @@
 #include <array>
 #include <cstddef>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -169,7 +170,7 @@ struct TelemetryEventFilters
 
 struct UiState
 {
-    WorkspaceMode workspace_mode = WorkspaceMode::Operator;
+    WorkspaceMode workspace_mode = WorkspaceMode::FlyTest;
     ViewMode view_mode = ViewMode::Terrain3D;
     UiNavigationMode active_mode = UiNavigationMode::View;
     InspectorTarget inspector_target = InspectorTarget::Terrain;
@@ -189,6 +190,12 @@ struct UiState
     bool request_config_save_default = false;
     bool request_config_reload = false;
     bool request_config_reset = false;
+    bool request_workspace_layout_reset = false;
+    bool workspace_layout_applied = false;
+    bool inspector_visible = true;
+    bool timeline_visible = true;
+    float timeline_height_px = 144.0F;
+    std::map<std::string, AppWorkspaceLayout> workspace_layouts;
     std::optional<double> request_review_jump_time_s;
     std::optional<std::size_t> selected_review_marker_index;
     bool request_home_view = false;

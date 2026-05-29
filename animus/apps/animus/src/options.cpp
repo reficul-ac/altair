@@ -84,19 +84,29 @@ std::uint16_t parse_udp_port(std::string_view name, std::string_view value)
 
 WorkspaceMode parse_workspace_mode(std::string_view value)
 {
-    if (value == "operator")
+    const std::string canonical = canonical_workspace_id(value);
+    if (canonical == "fly_test")
     {
-        return WorkspaceMode::Operator;
+        return WorkspaceMode::FlyTest;
     }
-    if (value == "advanced")
+    if (canonical == "plan")
     {
-        return WorkspaceMode::Advanced;
+        return WorkspaceMode::Plan;
     }
-    if (value == "developer")
+    if (canonical == "analyze")
+    {
+        return WorkspaceMode::Analyze;
+    }
+    if (canonical == "terrain")
+    {
+        return WorkspaceMode::Terrain;
+    }
+    if (canonical == "developer")
     {
         return WorkspaceMode::Developer;
     }
-    throw std::invalid_argument("workspace mode must be operator, advanced, or developer");
+    throw std::invalid_argument(
+        "workspace mode must be fly_test, plan, analyze, terrain, or developer");
 }
 
 ViewMode parse_view_mode(std::string_view value)
@@ -120,14 +130,18 @@ const char *workspace_mode_config_value(const WorkspaceMode mode)
 {
     switch (mode)
     {
-    case WorkspaceMode::Operator:
-        return "operator";
-    case WorkspaceMode::Advanced:
-        return "advanced";
+    case WorkspaceMode::FlyTest:
+        return "fly_test";
+    case WorkspaceMode::Plan:
+        return "plan";
+    case WorkspaceMode::Analyze:
+        return "analyze";
+    case WorkspaceMode::Terrain:
+        return "terrain";
     case WorkspaceMode::Developer:
         return "developer";
     }
-    return "operator";
+    return "fly_test";
 }
 
 const char *view_mode_config_value(const ViewMode mode)
@@ -179,7 +193,7 @@ std::string_view next_arg(int argc, char **argv, int &index, std::string_view op
 
 bool valid_workspace(std::string_view value)
 {
-    return value == "operator" || value == "advanced" || value == "developer";
+    return !canonical_workspace_id(value).empty();
 }
 
 bool valid_view_mode(std::string_view value)
@@ -660,6 +674,7 @@ void apply_app_config_to_options(Options &options, const AppConfig &config)
     options.overlay_enabled = config.overlay_enabled;
     options.overlay_opacity = config.overlay_opacity;
     options.status_thresholds = config.status_thresholds;
+    options.workspace_layouts = config.workspace_layouts;
     options.overlays.clear();
     for (const AppConfigOverlay &overlay : config.overlays)
     {
@@ -711,6 +726,7 @@ AppConfig app_config_from_options(const Options &options)
     config.telemetry_live_render_max_points = options.telemetry_live_render_max_points;
     config.status_thresholds = options.status_thresholds;
     config.plots = options.plots;
+    config.workspace_layouts = options.workspace_layouts;
     return config;
 }
 

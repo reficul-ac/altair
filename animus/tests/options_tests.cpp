@@ -93,7 +93,7 @@ TEST(AnimusOptions, LoadsAndSavesWorkspaceMode)
     }
 
     auto options = parse({"animus", "--config", path.string().c_str()});
-    EXPECT_EQ(options.workspace_mode, animus::app::WorkspaceMode::Advanced);
+    EXPECT_EQ(options.workspace_mode, animus::app::WorkspaceMode::Analyze);
 
     options.workspace_mode = animus::app::WorkspaceMode::Developer;
     const auto save = animus::app::save_app_config(options);
@@ -101,8 +101,39 @@ TEST(AnimusOptions, LoadsAndSavesWorkspaceMode)
 
     const auto restored = parse({"animus", "--config", path.string().c_str()});
     EXPECT_EQ(restored.workspace_mode, animus::app::WorkspaceMode::Developer);
+    const auto load = animus::app::load_app_config_file(path);
+    EXPECT_EQ(load.config.workspace_mode, "developer");
 
     std::filesystem::remove(path);
+}
+
+TEST(AnimusOptions, LoadsLegacyWorkspaceAliasesAndSavesCanonicalValues)
+{
+    const std::filesystem::path operator_path =
+        std::filesystem::temp_directory_path() / "animus_options_operator_workspace_test.yaml";
+    const std::filesystem::path advanced_path =
+        std::filesystem::temp_directory_path() / "animus_options_advanced_workspace_test.yaml";
+    {
+        std::ofstream output(operator_path);
+        output << "version: 1\napp:\n  workspace: operator\n";
+    }
+    {
+        std::ofstream output(advanced_path);
+        output << "version: 1\napp:\n  workspace: advanced\n";
+    }
+
+    auto operator_options = parse({"animus", "--config", operator_path.string().c_str()});
+    auto advanced_options = parse({"animus", "--config", advanced_path.string().c_str()});
+
+    EXPECT_EQ(operator_options.workspace_mode, animus::app::WorkspaceMode::FlyTest);
+    EXPECT_EQ(advanced_options.workspace_mode, animus::app::WorkspaceMode::Analyze);
+    EXPECT_TRUE(animus::app::save_app_config(operator_options).saved);
+    EXPECT_TRUE(animus::app::save_app_config(advanced_options).saved);
+    EXPECT_EQ(animus::app::load_app_config_file(operator_path).config.workspace_mode, "fly_test");
+    EXPECT_EQ(animus::app::load_app_config_file(advanced_path).config.workspace_mode, "analyze");
+
+    std::filesystem::remove(operator_path);
+    std::filesystem::remove(advanced_path);
 }
 
 TEST(AnimusOptions, LoadsAndSavesViewMode)
@@ -173,7 +204,7 @@ TEST(AnimusOptions, NoLoadConfigSkipsExistingFileButKeepsSavePath)
 
     EXPECT_EQ(options.config_path, path);
     EXPECT_FALSE(options.load_config);
-    EXPECT_EQ(options.workspace_mode, animus::app::WorkspaceMode::Operator);
+    EXPECT_EQ(options.workspace_mode, animus::app::WorkspaceMode::FlyTest);
     EXPECT_EQ(options.config_load_status, "skipped");
 
     std::filesystem::remove(path);

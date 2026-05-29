@@ -33,7 +33,7 @@ TEST(AnimusAppConfig, DefaultsAreVersioned)
     const animus::app::AppConfig config = animus::app::default_app_config();
 
     EXPECT_EQ(config.version, 1);
-    EXPECT_EQ(config.workspace_mode, "operator");
+    EXPECT_EQ(config.workspace_mode, "fly_test");
     EXPECT_EQ(config.view_mode, "terrain3d");
     EXPECT_EQ(config.telemetry_live_udp_port, 14550U);
     EXPECT_EQ(config.plots.plots.size(), 5U);
@@ -56,6 +56,9 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     config.overlays.push_back({"overlay.tif", true, 0.5F, 3, "geotiff:overlay.tif"});
     config.plots.paused = true;
     config.plots.plots.front().title = "Round Trip Plot";
+    config.workspace_layouts["analyze"] = animus::app::default_workspace_layout("analyze");
+    config.workspace_layouts["analyze"].main_panel = {200.0F, 80.0F, 520.0F, 460.0F};
+    config.workspace_layouts["analyze"].plot_shelf_height_px = 320.0F;
 
     const auto save = animus::app::save_app_config_file(path, config);
     ASSERT_TRUE(save.saved);
@@ -76,6 +79,10 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     EXPECT_EQ(load.config.telemetry_live_udp_port, 14560U);
     EXPECT_TRUE(load.config.plots.paused);
     EXPECT_EQ(load.config.plots.plots.front().title, "Round Trip Plot");
+    ASSERT_TRUE(load.config.workspace_layouts.contains("analyze"));
+    EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").main_panel.x, 200.0F);
+    EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").main_panel.width, 520.0F);
+    EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").plot_shelf_height_px, 320.0F);
 
     std::filesystem::remove(path);
 }
@@ -168,9 +175,61 @@ TEST(AnimusAppConfig, LoadsLegacyJsonLikeConfig)
 
     const auto load = animus::app::load_app_config_file(path);
     EXPECT_EQ(load.status, animus::app::AppConfigLoadStatus::LoadedLegacy);
-    EXPECT_EQ(load.config.workspace_mode, "advanced");
+    EXPECT_EQ(load.config.workspace_mode, "analyze");
     EXPECT_EQ(load.config.view_mode, "map2d");
     EXPECT_FLOAT_EQ(load.config.overlay_opacity, 0.4F);
+
+    std::filesystem::remove(path);
+}
+
+TEST(AnimusAppConfig, CanonicalizesLegacyWorkspaceAliasesFromYaml)
+{
+    const std::filesystem::path path = temp_path("animus_app_config_legacy_workspace.yaml");
+    {
+        std::ofstream output(path);
+        output << "version: 1\napp:\n  workspace: operator\n";
+    }
+
+    const auto load = animus::app::load_app_config_file(path);
+    EXPECT_EQ(load.status, animus::app::AppConfigLoadStatus::Loaded);
+    EXPECT_EQ(load.config.workspace_mode, "fly_test");
+    EXPECT_FALSE(has_diagnostic(load.diagnostics, "app.workspace"));
+
+    std::filesystem::remove(path);
+}
+
+TEST(AnimusAppConfig, WorkspaceLayoutDefaultsAndInvalidGeometryDiagnostics)
+{
+    const std::filesystem::path path = temp_path("animus_app_config_workspace_layout.yaml");
+    {
+        std::ofstream output(path);
+        output << "version: 1\nworkspaces:\n"
+               << "  terrain:\n"
+               << "    active_panel: layers\n"
+               << "    view_mode: terrain3d\n"
+               << "    plot_shelf_visible: false\n"
+               << "    main_panel:\n"
+               << "      x: 40\n"
+               << "      y: 50\n"
+               << "      width: -1\n"
+               << "      height: 420\n"
+               << "  mystery:\n"
+               << "    active_panel: view\n";
+    }
+
+    const auto load = animus::app::load_app_config_file(path);
+    EXPECT_EQ(load.status, animus::app::AppConfigLoadStatus::Loaded);
+    ASSERT_TRUE(load.config.workspace_layouts.contains("terrain"));
+    EXPECT_EQ(load.config.workspace_layouts.at("terrain").active_panel, "layers");
+    EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("terrain").main_panel.width, 440.0F);
+    EXPECT_TRUE(has_diagnostic(load.diagnostics, "width"));
+    EXPECT_TRUE(has_diagnostic(load.diagnostics, "unknown workspace layout key: mystery"));
+
+    const auto plan = animus::app::default_workspace_layout("plan");
+    EXPECT_EQ(plan.active_panel, "view");
+    EXPECT_EQ(plan.view_mode, "map2d");
+    EXPECT_FALSE(plan.plot_shelf_visible);
+    EXPECT_FALSE(plan.inspector_visible);
 
     std::filesystem::remove(path);
 }

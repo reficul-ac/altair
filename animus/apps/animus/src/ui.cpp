@@ -54,14 +54,36 @@ const char *workspace_label(const WorkspaceMode mode)
 {
     switch (mode)
     {
-    case WorkspaceMode::Operator:
-        return "Operator";
-    case WorkspaceMode::Advanced:
-        return "Advanced";
+    case WorkspaceMode::FlyTest:
+        return "Fly/Test";
+    case WorkspaceMode::Plan:
+        return "Plan";
+    case WorkspaceMode::Analyze:
+        return "Analyze";
+    case WorkspaceMode::Terrain:
+        return "Terrain";
     case WorkspaceMode::Developer:
         return "Developer";
     }
-    return "Operator";
+    return "Fly/Test";
+}
+
+std::string workspace_config_value(const WorkspaceMode mode)
+{
+    switch (mode)
+    {
+    case WorkspaceMode::FlyTest:
+        return "fly_test";
+    case WorkspaceMode::Plan:
+        return "plan";
+    case WorkspaceMode::Analyze:
+        return "analyze";
+    case WorkspaceMode::Terrain:
+        return "terrain";
+    case WorkspaceMode::Developer:
+        return "developer";
+    }
+    return "fly_test";
 }
 
 const char *view_mode_label(const ViewMode mode)
@@ -269,10 +291,6 @@ bool mode_visible_in_workspace(const UiNavigationMode mode, const WorkspaceMode 
     {
         return workspace_mode == WorkspaceMode::Developer;
     }
-    if (mode == UiNavigationMode::Layers)
-    {
-        return workspace_mode != WorkspaceMode::Operator;
-    }
     return true;
 }
 
@@ -284,7 +302,196 @@ void sanitize_active_mode(UiState &ui_state)
     }
 }
 
-void workspace_button(UiState &ui_state, const WorkspaceMode mode)
+AppWorkspaceLayout &workspace_layout(UiState &ui_state, const WorkspaceMode mode)
+{
+    const std::string id = workspace_config_value(mode);
+    auto found = ui_state.workspace_layouts.find(id);
+    if (found == ui_state.workspace_layouts.end())
+    {
+        found = ui_state.workspace_layouts.emplace(id, default_workspace_layout(id)).first;
+    }
+    return found->second;
+}
+
+ViewMode view_mode_from_config_value(const std::string &value)
+{
+    if (value == "map2d")
+    {
+        return ViewMode::Map2D;
+    }
+    if (value == "oblique25d")
+    {
+        return ViewMode::Oblique25D;
+    }
+    return ViewMode::Terrain3D;
+}
+
+std::string view_mode_config_value(const ViewMode mode)
+{
+    switch (mode)
+    {
+    case ViewMode::Terrain3D:
+        return "terrain3d";
+    case ViewMode::Map2D:
+        return "map2d";
+    case ViewMode::Oblique25D:
+        return "oblique25d";
+    }
+    return "terrain3d";
+}
+
+MapOrientationMode map_orientation_from_layout_value(const std::string &value)
+{
+    if (value == "track_up")
+    {
+        return MapOrientationMode::TrackUp;
+    }
+    if (value == "free_rotate")
+    {
+        return MapOrientationMode::FreeRotate;
+    }
+    return MapOrientationMode::NorthUp;
+}
+
+std::string map_orientation_layout_value(const MapOrientationMode mode)
+{
+    switch (mode)
+    {
+    case MapOrientationMode::NorthUp:
+        return "north_up";
+    case MapOrientationMode::TrackUp:
+        return "track_up";
+    case MapOrientationMode::FreeRotate:
+        return "free_rotate";
+    }
+    return "north_up";
+}
+
+void apply_workspace_layout(UiState &ui_state,
+                            Map2DCamera &map_camera,
+                            Options &options,
+                            PlanVisualizationState &plan_state,
+                            bool &state_colors,
+                            bool &highlight_fallback,
+                            const WorkspaceMode mode)
+{
+    AppWorkspaceLayout &layout = workspace_layout(ui_state, mode);
+    ui_state.active_mode = [&layout]()
+    {
+        if (layout.active_panel == "layers")
+        {
+            return UiNavigationMode::Layers;
+        }
+        if (layout.active_panel == "telemetry")
+        {
+            return UiNavigationMode::Telemetry;
+        }
+        if (layout.active_panel == "signals")
+        {
+            return UiNavigationMode::Signals;
+        }
+        if (layout.active_panel == "capture")
+        {
+            return UiNavigationMode::Capture;
+        }
+        if (layout.active_panel == "settings")
+        {
+            return UiNavigationMode::Settings;
+        }
+        if (layout.active_panel == "developer")
+        {
+            return UiNavigationMode::Developer;
+        }
+        return UiNavigationMode::View;
+    }();
+    ui_state.view_mode = view_mode_from_config_value(layout.view_mode);
+    map_camera.orientation = map_orientation_from_layout_value(layout.map_orientation);
+    options.plots.visible = layout.plot_shelf_visible;
+    options.plots.height_px = layout.plot_shelf_height_px;
+    ui_state.timeline_visible = layout.timeline_visible;
+    ui_state.timeline_height_px = layout.timeline_height_px;
+    ui_state.inspector_visible = layout.inspector_visible;
+    ui_state.developer_diagnostics_visible = mode == WorkspaceMode::Developer;
+    ui_state.telemetry_diagnostics_visible =
+        mode == WorkspaceMode::Analyze || mode == WorkspaceMode::Developer;
+    if (mode == WorkspaceMode::Plan)
+    {
+        plan_state.overlay_visible = true;
+    }
+    if (mode == WorkspaceMode::Terrain)
+    {
+        state_colors = true;
+        highlight_fallback = true;
+    }
+    sanitize_active_mode(ui_state);
+}
+
+void capture_workspace_layout(UiState &ui_state,
+                              const Map2DCamera &map_camera,
+                              const Options &options)
+{
+    AppWorkspaceLayout &layout = workspace_layout(ui_state, ui_state.workspace_mode);
+    switch (ui_state.active_mode)
+    {
+    case UiNavigationMode::View:
+        layout.active_panel = "view";
+        break;
+    case UiNavigationMode::Layers:
+        layout.active_panel = "layers";
+        break;
+    case UiNavigationMode::Telemetry:
+        layout.active_panel = "telemetry";
+        break;
+    case UiNavigationMode::Signals:
+        layout.active_panel = "signals";
+        break;
+    case UiNavigationMode::Capture:
+        layout.active_panel = "capture";
+        break;
+    case UiNavigationMode::Settings:
+        layout.active_panel = "settings";
+        break;
+    case UiNavigationMode::Developer:
+        layout.active_panel = "developer";
+        break;
+    }
+    layout.view_mode = view_mode_config_value(ui_state.view_mode);
+    layout.map_orientation = map_orientation_layout_value(map_camera.orientation);
+    layout.plot_shelf_visible = options.plots.visible;
+    layout.plot_shelf_height_px = options.plots.height_px;
+    layout.timeline_visible = ui_state.timeline_visible;
+    layout.timeline_height_px = ui_state.timeline_height_px;
+    layout.inspector_visible = ui_state.inspector_visible;
+}
+
+AppWindowRect clamp_window_rect(const AppWindowRect &requested,
+                                const AppWindowRect &fallback,
+                                const ImVec2 display,
+                                const ImVec2 min_size)
+{
+    AppWindowRect rect = requested.width > 0.0F && requested.height > 0.0F ? requested : fallback;
+    rect.width = std::clamp(rect.width, min_size.x, std::max(min_size.x, display.x - 24.0F));
+    rect.height = std::clamp(rect.height, min_size.y, std::max(min_size.y, display.y - 52.0F));
+    rect.x = std::clamp(rect.x, 0.0F, std::max(0.0F, display.x - rect.width));
+    rect.y =
+        std::clamp(rect.y, status_bar_height, std::max(status_bar_height, display.y - rect.height));
+    return rect;
+}
+
+void capture_current_window_rect(AppWindowRect &rect)
+{
+    const ImVec2 pos = ImGui::GetWindowPos();
+    const ImVec2 size = ImGui::GetWindowSize();
+    rect = {pos.x, pos.y, size.x, size.y};
+}
+
+void workspace_button(UiState &ui_state,
+                      Options &options,
+                      Map2DCamera &map_camera,
+                      PlanVisualizationState &plan_state,
+                      bool &state_colors,
+                      bool &highlight_fallback,
+                      const WorkspaceMode mode)
 {
     const bool selected = ui_state.workspace_mode == mode;
     ImGui::PushID(workspace_label(mode));
@@ -304,12 +511,11 @@ void workspace_button(UiState &ui_state, const WorkspaceMode mode)
     }
     if (ImGui::Button(workspace_label(mode), ImVec2(0.0F, 0.0F)))
     {
+        capture_workspace_layout(ui_state, map_camera, options);
         ui_state.workspace_mode = mode;
-        sanitize_active_mode(ui_state);
-        if (mode == WorkspaceMode::Developer)
-        {
-            ui_state.developer_diagnostics_visible = true;
-        }
+        apply_workspace_layout(
+            ui_state, map_camera, options, plan_state, state_colors, highlight_fallback, mode);
+        ui_state.workspace_layout_applied = true;
     }
     ImGui::PopStyleColor(3);
     ImGui::PopStyleVar(2);
@@ -865,12 +1071,17 @@ void draw_top_status_bar(const Options &options,
     ImGui::PopStyleColor();
 }
 
-void draw_nav(UiState &ui_state)
+void draw_nav(UiState &ui_state,
+              Options &options,
+              Map2DCamera &map_camera,
+              PlanVisualizationState &plan_state,
+              bool &state_colors,
+              bool &highlight_fallback)
 {
     sanitize_active_mode(ui_state);
     ImGui::SetNextWindowPos(ImVec2(chrome_margin, status_bar_height + chrome_margin),
                             ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(nav_width, 424.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(nav_width, 540.0F), ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
@@ -878,16 +1089,45 @@ void draw_nav(UiState &ui_state)
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0F, 12.0F));
     ImGui::Begin("Navigate", nullptr, flags);
-    workspace_button(ui_state, WorkspaceMode::Operator);
-    workspace_button(ui_state, WorkspaceMode::Advanced);
-    workspace_button(ui_state, WorkspaceMode::Developer);
+    workspace_button(ui_state,
+                     options,
+                     map_camera,
+                     plan_state,
+                     state_colors,
+                     highlight_fallback,
+                     WorkspaceMode::FlyTest);
+    workspace_button(ui_state,
+                     options,
+                     map_camera,
+                     plan_state,
+                     state_colors,
+                     highlight_fallback,
+                     WorkspaceMode::Plan);
+    workspace_button(ui_state,
+                     options,
+                     map_camera,
+                     plan_state,
+                     state_colors,
+                     highlight_fallback,
+                     WorkspaceMode::Analyze);
+    workspace_button(ui_state,
+                     options,
+                     map_camera,
+                     plan_state,
+                     state_colors,
+                     highlight_fallback,
+                     WorkspaceMode::Terrain);
+    workspace_button(ui_state,
+                     options,
+                     map_camera,
+                     plan_state,
+                     state_colors,
+                     highlight_fallback,
+                     WorkspaceMode::Developer);
     ImGui::Separator();
     nav_button(ui_state, UiNavigationMode::View);
-    if (mode_visible_in_workspace(UiNavigationMode::Layers, ui_state.workspace_mode))
-    {
-        ImGui::Dummy(ImVec2(0.0F, 2.0F));
-        nav_button(ui_state, UiNavigationMode::Layers);
-    }
+    ImGui::Dummy(ImVec2(0.0F, 2.0F));
+    nav_button(ui_state, UiNavigationMode::Layers);
     ImGui::Dummy(ImVec2(0.0F, 2.0F));
     nav_button(ui_state, UiNavigationMode::Telemetry);
     ImGui::Dummy(ImVec2(0.0F, 2.0F));
@@ -931,6 +1171,11 @@ void draw_settings_panel(const Options &options, UiState &ui_state)
     if (ImGui::Button("Reset"))
     {
         ui_state.request_config_reset = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset Layout"))
+    {
+        ui_state.request_workspace_layout_reset = true;
     }
     if (!options.config_diagnostics.empty())
     {
@@ -2204,18 +2449,23 @@ void draw_selected_entity_card(TelemetryPlaybackState &playback,
 void draw_inspector(TelemetryPlaybackState &playback,
                     const VehicleRuntimeStatus &vehicle_status,
                     const AppConfigStatusThresholds &thresholds,
-                    UiState &ui_state)
+                    UiState &ui_state,
+                    AppWorkspaceLayout &layout)
 {
-    if (ui_state.inspector_target == InspectorTarget::None || ImGui::GetIO().DisplaySize.x < 980.0F)
+    if (!ui_state.inspector_visible || ui_state.inspector_target == InspectorTarget::None ||
+        ImGui::GetIO().DisplaySize.x < 980.0F)
     {
         return;
     }
-    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - inspector_width - chrome_margin,
-                                   status_bar_height + chrome_margin),
-                            ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(inspector_width, 520.0F), ImGuiCond_Always);
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
-                             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
+    const AppWindowRect fallback{ImGui::GetIO().DisplaySize.x - inspector_width - chrome_margin,
+                                 status_bar_height + chrome_margin,
+                                 inspector_width,
+                                 520.0F};
+    const AppWindowRect rect =
+        clamp_window_rect(layout.inspector, fallback, ImGui::GetIO().DisplaySize, {260.0F, 220.0F});
+    ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(rect.width, rect.height), ImGuiCond_Always);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
     ImGui::PushStyleColor(ImGuiCol_Border, panel_border);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
@@ -2240,6 +2490,7 @@ void draw_inspector(TelemetryPlaybackState &playback,
     {
         ImGui::TextUnformatted("Terrain view");
     }
+    capture_current_window_rect(layout.inspector);
     ImGui::End();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
@@ -2457,9 +2708,13 @@ void draw_bookmark_popup(TelemetryPlaybackState &playback, UiState &ui_state)
     }
 }
 
-void draw_bottom_timeline(TelemetryPlaybackState &playback, UiState &ui_state)
+void draw_bottom_timeline(TelemetryPlaybackState &playback,
+                          UiState &ui_state,
+                          AppWorkspaceLayout &layout)
 {
-    if (!playback.loaded)
+    const bool plan_default_timeline =
+        ui_state.workspace_mode == WorkspaceMode::Plan && playback.loaded;
+    if (!playback.loaded || (!ui_state.timeline_visible && !plan_default_timeline))
     {
         return;
     }
@@ -2471,10 +2726,15 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback, UiState &ui_state)
     {
         return;
     }
-    ImGui::SetNextWindowPos(ImVec2(left, ImGui::GetIO().DisplaySize.y - 150.0F), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(available_width, 144.0F), ImGuiCond_Always);
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize;
+    const AppWindowRect fallback{left,
+                                 ImGui::GetIO().DisplaySize.y - ui_state.timeline_height_px - 6.0F,
+                                 available_width,
+                                 ui_state.timeline_height_px};
+    const AppWindowRect rect =
+        clamp_window_rect(layout.timeline, fallback, ImGui::GetIO().DisplaySize, {260.0F, 96.0F});
+    ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(rect.width, rect.height), ImGuiCond_Always);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055F, 0.064F, 0.072F, 0.88F));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 10.0F));
@@ -2573,6 +2833,9 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback, UiState &ui_state)
             playback.clock.set_rate(rate);
         }
     }
+    capture_current_window_rect(layout.timeline);
+    ui_state.timeline_height_px = ImGui::GetWindowSize().y;
+    layout.timeline_height_px = ui_state.timeline_height_px;
     ImGui::End();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
@@ -2684,6 +2947,17 @@ void draw_app_workspace(Options &options,
 {
     sanitize_active_mode(ui_state);
     RuntimeSignalInputs runtime_signals;
+    if (!ui_state.workspace_layout_applied)
+    {
+        apply_workspace_layout(ui_state,
+                               map_camera,
+                               options,
+                               plan_state,
+                               state_colors,
+                               highlight_fallback,
+                               ui_state.workspace_mode);
+        ui_state.workspace_layout_applied = true;
+    }
     runtime_signals.terrain_elevation_m = playback.selected_entity_terrain.terrain_elevation_m;
     runtime_signals.terrain_clearance_m = playback.selected_entity_terrain.terrain_clearance_m;
     runtime_signals.telemetry_age_s =
@@ -2713,7 +2987,8 @@ void draw_app_workspace(Options &options,
                         mp4_recorder,
                         ui_state,
                         resident_gpu_bytes);
-    draw_nav(ui_state);
+    draw_nav(ui_state, options, map_camera, plan_state, state_colors, highlight_fallback);
+    AppWorkspaceLayout &layout = workspace_layout(ui_state, ui_state.workspace_mode);
 
     const float panel_left = chrome_margin + nav_width + panel_gap;
     const float panel_top = status_bar_height + chrome_margin;
@@ -2721,15 +2996,18 @@ void draw_app_workspace(Options &options,
         ImGui::GetIO().DisplaySize.x >= 980.0F ? inspector_width + 36.0F : 24.0F;
     const float main_width =
         std::clamp(ImGui::GetIO().DisplaySize.x - panel_left - inspector_reserve, 320.0F, 470.0F);
-    ImGui::SetNextWindowPos(ImVec2(panel_left, panel_top), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(main_width, 430.0F), ImGuiCond_Always);
+    const AppWindowRect main_fallback{panel_left, panel_top, main_width, 430.0F};
+    const AppWindowRect main_rect = clamp_window_rect(
+        layout.main_panel, main_fallback, ImGui::GetIO().DisplaySize, {320.0F, 220.0F});
+    ImGui::SetNextWindowPos(ImVec2(main_rect.x, main_rect.y), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(main_rect.width, main_rect.height), ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
     ImGui::PushStyleColor(ImGuiCol_Border, panel_border);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 12.0F));
     ImGui::Begin(mode_label(ui_state.active_mode), nullptr, flags);
-    const bool advanced_workspace = ui_state.workspace_mode != WorkspaceMode::Operator;
+    const bool advanced_workspace = ui_state.workspace_mode != WorkspaceMode::FlyTest;
     switch (ui_state.active_mode)
     {
     case UiNavigationMode::View:
@@ -2792,13 +3070,15 @@ void draw_app_workspace(Options &options,
                              ui_state);
         break;
     }
+    capture_current_window_rect(layout.main_panel);
     ImGui::End();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
 
-    draw_inspector(playback, vehicle_status, options.status_thresholds, ui_state);
-    draw_plot_shelf(options, playback, runtime_signals, ui_state.plot_ui);
-    draw_bottom_timeline(playback, ui_state);
+    draw_inspector(playback, vehicle_status, options.status_thresholds, ui_state, layout);
+    draw_plot_shelf(options, playback, runtime_signals, ui_state.plot_ui, layout.plot_shelf);
+    draw_bottom_timeline(playback, ui_state, layout);
+    capture_workspace_layout(ui_state, map_camera, options);
 }
 
 } // namespace animus::app

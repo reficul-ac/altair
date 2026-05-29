@@ -55,6 +55,9 @@ Reusable Bayek framework follow-up is tracked separately in
   fallback/synthetic-under-vehicle, speed/climb excursions, plan deviation,
   geofence, capture events, and model fallback when those runtime/session
   sources are available.
+- [ ] Add headless Animus workspace-layout transition tests for switching and
+  resetting layouts once the ImGui layout application logic is factored into a
+  pure model helper.
 
 ## Workflow, Artifacts, And Verification
 

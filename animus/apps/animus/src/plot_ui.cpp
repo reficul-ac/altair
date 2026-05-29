@@ -590,7 +590,8 @@ void draw_plot_editor(Options &options, PlotUiState &state)
 void draw_plot_shelf(Options &options,
                      TelemetryPlaybackState &playback,
                      const RuntimeSignalInputs &runtime,
-                     PlotUiState &state)
+                     PlotUiState &state,
+                     AppWindowRect &rect)
 {
     PlotShelfConfig &config = options.plots;
     update_buffers(config, playback, runtime, state);
@@ -608,13 +609,26 @@ void draw_plot_shelf(Options &options,
     }
     const float timeline_reserve = playback.loaded ? 118.0F : 12.0F;
     config.height_px = std::clamp(config.height_px, 104.0F, ImGui::GetIO().DisplaySize.y * 0.55F);
-    ImGui::SetNextWindowPos(
-        ImVec2(left, ImGui::GetIO().DisplaySize.y - timeline_reserve - config.height_px),
-        ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(width, config.height_px), ImGuiCond_Always);
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
+    if (rect.width <= 0.0F || rect.height <= 0.0F)
+    {
+        rect = {left,
+                ImGui::GetIO().DisplaySize.y - timeline_reserve - config.height_px,
+                width,
+                config.height_px};
+    }
+    rect.width =
+        std::clamp(rect.width, 320.0F, std::max(320.0F, ImGui::GetIO().DisplaySize.x - 24.0F));
+    rect.height = std::clamp(rect.height, 104.0F, ImGui::GetIO().DisplaySize.y * 0.55F);
+    rect.x = std::clamp(rect.x, 0.0F, std::max(0.0F, ImGui::GetIO().DisplaySize.x - rect.width));
+    rect.y = std::clamp(rect.y, 38.0F, std::max(38.0F, ImGui::GetIO().DisplaySize.y - rect.height));
+    ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(rect.width, rect.height), ImGuiCond_Always);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoSavedSettings;
     ImGui::Begin("Plot Shelf", &config.visible, flags);
-    config.height_px = ImGui::GetWindowSize().y;
+    const ImVec2 pos = ImGui::GetWindowPos();
+    const ImVec2 size = ImGui::GetWindowSize();
+    rect = {pos.x, pos.y, size.x, size.y};
+    config.height_px = size.y;
     ImGui::Checkbox("Paused", &config.paused);
     ImGui::SameLine();
     ImGui::Checkbox("Follow latest", &config.follow_latest);
