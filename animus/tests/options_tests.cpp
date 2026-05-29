@@ -136,6 +136,24 @@ TEST(AnimusOptions, LoadsLegacyWorkspaceAliasesAndSavesCanonicalValues)
     std::filesystem::remove(advanced_path);
 }
 
+TEST(AnimusOptions, LoadsExportWorkspaceAlias)
+{
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "animus_options_export_workspace_test.yaml";
+    {
+        std::ofstream output(path);
+        output << "version: 1\napp:\n  workspace: report\n";
+    }
+
+    auto options = parse({"animus", "--config", path.string().c_str()});
+
+    EXPECT_EQ(options.workspace_mode, animus::app::WorkspaceMode::Export);
+    EXPECT_TRUE(animus::app::save_app_config(options).saved);
+    EXPECT_EQ(animus::app::load_app_config_file(path).config.workspace_mode, "export");
+
+    std::filesystem::remove(path);
+}
+
 TEST(AnimusOptions, LoadsAndSavesViewMode)
 {
     const std::filesystem::path path =

@@ -609,13 +609,10 @@ void draw_plot_shelf(Options &options,
     }
     const float timeline_reserve = playback.loaded ? 118.0F : 12.0F;
     config.height_px = std::clamp(config.height_px, 104.0F, ImGui::GetIO().DisplaySize.y * 0.55F);
-    if (rect.width <= 0.0F || rect.height <= 0.0F)
-    {
-        rect = {left,
-                ImGui::GetIO().DisplaySize.y - timeline_reserve - config.height_px,
-                width,
-                config.height_px};
-    }
+    rect = {left,
+            ImGui::GetIO().DisplaySize.y - timeline_reserve - config.height_px,
+            width,
+            config.height_px};
     rect.width =
         std::clamp(rect.width, 320.0F, std::max(320.0F, ImGui::GetIO().DisplaySize.x - 24.0F));
     rect.height = std::clamp(rect.height, 104.0F, ImGui::GetIO().DisplaySize.y * 0.55F);

@@ -85,6 +85,14 @@ struct AppWindowRect
     bool operator==(const AppWindowRect &) const = default;
 };
 
+enum class BottomDrawerState
+{
+    Hidden,
+    Collapsed,
+    Compact,
+    Expanded,
+};
+
 struct AppWorkspaceLayout
 {
     std::string active_panel = "view";
@@ -95,6 +103,7 @@ struct AppWorkspaceLayout
     bool timeline_visible = true;
     float timeline_height_px = 144.0F;
     bool inspector_visible = true;
+    BottomDrawerState bottom_drawer_state = BottomDrawerState::Compact;
     AppWindowRect main_panel;
     AppWindowRect inspector;
     AppWindowRect timeline;
@@ -165,6 +174,8 @@ struct AppConfigSaveResult
 
 [[nodiscard]] AppConfig default_app_config();
 [[nodiscard]] std::string canonical_workspace_id(std::string_view value);
+[[nodiscard]] const char *bottom_drawer_state_config_value(BottomDrawerState state);
+[[nodiscard]] BottomDrawerState bottom_drawer_state_from_config_value(std::string_view value);
 [[nodiscard]] AppWorkspaceLayout default_workspace_layout(std::string_view workspace_id);
 [[nodiscard]] AppConfigLoadResult load_app_config_file(const std::filesystem::path &path);
 [[nodiscard]] AppConfigSaveResult save_app_config_file(const std::filesystem::path &path,

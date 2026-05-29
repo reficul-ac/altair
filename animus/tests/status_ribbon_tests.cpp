@@ -122,8 +122,29 @@ TEST(AnimusStatusRibbon, LinkStatesFromRateGapAndDrops)
               StatusRibbonLevel::Warning);
 
     playback.live = false;
-    EXPECT_EQ(pill(build(options, thresholds, snapshot, runtime, playback), "LINK").level,
-              StatusRibbonLevel::Unknown);
+    const auto replay_link = pill(build(options, thresholds, snapshot, runtime, playback), "LINK");
+    EXPECT_EQ(replay_link.level, StatusRibbonLevel::Unknown);
+    EXPECT_EQ(replay_link.summary, "offline expected");
+}
+
+TEST(AnimusStatusRibbon, RibbonUsesOperatorOrderAndLabels)
+{
+    animus::app::Options options;
+    animus::app::AppConfigStatusThresholds thresholds;
+    animus::terrain_core::TerrainStreamSnapshot snapshot;
+    RuntimeSignalInputs runtime;
+    TelemetryPlaybackState playback = loaded_playback();
+
+    const auto model = build(options, thresholds, snapshot, runtime, playback);
+
+    EXPECT_EQ(model[0].label, "RUN");
+    EXPECT_EQ(model[1].label, "VEHICLE");
+    EXPECT_EQ(model[2].label, "TERRAIN");
+    EXPECT_EQ(model[3].label, "LINK");
+    EXPECT_EQ(model[4].label, "PLAN");
+    EXPECT_EQ(model[5].label, "RECORD");
+    EXPECT_EQ(model[6].label, "PERF");
+    EXPECT_EQ(model[7].label, "DATA");
 }
 
 TEST(AnimusStatusRibbon, LinkDetailsExposeHeartbeatAge)

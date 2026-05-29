@@ -33,3 +33,27 @@ TEST(WorkspaceLayoutModel, ResetOnlyReplacesCurrentWorkspace)
                     animus::app::default_workspace_layout("analyze").plot_shelf_height_px);
     EXPECT_FALSE(layouts["terrain"].inspector_visible);
 }
+
+TEST(WorkspaceLayoutModel, ExportAliasCreatesExportDefault)
+{
+    std::map<std::string, animus::app::AppWorkspaceLayout> layouts;
+
+    const auto transition = animus::app::workspace_layout_for_switch(layouts, "report");
+
+    EXPECT_EQ(transition.workspace_id, "export");
+    EXPECT_TRUE(transition.created_default);
+    EXPECT_TRUE(layouts.contains("export"));
+    EXPECT_EQ(transition.layout.active_panel, "capture");
+    EXPECT_EQ(transition.layout.bottom_drawer_state, animus::app::BottomDrawerState::Hidden);
+}
+
+TEST(WorkspaceLayoutModel, SafeViewportSubtractsVisibleChrome)
+{
+    const auto rect =
+        animus::app::safe_viewport_rect({1440.0F, 900.0F, 38.0F, 150.0F, 340.0F, 160.0F, 12.0F});
+
+    EXPECT_FLOAT_EQ(rect.x, 162.0F);
+    EXPECT_FLOAT_EQ(rect.y, 50.0F);
+    EXPECT_FLOAT_EQ(rect.width, 926.0F);
+    EXPECT_FLOAT_EQ(rect.height, 678.0F);
+}

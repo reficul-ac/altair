@@ -315,6 +315,8 @@ std::string workspace_config_value(const animus::app::WorkspaceMode mode)
         return "analyze";
     case animus::app::WorkspaceMode::Terrain:
         return "terrain";
+    case animus::app::WorkspaceMode::Export:
+        return "export";
     case animus::app::WorkspaceMode::Developer:
         return "developer";
     }

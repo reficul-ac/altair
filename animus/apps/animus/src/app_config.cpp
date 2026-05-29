@@ -633,6 +633,7 @@ void read_workspace_layouts(const YAML::Node &node,
                            "timeline_visible",
                            "timeline_height_px",
                            "inspector_visible",
+                           "bottom_drawer_state",
                            "main_panel",
                            "inspector",
                            "timeline",
@@ -650,6 +651,10 @@ void read_workspace_layouts(const YAML::Node &node,
         read_positive_float(
             layout_node, "timeline_height_px", layout.timeline_height_px, diagnostics);
         read_value(layout_node, "inspector_visible", layout.inspector_visible, diagnostics);
+        std::string bottom_drawer_state =
+            bottom_drawer_state_config_value(layout.bottom_drawer_state);
+        read_value(layout_node, "bottom_drawer_state", bottom_drawer_state, diagnostics);
+        layout.bottom_drawer_state = bottom_drawer_state_from_config_value(bottom_drawer_state);
         read_window_rect(
             layout_node["main_panel"], raw_id + ".main_panel", layout.main_panel, diagnostics);
         read_window_rect(
@@ -702,11 +707,48 @@ std::string canonical_workspace_id(const std::string_view value)
     {
         return "terrain";
     }
+    if (value == "export" || value == "capture" || value == "report")
+    {
+        return "export";
+    }
     if (value == "developer")
     {
         return "developer";
     }
     return {};
+}
+
+const char *bottom_drawer_state_config_value(const BottomDrawerState state)
+{
+    switch (state)
+    {
+    case BottomDrawerState::Hidden:
+        return "hidden";
+    case BottomDrawerState::Collapsed:
+        return "collapsed";
+    case BottomDrawerState::Compact:
+        return "compact";
+    case BottomDrawerState::Expanded:
+        return "expanded";
+    }
+    return "compact";
+}
+
+BottomDrawerState bottom_drawer_state_from_config_value(const std::string_view value)
+{
+    if (value == "hidden")
+    {
+        return BottomDrawerState::Hidden;
+    }
+    if (value == "collapsed")
+    {
+        return BottomDrawerState::Collapsed;
+    }
+    if (value == "expanded")
+    {
+        return BottomDrawerState::Expanded;
+    }
+    return BottomDrawerState::Compact;
 }
 
 AppWorkspaceLayout default_workspace_layout(const std::string_view workspace_id)
@@ -725,6 +767,7 @@ AppWorkspaceLayout default_workspace_layout(const std::string_view workspace_id)
         layout.plot_shelf_visible = false;
         layout.timeline_visible = false;
         layout.inspector_visible = false;
+        layout.bottom_drawer_state = BottomDrawerState::Hidden;
     }
     else if (id == "analyze")
     {
@@ -735,6 +778,7 @@ AppWorkspaceLayout default_workspace_layout(const std::string_view workspace_id)
         layout.timeline_visible = true;
         layout.timeline_height_px = 190.0F;
         layout.inspector_visible = true;
+        layout.bottom_drawer_state = BottomDrawerState::Expanded;
     }
     else if (id == "terrain")
     {
@@ -743,6 +787,16 @@ AppWorkspaceLayout default_workspace_layout(const std::string_view workspace_id)
         layout.plot_shelf_visible = false;
         layout.timeline_visible = false;
         layout.inspector_visible = true;
+        layout.bottom_drawer_state = BottomDrawerState::Hidden;
+    }
+    else if (id == "export")
+    {
+        layout.active_panel = "capture";
+        layout.view_mode = "terrain3d";
+        layout.plot_shelf_visible = false;
+        layout.timeline_visible = false;
+        layout.inspector_visible = false;
+        layout.bottom_drawer_state = BottomDrawerState::Hidden;
     }
     else if (id == "developer")
     {
@@ -751,15 +805,18 @@ AppWorkspaceLayout default_workspace_layout(const std::string_view workspace_id)
         layout.plot_shelf_visible = false;
         layout.timeline_visible = false;
         layout.inspector_visible = true;
+        layout.bottom_drawer_state = BottomDrawerState::Hidden;
     }
     else
     {
         layout.active_panel = "telemetry";
         layout.view_mode = "terrain3d";
         layout.plot_shelf_visible = true;
+        layout.plot_shelf_height_px = 160.0F;
         layout.timeline_visible = true;
-        layout.timeline_height_px = 116.0F;
+        layout.timeline_height_px = 28.0F;
         layout.inspector_visible = true;
+        layout.bottom_drawer_state = BottomDrawerState::Compact;
     }
     layout.plot_shelf.height = layout.plot_shelf_height_px;
     layout.timeline.height = layout.timeline_height_px;
@@ -1267,6 +1324,9 @@ AppConfigSaveResult save_app_config_file(const std::filesystem::path &path, cons
         out << YAML::Key << "timeline_visible" << YAML::Value << layout.timeline_visible;
         out << YAML::Key << "timeline_height_px" << YAML::Value << layout.timeline_height_px;
         out << YAML::Key << "inspector_visible" << YAML::Value << layout.inspector_visible;
+        write_string(out,
+                     "bottom_drawer_state",
+                     bottom_drawer_state_config_value(layout.bottom_drawer_state));
         write_window_rect(out, "main_panel", layout.main_panel);
         write_window_rect(out, "inspector", layout.inspector);
         write_window_rect(out, "timeline", layout.timeline);

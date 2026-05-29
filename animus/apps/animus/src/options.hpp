@@ -18,6 +18,7 @@ enum class WorkspaceMode
     Plan,
     Analyze,
     Terrain,
+    Export,
     Developer,
 };
 

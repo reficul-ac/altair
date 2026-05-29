@@ -62,6 +62,11 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Add headless Animus workspace-layout transition tests for switching and
   resetting layouts once the ImGui layout application logic is factored into a
   pure model helper.
+- [ ] Finish Animus operator UI cleanup after the foundational Export
+  workspace, docked drawer model, contextual navigation, and status semantics:
+  selected-vehicle compact/expanded card split, Plan route profile, Analyze
+  event lanes/filter popover, Terrain layer details collapse, and Export report
+  workflow controls.
 
 ## Workflow, Artifacts, And Verification
 

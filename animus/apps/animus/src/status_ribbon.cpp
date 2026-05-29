@@ -114,7 +114,7 @@ StatusRibbonLevel worst(StatusRibbonLevel lhs, StatusRibbonLevel rhs)
 
 StatusRibbonPill make_test_pill(const TelemetryPlaybackState &playback, const UiState &ui_state)
 {
-    StatusRibbonPill pill = make_pill("test_status", "TEST");
+    StatusRibbonPill pill = make_pill("run_status", "RUN");
     if (!playback.loaded)
     {
         pill.level = StatusRibbonLevel::Unknown;
@@ -148,9 +148,9 @@ StatusRibbonPill make_link_pill(const RuntimeSignalInputs &runtime,
     StatusRibbonPill pill = make_pill("link_status", "LINK");
     if (!playback.live)
     {
-        pill.level = playback.loaded ? StatusRibbonLevel::Unknown : StatusRibbonLevel::Unknown;
-        pill.summary = playback.loaded ? "offline" : "idle";
-        pill.action = playback.loaded ? "Live link is not active for this log."
+        pill.level = StatusRibbonLevel::Unknown;
+        pill.summary = playback.loaded ? "offline expected" : "idle";
+        pill.action = playback.loaded ? "Offline link is expected while replaying a log."
                                       : "Start live telemetry to monitor link health.";
     }
     else if (!playback.receiver_stats.connected || runtime.packet_count == 0U)
@@ -385,7 +385,7 @@ StatusRibbonPill make_plan_pill(const PlanVisualizationState &plan_state)
 StatusRibbonPill make_rec_pill(const ScreenshotToolState &screenshot_tool,
                                const Mp4RecorderState &recorder)
 {
-    StatusRibbonPill pill = make_pill("rec_status", "REC");
+    StatusRibbonPill pill = make_pill("record_status", "RECORD");
     if (recorder.recording)
     {
         pill.level = StatusRibbonLevel::Caution;
@@ -416,21 +416,23 @@ StatusRibbonPill make_rec_pill(const ScreenshotToolState &screenshot_tool,
     return pill;
 }
 
-StatusRibbonPill make_perf_pill(const RuntimeSignalInputs &runtime,
+StatusRibbonPill make_perf_pill(const Options &options,
+                                const RuntimeSignalInputs &runtime,
                                 const AppConfigStatusThresholds &thresholds,
                                 std::size_t resident_gpu_bytes)
 {
     StatusRibbonPill pill = make_pill("perf_status", "PERF");
     pill.level = runtime.frame_time_ms > thresholds.frame_time_warning_ms
-                     ? StatusRibbonLevel::Warning
+                     ? (options.smoke ? StatusRibbonLevel::Caution : StatusRibbonLevel::Warning)
                      : StatusRibbonLevel::Ok;
     if (runtime.upload_bytes_this_frame > 32U * 1024U * 1024U)
     {
         pill.level = worst(pill.level, StatusRibbonLevel::Caution);
     }
     pill.summary = fmt("%.1f ms", runtime.frame_time_ms);
-    pill.action =
-        pill.level == StatusRibbonLevel::Ok ? "Monitor." : "Reduce layer load or tile churn.";
+    pill.action = pill.level == StatusRibbonLevel::Ok
+                      ? "Monitor."
+                      : "Open Developer > Render and inspect frame timing.";
     pill.details.push_back("upload: " + std::to_string(runtime.upload_bytes_this_frame) + " B");
     pill.details.push_back("resident tiles: " + std::to_string(runtime.resident_tile_count));
     pill.details.push_back(
@@ -515,12 +517,12 @@ build_status_ribbon_model(const Options &options,
                           const std::size_t resident_gpu_bytes)
 {
     return {make_test_pill(playback, ui_state),
-            make_link_pill(runtime, playback, thresholds),
             make_vehicle_pill(playback, ui_state, vehicle_status, thresholds),
             make_terrain_pill(options, snapshot, runtime, playback, thresholds),
+            make_link_pill(runtime, playback, thresholds),
             make_plan_pill(plan_state),
             make_rec_pill(screenshot_tool, recorder),
-            make_perf_pill(runtime, thresholds, resident_gpu_bytes),
+            make_perf_pill(options, runtime, thresholds, resident_gpu_bytes),
             make_data_pill(playback)};
 }
 

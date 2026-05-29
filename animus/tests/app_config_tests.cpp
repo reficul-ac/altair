@@ -93,6 +93,8 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     config.workspace_layouts["analyze"] = animus::app::default_workspace_layout("analyze");
     config.workspace_layouts["analyze"].main_panel = {200.0F, 80.0F, 520.0F, 460.0F};
     config.workspace_layouts["analyze"].plot_shelf_height_px = 320.0F;
+    config.workspace_layouts["analyze"].bottom_drawer_state =
+        animus::app::BottomDrawerState::Expanded;
     config.selected_entity_tail_points = 250U;
     config.layers.selected_entity_tail_points = 250U;
     config.selected_vehicle_test.test_name = "FT-12";
@@ -150,6 +152,8 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").main_panel.x, 200.0F);
     EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").main_panel.width, 520.0F);
     EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").plot_shelf_height_px, 320.0F);
+    EXPECT_EQ(load.config.workspace_layouts.at("analyze").bottom_drawer_state,
+              animus::app::BottomDrawerState::Expanded);
     EXPECT_EQ(load.config.selected_entity_tail_points, 250U);
     EXPECT_EQ(load.config.layers.selected_entity_tail_points, 250U);
     EXPECT_EQ(load.config.selected_vehicle_test.test_name, "FT-12");
@@ -294,6 +298,23 @@ TEST(AnimusAppConfig, CanonicalizesLegacyWorkspaceAliasesFromYaml)
     EXPECT_FALSE(has_diagnostic(load.diagnostics, "app.workspace"));
 
     std::filesystem::remove(path);
+}
+
+TEST(AnimusAppConfig, ExportWorkspaceAndBottomDrawerDefaultsAreAvailable)
+{
+    EXPECT_EQ(animus::app::canonical_workspace_id("capture"), "export");
+    EXPECT_EQ(animus::app::canonical_workspace_id("report"), "export");
+
+    const auto export_layout = animus::app::default_workspace_layout("export");
+    EXPECT_EQ(export_layout.active_panel, "capture");
+    EXPECT_FALSE(export_layout.plot_shelf_visible);
+    EXPECT_FALSE(export_layout.timeline_visible);
+    EXPECT_EQ(export_layout.bottom_drawer_state, animus::app::BottomDrawerState::Hidden);
+
+    const auto fly_layout = animus::app::default_workspace_layout("fly_test");
+    EXPECT_EQ(fly_layout.bottom_drawer_state, animus::app::BottomDrawerState::Compact);
+    EXPECT_FLOAT_EQ(fly_layout.plot_shelf_height_px, 160.0F);
+    EXPECT_FLOAT_EQ(fly_layout.timeline_height_px, 28.0F);
 }
 
 TEST(AnimusAppConfig, WorkspaceLayoutDefaultsAndInvalidGeometryDiagnostics)

@@ -101,12 +101,16 @@ WorkspaceMode parse_workspace_mode(std::string_view value)
     {
         return WorkspaceMode::Terrain;
     }
+    if (canonical == "export")
+    {
+        return WorkspaceMode::Export;
+    }
     if (canonical == "developer")
     {
         return WorkspaceMode::Developer;
     }
     throw std::invalid_argument(
-        "workspace mode must be fly_test, plan, analyze, terrain, or developer");
+        "workspace mode must be fly_test, plan, analyze, terrain, export, or developer");
 }
 
 ViewMode parse_view_mode(std::string_view value)
@@ -138,6 +142,8 @@ const char *workspace_mode_config_value(const WorkspaceMode mode)
         return "analyze";
     case WorkspaceMode::Terrain:
         return "terrain";
+    case WorkspaceMode::Export:
+        return "export";
     case WorkspaceMode::Developer:
         return "developer";
     }

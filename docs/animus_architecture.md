@@ -192,6 +192,18 @@ viewer with progressively disclosed diagnostics. Preserve all current terrain,
 telemetry, capture, and smoke behavior while making the default experience
 quieter and more task-oriented.
 
+The cleanup visual baseline is the May 29, 2026 screenshot set in
+`/home/reficul/Downloads/animus-screenshots-2026-05-29/`:
+
+- `01-flight.png`: Fly/Test workspace with telemetry loaded at 1440x900.
+- `02-plan.png`: Plan workspace in 2D map mode with route, fence, and rally
+  data at 1440x900.
+- `03-analyze.png`: Analyze workspace with telemetry review and Ghost Replay
+  controls at 1440x900.
+- `04-terrain-layers.png`: Terrain workspace with layer controls and debug
+  overlays at 1440x900.
+- `05-developer.png`: Developer workspace with diagnostics at 1440x900.
+
 This is the active checklist for future implementation agents. Check an item
 only when the code, docs, and validation needed for that item are complete. If a
 phase is too large for one pass, finish a coherent checked subset and leave
@@ -203,6 +215,7 @@ enum class WorkspaceMode {
   Plan,
   Analyze,
   Terrain,
+  Export,
   Developer
 };
 ```

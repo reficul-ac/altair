@@ -9,6 +9,7 @@
 #include "selected_vehicle_card.hpp"
 #include "status_ribbon.hpp"
 #include "vehicle_visual_style.hpp"
+#include "workspace_layout_model.hpp"
 
 #include "animus/terrain_core/contracts.hpp"
 #include "animus/terrain_core/terrain_cache.hpp"
@@ -53,6 +54,7 @@ enum class PillState
 
 const char *altitude_datum_label(animus::telemetry_core::AltitudeDatum datum);
 void draw_review_filters(TimelineReviewFilterState &filters);
+bool mode_visible_in_workspace(UiNavigationMode mode, WorkspaceMode workspace_mode);
 
 const char *workspace_label(const WorkspaceMode mode)
 {
@@ -66,6 +68,8 @@ const char *workspace_label(const WorkspaceMode mode)
         return "Analyze";
     case WorkspaceMode::Terrain:
         return "Terrain";
+    case WorkspaceMode::Export:
+        return "Export";
     case WorkspaceMode::Developer:
         return "Developer";
     }
@@ -84,6 +88,8 @@ std::string workspace_config_value(const WorkspaceMode mode)
         return "analyze";
     case WorkspaceMode::Terrain:
         return "terrain";
+    case WorkspaceMode::Export:
+        return "export";
     case WorkspaceMode::Developer:
         return "developer";
     }
@@ -138,6 +144,77 @@ const char *mode_label(const UiNavigationMode mode)
         return "Developer";
     }
     return "View";
+}
+
+const char *workspace_tab_label(const UiNavigationMode mode, const WorkspaceMode workspace)
+{
+    switch (workspace)
+    {
+    case WorkspaceMode::FlyTest:
+        switch (mode)
+        {
+        case UiNavigationMode::View:
+            return "Vehicle";
+        case UiNavigationMode::Telemetry:
+            return "Link";
+        case UiNavigationMode::Signals:
+            return "Test";
+        case UiNavigationMode::Capture:
+            return "Plots";
+        default:
+            break;
+        }
+        break;
+    case WorkspaceMode::Plan:
+        switch (mode)
+        {
+        case UiNavigationMode::View:
+            return "Mission";
+        case UiNavigationMode::Layers:
+            return "Terrain";
+        default:
+            break;
+        }
+        break;
+    case WorkspaceMode::Analyze:
+        switch (mode)
+        {
+        case UiNavigationMode::Telemetry:
+            return "Timeline";
+        case UiNavigationMode::Signals:
+            return "Plots";
+        case UiNavigationMode::Capture:
+            return "Report";
+        default:
+            break;
+        }
+        break;
+    case WorkspaceMode::Terrain:
+        switch (mode)
+        {
+        case UiNavigationMode::Layers:
+            return "Layers";
+        case UiNavigationMode::View:
+            return "Probe";
+        default:
+            break;
+        }
+        break;
+    case WorkspaceMode::Export:
+        switch (mode)
+        {
+        case UiNavigationMode::Capture:
+            return "Bundle";
+        case UiNavigationMode::Settings:
+            return "Settings";
+        default:
+            break;
+        }
+        break;
+    case WorkspaceMode::Developer:
+        break;
+    }
+    return mode_label(mode);
 }
 
 std::string format_value(const char *format, const double value)
@@ -265,6 +342,10 @@ bool draw_status_pill(const char *popup_id, const char *summary, const PillState
 
 void nav_button(UiState &ui_state, UiNavigationMode mode)
 {
+    if (!mode_visible_in_workspace(mode, ui_state.workspace_mode))
+    {
+        return;
+    }
     const bool selected = ui_state.active_mode == mode;
     ImGui::PushID(mode_label(mode));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0F);
@@ -281,7 +362,7 @@ void nav_button(UiState &ui_state, UiNavigationMode mode)
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15F, 0.17F, 0.18F, 0.88F));
         ImGui::PushStyleColor(ImGuiCol_Text, text_muted);
     }
-    if (ImGui::Button(mode_label(mode), ImVec2(-1.0F, 0.0F)))
+    if (ImGui::Button(workspace_tab_label(mode, ui_state.workspace_mode), ImVec2(-1.0F, 0.0F)))
     {
         ui_state.active_mode = mode;
         if (mode == UiNavigationMode::Developer)
@@ -300,6 +381,28 @@ bool mode_visible_in_workspace(const UiNavigationMode mode, const WorkspaceMode 
     {
         return workspace_mode == WorkspaceMode::Developer;
     }
+    if (workspace_mode == WorkspaceMode::FlyTest)
+    {
+        return mode == UiNavigationMode::Telemetry || mode == UiNavigationMode::Signals ||
+               mode == UiNavigationMode::Capture || mode == UiNavigationMode::View;
+    }
+    if (workspace_mode == WorkspaceMode::Plan)
+    {
+        return mode == UiNavigationMode::View || mode == UiNavigationMode::Layers;
+    }
+    if (workspace_mode == WorkspaceMode::Analyze)
+    {
+        return mode == UiNavigationMode::Telemetry || mode == UiNavigationMode::Signals ||
+               mode == UiNavigationMode::Capture;
+    }
+    if (workspace_mode == WorkspaceMode::Terrain)
+    {
+        return mode == UiNavigationMode::Layers || mode == UiNavigationMode::View;
+    }
+    if (workspace_mode == WorkspaceMode::Export)
+    {
+        return mode == UiNavigationMode::Capture || mode == UiNavigationMode::Settings;
+    }
     return true;
 }
 
@@ -307,7 +410,25 @@ void sanitize_active_mode(UiState &ui_state)
 {
     if (!mode_visible_in_workspace(ui_state.active_mode, ui_state.workspace_mode))
     {
-        ui_state.active_mode = UiNavigationMode::View;
+        switch (ui_state.workspace_mode)
+        {
+        case WorkspaceMode::Analyze:
+            ui_state.active_mode = UiNavigationMode::Telemetry;
+            break;
+        case WorkspaceMode::Terrain:
+            ui_state.active_mode = UiNavigationMode::Layers;
+            break;
+        case WorkspaceMode::Export:
+            ui_state.active_mode = UiNavigationMode::Capture;
+            break;
+        case WorkspaceMode::Developer:
+            ui_state.active_mode = UiNavigationMode::Developer;
+            break;
+        case WorkspaceMode::FlyTest:
+        case WorkspaceMode::Plan:
+            ui_state.active_mode = UiNavigationMode::View;
+            break;
+        }
     }
 }
 
@@ -420,6 +541,30 @@ void apply_workspace_layout(UiState &ui_state,
     ui_state.timeline_visible = layout.timeline_visible;
     ui_state.timeline_height_px = layout.timeline_height_px;
     ui_state.inspector_visible = layout.inspector_visible;
+    switch (layout.bottom_drawer_state)
+    {
+    case BottomDrawerState::Hidden:
+        options.plots.visible = false;
+        ui_state.timeline_visible = false;
+        break;
+    case BottomDrawerState::Collapsed:
+        options.plots.visible = false;
+        ui_state.timeline_visible = true;
+        ui_state.timeline_height_px = 28.0F;
+        break;
+    case BottomDrawerState::Compact:
+        options.plots.visible = true;
+        options.plots.height_px = 160.0F;
+        ui_state.timeline_visible = true;
+        ui_state.timeline_height_px = 28.0F;
+        break;
+    case BottomDrawerState::Expanded:
+        options.plots.visible = true;
+        options.plots.height_px = std::max(layout.plot_shelf_height_px, 320.0F);
+        ui_state.timeline_visible = true;
+        ui_state.timeline_height_px = std::max(layout.timeline_height_px, 160.0F);
+        break;
+    }
     ui_state.developer_diagnostics_visible = mode == WorkspaceMode::Developer;
     ui_state.telemetry_diagnostics_visible =
         mode == WorkspaceMode::Analyze || mode == WorkspaceMode::Developer;
@@ -435,6 +580,10 @@ void apply_workspace_layout(UiState &ui_state,
         highlight_fallback = true;
         ui_state.layers.tile_state_debug_visible = true;
         ui_state.layers.fallback_highlight_visible = true;
+    }
+    if (mode == WorkspaceMode::Export)
+    {
+        ui_state.inspector_visible = false;
     }
     sanitize_active_mode(ui_state);
 }
@@ -475,6 +624,22 @@ void capture_workspace_layout(UiState &ui_state,
     layout.timeline_visible = ui_state.timeline_visible;
     layout.timeline_height_px = ui_state.timeline_height_px;
     layout.inspector_visible = ui_state.inspector_visible;
+    if (!options.plots.visible && !ui_state.timeline_visible)
+    {
+        layout.bottom_drawer_state = BottomDrawerState::Hidden;
+    }
+    else if (!options.plots.visible && ui_state.timeline_height_px <= 40.0F)
+    {
+        layout.bottom_drawer_state = BottomDrawerState::Collapsed;
+    }
+    else if (options.plots.visible && options.plots.height_px >= 300.0F)
+    {
+        layout.bottom_drawer_state = BottomDrawerState::Expanded;
+    }
+    else
+    {
+        layout.bottom_drawer_state = BottomDrawerState::Compact;
+    }
 }
 
 AppWindowRect clamp_window_rect(const AppWindowRect &requested,
@@ -1195,6 +1360,13 @@ void draw_nav(UiState &ui_state,
                      state_colors,
                      highlight_fallback,
                      WorkspaceMode::Terrain);
+    workspace_button(ui_state,
+                     options,
+                     map_camera,
+                     plan_state,
+                     state_colors,
+                     highlight_fallback,
+                     WorkspaceMode::Export);
     workspace_button(ui_state,
                      options,
                      map_camera,
@@ -2973,7 +3145,7 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback,
                                  available_width,
                                  ui_state.timeline_height_px};
     const AppWindowRect rect =
-        clamp_window_rect(layout.timeline, fallback, ImGui::GetIO().DisplaySize, {260.0F, 96.0F});
+        clamp_window_rect(fallback, fallback, ImGui::GetIO().DisplaySize, {260.0F, 28.0F});
     ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(rect.width, rect.height), ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings;
@@ -2981,6 +3153,26 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback,
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 10.0F));
     ImGui::Begin("Timeline", nullptr, flags);
+    if (ui_state.timeline_height_px <= 40.0F)
+    {
+        ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F),
+                           "Events %zu  markers %zu",
+                           playback.timeline.events.size(),
+                           playback.review.markers.size());
+        ImGui::SameLine();
+        if (playback.review.min_clearance_marker)
+        {
+            ImGui::TextColored(
+                text_muted, "min clearance %.1f s", playback.review.min_clearance_marker->time_s);
+        }
+        capture_current_window_rect(layout.timeline);
+        ui_state.timeline_height_px = ImGui::GetWindowSize().y;
+        layout.timeline_height_px = ui_state.timeline_height_px;
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor();
+        return;
+    }
     if (playback.live)
     {
         ImGui::TextColored(
