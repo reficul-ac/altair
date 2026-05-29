@@ -17,6 +17,9 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Reformat `animus/apps/animus/src/layer_offline.cpp` and
   `animus/apps/animus/src/layer_offline.hpp` so `format_repo.py --check` passes
   without touching unrelated files.
+- [ ] Reformat `animus/apps/animus/src/mavlink_inspector.cpp`,
+  `animus/apps/animus/src/mavlink_inspector.hpp`, and
+  `animus/tests/mavlink_inspector_tests.cpp` so `format_repo.py --check` passes.
 
 ## Vehicle And SITL
 

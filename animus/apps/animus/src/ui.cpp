@@ -2,6 +2,7 @@
 
 #include "capture.hpp"
 #include "layer_offline.hpp"
+#include "layer_stack_model.hpp"
 #include "mavlink_inspector.hpp"
 #include "plot_ui.hpp"
 #include "selected_vehicle_card.hpp"
@@ -417,11 +418,15 @@ void apply_workspace_layout(UiState &ui_state,
     if (mode == WorkspaceMode::Plan)
     {
         plan_state.overlay_visible = true;
+        ui_state.layers.planned_route_visible = true;
+        ui_state.layers.geofence_rally_visible = true;
     }
     if (mode == WorkspaceMode::Terrain)
     {
         state_colors = true;
         highlight_fallback = true;
+        ui_state.layers.tile_state_debug_visible = true;
+        ui_state.layers.fallback_highlight_visible = true;
     }
     sanitize_active_mode(ui_state);
 }
@@ -572,42 +577,6 @@ std::string bool_label(const bool value)
     return value ? "on" : "off";
 }
 
-std::string configured_label(const bool configured)
-{
-    return configured ? "configured" : "not configured";
-}
-
-std::string file_health(const std::filesystem::path &path)
-{
-    if (path.empty())
-    {
-        return "not configured";
-    }
-    return std::filesystem::exists(path) ? "available" : "missing";
-}
-
-std::string layer_source_summary(const animus::terrain_core::TerrainStreamSnapshot &snapshot)
-{
-    std::string summary = "none";
-    for (const auto &tile : snapshot.tiles)
-    {
-        if (tile.source_type == animus::terrain_core::TileSourceType::None)
-        {
-            continue;
-        }
-        const std::string value(animus::terrain_core::to_string(tile.source_type));
-        if (summary == "none")
-        {
-            summary = value;
-        }
-        else if (summary.find(value) == std::string::npos)
-        {
-            summary += "," + value;
-        }
-    }
-    return summary;
-}
-
 void detail_popup(const char *id, const std::string &text)
 {
     ImGui::PushID(id);
@@ -725,59 +694,41 @@ void draw_plan_controls(PlanVisualizationState &plan_state,
 void apply_layer_preset(const char *preset,
                         const Options &options,
                         UiState &ui_state,
+                        bool plan_loaded,
                         bool &state_colors,
                         bool &highlight_fallback,
                         bool &overlay_enabled,
                         float &overlay_opacity)
 {
     const std::string name(preset);
-    if (name == "Operator clean" || name == "Capture/export")
+    if (name == "Operator Clean")
     {
-        state_colors = false;
-        highlight_fallback = false;
-        overlay_enabled = options.overlay_enabled;
-        overlay_opacity = options.overlay_opacity;
-        ui_state.telemetry_tracks_visible = true;
-        ui_state.telemetry_labels_visible = true;
-        ui_state.bathymetry_enabled = options.use_bathymetry;
+        ui_state.layers = layer_preset_operator_clean(ui_state.layers, plan_loaded);
     }
-    else if (name == "Terrain analysis")
+    else if (name == "Terrain Analysis")
     {
-        state_colors = false;
-        highlight_fallback = false;
-        overlay_enabled = !options.overlay_geotiff.empty() || !options.overlays.empty();
-        overlay_opacity = 0.85F;
-        ui_state.telemetry_tracks_visible = true;
-        ui_state.telemetry_labels_visible = false;
-        ui_state.bathymetry_enabled = options.use_bathymetry && !options.bathymetry_geotiff.empty();
+        ui_state.layers =
+            layer_preset_terrain_analysis(ui_state.layers, !options.bathymetry_geotiff.empty());
     }
-    else if (name == "Telemetry review")
+    else if (name == "Mission Review")
     {
-        state_colors = false;
-        highlight_fallback = false;
-        overlay_enabled = options.overlay_enabled;
-        overlay_opacity = options.overlay_opacity;
-        ui_state.telemetry_tracks_visible = true;
-        ui_state.telemetry_labels_visible = true;
-        ui_state.bathymetry_enabled = options.use_bathymetry;
+        ui_state.layers = layer_preset_mission_review(ui_state.layers, plan_loaded);
     }
-    else if (name == "Debug tiles")
+    else if (name == "Debug Tiles")
     {
-        state_colors = true;
-        highlight_fallback = true;
-        ui_state.telemetry_tracks_visible = true;
-        ui_state.telemetry_labels_visible = true;
+        ui_state.layers = layer_preset_debug_tiles(ui_state.layers);
     }
-    else if (name == "Bathymetry")
+    else if (name == "Capture Mode")
     {
-        state_colors = false;
-        highlight_fallback = false;
-        overlay_enabled = !options.overlay_geotiff.empty() || !options.overlays.empty();
-        overlay_opacity = 0.75F;
-        ui_state.telemetry_tracks_visible = true;
-        ui_state.telemetry_labels_visible = false;
-        ui_state.bathymetry_enabled = options.use_bathymetry && !options.bathymetry_geotiff.empty();
+        ui_state.layers = layer_preset_capture_mode(ui_state.layers, plan_loaded);
     }
+    ui_state.telemetry_tracks_visible = ui_state.layers.track_tail_visible;
+    ui_state.telemetry_labels_visible = ui_state.layers.vehicle_labels_visible;
+    ui_state.bathymetry_enabled = ui_state.layers.bathymetry_visible;
+    state_colors = ui_state.layers.tile_state_debug_visible;
+    highlight_fallback = ui_state.layers.fallback_highlight_visible;
+    overlay_enabled = ui_state.layers.geotiff_overlay_visible;
+    overlay_opacity = ui_state.layers.geotiff_overlay_opacity;
 }
 
 const char *altitude_datum_label(const animus::telemetry_core::AltitudeDatum datum)
@@ -1290,6 +1241,8 @@ void draw_view_panel(const Options &options,
     ImGui::Checkbox("State colors", &state_colors);
     ImGui::SameLine();
     ImGui::Checkbox("Fallback highlight", &highlight_fallback);
+    ui_state.layers.tile_state_debug_visible = state_colors;
+    ui_state.layers.fallback_highlight_visible = highlight_fallback;
 }
 
 void draw_layer_row(const char *name,
@@ -1328,13 +1281,12 @@ void draw_layer_stack(const Options &options,
                       float &overlay_opacity)
 {
     ImGui::SeparatorText("Presets");
-    constexpr std::array<const char *, 6> presets = {
-        "Operator clean",
-        "Terrain analysis",
-        "Telemetry review",
-        "Debug tiles",
-        "Bathymetry",
-        "Capture/export",
+    constexpr std::array<const char *, 5> presets = {
+        "Operator Clean",
+        "Terrain Analysis",
+        "Mission Review",
+        "Debug Tiles",
+        "Capture Mode",
     };
     for (const char *preset : presets)
     {
@@ -1343,6 +1295,7 @@ void draw_layer_stack(const Options &options,
             apply_layer_preset(preset,
                                options,
                                ui_state,
+                               plan_state.data.has_value(),
                                state_colors,
                                highlight_fallback,
                                overlay_enabled,
@@ -1355,21 +1308,31 @@ void draw_layer_stack(const Options &options,
     }
 
     ImGui::SeparatorText("Mutable Layers");
-    ImGui::Checkbox("GeoTIFF overlays", &overlay_enabled);
-    ImGui::SliderFloat("Overlay opacity", &overlay_opacity, 0.0F, 1.0F, "%.2f");
-    ImGui::Checkbox("Telemetry tracks", &ui_state.telemetry_tracks_visible);
+    ImGui::Checkbox("Vehicle icons", &ui_state.layers.vehicle_icons_visible);
     ImGui::SameLine();
-    ImGui::Checkbox("Entity labels", &ui_state.telemetry_labels_visible);
+    ImGui::Checkbox("Vehicle labels", &ui_state.layers.vehicle_labels_visible);
     ImGui::SameLine();
-    ImGui::Checkbox("Plan overlay", &plan_state.overlay_visible);
-    bool bathymetry_mutable = ui_state.bathymetry_enabled;
+    ImGui::Checkbox("Track tail", &ui_state.layers.track_tail_visible);
+    ImGui::Checkbox("Heading vectors", &ui_state.layers.heading_vectors_visible);
+    ImGui::SameLine();
+    ImGui::Checkbox("Planned route", &ui_state.layers.planned_route_visible);
+    ImGui::SameLine();
+    ImGui::Checkbox("Geofence/rally", &ui_state.layers.geofence_rally_visible);
+    ImGui::Checkbox("Terrain confidence", &ui_state.layers.terrain_confidence_visible);
+    ImGui::BeginDisabled();
+    ImGui::Checkbox("Clearance heatmap", &ui_state.layers.terrain_clearance_heatmap_visible);
+    ImGui::EndDisabled();
+    ImGui::Checkbox("GeoTIFF overlay", &ui_state.layers.geotiff_overlay_visible);
+    ImGui::SliderFloat(
+        "GeoTIFF opacity", &ui_state.layers.geotiff_overlay_opacity, 0.0F, 1.0F, "%.2f");
+    bool bathymetry_mutable = ui_state.layers.bathymetry_visible;
     if (!options.use_bathymetry || options.bathymetry_geotiff.empty())
     {
         ImGui::BeginDisabled();
     }
     if (ImGui::Checkbox("Bathymetry", &bathymetry_mutable))
     {
-        ui_state.bathymetry_enabled = bathymetry_mutable;
+        ui_state.layers.bathymetry_visible = bathymetry_mutable;
     }
     if (!options.use_bathymetry || options.bathymetry_geotiff.empty())
     {
@@ -1380,9 +1343,21 @@ void draw_layer_stack(const Options &options,
             muted_text("not configured");
         }
     }
-    ImGui::Checkbox("State colors", &state_colors);
+    ImGui::Checkbox("Hillshade", &ui_state.layers.hillshade_visible);
     ImGui::SameLine();
-    ImGui::Checkbox("Fallback highlight", &highlight_fallback);
+    ImGui::Checkbox("Tile state debug", &ui_state.layers.tile_state_debug_visible);
+    ImGui::SameLine();
+    ImGui::Checkbox("Fallback highlight", &ui_state.layers.fallback_highlight_visible);
+
+    ui_state.telemetry_tracks_visible = ui_state.layers.track_tail_visible;
+    ui_state.telemetry_labels_visible = ui_state.layers.vehicle_labels_visible;
+    ui_state.bathymetry_enabled = ui_state.layers.bathymetry_visible;
+    state_colors = ui_state.layers.tile_state_debug_visible;
+    highlight_fallback = ui_state.layers.fallback_highlight_visible;
+    overlay_enabled = ui_state.layers.geotiff_overlay_visible;
+    overlay_opacity = ui_state.layers.geotiff_overlay_opacity;
+    plan_state.overlay_visible =
+        ui_state.layers.planned_route_visible || ui_state.layers.geofence_rally_visible;
 
     ImGui::SeparatorText("Layer Stack");
     if (ImGui::BeginTable("layer_stack",
@@ -1399,109 +1374,59 @@ void draw_layer_stack(const Options &options,
         ImGui::TableSetupColumn("");
         ImGui::TableHeadersRow();
 
-        const std::string terrain_sources = layer_source_summary(snapshot);
-        const std::string terrain_health =
-            snapshot.failed_tiles > 0U ? "degraded"
-                                       : (snapshot.resident_gpu_tiles > 0U ? "ok" : "loading");
-        draw_layer_row("Base imagery",
-                       "on",
-                       "1.00",
-                       "0",
-                       terrain_sources.c_str(),
-                       terrain_health.c_str(),
-                       "Primary terrain imagery. Source priority is remote HTTP, MBTiles, local "
-                       "XYZ, disk cache, then synthetic fallback.");
-        draw_layer_row("Terrain shading",
-                       "on",
-                       "1.00",
-                       "built-in",
-                       "height raster",
-                       snapshot.resident_gpu_tiles > 0U ? "active" : "loading",
-                       "Read-only renderer terrain mesh and height shading.");
-        draw_layer_row("Elevation color",
-                       "on",
-                       "1.00",
-                       "built-in",
-                       options.elevation_geotiff.empty() ? "local_xyz/cache" : "geotiff/cache",
-                       file_health(options.elevation_geotiff).c_str(),
-                       "Elevation height raster is merged into the terrain mesh and sampled for "
-                       "telemetry placement.");
-        draw_layer_row("Bathymetry",
-                       bool_label(ui_state.bathymetry_enabled).c_str(),
-                       "1.00",
-                       "merge",
-                       options.bathymetry_geotiff.empty() ? "none" : "geotiff",
-                       file_health(options.bathymetry_geotiff).c_str(),
-                       "Session-only bathymetry merge toggle. It is editable only when bathymetry "
-                       "is configured at startup.");
-        char overlay_opacity_text[32]{};
-        std::snprintf(overlay_opacity_text, sizeof(overlay_opacity_text), "%.2f", overlay_opacity);
-        char overlay_order_text[32]{};
-        std::snprintf(overlay_order_text, sizeof(overlay_order_text), "%d", options.overlay_order);
-        draw_layer_row(
-            "GeoTIFF overlays",
-            bool_label(overlay_enabled).c_str(),
-            overlay_opacity_text,
-            overlay_order_text,
-            options.overlay_geotiff.empty() && options.overlays.empty() ? "none" : "geotiff",
-            (!options.overlay_geotiff.empty() ? file_health(options.overlay_geotiff)
-                                              : configured_label(!options.overlays.empty()))
-                .c_str(),
-            "Configured app overlays are draped over terrain. Opacity applies to the compatibility "
-            "overlay.");
-        draw_layer_row("MBTiles imagery",
-                       options.imagery_mbtiles.empty() ? "off" : "on",
-                       "1.00",
-                       "source",
-                       options.imagery_mbtiles.empty() ? "none" : "mbtiles",
-                       file_health(options.imagery_mbtiles).c_str(),
-                       "Read-only imagery source configured with --imagery-mbtiles.");
-        draw_layer_row("Remote imagery",
-                       options.remote_imagery_url_template.empty() ? "off" : "on",
-                       "1.00",
-                       "source",
-                       options.remote_imagery_url_template.empty() ? "none" : "remote-http",
-                       configured_label(!options.remote_imagery_url_template.empty()).c_str(),
-                       "Read-only imagery source configured with --remote-imagery-url. The app "
-                       "does not browse providers.");
-        draw_layer_row(
-            "Telemetry tracks",
-            bool_label(ui_state.telemetry_tracks_visible).c_str(),
-            "1.00",
-            "overlay",
-            playback.live ? "live telemetry" : "offline telemetry",
-            playback.loaded ? "active" : "idle",
-            "Selected entity trail overlay. Live trails use the configured decimation limit.");
-        draw_layer_row("Entity labels",
-                       bool_label(ui_state.telemetry_labels_visible).c_str(),
-                       "1.00",
-                       "overlay",
-                       playback.live ? "live telemetry" : "offline telemetry",
-                       playback.loaded ? "active" : "idle",
-                       "Entity labels remain compact when many entities are visible.");
-        draw_layer_row("Plan overlay",
-                       bool_label(plan_state.overlay_visible).c_str(),
-                       "1.00",
-                       "overlay",
-                       plan_state.data ? "qgc plan" : "none",
-                       !plan_state.error.empty() ? "error" : (plan_state.data ? "active" : "idle"),
-                       "Read-only QGroundControl .plan visualization. The app does not add "
-                       "mission upload, vehicle commands, drag handles, or write-back paths.");
-        draw_layer_row("Debug tile states",
-                       bool_label(state_colors).c_str(),
-                       "0.35",
-                       "debug",
-                       "runtime state",
-                       state_colors ? "enabled" : "off",
-                       "Advanced session toggle for tile state colors. Full runtime tables stay "
-                       "Developer-only.");
-        draw_layer_row("Fallback highlight",
-                       bool_label(highlight_fallback).c_str(),
-                       "0.35",
-                       "debug",
-                       "parent/synthetic",
-                       highlight_fallback ? "enabled" : "off",
-                       "Highlights parent fallback or synthetic terrain in the current view.");
+        LayerStackContext context;
+        context.telemetry_loaded = playback.loaded;
+        context.telemetry_live = playback.live;
+        context.plan_loaded = plan_state.data.has_value();
+        context.plan_error = !plan_state.error.empty();
+        context.plan_diagnostic_count = plan_state.diagnostics.size();
+        if (plan_state.data)
+        {
+            context.plan_route_points = plan_state.data->mission_waypoints.size();
+            context.plan_geofence_items = plan_state.data->geofence_polygons.size() +
+                                          plan_state.data->geofence_circles.size();
+            context.plan_rally_points = plan_state.data->rally_points.size();
+        }
+        context.geotiff_configured = !options.overlay_geotiff.empty() || !options.overlays.empty();
+        context.geotiff_missing =
+            !options.overlay_geotiff.empty() && !std::filesystem::exists(options.overlay_geotiff);
+        context.bathymetry_configured = !options.bathymetry_geotiff.empty();
+        context.bathymetry_missing = !options.bathymetry_geotiff.empty() &&
+                                     !std::filesystem::exists(options.bathymetry_geotiff);
+        context.bathymetry_runtime_enabled = ui_state.bathymetry_enabled;
+        context.terrain_tiles_loaded = snapshot.resident_gpu_tiles > 0U;
+        context.failed_tiles = snapshot.failed_tiles;
+        for (const auto &tile : snapshot.tiles)
+        {
+            if (tile.state == animus::terrain_core::TileState::UsingFallback)
+            {
+                ++context.fallback_tiles;
+            }
+            if (tile.synthetic)
+            {
+                ++context.synthetic_tiles;
+            }
+        }
+        context.terrain_confidence_available = ui_state.telemetry_entity_selected;
+        context.terrain_clearance_available =
+            playback.selected_entity_terrain.terrain_clearance_m.has_value();
+
+        for (const LayerStackRow &row : build_layer_stack_rows(ui_state.layers, context))
+        {
+            char opacity_text[32]{};
+            std::snprintf(opacity_text, sizeof(opacity_text), "%.2f", row.opacity);
+            const std::string visible = row.available ? bool_label(row.visible) : "unavailable";
+            const std::string health = row.warning == LayerWarningLevel::None
+                                           ? row.status
+                                           : row.status + " / " + row.warning_badge;
+            draw_layer_row(row.label.c_str(),
+                           visible.c_str(),
+                           row.has_opacity ? opacity_text : "-",
+                           row.has_draw_order ? row.order_label.c_str() : "-",
+                           row.source.c_str(),
+                           health.c_str(),
+                           row.details);
+        }
         ImGui::EndTable();
     }
 }

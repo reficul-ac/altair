@@ -372,6 +372,43 @@ void read_overlays(const YAML::Node &node,
     }
 }
 
+void read_layer_settings(const YAML::Node &node,
+                         AppLayerSettings &settings,
+                         std::vector<std::string> &diagnostics)
+{
+    if (!node)
+    {
+        return;
+    }
+    if (!node.IsMap())
+    {
+        diagnostics.push_back("invalid config value for layers: expected map");
+        return;
+    }
+    read_value(node, "vehicle_icons_visible", settings.vehicle_icons_visible, diagnostics);
+    read_value(node, "vehicle_labels_visible", settings.vehicle_labels_visible, diagnostics);
+    read_value(node, "track_tail_visible", settings.track_tail_visible, diagnostics);
+    read_value(node, "heading_vectors_visible", settings.heading_vectors_visible, diagnostics);
+    read_value(node, "planned_route_visible", settings.planned_route_visible, diagnostics);
+    read_value(node, "geofence_rally_visible", settings.geofence_rally_visible, diagnostics);
+    read_value(
+        node, "terrain_confidence_visible", settings.terrain_confidence_visible, diagnostics);
+    read_value(node,
+               "terrain_clearance_heatmap_visible",
+               settings.terrain_clearance_heatmap_visible,
+               diagnostics);
+    read_value(node, "geotiff_overlay_visible", settings.geotiff_overlay_visible, diagnostics);
+    read_unit_float(node, "geotiff_overlay_opacity", settings.geotiff_overlay_opacity, diagnostics);
+    read_value(
+        node, "geotiff_overlay_draw_order", settings.geotiff_overlay_draw_order, diagnostics);
+    read_value(node, "bathymetry_visible", settings.bathymetry_visible, diagnostics);
+    read_unit_float(node, "bathymetry_opacity", settings.bathymetry_opacity, diagnostics);
+    read_value(node, "hillshade_visible", settings.hillshade_visible, diagnostics);
+    read_value(node, "tile_state_debug_visible", settings.tile_state_debug_visible, diagnostics);
+    read_value(
+        node, "fallback_highlight_visible", settings.fallback_highlight_visible, diagnostics);
+}
+
 void read_window_rect(const YAML::Node &node,
                       const std::string &key,
                       AppWindowRect &target,
@@ -686,10 +723,53 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
                result.diagnostics);
 
     const YAML::Node layers = root["layers"];
-    warn_unknown_keys(
-        layers, {"overlay_enabled", "overlay_opacity", "overlays"}, "layers.", result.diagnostics);
+    warn_unknown_keys(layers,
+                      {"vehicle_icons_visible",
+                       "vehicle_labels_visible",
+                       "track_tail_visible",
+                       "heading_vectors_visible",
+                       "planned_route_visible",
+                       "geofence_rally_visible",
+                       "terrain_confidence_visible",
+                       "terrain_clearance_heatmap_visible",
+                       "geotiff_overlay_visible",
+                       "geotiff_overlay_opacity",
+                       "geotiff_overlay_draw_order",
+                       "bathymetry_visible",
+                       "bathymetry_opacity",
+                       "hillshade_visible",
+                       "tile_state_debug_visible",
+                       "fallback_highlight_visible",
+                       "overlay_enabled",
+                       "overlay_opacity",
+                       "overlays"},
+                      "layers.",
+                      result.diagnostics);
+    read_layer_settings(layers, result.config.layers, result.diagnostics);
     read_value(layers, "overlay_enabled", result.config.overlay_enabled, result.diagnostics);
     read_unit_float(layers, "overlay_opacity", result.config.overlay_opacity, result.diagnostics);
+    if (layers && layers["overlay_enabled"] && !layers["geotiff_overlay_visible"])
+    {
+        result.config.layers.geotiff_overlay_visible = result.config.overlay_enabled;
+    }
+    if (layers && layers["overlay_opacity"] && !layers["geotiff_overlay_opacity"])
+    {
+        result.config.layers.geotiff_overlay_opacity = result.config.overlay_opacity;
+    }
+    result.config.overlay_enabled = result.config.layers.geotiff_overlay_visible;
+    result.config.overlay_opacity = result.config.layers.geotiff_overlay_opacity;
+    if (layers && layers["bathymetry_visible"])
+    {
+        result.config.bathymetry_enabled = result.config.layers.bathymetry_visible;
+    }
+    if (layers && layers["track_tail_visible"])
+    {
+        result.config.telemetry_tracks_visible = result.config.layers.track_tail_visible;
+    }
+    if (layers && layers["vehicle_labels_visible"])
+    {
+        result.config.telemetry_labels_visible = result.config.layers.vehicle_labels_visible;
+    }
     read_overlays(layers["overlays"], result.config.overlays, result.diagnostics);
 
     const YAML::Node telemetry = root["telemetry"];
@@ -820,6 +900,34 @@ AppConfigSaveResult save_app_config_file(const std::filesystem::path &path, cons
         << config.mavlink_inspector_visible;
     out << YAML::EndMap;
     out << YAML::Key << "layers" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "vehicle_icons_visible" << YAML::Value
+        << config.layers.vehicle_icons_visible;
+    out << YAML::Key << "vehicle_labels_visible" << YAML::Value
+        << config.layers.vehicle_labels_visible;
+    out << YAML::Key << "track_tail_visible" << YAML::Value << config.layers.track_tail_visible;
+    out << YAML::Key << "heading_vectors_visible" << YAML::Value
+        << config.layers.heading_vectors_visible;
+    out << YAML::Key << "planned_route_visible" << YAML::Value
+        << config.layers.planned_route_visible;
+    out << YAML::Key << "geofence_rally_visible" << YAML::Value
+        << config.layers.geofence_rally_visible;
+    out << YAML::Key << "terrain_confidence_visible" << YAML::Value
+        << config.layers.terrain_confidence_visible;
+    out << YAML::Key << "terrain_clearance_heatmap_visible" << YAML::Value
+        << config.layers.terrain_clearance_heatmap_visible;
+    out << YAML::Key << "geotiff_overlay_visible" << YAML::Value
+        << config.layers.geotiff_overlay_visible;
+    out << YAML::Key << "geotiff_overlay_opacity" << YAML::Value
+        << config.layers.geotiff_overlay_opacity;
+    out << YAML::Key << "geotiff_overlay_draw_order" << YAML::Value
+        << config.layers.geotiff_overlay_draw_order;
+    out << YAML::Key << "bathymetry_visible" << YAML::Value << config.layers.bathymetry_visible;
+    out << YAML::Key << "bathymetry_opacity" << YAML::Value << config.layers.bathymetry_opacity;
+    out << YAML::Key << "hillshade_visible" << YAML::Value << config.layers.hillshade_visible;
+    out << YAML::Key << "tile_state_debug_visible" << YAML::Value
+        << config.layers.tile_state_debug_visible;
+    out << YAML::Key << "fallback_highlight_visible" << YAML::Value
+        << config.layers.fallback_highlight_visible;
     out << YAML::Key << "overlay_enabled" << YAML::Value << config.overlay_enabled;
     out << YAML::Key << "overlay_opacity" << YAML::Value << config.overlay_opacity;
     out << YAML::Key << "overlays" << YAML::Value << YAML::BeginSeq;

@@ -37,6 +37,20 @@ TEST(AnimusAppConfig, DefaultsAreVersioned)
     EXPECT_EQ(config.view_mode, "terrain3d");
     EXPECT_EQ(config.telemetry_live_udp_port, 14550U);
     EXPECT_EQ(config.plots.plots.size(), 5U);
+    EXPECT_TRUE(config.layers.vehicle_icons_visible);
+    EXPECT_TRUE(config.layers.vehicle_labels_visible);
+    EXPECT_TRUE(config.layers.track_tail_visible);
+    EXPECT_TRUE(config.layers.heading_vectors_visible);
+    EXPECT_TRUE(config.layers.planned_route_visible);
+    EXPECT_TRUE(config.layers.geofence_rally_visible);
+    EXPECT_TRUE(config.layers.terrain_confidence_visible);
+    EXPECT_FALSE(config.layers.terrain_clearance_heatmap_visible);
+    EXPECT_TRUE(config.layers.geotiff_overlay_visible);
+    EXPECT_FLOAT_EQ(config.layers.geotiff_overlay_opacity, 0.65F);
+    EXPECT_FALSE(config.layers.bathymetry_visible);
+    EXPECT_TRUE(config.layers.hillshade_visible);
+    EXPECT_FALSE(config.layers.tile_state_debug_visible);
+    EXPECT_FALSE(config.layers.fallback_highlight_visible);
 }
 
 TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
@@ -50,6 +64,22 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     config.map_orientation = "track_up";
     config.overlay_enabled = false;
     config.overlay_opacity = 0.25F;
+    config.layers.vehicle_icons_visible = false;
+    config.layers.vehicle_labels_visible = false;
+    config.layers.track_tail_visible = false;
+    config.layers.heading_vectors_visible = false;
+    config.layers.planned_route_visible = false;
+    config.layers.geofence_rally_visible = false;
+    config.layers.terrain_confidence_visible = false;
+    config.layers.terrain_clearance_heatmap_visible = true;
+    config.layers.geotiff_overlay_visible = false;
+    config.layers.geotiff_overlay_opacity = 0.25F;
+    config.layers.geotiff_overlay_draw_order = 3;
+    config.layers.bathymetry_visible = true;
+    config.layers.bathymetry_opacity = 0.4F;
+    config.layers.hillshade_visible = false;
+    config.layers.tile_state_debug_visible = true;
+    config.layers.fallback_highlight_visible = true;
     config.mavlink_inspector_visible = false;
     config.telemetry_live_udp_host = "0.0.0.0";
     config.telemetry_live_udp_port = 14560U;
@@ -72,6 +102,22 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     EXPECT_EQ(load.config.map_orientation, "track_up");
     EXPECT_FALSE(load.config.overlay_enabled);
     EXPECT_FLOAT_EQ(load.config.overlay_opacity, 0.25F);
+    EXPECT_FALSE(load.config.layers.vehicle_icons_visible);
+    EXPECT_FALSE(load.config.layers.vehicle_labels_visible);
+    EXPECT_FALSE(load.config.layers.track_tail_visible);
+    EXPECT_FALSE(load.config.layers.heading_vectors_visible);
+    EXPECT_FALSE(load.config.layers.planned_route_visible);
+    EXPECT_FALSE(load.config.layers.geofence_rally_visible);
+    EXPECT_FALSE(load.config.layers.terrain_confidence_visible);
+    EXPECT_TRUE(load.config.layers.terrain_clearance_heatmap_visible);
+    EXPECT_FALSE(load.config.layers.geotiff_overlay_visible);
+    EXPECT_FLOAT_EQ(load.config.layers.geotiff_overlay_opacity, 0.25F);
+    EXPECT_EQ(load.config.layers.geotiff_overlay_draw_order, 3);
+    EXPECT_TRUE(load.config.layers.bathymetry_visible);
+    EXPECT_FLOAT_EQ(load.config.layers.bathymetry_opacity, 0.4F);
+    EXPECT_FALSE(load.config.layers.hillshade_visible);
+    EXPECT_TRUE(load.config.layers.tile_state_debug_visible);
+    EXPECT_TRUE(load.config.layers.fallback_highlight_visible);
     EXPECT_FALSE(load.config.mavlink_inspector_visible);
     ASSERT_EQ(load.config.overlays.size(), 1U);
     EXPECT_EQ(load.config.overlays.front().path.string(), "overlay.tif");
@@ -108,6 +154,8 @@ TEST(AnimusAppConfig, ReportsInvalidValuesAndKeepsDefaults)
     {
         std::ofstream output(path);
         output << "version: 1\nwindow:\n  width: -1\nlayers:\n  overlay_opacity: 2\n"
+               << "  geotiff_overlay_opacity: 9\n  bathymetry_opacity: -0.5\n"
+               << "  mystery_layer: true\n"
                << "telemetry:\n  live_udp_port: 70000\n";
     }
 
@@ -118,6 +166,9 @@ TEST(AnimusAppConfig, ReportsInvalidValuesAndKeepsDefaults)
     EXPECT_EQ(load.config.telemetry_live_udp_port, 14550U);
     EXPECT_TRUE(has_diagnostic(load.diagnostics, "width"));
     EXPECT_TRUE(has_diagnostic(load.diagnostics, "overlay_opacity"));
+    EXPECT_TRUE(has_diagnostic(load.diagnostics, "geotiff_overlay_opacity"));
+    EXPECT_TRUE(has_diagnostic(load.diagnostics, "bathymetry_opacity"));
+    EXPECT_TRUE(has_diagnostic(load.diagnostics, "unknown config key: layers.mystery_layer"));
     EXPECT_TRUE(has_diagnostic(load.diagnostics, "live_udp_port"));
 
     std::filesystem::remove(path);

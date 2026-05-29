@@ -57,6 +57,7 @@ struct Options
     float overlay_opacity = 0.65F;
     int overlay_order = 0;
     bool overlay_enabled = true;
+    AppLayerSettings layers;
     std::vector<OverlayLayerConfig> overlays;
     std::filesystem::path geoid_grid;
     std::filesystem::path config_path;

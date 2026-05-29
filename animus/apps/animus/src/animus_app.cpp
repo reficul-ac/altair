@@ -356,6 +356,7 @@ void apply_options_to_ui(const Options &options, UiState &ui_state, Map2DCamera 
     ui_state.telemetry_tracks_visible = options.telemetry_tracks_visible;
     ui_state.telemetry_labels_visible = options.telemetry_labels_visible;
     ui_state.bathymetry_enabled = options.use_bathymetry;
+    ui_state.layers = options.layers;
     ui_state.developer_diagnostics_visible = options.developer_diagnostics_visible;
     ui_state.telemetry_diagnostics_visible = options.telemetry_diagnostics_visible;
     ui_state.mavlink_inspector_visible = options.mavlink_inspector_visible;
@@ -378,6 +379,14 @@ void sync_options_from_ui(Options &options,
     options.telemetry_tracks_visible = ui_state.telemetry_tracks_visible;
     options.telemetry_labels_visible = ui_state.telemetry_labels_visible;
     options.use_bathymetry = ui_state.bathymetry_enabled;
+    options.layers = ui_state.layers;
+    options.layers.track_tail_visible = ui_state.telemetry_tracks_visible;
+    options.layers.vehicle_labels_visible = ui_state.telemetry_labels_visible;
+    options.layers.bathymetry_visible = ui_state.bathymetry_enabled;
+    options.layers.geotiff_overlay_visible = overlay_enabled;
+    options.layers.geotiff_overlay_opacity = overlay_opacity;
+    options.layers.tile_state_debug_visible = ui_state.layers.tile_state_debug_visible;
+    options.layers.fallback_highlight_visible = ui_state.layers.fallback_highlight_visible;
     options.developer_diagnostics_visible = ui_state.developer_diagnostics_visible;
     options.telemetry_diagnostics_visible = ui_state.telemetry_diagnostics_visible;
     options.mavlink_inspector_visible = ui_state.mavlink_inspector_visible;
@@ -2490,7 +2499,7 @@ draw_telemetry_overlay(const Options &options,
     const auto *track = ui_state.telemetry_entity_selected
                             ? playback.timeline.track_for(playback.selected_entity)
                             : nullptr;
-    if (ui_state.telemetry_tracks_visible && current && telemetry_sample_placeable(*current) &&
+    if (ui_state.layers.track_tail_visible && current && telemetry_sample_placeable(*current) &&
         track != nullptr && track->samples.size() >= 2U)
     {
         const auto selected_entity =
@@ -2615,14 +2624,15 @@ draw_telemetry_overlay(const Options &options,
             visual_registry.variant(style, {selected, stale, degraded});
         const std::optional<float> heading = telemetry_heading_rad(*sample);
         const bool suppress_selected_fallback_marker = selected && selected_model_visible;
-        if (!suppress_selected_fallback_marker)
+        if (ui_state.layers.vehicle_icons_visible && !suppress_selected_fallback_marker)
         {
             draw_vehicle_visual_icon(draw, style, variant, point.screen, heading);
             if (selected)
             {
                 draw->AddCircle(point.screen, 13.5F, IM_COL32(118, 210, 255, 216), 28, 2.2F);
                 draw->AddCircle(point.screen, 17.0F, IM_COL32(118, 210, 255, 68), 32, 3.0F);
-                if (ui_state.view_mode == animus::app::ViewMode::Map2D)
+                if (ui_state.view_mode == animus::app::ViewMode::Map2D &&
+                    ui_state.layers.terrain_confidence_visible)
                 {
                     draw_selected_terrain_confidence_ring(
                         draw, point.screen, playback.selected_entity_terrain.confidence);
@@ -2637,7 +2647,7 @@ draw_telemetry_overlay(const Options &options,
                 }
             }
 
-            if (heading &&
+            if (ui_state.layers.heading_vectors_visible && heading &&
                 style.heading_indicator == animus::app::VehicleVisualHeadingIndicator::NoseLine)
             {
                 const float length = selected ? 30.0F : 16.0F;
@@ -2651,7 +2661,7 @@ draw_telemetry_overlay(const Options &options,
             }
         }
 
-        const bool draw_label = ui_state.telemetry_labels_visible &&
+        const bool draw_label = ui_state.layers.vehicle_labels_visible &&
                                 (selected || !compact_labels || visible_labels < 3U || stale);
         if (!draw_label)
         {
@@ -2781,13 +2791,15 @@ void draw_plan_polyline(ImDrawList *draw,
 void draw_plan_overlay(const Options &options,
                        const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
                        const PlanVisualizationState &plan_state,
+                       const animus::app::AppLayerSettings &layers,
                        const Camera &camera,
                        const Map2DCamera &map_camera,
                        const animus::app::ViewMode view_mode,
                        const int framebuffer_width,
                        const int framebuffer_height)
 {
-    if (!plan_state.overlay_visible || !plan_state.data)
+    if (!plan_state.overlay_visible || !plan_state.data ||
+        (!layers.planned_route_visible && !layers.geofence_rally_visible))
     {
         return;
     }
@@ -2796,65 +2808,70 @@ void draw_plan_overlay(const Options &options,
         camera, map_camera, view_mode, framebuffer_width, framebuffer_height);
     const PlanVisualizationData &plan = *plan_state.data;
 
-    std::vector<PlanGeoPoint> route;
-    route.reserve(plan.mission_waypoints.size());
-    for (const auto &waypoint : plan.mission_waypoints)
+    if (layers.planned_route_visible)
     {
-        route.push_back(waypoint.point);
-    }
-    draw_plan_polyline(draw,
-                       options,
-                       tiles,
-                       mvp,
-                       route,
-                       framebuffer_width,
-                       framebuffer_height,
-                       IM_COL32(255, 213, 94, 232),
-                       2.2F,
-                       false,
-                       true);
-
-    for (const auto &outline : plan.complex_outlines)
-    {
+        std::vector<PlanGeoPoint> route;
+        route.reserve(plan.mission_waypoints.size());
+        for (const auto &waypoint : plan.mission_waypoints)
+        {
+            route.push_back(waypoint.point);
+        }
         draw_plan_polyline(draw,
                            options,
                            tiles,
                            mvp,
-                           outline.points,
+                           route,
                            framebuffer_width,
                            framebuffer_height,
-                           IM_COL32(137, 209, 255, 184),
-                           1.8F,
+                           IM_COL32(255, 213, 94, 232),
+                           2.2F,
                            false,
-                           false);
+                           true);
+        for (const auto &outline : plan.complex_outlines)
+        {
+            draw_plan_polyline(draw,
+                               options,
+                               tiles,
+                               mvp,
+                               outline.points,
+                               framebuffer_width,
+                               framebuffer_height,
+                               IM_COL32(137, 209, 255, 184),
+                               1.8F,
+                               false,
+                               false);
+        }
     }
-    for (const auto &polygon : plan.geofence_polygons)
+    if (layers.geofence_rally_visible)
     {
-        draw_plan_polyline(draw,
-                           options,
-                           tiles,
-                           mvp,
-                           polygon.points,
-                           framebuffer_width,
-                           framebuffer_height,
-                           IM_COL32(248, 114, 114, 202),
-                           2.0F,
-                           true,
-                           false);
-    }
-    for (const auto &circle : plan.geofence_circles)
-    {
-        draw_plan_polyline(draw,
-                           options,
-                           tiles,
-                           mvp,
-                           circle_points(circle.center, circle.radius_m),
-                           framebuffer_width,
-                           framebuffer_height,
-                           IM_COL32(248, 114, 114, 178),
-                           1.8F,
-                           false,
-                           false);
+        for (const auto &polygon : plan.geofence_polygons)
+        {
+            draw_plan_polyline(draw,
+                               options,
+                               tiles,
+                               mvp,
+                               polygon.points,
+                               framebuffer_width,
+                               framebuffer_height,
+                               IM_COL32(248, 114, 114, 202),
+                               2.0F,
+                               true,
+                               false);
+        }
+        for (const auto &circle : plan.geofence_circles)
+        {
+            draw_plan_polyline(draw,
+                               options,
+                               tiles,
+                               mvp,
+                               circle_points(circle.center, circle.radius_m),
+                               framebuffer_width,
+                               framebuffer_height,
+                               IM_COL32(248, 114, 114, 178),
+                               1.8F,
+                               false,
+                               false);
+        }
     }
 
     const auto draw_point = [&](const PlanGeoPoint &point,
@@ -2875,17 +2892,25 @@ void draw_plan_overlay(const Options &options,
             draw_tool_label(draw, screen.screen, label, IM_COL32(242, 246, 248, 236));
         }
     };
-    for (const auto &waypoint : plan.mission_waypoints)
+    if (layers.planned_route_visible)
     {
-        draw_point(waypoint.point,
-                   waypoint.label,
-                   IM_COL32(255, 213, 94, 242),
-                   IM_COL32(255, 246, 184, 220));
+        for (const auto &waypoint : plan.mission_waypoints)
+        {
+            draw_point(waypoint.point,
+                       waypoint.label,
+                       IM_COL32(255, 213, 94, 242),
+                       IM_COL32(255, 246, 184, 220));
+        }
     }
-    for (const auto &rally : plan.rally_points)
+    if (layers.geofence_rally_visible)
     {
-        draw_point(
-            rally.point, rally.label, IM_COL32(88, 221, 155, 232), IM_COL32(203, 250, 226, 214));
+        for (const auto &rally : plan.rally_points)
+        {
+            draw_point(rally.point,
+                       rally.label,
+                       IM_COL32(88, 221, 155, 232),
+                       IM_COL32(203, 250, 226, 214));
+        }
     }
 }
 
@@ -3210,10 +3235,10 @@ int run(Options options)
     constexpr std::uint64_t stream_generation = 1;
     std::vector<TileCoord> desired_tiles;
     std::vector<animus::terrain_core::TileRenderDecision> visible_tiles;
-    bool state_colors = false;
-    bool highlight_fallback = false;
-    bool overlay_enabled = options.overlay_enabled;
-    float overlay_opacity = options.overlay_opacity;
+    bool state_colors = options.layers.tile_state_debug_visible;
+    bool highlight_fallback = options.layers.fallback_highlight_visible;
+    bool overlay_enabled = options.layers.geotiff_overlay_visible;
+    float overlay_opacity = options.layers.geotiff_overlay_opacity;
     std::vector<animus::app::OverlayLayerConfig> active_overlays = options.overlays;
     for (auto &layer : active_overlays)
     {
@@ -3743,6 +3768,7 @@ int run(Options options)
             draw_plan_overlay(options,
                               tiles,
                               plan_state,
+                              ui_state.layers,
                               input.camera,
                               input.map_camera,
                               ui_state.view_mode,
@@ -3810,9 +3836,11 @@ int run(Options options)
             options.config_save_status = "not saved";
             options.config_dirty = true;
             options.config_diagnostics.push_back("reset preferences to defaults");
-            overlay_enabled = options.overlay_enabled;
-            overlay_opacity = options.overlay_opacity;
             apply_options_to_ui(options, ui_state, input.map_camera);
+            state_colors = ui_state.layers.tile_state_debug_visible;
+            highlight_fallback = ui_state.layers.fallback_highlight_visible;
+            overlay_enabled = ui_state.layers.geotiff_overlay_visible;
+            overlay_opacity = ui_state.layers.geotiff_overlay_opacity;
             ui_state.request_config_reset = false;
         }
         if (ui_state.request_workspace_layout_reset)
@@ -3838,9 +3866,11 @@ int run(Options options)
                 result.status == animus::app::AppConfigLoadStatus::LoadedLegacy)
             {
                 animus::app::apply_app_config_to_options(options, result.config);
-                overlay_enabled = options.overlay_enabled;
-                overlay_opacity = options.overlay_opacity;
                 apply_options_to_ui(options, ui_state, input.map_camera);
+                state_colors = ui_state.layers.tile_state_debug_visible;
+                highlight_fallback = ui_state.layers.fallback_highlight_visible;
+                overlay_enabled = ui_state.layers.geotiff_overlay_visible;
+                overlay_opacity = ui_state.layers.geotiff_overlay_opacity;
                 options.config_dirty = false;
                 saved_config_baseline = animus::app::app_config_from_options(options);
             }

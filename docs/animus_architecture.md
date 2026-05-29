@@ -805,7 +805,7 @@ Acceptance:
 
 #### Phase 10: Layer Stack 2.0
 
-Status: planned.
+Status: implemented.
 
 Layer stack rows:
 
@@ -840,10 +840,12 @@ Presets:
 
 Acceptance:
 
-- Existing layer functionality still works.
-- Layer choices persist.
-- Warnings appear for source failures/fallbacks when stats exist.
-- No heavy rendering changes required.
+- [x] Existing layer functionality still works.
+- [x] Layer choices persist.
+- [x] Warnings appear for source failures/fallbacks when stats exist.
+- [x] No heavy rendering changes required.
+- [x] Terrain clearance heatmap remains a persisted unavailable preference; no
+  heatmap renderer was added in Phase 10.
 
 #### Phase 12: Vehicle Assignment And Model Lifecycle UI
 

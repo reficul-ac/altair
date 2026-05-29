@@ -6,6 +6,7 @@
 #include "animus/telemetry_live/live_telemetry_buffer.hpp"
 #include "animus/telemetry_live/udp_mavlink_receiver.hpp"
 #include "animus/terrain_core/terrain_stream.hpp"
+#include "app_config.hpp"
 #include "options.hpp"
 #include "plot_ui.hpp"
 #include "plan_visualization.hpp"
@@ -181,6 +182,7 @@ struct UiState
     bool telemetry_tracks_visible = true;
     bool telemetry_labels_visible = true;
     bool bathymetry_enabled = false;
+    AppLayerSettings layers;
     bool follow_selected_entity = false;
     bool request_fit_all_entities = false;
     bool request_center_selected_entity = false;

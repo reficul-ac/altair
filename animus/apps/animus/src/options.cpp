@@ -673,6 +673,13 @@ void apply_app_config_to_options(Options &options, const AppConfig &config)
     options.mavlink_inspector_visible = config.mavlink_inspector_visible;
     options.overlay_enabled = config.overlay_enabled;
     options.overlay_opacity = config.overlay_opacity;
+    options.overlay_order = config.layers.geotiff_overlay_draw_order;
+    options.layers = config.layers;
+    options.layers.track_tail_visible = options.telemetry_tracks_visible;
+    options.layers.vehicle_labels_visible = options.telemetry_labels_visible;
+    options.layers.bathymetry_visible = options.use_bathymetry;
+    options.layers.geotiff_overlay_visible = options.overlay_enabled;
+    options.layers.geotiff_overlay_opacity = options.overlay_opacity;
     options.status_thresholds = config.status_thresholds;
     options.workspace_layouts = config.workspace_layouts;
     options.overlays.clear();
@@ -711,6 +718,13 @@ AppConfig app_config_from_options(const Options &options)
     config.mavlink_inspector_visible = options.mavlink_inspector_visible;
     config.overlay_enabled = options.overlay_enabled;
     config.overlay_opacity = options.overlay_opacity;
+    config.layers = options.layers;
+    config.layers.track_tail_visible = options.telemetry_tracks_visible;
+    config.layers.vehicle_labels_visible = options.telemetry_labels_visible;
+    config.layers.bathymetry_visible = options.use_bathymetry;
+    config.layers.geotiff_overlay_visible = options.overlay_enabled;
+    config.layers.geotiff_overlay_opacity = options.overlay_opacity;
+    config.layers.geotiff_overlay_draw_order = options.overlay_order;
     for (const OverlayLayerConfig &overlay : options.overlays)
     {
         config.overlays.push_back({overlay.path,

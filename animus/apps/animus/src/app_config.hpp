@@ -24,6 +24,28 @@ struct AppConfigOverlay
     bool operator==(const AppConfigOverlay &) const = default;
 };
 
+struct AppLayerSettings
+{
+    bool vehicle_icons_visible = true;
+    bool vehicle_labels_visible = true;
+    bool track_tail_visible = true;
+    bool heading_vectors_visible = true;
+    bool planned_route_visible = true;
+    bool geofence_rally_visible = true;
+    bool terrain_confidence_visible = true;
+    bool terrain_clearance_heatmap_visible = false;
+    bool geotiff_overlay_visible = true;
+    float geotiff_overlay_opacity = 0.65F;
+    int geotiff_overlay_draw_order = 0;
+    bool bathymetry_visible = false;
+    float bathymetry_opacity = 1.0F;
+    bool hillshade_visible = true;
+    bool tile_state_debug_visible = false;
+    bool fallback_highlight_visible = false;
+
+    bool operator==(const AppLayerSettings &) const = default;
+};
+
 struct AppConfigStatusThresholds
 {
     double terrain_clearance_warning_m = 30.0;
@@ -84,6 +106,7 @@ struct AppConfig
     bool mavlink_inspector_visible = true;
     bool overlay_enabled = true;
     float overlay_opacity = 0.65F;
+    AppLayerSettings layers;
     std::vector<AppConfigOverlay> overlays;
     std::string telemetry_live_udp_host = "127.0.0.1";
     std::uint16_t telemetry_live_udp_port = 14550;
