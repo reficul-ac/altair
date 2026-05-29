@@ -31,8 +31,14 @@ struct SelectedVehicleCardModel
     std::string mode = "--";
     std::string telemetry_state = "--";
     std::string telemetry_age = "--";
+    std::string detected_type = "--";
     std::string visual_assignment = "--";
     std::string visual_status = "--";
+    std::string visual_fallback = "--";
+    std::string heading_source = "--";
+    std::string altitude_placement = "--";
+    float visual_scale = 1.0F;
+    bool force_icon_only = false;
     std::string test = "--";
     std::string phase = "--";
     std::string target = "--";

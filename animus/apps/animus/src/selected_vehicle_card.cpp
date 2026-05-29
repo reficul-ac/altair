@@ -197,9 +197,18 @@ build_selected_vehicle_card_model(const TelemetryPlaybackState &playback,
 {
     SelectedVehicleCardModel model;
     model.mode = playback.loaded ? (playback.live ? "live UDP" : "offline playback") : "--";
+    model.detected_type = vehicle_status.selected_detected_type;
     model.visual_assignment =
-        vehicle_status.default_vehicle_name + " / " + vehicle_status.default_vehicle_type;
-    model.visual_status = vehicle_status.model_status.empty() ? "--" : vehicle_status.model_status;
+        vehicle_status.selected_vehicle_name + " / " + vehicle_status.selected_vehicle_type;
+    model.visual_status =
+        vehicle_status.selected_model_status.empty() ? "--" : vehicle_status.selected_model_status;
+    model.visual_fallback = vehicle_status.selected_fallback_reason.empty()
+                                ? "--"
+                                : vehicle_status.selected_fallback_reason;
+    model.heading_source = vehicle_status.selected_heading_source;
+    model.altitude_placement = vehicle_status.selected_altitude_placement;
+    model.visual_scale = vehicle_status.selected_scale;
+    model.force_icon_only = vehicle_status.selected_force_icon_only;
     model.terrain_confidence =
         terrain_confidence_label(playback.selected_entity_terrain.confidence);
     model.forward_clearance_summary =
@@ -307,7 +316,7 @@ build_selected_vehicle_card_model(const TelemetryPlaybackState &playback,
         break;
     }
 
-    if (!vehicle_status.model_loaded)
+    if (!vehicle_status.selected_model_loaded)
     {
         add_warning(model, SelectedVehicleCardStatus::Caution, "Vehicle model fallback is active");
     }

@@ -849,7 +849,9 @@ Acceptance:
 
 #### Phase 12: Vehicle Assignment And Model Lifecycle UI
 
-Status: planned.
+Status: complete for vehicle assignment/model lifecycle UI. Baseline telemetry
+loading, second-run comparison, and ghost rendering remain future ghost replay
+work.
 
 UI:
 
@@ -884,7 +886,8 @@ Acceptance:
 #### Phase 11: Plan-vs-Actual And Ghost Replay Foundation
 
 Status: complete as a foundation-only Phase 11 slice after Phases 1-10. Baseline
-loading, second-run comparison, and ghost rendering remain future Phase 12 work.
+loading, second-run comparison, and ghost rendering remain future ghost replay
+work.
 
 Plan-vs-actual:
 

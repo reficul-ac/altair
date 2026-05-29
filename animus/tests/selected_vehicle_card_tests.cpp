@@ -78,6 +78,10 @@ animus::app::VehicleRuntimeStatus loaded_vehicle()
     vehicle.default_vehicle_type = "fixed_wing";
     vehicle.model_loaded = true;
     vehicle.model_status = "loaded";
+    vehicle.selected_vehicle_name = "Generic RC Plane";
+    vehicle.selected_vehicle_type = "fixed_wing";
+    vehicle.selected_model_loaded = true;
+    vehicle.selected_model_status = "loaded";
     return vehicle;
 }
 
@@ -285,6 +289,9 @@ TEST(SelectedVehicleCard, ModelFallbackRaisesCaution)
     animus::app::VehicleRuntimeStatus vehicle = loaded_vehicle();
     vehicle.model_loaded = false;
     vehicle.model_status = "fallback icon";
+    vehicle.selected_model_loaded = false;
+    vehicle.selected_model_status = "fallback icon";
+    vehicle.selected_fallback_reason = "fallback icon";
 
     const auto model = build(playback_with_sample(), selected_ui(), vehicle);
 

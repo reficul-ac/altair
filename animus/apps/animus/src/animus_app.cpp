@@ -988,9 +988,17 @@ struct TelemetryOverlayDrawStats
 
 struct VehicleRenderState
 {
+    struct LoadedModel
+    {
+        const animus::vehicle_core::VehicleDefinition *definition = nullptr;
+        std::unique_ptr<animus::render_core::ModelMesh> mesh;
+        std::string status = "not loaded";
+        bool loaded = false;
+    };
+
     animus::vehicle_core::VehicleRegistry registry;
     const animus::vehicle_core::VehicleDefinition *default_definition = nullptr;
-    std::unique_ptr<animus::render_core::ModelMesh> default_model;
+    std::unordered_map<std::string, LoadedModel> models;
     VehicleRuntimeStatus status;
 };
 
@@ -1235,23 +1243,95 @@ VehicleRenderState load_vehicle_render_state()
     state.status.default_vehicle_name = state.default_definition->display_name;
     state.status.default_vehicle_type =
         std::string(animus::vehicle_core::to_string(state.default_definition->type));
+    for (const auto &definition : state.registry.definitions())
+    {
+        state.status.definitions.push_back(
+            {definition.id,
+             definition.display_name,
+             std::string(animus::vehicle_core::to_string(definition.type)),
+             "not loaded",
+             false});
+    }
+    return state;
+}
+
+VehicleRenderState::LoadedModel &ensure_vehicle_model_loaded(VehicleRenderState &state,
+                                                             const std::string &vehicle_id)
+{
+    VehicleRenderState::LoadedModel &model = state.models[vehicle_id];
+    if (model.definition != nullptr || model.status != "not loaded")
+    {
+        return model;
+    }
+    model.definition = state.registry.find(vehicle_id);
+    if (model.definition == nullptr)
+    {
+        model.status = "descriptor missing";
+        state.status.diagnostics.push_back("error: vehicle descriptor missing: " + vehicle_id);
+        return model;
+    }
     try
     {
         const animus::vehicle_core::VehicleModelCpu cpu_model =
-            animus::vehicle_core::load_glb_model(state.default_definition->model_path);
+            animus::vehicle_core::load_glb_model(model.definition->model_path);
         const auto render_primitives = to_render_model_primitives(cpu_model);
-        state.default_model = std::make_unique<animus::render_core::ModelMesh>(render_primitives);
-        state.status.model_loaded = true;
-        state.status.model_status = "loaded";
+        model.mesh = std::make_unique<animus::render_core::ModelMesh>(render_primitives);
+        model.loaded = true;
+        model.status = "loaded";
     }
     catch (const std::exception &error)
     {
-        state.status.model_loaded = false;
-        state.status.model_status = "fallback icon";
+        model.loaded = false;
+        model.status = "fallback icon";
         state.status.diagnostics.push_back(std::string("error: model load failed: ") +
                                            error.what());
     }
-    return state;
+    return model;
+}
+
+void refresh_vehicle_runtime_status(VehicleRenderState &state,
+                                    const animus::app::VehicleResolvedVisual &selected_visual)
+{
+    state.status.model_loaded = false;
+    state.status.model_status = "fallback icon";
+    if (state.default_definition != nullptr)
+    {
+        if (const auto model = state.models.find(state.default_definition->id);
+            model != state.models.end())
+        {
+            state.status.model_loaded = model->second.loaded;
+            state.status.model_status = model->second.status;
+        }
+    }
+    for (auto &definition : state.status.definitions)
+    {
+        if (const auto model = state.models.find(definition.id); model != state.models.end())
+        {
+            definition.model_loaded = model->second.loaded;
+            definition.model_status = model->second.status;
+        }
+    }
+    state.status.selected_detected_type = selected_visual.detected_type;
+    state.status.selected_vehicle_id = selected_visual.vehicle_id;
+    state.status.selected_vehicle_name = selected_visual.vehicle_name;
+    state.status.selected_vehicle_type = selected_visual.vehicle_type;
+    state.status.selected_model_status = selected_visual.model_status;
+    state.status.selected_fallback_reason = selected_visual.fallback_reason;
+    state.status.selected_heading_source = selected_visual.heading_source;
+    state.status.selected_altitude_placement = selected_visual.altitude_placement;
+    state.status.selected_model_loaded = selected_visual.model_loaded;
+    state.status.selected_force_icon_only = selected_visual.force_icon_only;
+    state.status.selected_scale = selected_visual.scale;
+}
+
+std::pair<bool, std::string> vehicle_model_status(const VehicleRenderState &state,
+                                                  const std::string &vehicle_id)
+{
+    if (const auto model = state.models.find(vehicle_id); model != state.models.end())
+    {
+        return {model->second.loaded, model->second.status};
+    }
+    return {false, "not loaded"};
 }
 
 Mat4 selected_vehicle_model_matrix(const animus::vehicle_core::VehicleDefinition &definition,
@@ -2507,6 +2587,7 @@ draw_telemetry_overlay(const Options &options,
                        const std::unordered_map<TileCoord, TerrainTileGpu> &tiles,
                        const animus::terrain_core::GeoidCorrectionGrid &geoid_grid,
                        TelemetryPlaybackState &playback,
+                       const VehicleRenderState &vehicle_render,
                        const UiState &ui_state,
                        const Camera &camera,
                        const Map2DCamera &map_camera,
@@ -2544,10 +2625,19 @@ draw_telemetry_overlay(const Options &options,
                          playback.timeline.entities.end(),
                          [&](const animus::telemetry_core::Entity &entity)
                          { return entity.id == playback.selected_entity; });
+        animus::app::VehicleResolvedVisual trail_visual;
+        if (selected_entity != playback.timeline.entities.end())
+        {
+            trail_visual = animus::app::resolve_vehicle_visual(vehicle_render.registry,
+                                                               options.vehicle_visuals,
+                                                               *selected_entity,
+                                                               false,
+                                                               "not loaded");
+        }
         const animus::app::VehicleVisualStyle &trail_style =
             selected_entity == playback.timeline.entities.end()
                 ? visual_registry.default_style()
-                : animus::app::resolve_entity_visual_style(visual_registry, *selected_entity);
+                : animus::app::resolve_entity_visual_style(visual_registry, trail_visual);
         const std::size_t max_points =
             playback.live ? options.telemetry_live_render_max_points : track->samples.size();
         const std::vector<std::size_t> trail_indices =
@@ -2655,11 +2745,22 @@ draw_telemetry_overlay(const Options &options,
             ui_state.telemetry_entity_selected && entity.id == playback.selected_entity;
         const bool stale = telemetry_sample_stale(playback, *sample);
         const bool degraded = terrain_unavailable || geoid_unavailable;
+        animus::app::VehicleResolvedVisual resolved_visual = animus::app::resolve_vehicle_visual(
+            vehicle_render.registry, options.vehicle_visuals, entity, false, "not loaded");
+        const auto model_status = vehicle_model_status(vehicle_render, resolved_visual.vehicle_id);
+        resolved_visual = animus::app::resolve_vehicle_visual(vehicle_render.registry,
+                                                              options.vehicle_visuals,
+                                                              entity,
+                                                              model_status.first,
+                                                              model_status.second);
         const animus::app::VehicleVisualStyle &style =
-            animus::app::resolve_entity_visual_style(visual_registry, entity);
-        const animus::app::VehicleVisualVariant &variant =
+            animus::app::resolve_entity_visual_style(visual_registry, resolved_visual);
+        animus::app::VehicleVisualVariant variant =
             visual_registry.variant(style, {selected, stale, degraded});
-        const std::optional<float> heading = telemetry_heading_rad(*sample);
+        variant.scale *= resolved_visual.scale;
+        const std::optional<float> heading = resolved_visual.heading_source == "none"
+                                                 ? std::nullopt
+                                                 : telemetry_heading_rad(*sample);
         const bool suppress_selected_fallback_marker = selected && selected_model_visible;
         if (ui_state.layers.vehicle_icons_visible && !suppress_selected_fallback_marker)
         {
@@ -3763,13 +3864,33 @@ int run(Options options)
 
         const animus::render_core::ModelMesh *selected_model = nullptr;
         Mat4 selected_model_matrix_value = identity();
-        if (ui_state.view_mode == animus::app::ViewMode::Terrain3D &&
-            vehicle_render.default_definition != nullptr && vehicle_render.default_model &&
-            ui_state.telemetry_entity_selected)
+        animus::app::VehicleResolvedVisual selected_visual;
+        const auto selected_entity =
+            ui_state.telemetry_entity_selected
+                ? std::find_if(telemetry.timeline.entities.begin(),
+                               telemetry.timeline.entities.end(),
+                               [&](const animus::telemetry_core::Entity &entity)
+                               { return entity.id == telemetry.selected_entity; })
+                : telemetry.timeline.entities.end();
+        if (selected_entity != telemetry.timeline.entities.end())
         {
+            selected_visual = animus::app::resolve_vehicle_visual(vehicle_render.registry,
+                                                                  options.vehicle_visuals,
+                                                                  *selected_entity,
+                                                                  false,
+                                                                  "not loaded");
+            VehicleRenderState::LoadedModel &model =
+                ensure_vehicle_model_loaded(vehicle_render, selected_visual.vehicle_id);
+            selected_visual = animus::app::resolve_vehicle_visual(vehicle_render.registry,
+                                                                  options.vehicle_visuals,
+                                                                  *selected_entity,
+                                                                  model.loaded,
+                                                                  model.status);
             const auto sample =
                 telemetry.timeline.sample_at(telemetry.selected_entity, telemetry.clock.time_s());
-            if (sample && telemetry_sample_placeable(*sample))
+            if (ui_state.view_mode == animus::app::ViewMode::Terrain3D && sample &&
+                telemetry_sample_placeable(*sample) && !selected_visual.force_icon_only &&
+                model.definition != nullptr && model.mesh)
             {
                 bool terrain_unavailable = false;
                 bool unknown_datum = false;
@@ -3782,10 +3903,14 @@ int run(Options options)
                                                             unknown_datum,
                                                             geoid_unavailable);
                 selected_model_matrix_value = selected_vehicle_model_matrix(
-                    *vehicle_render.default_definition, world, telemetry_heading_rad(*sample));
-                selected_model = vehicle_render.default_model.get();
+                    *model.definition,
+                    world,
+                    selected_visual.heading_source == "none" ? std::nullopt
+                                                             : telemetry_heading_rad(*sample));
+                selected_model = model.mesh.get();
             }
         }
+        refresh_vehicle_runtime_status(vehicle_render, selected_visual);
 
         render_frame(window,
                      program,
@@ -3808,6 +3933,7 @@ int run(Options options)
                                        tiles,
                                        geoid_grid,
                                        telemetry,
+                                       vehicle_render,
                                        ui_state,
                                        input.camera,
                                        input.map_camera,

@@ -7,6 +7,7 @@
 #include "plot_ui.hpp"
 #include "selected_vehicle_card.hpp"
 #include "status_ribbon.hpp"
+#include "vehicle_visual_style.hpp"
 
 #include "animus/terrain_core/contracts.hpp"
 #include "animus/terrain_core/terrain_cache.hpp"
@@ -2226,6 +2227,25 @@ void draw_developer_panel(
             static_cast<unsigned long long>(cache.geotiff_extraction_failures));
     }
 
+    if (ImGui::CollapsingHeader("Vehicle Models", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Text("packages %zu definitions %zu",
+                    vehicle_status.registry_package_count,
+                    vehicle_status.definitions.size());
+        for (const auto &definition : vehicle_status.definitions)
+        {
+            ImGui::BulletText("%s / %s", definition.name.c_str(), definition.type.c_str());
+            ImGui::SameLine();
+            ImGui::TextColored(definition.model_loaded ? live_green : stale_amber,
+                               "%s",
+                               definition.model_status.c_str());
+        }
+        for (const std::string &diagnostic : vehicle_status.diagnostics)
+        {
+            ImGui::TextColored(stale_amber, "%s", diagnostic.c_str());
+        }
+    }
+
     if (ImGui::CollapsingHeader("Telemetry Parser"))
     {
         const auto &diag = playback.timeline.diagnostics;
@@ -2371,7 +2391,8 @@ void metric_grid(const char *id, const std::vector<SelectedVehicleCardMetric> &m
     }
 }
 
-void draw_selected_entity_card(TelemetryPlaybackState &playback,
+void draw_selected_entity_card(Options &options,
+                               TelemetryPlaybackState &playback,
                                const VehicleRuntimeStatus &vehicle_status,
                                const AppConfigStatusThresholds &thresholds,
                                UiState &ui_state)
@@ -2385,6 +2406,10 @@ void draw_selected_entity_card(TelemetryPlaybackState &playback,
     ImGui::TextColored(state_color, "%s", card.status_label.c_str());
     ImGui::TextColored(text_muted, "%s", card.visual_assignment.c_str());
     ImGui::TextColored(text_muted, "model %s", card.visual_status.c_str());
+    if (card.visual_fallback != "--")
+    {
+        ImGui::TextColored(stale_amber, "%s", card.visual_fallback.c_str());
+    }
 
     ImGui::SeparatorText("Controls");
     ImGui::Checkbox("Follow selected", &ui_state.follow_selected_entity);
@@ -2401,6 +2426,115 @@ void draw_selected_entity_card(TelemetryPlaybackState &playback,
     ImGui::Checkbox("Labels", &ui_state.telemetry_labels_visible);
     ImGui::SameLine();
     ImGui::Checkbox("Tracks", &ui_state.telemetry_tracks_visible);
+
+    ImGui::SeparatorText("Vehicle visual");
+    metric_row("Detected", card.detected_type);
+    if (!playback.loaded || !ui_state.telemetry_entity_selected)
+    {
+        muted_text("Select telemetry to assign a vehicle visual.");
+    }
+    else
+    {
+        const std::string entity_key = vehicle_assignment_entity_key(playback.selected_entity);
+        VehicleVisualAssignment assignment;
+        if (const auto existing = options.vehicle_visuals.entities.find(entity_key);
+            existing != options.vehicle_visuals.entities.end())
+        {
+            assignment = existing->second;
+        }
+        else
+        {
+            assignment.vehicle_id = vehicle_status.selected_vehicle_id.empty()
+                                        ? vehicle_status.default_vehicle_id
+                                        : vehicle_status.selected_vehicle_id;
+            assignment.force_icon_only = vehicle_status.selected_force_icon_only;
+            assignment.scale = vehicle_status.selected_scale;
+            assignment.heading_source = vehicle_status.selected_heading_source;
+            assignment.altitude_placement = vehicle_status.selected_altitude_placement;
+        }
+        if (assignment.vehicle_id.empty())
+        {
+            assignment.vehicle_id = vehicle_status.selected_vehicle_id.empty()
+                                        ? vehicle_status.default_vehicle_id
+                                        : vehicle_status.selected_vehicle_id;
+        }
+        if (assignment.heading_source.empty())
+        {
+            assignment.heading_source = "auto";
+        }
+        if (assignment.altitude_placement.empty())
+        {
+            assignment.altitude_placement = "terrain_resolved";
+        }
+
+        int selected_index = 0;
+        for (std::size_t index = 0; index < vehicle_status.definitions.size(); ++index)
+        {
+            if (vehicle_status.definitions[index].id == assignment.vehicle_id)
+            {
+                selected_index = static_cast<int>(index);
+                break;
+            }
+        }
+        const char *preview =
+            vehicle_status.definitions.empty()
+                ? "No models"
+                : vehicle_status.definitions[static_cast<std::size_t>(selected_index)].name.c_str();
+        if (ImGui::BeginCombo("Assigned model", preview))
+        {
+            for (std::size_t index = 0; index < vehicle_status.definitions.size(); ++index)
+            {
+                const bool selected = static_cast<int>(index) == selected_index;
+                const auto &definition = vehicle_status.definitions[index];
+                const std::string label = definition.name + "##" + definition.id;
+                if (ImGui::Selectable(label.c_str(), selected))
+                {
+                    assignment.vehicle_id = definition.id;
+                    options.vehicle_visuals.entities[entity_key] = assignment;
+                }
+                if (selected)
+                {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::Checkbox("Force icon-only", &assignment.force_icon_only))
+        {
+            options.vehicle_visuals.entities[entity_key] = assignment;
+        }
+        if (ImGui::SliderFloat("Scale", &assignment.scale, 0.1F, 10.0F, "%.2f"))
+        {
+            options.vehicle_visuals.entities[entity_key] = assignment;
+        }
+        const char *heading_items[] = {"auto", "none"};
+        int heading_index = assignment.heading_source == "none" ? 1 : 0;
+        if (ImGui::Combo("Heading source", &heading_index, heading_items, 2))
+        {
+            assignment.heading_source = heading_items[heading_index];
+            options.vehicle_visuals.entities[entity_key] = assignment;
+        }
+        const char *altitude_items[] = {"terrain_resolved"};
+        int altitude_index = 0;
+        if (ImGui::Combo("Altitude placement", &altitude_index, altitude_items, 1))
+        {
+            assignment.altitude_placement = altitude_items[altitude_index];
+            options.vehicle_visuals.entities[entity_key] = assignment;
+        }
+        if (ImGui::Button("Use as type default"))
+        {
+            options.vehicle_visuals.defaults_by_type[vehicle_status.selected_detected_type] =
+                assignment.vehicle_id;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Clear entity override"))
+        {
+            options.vehicle_visuals.entities.erase(entity_key);
+        }
+        metric_row("Icon", vehicle_status.selected_vehicle_type);
+        metric_row("Heading", card.heading_source);
+        metric_row("Altitude", card.altitude_placement);
+    }
 
     ImGui::SeparatorText("Test");
     metric_row("Test", card.test);
@@ -2429,7 +2563,8 @@ void draw_selected_entity_card(TelemetryPlaybackState &playback,
     }
 }
 
-void draw_inspector(TelemetryPlaybackState &playback,
+void draw_inspector(Options &options,
+                    TelemetryPlaybackState &playback,
                     const VehicleRuntimeStatus &vehicle_status,
                     const AppConfigStatusThresholds &thresholds,
                     UiState &ui_state,
@@ -2461,7 +2596,7 @@ void draw_inspector(TelemetryPlaybackState &playback,
     }
     else if (ui_state.inspector_target == InspectorTarget::Entity)
     {
-        draw_selected_entity_card(playback, vehicle_status, thresholds, ui_state);
+        draw_selected_entity_card(options, playback, vehicle_status, thresholds, ui_state);
     }
     else if (ui_state.inspector_target == InspectorTarget::TelemetrySource)
     {
@@ -3061,7 +3196,7 @@ void draw_app_workspace(Options &options,
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
 
-    draw_inspector(playback, vehicle_status, options.status_thresholds, ui_state, layout);
+    draw_inspector(options, playback, vehicle_status, options.status_thresholds, ui_state, layout);
     draw_plot_shelf(options, playback, runtime_signals, ui_state.plot_ui, layout.plot_shelf);
     draw_bottom_timeline(playback, ui_state, layout);
     capture_workspace_layout(ui_state, map_camera, options);

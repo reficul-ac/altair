@@ -45,7 +45,7 @@ Reusable Bayek framework follow-up is tracked separately in
   field-state semantics.
 - [x] Implement the documented Animus vehicle asset registry and GLB fallback
   path after the operator UI/entity overlay foundation is stable.
-- [ ] Add per-entity Animus vehicle assignment policy and UI after the default
+- [x] Add per-entity Animus vehicle assignment policy and UI after the default
   Generic RC Plane model path is exercised in operator workflows.
 - [ ] Add selected-entity tail length preference once the overlay renderer has
   app-local tail-length wiring.
@@ -57,7 +57,7 @@ Reusable Bayek framework follow-up is tracked separately in
 - [ ] Add Animus review-tape marker sources for low link Hz, terrain
   fallback/synthetic-under-vehicle, speed/climb excursions, geofence, capture
   events, and model fallback when those runtime/session sources are available.
-- [ ] Add Phase 12 Animus ghost replay baseline telemetry loading, comparison,
+- [ ] Add Animus ghost replay baseline telemetry loading, comparison,
   and ghost track rendering on top of the Phase 11 current-run summary.
 - [ ] Add headless Animus workspace-layout transition tests for switching and
   resetting layouts once the ImGui layout application logic is factored into a

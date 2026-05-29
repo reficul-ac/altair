@@ -148,6 +148,168 @@ void read_positive_float(const YAML::Node &node,
     target = value;
 }
 
+float clamped_vehicle_scale(const float value)
+{
+    if (value < 0.1F)
+    {
+        return 0.1F;
+    }
+    if (value > 10.0F)
+    {
+        return 10.0F;
+    }
+    return value;
+}
+
+bool valid_vehicle_assignment_key(const std::string_view value)
+{
+    const std::size_t colon = value.find(':');
+    if (colon == std::string_view::npos || colon == 0U || colon + 1U >= value.size())
+    {
+        return false;
+    }
+    const auto digits = [](const std::string_view text)
+    {
+        return std::all_of(text.begin(),
+                           text.end(),
+                           [](const char ch)
+                           { return std::isdigit(static_cast<unsigned char>(ch)) != 0; });
+    };
+    return digits(value.substr(0U, colon)) && digits(value.substr(colon + 1U));
+}
+
+bool valid_vehicle_heading_source(const std::string_view value)
+{
+    return value == "auto" || value == "none";
+}
+
+bool valid_vehicle_altitude_placement(const std::string_view value)
+{
+    return value == "terrain_resolved";
+}
+
+void read_vehicle_visuals(const YAML::Node &node,
+                          VehicleVisualAssignments &visuals,
+                          std::vector<std::string> &diagnostics)
+{
+    if (!node)
+    {
+        return;
+    }
+    if (!node.IsMap())
+    {
+        diagnostics.push_back("invalid config value for vehicle_visuals: expected map");
+        return;
+    }
+
+    warn_unknown_keys(node, {"defaults_by_type", "entities"}, "vehicle_visuals.", diagnostics);
+
+    const YAML::Node defaults = node["defaults_by_type"];
+    if (defaults)
+    {
+        if (!defaults.IsMap())
+        {
+            diagnostics.push_back(
+                "invalid config value for vehicle_visuals.defaults_by_type: expected map");
+        }
+        else
+        {
+            for (const auto &entry : defaults)
+            {
+                try
+                {
+                    const std::string type = entry.first.as<std::string>();
+                    const std::string vehicle_id = entry.second.as<std::string>();
+                    if (type.empty() || vehicle_id.empty())
+                    {
+                        diagnostics.push_back(
+                            "invalid config value for vehicle_visuals.defaults_by_type: "
+                            "expected non-empty strings");
+                        continue;
+                    }
+                    visuals.defaults_by_type[type] = vehicle_id;
+                }
+                catch (const YAML::Exception &error)
+                {
+                    diagnostics.push_back(
+                        std::string("invalid config value for vehicle_visuals.defaults_by_type: ") +
+                        error.what());
+                }
+            }
+        }
+    }
+
+    const YAML::Node entities = node["entities"];
+    if (!entities)
+    {
+        return;
+    }
+    if (!entities.IsMap())
+    {
+        diagnostics.push_back("invalid config value for vehicle_visuals.entities: expected map");
+        return;
+    }
+    for (const auto &entry : entities)
+    {
+        std::string key;
+        try
+        {
+            key = entry.first.as<std::string>();
+        }
+        catch (const YAML::Exception &error)
+        {
+            diagnostics.push_back(
+                std::string("invalid config key under vehicle_visuals.entities: ") + error.what());
+            continue;
+        }
+        if (!valid_vehicle_assignment_key(key))
+        {
+            diagnostics.push_back("invalid config key under vehicle_visuals.entities: " + key);
+            continue;
+        }
+        const YAML::Node assignment_node = entry.second;
+        if (!assignment_node || !assignment_node.IsMap())
+        {
+            diagnostics.push_back("invalid config value for vehicle_visuals.entities." + key +
+                                  ": expected map");
+            continue;
+        }
+        warn_unknown_keys(
+            assignment_node,
+            {"vehicle_id", "force_icon_only", "scale", "heading_source", "altitude_placement"},
+            "vehicle_visuals.entities." + key + ".",
+            diagnostics);
+
+        VehicleVisualAssignment assignment;
+        read_value(assignment_node, "vehicle_id", assignment.vehicle_id, diagnostics);
+        read_value(assignment_node, "force_icon_only", assignment.force_icon_only, diagnostics);
+        read_positive_float(assignment_node, "scale", assignment.scale, diagnostics);
+        assignment.scale = clamped_vehicle_scale(assignment.scale);
+        read_value(assignment_node, "heading_source", assignment.heading_source, diagnostics);
+        if (!valid_vehicle_heading_source(assignment.heading_source))
+        {
+            diagnostics.push_back("invalid config value for vehicle_visuals.entities." + key +
+                                  ".heading_source: " + assignment.heading_source);
+            assignment.heading_source = "auto";
+        }
+        read_value(
+            assignment_node, "altitude_placement", assignment.altitude_placement, diagnostics);
+        if (!valid_vehicle_altitude_placement(assignment.altitude_placement))
+        {
+            diagnostics.push_back("invalid config value for vehicle_visuals.entities." + key +
+                                  ".altitude_placement: " + assignment.altitude_placement);
+            assignment.altitude_placement = "terrain_resolved";
+        }
+        if (assignment.vehicle_id.empty())
+        {
+            diagnostics.push_back("invalid config value for vehicle_visuals.entities." + key +
+                                  ".vehicle_id: expected non-empty string");
+            assignment.vehicle_id = "animus.rc_plane.generic";
+        }
+        visuals.entities[key] = assignment;
+    }
+}
+
 void read_udp_port(const YAML::Node &node,
                    const char *key,
                    std::uint16_t &target,
@@ -852,6 +1014,8 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
                          result.diagnostics);
 
     result.config.plots = read_plot_shelf_config(root["plots"], result.diagnostics);
+    read_vehicle_visuals(
+        root["vehicle_visuals"], result.config.vehicle_visuals, result.diagnostics);
     read_workspace_layouts(root["workspaces"], result.config.workspace_layouts, result.diagnostics);
 
     result.status = AppConfigLoadStatus::Loaded;
@@ -983,7 +1147,34 @@ AppConfigSaveResult save_app_config_file(const std::filesystem::path &path, cons
     out << YAML::Key << "plan_altitude_error_warning_m" << YAML::Value
         << config.status_thresholds.plan_altitude_error_warning_m;
     out << YAML::EndMap;
-    out << YAML::Key << "vehicle_visuals" << YAML::Value << YAML::BeginMap << YAML::EndMap;
+    out << YAML::Key << "vehicle_visuals" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "defaults_by_type" << YAML::Value << YAML::BeginMap;
+    for (const auto &[type, vehicle_id] : config.vehicle_visuals.defaults_by_type)
+    {
+        write_string(out, type.c_str(), vehicle_id);
+    }
+    out << YAML::EndMap;
+    out << YAML::Key << "entities" << YAML::Value << YAML::BeginMap;
+    for (const auto &[key, assignment] : config.vehicle_visuals.entities)
+    {
+        out << YAML::Key << key << YAML::Value << YAML::BeginMap;
+        write_string(out, "vehicle_id", assignment.vehicle_id);
+        out << YAML::Key << "force_icon_only" << YAML::Value << assignment.force_icon_only;
+        out << YAML::Key << "scale" << YAML::Value << clamped_vehicle_scale(assignment.scale);
+        write_string(out,
+                     "heading_source",
+                     valid_vehicle_heading_source(assignment.heading_source)
+                         ? assignment.heading_source
+                         : std::string("auto"));
+        write_string(out,
+                     "altitude_placement",
+                     valid_vehicle_altitude_placement(assignment.altitude_placement)
+                         ? assignment.altitude_placement
+                         : std::string("terrain_resolved"));
+        out << YAML::EndMap;
+    }
+    out << YAML::EndMap;
+    out << YAML::EndMap;
     out << YAML::Key << "plots" << YAML::Value;
     write_plot_shelf_config(out, config.plots);
     out << YAML::Key << "workspaces" << YAML::Value << YAML::BeginMap;

@@ -681,6 +681,7 @@ void apply_app_config_to_options(Options &options, const AppConfig &config)
     options.layers.geotiff_overlay_visible = options.overlay_enabled;
     options.layers.geotiff_overlay_opacity = options.overlay_opacity;
     options.status_thresholds = config.status_thresholds;
+    options.vehicle_visuals = config.vehicle_visuals;
     options.workspace_layouts = config.workspace_layouts;
     options.overlays.clear();
     for (const AppConfigOverlay &overlay : config.overlays)
@@ -739,6 +740,7 @@ AppConfig app_config_from_options(const Options &options)
     config.telemetry_live_max_samples = options.telemetry_live_max_samples;
     config.telemetry_live_render_max_points = options.telemetry_live_render_max_points;
     config.status_thresholds = options.status_thresholds;
+    config.vehicle_visuals = options.vehicle_visuals;
     config.plots = options.plots;
     config.workspace_layouts = options.workspace_layouts;
     return config;

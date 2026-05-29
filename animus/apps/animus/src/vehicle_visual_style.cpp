@@ -1,6 +1,9 @@
 #include "vehicle_visual_style.hpp"
 
+#include <algorithm>
+#include <charconv>
 #include <string>
+#include <system_error>
 
 namespace animus::app
 {
@@ -134,6 +137,32 @@ std::string entity_label(const animus::telemetry_core::EntityId id)
     return std::to_string(id.system_id) + ":" + std::to_string(id.component_id);
 }
 
+float clamped_visual_scale(const float value)
+{
+    if (value < 0.1F)
+    {
+        return 0.1F;
+    }
+    if (value > 10.0F)
+    {
+        return 10.0F;
+    }
+    return value;
+}
+
+std::optional<std::uint8_t> parse_u8(std::string_view text)
+{
+    unsigned int value = 0U;
+    const char *begin = text.data();
+    const char *end = text.data() + text.size();
+    const auto result = std::from_chars(begin, end, value);
+    if (result.ec != std::errc() || result.ptr != end || value > 255U)
+    {
+        return std::nullopt;
+    }
+    return static_cast<std::uint8_t>(value);
+}
+
 } // namespace
 
 VehicleVisualRegistry::VehicleVisualRegistry()
@@ -244,11 +273,125 @@ VehicleVisualKind default_vehicle_visual_kind()
     return VehicleVisualKind::FixedWing;
 }
 
+std::string vehicle_assignment_entity_key(const animus::telemetry_core::EntityId entity_id)
+{
+    return entity_label(entity_id);
+}
+
+std::optional<animus::telemetry_core::EntityId>
+parse_vehicle_assignment_entity_key(const std::string_view key)
+{
+    const std::size_t colon = key.find(':');
+    if (colon == std::string_view::npos || colon == 0U || colon + 1U >= key.size())
+    {
+        return std::nullopt;
+    }
+    const std::optional<std::uint8_t> system_id = parse_u8(key.substr(0U, colon));
+    const std::optional<std::uint8_t> component_id = parse_u8(key.substr(colon + 1U));
+    if (!system_id || !component_id)
+    {
+        return std::nullopt;
+    }
+    return animus::telemetry_core::EntityId{*system_id, *component_id};
+}
+
+VehicleVisualKind vehicle_visual_kind_for_type(const animus::vehicle_core::VehicleType type)
+{
+    switch (type)
+    {
+    case animus::vehicle_core::VehicleType::RcPlane:
+        return VehicleVisualKind::FixedWing;
+    }
+    return VehicleVisualKind::Unknown;
+}
+
+VehicleResolvedVisual
+resolve_vehicle_visual(const animus::vehicle_core::VehicleRegistry &vehicle_registry,
+                       const VehicleVisualAssignments &assignments,
+                       const animus::telemetry_core::Entity &entity,
+                       const bool assigned_model_loaded,
+                       const std::string_view assigned_model_status)
+{
+    VehicleResolvedVisual visual;
+    visual.entity_key = vehicle_assignment_entity_key(entity.id);
+
+    const animus::vehicle_core::VehicleDefinition *default_definition =
+        vehicle_registry.default_definition();
+    if (default_definition != nullptr)
+    {
+        visual.vehicle_id = default_definition->id;
+        visual.vehicle_name = default_definition->display_name;
+        visual.vehicle_type =
+            std::string(animus::vehicle_core::to_string(default_definition->type));
+        visual.detected_type = visual.vehicle_type;
+        visual.icon_kind = vehicle_visual_kind_for_type(default_definition->type);
+    }
+
+    VehicleVisualAssignment assignment;
+    bool has_assignment = false;
+    if (const auto entity_assignment = assignments.entities.find(visual.entity_key);
+        entity_assignment != assignments.entities.end())
+    {
+        assignment = entity_assignment->second;
+        has_assignment = true;
+    }
+    else if (const auto type_default = assignments.defaults_by_type.find(visual.detected_type);
+             type_default != assignments.defaults_by_type.end())
+    {
+        assignment.vehicle_id = type_default->second;
+        has_assignment = true;
+    }
+
+    if (has_assignment)
+    {
+        visual.force_icon_only = assignment.force_icon_only;
+        visual.scale = clamped_visual_scale(assignment.scale);
+        visual.heading_source = assignment.heading_source == "none" ? "none" : "auto";
+        visual.altitude_placement = "terrain_resolved";
+        const animus::vehicle_core::VehicleDefinition *assigned_definition =
+            vehicle_registry.find(assignment.vehicle_id);
+        if (assigned_definition == nullptr)
+        {
+            visual.fallback_reason = "assigned model not found: " + assignment.vehicle_id;
+        }
+        else
+        {
+            visual.vehicle_id = assigned_definition->id;
+            visual.vehicle_name = assigned_definition->display_name;
+            visual.vehicle_type =
+                std::string(animus::vehicle_core::to_string(assigned_definition->type));
+            visual.icon_kind = vehicle_visual_kind_for_type(assigned_definition->type);
+        }
+    }
+
+    visual.model_loaded = assigned_model_loaded && !visual.force_icon_only;
+    visual.model_status =
+        std::string(assigned_model_status.empty() ? "fallback icon" : assigned_model_status);
+    if (visual.force_icon_only)
+    {
+        visual.model_loaded = false;
+        visual.model_status = "icon-only";
+        visual.fallback_reason = "icon-only forced";
+    }
+    else if (!visual.model_loaded && visual.fallback_reason.empty())
+    {
+        visual.fallback_reason =
+            visual.model_status == "loaded" ? "model unavailable" : visual.model_status;
+    }
+    return visual;
+}
+
 const VehicleVisualStyle &resolve_entity_visual_style(const VehicleVisualRegistry &registry,
                                                       const animus::telemetry_core::Entity &entity)
 {
     (void)entity;
     return registry.default_style();
+}
+
+const VehicleVisualStyle &resolve_entity_visual_style(const VehicleVisualRegistry &registry,
+                                                      const VehicleResolvedVisual &visual)
+{
+    return registry.style(visual.icon_kind);
 }
 
 std::string vehicle_visual_label(const VehicleVisualStyle &style,

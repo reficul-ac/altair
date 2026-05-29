@@ -143,7 +143,11 @@ add_executable(
 )
 target_include_directories(animus_vehicle_visual_style_tests PRIVATE ../apps/animus/src)
 target_link_libraries(
-    animus_vehicle_visual_style_tests PRIVATE animus_telemetry_core GTest::gtest_main
+    animus_vehicle_visual_style_tests PRIVATE animus_telemetry_core animus_vehicle_core
+                                              GTest::gtest_main
+)
+target_compile_definitions(
+    animus_vehicle_visual_style_tests PRIVATE ANIMUS_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 animus_enable_warnings(animus_vehicle_visual_style_tests)
 gtest_discover_tests(animus_vehicle_visual_style_tests)

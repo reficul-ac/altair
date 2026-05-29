@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "plot_config.hpp"
+#include "vehicle_visual_assignment.hpp"
 
 namespace animus::app
 {
@@ -116,6 +117,7 @@ struct AppConfig
     std::size_t telemetry_live_max_samples = 20000U;
     std::size_t telemetry_live_render_max_points = 1000U;
     AppConfigStatusThresholds status_thresholds;
+    VehicleVisualAssignments vehicle_visuals;
     PlotShelfConfig plots = default_plot_shelf_config();
     std::map<std::string, AppWorkspaceLayout> workspace_layouts;
 

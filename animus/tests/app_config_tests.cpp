@@ -86,6 +86,9 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     config.overlays.push_back({"overlay.tif", true, 0.5F, 3, "geotiff:overlay.tif"});
     config.plots.paused = true;
     config.plots.plots.front().title = "Round Trip Plot";
+    config.vehicle_visuals.defaults_by_type["rc_plane"] = "animus.rc_plane.generic";
+    config.vehicle_visuals.entities["1:1"] = {
+        "animus.rc_plane.generic", true, 1.5F, "none", "terrain_resolved"};
     config.workspace_layouts["analyze"] = animus::app::default_workspace_layout("analyze");
     config.workspace_layouts["analyze"].main_panel = {200.0F, 80.0F, 520.0F, 460.0F};
     config.workspace_layouts["analyze"].plot_shelf_height_px = 320.0F;
@@ -125,6 +128,13 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     EXPECT_EQ(load.config.telemetry_live_udp_port, 14560U);
     EXPECT_TRUE(load.config.plots.paused);
     EXPECT_EQ(load.config.plots.plots.front().title, "Round Trip Plot");
+    ASSERT_TRUE(load.config.vehicle_visuals.defaults_by_type.contains("rc_plane"));
+    EXPECT_EQ(load.config.vehicle_visuals.defaults_by_type.at("rc_plane"),
+              "animus.rc_plane.generic");
+    ASSERT_TRUE(load.config.vehicle_visuals.entities.contains("1:1"));
+    EXPECT_TRUE(load.config.vehicle_visuals.entities.at("1:1").force_icon_only);
+    EXPECT_FLOAT_EQ(load.config.vehicle_visuals.entities.at("1:1").scale, 1.5F);
+    EXPECT_EQ(load.config.vehicle_visuals.entities.at("1:1").heading_source, "none");
     ASSERT_TRUE(load.config.workspace_layouts.contains("analyze"));
     EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").main_panel.x, 200.0F);
     EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").main_panel.width, 520.0F);
@@ -157,6 +167,17 @@ TEST(AnimusAppConfig, ReportsInvalidValuesAndKeepsDefaults)
                << "  geotiff_overlay_opacity: 9\n  bathymetry_opacity: -0.5\n"
                << "  mystery_layer: true\n"
                << "telemetry:\n  live_udp_port: 70000\n";
+        output << "vehicle_visuals:\n"
+               << "  unknown: true\n"
+               << "  defaults_by_type: []\n"
+               << "  entities:\n"
+               << "    bad-key:\n"
+               << "      vehicle_id: \"\"\n"
+               << "    \"1:1\":\n"
+               << "      vehicle_id: \"\"\n"
+               << "      scale: -2\n"
+               << "      heading_source: sideways\n"
+               << "      altitude_placement: pressure\n";
     }
 
     const auto load = animus::app::load_app_config_file(path);
@@ -170,6 +191,11 @@ TEST(AnimusAppConfig, ReportsInvalidValuesAndKeepsDefaults)
     EXPECT_TRUE(has_diagnostic(load.diagnostics, "bathymetry_opacity"));
     EXPECT_TRUE(has_diagnostic(load.diagnostics, "unknown config key: layers.mystery_layer"));
     EXPECT_TRUE(has_diagnostic(load.diagnostics, "live_udp_port"));
+    EXPECT_TRUE(has_diagnostic(load.diagnostics, "unknown config key: vehicle_visuals.unknown"));
+    EXPECT_TRUE(has_diagnostic(load.diagnostics, "vehicle_visuals.defaults_by_type"));
+    EXPECT_TRUE(has_diagnostic(load.diagnostics, "bad-key"));
+    EXPECT_TRUE(has_diagnostic(load.diagnostics, "heading_source"));
+    EXPECT_TRUE(has_diagnostic(load.diagnostics, "altitude_placement"));
 
     std::filesystem::remove(path);
 }

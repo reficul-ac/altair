@@ -133,12 +133,33 @@ struct TelemetryPlaybackState
 
 struct VehicleRuntimeStatus
 {
+    struct Definition
+    {
+        std::string id;
+        std::string name;
+        std::string type;
+        std::string model_status = "not loaded";
+        bool model_loaded = false;
+    };
+
     std::size_t registry_package_count = 0;
     std::string default_vehicle_id;
     std::string default_vehicle_name = "Generic RC Plane";
     std::string default_vehicle_type = "rc_plane";
     std::string model_status = "not loaded";
     bool model_loaded = false;
+    std::vector<Definition> definitions;
+    std::string selected_detected_type = "unknown";
+    std::string selected_vehicle_id = "animus.rc_plane.generic";
+    std::string selected_vehicle_name = "Generic RC Plane";
+    std::string selected_vehicle_type = "rc_plane";
+    std::string selected_model_status = "fallback icon";
+    std::string selected_fallback_reason;
+    std::string selected_heading_source = "auto";
+    std::string selected_altitude_placement = "terrain_resolved";
+    bool selected_model_loaded = false;
+    bool selected_force_icon_only = false;
+    float selected_scale = 1.0F;
     std::vector<std::string> diagnostics;
 };
 

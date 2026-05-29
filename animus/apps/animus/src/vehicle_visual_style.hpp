@@ -1,9 +1,12 @@
 #pragma once
 
 #include "animus/telemetry_core/telemetry.hpp"
+#include "animus/vehicle_core/vehicle_definition.hpp"
+#include "vehicle_visual_assignment.hpp"
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -85,6 +88,23 @@ struct VehicleVisualState
     bool degraded = false;
 };
 
+struct VehicleResolvedVisual
+{
+    std::string entity_key;
+    std::string detected_type = "unknown";
+    std::string vehicle_id = "animus.rc_plane.generic";
+    std::string vehicle_name = "Generic RC Plane";
+    std::string vehicle_type = "rc_plane";
+    VehicleVisualKind icon_kind = VehicleVisualKind::FixedWing;
+    bool force_icon_only = false;
+    float scale = 1.0F;
+    std::string heading_source = "auto";
+    std::string altitude_placement = "terrain_resolved";
+    bool model_loaded = false;
+    std::string model_status = "fallback icon";
+    std::string fallback_reason;
+};
+
 class VehicleVisualRegistry
 {
   public:
@@ -103,9 +123,23 @@ class VehicleVisualRegistry
 };
 
 [[nodiscard]] VehicleVisualKind default_vehicle_visual_kind();
+[[nodiscard]] std::string vehicle_assignment_entity_key(animus::telemetry_core::EntityId entity_id);
+[[nodiscard]] std::optional<animus::telemetry_core::EntityId>
+parse_vehicle_assignment_entity_key(std::string_view key);
+[[nodiscard]] VehicleVisualKind
+vehicle_visual_kind_for_type(animus::vehicle_core::VehicleType type);
+[[nodiscard]] VehicleResolvedVisual
+resolve_vehicle_visual(const animus::vehicle_core::VehicleRegistry &vehicle_registry,
+                       const VehicleVisualAssignments &assignments,
+                       const animus::telemetry_core::Entity &entity,
+                       bool assigned_model_loaded,
+                       std::string_view assigned_model_status);
 [[nodiscard]] const VehicleVisualStyle &
 resolve_entity_visual_style(const VehicleVisualRegistry &registry,
                             const animus::telemetry_core::Entity &entity);
+[[nodiscard]] const VehicleVisualStyle &
+resolve_entity_visual_style(const VehicleVisualRegistry &registry,
+                            const VehicleResolvedVisual &visual);
 [[nodiscard]] std::string vehicle_visual_label(const VehicleVisualStyle &style,
                                                animus::telemetry_core::EntityId entity_id,
                                                bool stale);

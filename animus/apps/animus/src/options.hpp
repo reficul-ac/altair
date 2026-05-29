@@ -77,6 +77,7 @@ struct Options
     bool telemetry_diagnostics_visible = false;
     bool mavlink_inspector_visible = true;
     AppConfigStatusThresholds status_thresholds;
+    VehicleVisualAssignments vehicle_visuals;
     std::map<std::string, AppWorkspaceLayout> workspace_layouts;
     bool developer_workspace = false;
     std::filesystem::path capture_ppm;
