@@ -107,6 +107,22 @@ animus_enable_warnings(animus_telemetry_signal_catalog_tests)
 gtest_discover_tests(animus_telemetry_signal_catalog_tests)
 
 add_executable(
+    animus_mavlink_inspector_tests
+    ../apps/animus/src/mavlink_inspector.cpp
+    ../apps/animus/src/plot_config.cpp
+    ../apps/animus/src/plot_series_buffer.cpp
+    ../apps/animus/src/telemetry_signal_catalog.cpp
+    mavlink_inspector_tests.cpp
+)
+target_include_directories(animus_mavlink_inspector_tests PRIVATE ../apps/animus/src)
+target_link_libraries(
+    animus_mavlink_inspector_tests PRIVATE animus_telemetry_core animus_telemetry_live
+                                           GTest::gtest_main yaml-cpp::yaml-cpp
+)
+animus_enable_warnings(animus_mavlink_inspector_tests)
+gtest_discover_tests(animus_mavlink_inspector_tests)
+
+add_executable(
     animus_plot_series_buffer_tests ../apps/animus/src/plot_series_buffer.cpp
                                     plot_series_buffer_tests.cpp
 )

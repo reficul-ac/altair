@@ -656,6 +656,7 @@ void apply_app_config_to_options(Options &options, const AppConfig &config)
     options.use_bathymetry = config.bathymetry_enabled;
     options.developer_diagnostics_visible = config.developer_diagnostics_visible;
     options.telemetry_diagnostics_visible = config.telemetry_diagnostics_visible;
+    options.mavlink_inspector_visible = config.mavlink_inspector_visible;
     options.overlay_enabled = config.overlay_enabled;
     options.overlay_opacity = config.overlay_opacity;
     options.status_thresholds = config.status_thresholds;
@@ -692,6 +693,7 @@ AppConfig app_config_from_options(const Options &options)
     config.bathymetry_enabled = options.use_bathymetry;
     config.developer_diagnostics_visible = options.developer_diagnostics_visible;
     config.telemetry_diagnostics_visible = options.telemetry_diagnostics_visible;
+    config.mavlink_inspector_visible = options.mavlink_inspector_visible;
     config.overlay_enabled = options.overlay_enabled;
     config.overlay_opacity = options.overlay_opacity;
     for (const OverlayLayerConfig &overlay : options.overlays)

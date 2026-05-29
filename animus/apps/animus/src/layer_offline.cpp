@@ -106,22 +106,23 @@ std::size_t estimate_prewarm_tile_count(const animus::geo_core::GeoBounds bounds
     std::size_t count = 0U;
     for (int z = min_z; z <= max_z; ++z)
     {
-        const auto west_south = animus::geo_core::lat_lon_to_tile(bounds.south_deg, bounds.west_deg, z);
-        const auto east_north = animus::geo_core::lat_lon_to_tile(bounds.north_deg, bounds.east_deg, z);
+        const auto west_south =
+            animus::geo_core::lat_lon_to_tile(bounds.south_deg, bounds.west_deg, z);
+        const auto east_north =
+            animus::geo_core::lat_lon_to_tile(bounds.north_deg, bounds.east_deg, z);
         const int x0 = std::min(west_south.x, east_north.x);
         const int x1 = std::max(west_south.x, east_north.x);
         const int y0 = std::min(west_south.y, east_north.y);
         const int y1 = std::max(west_south.y, east_north.y);
-        count += static_cast<std::size_t>(x1 - x0 + 1) *
-                 static_cast<std::size_t>(y1 - y0 + 1);
+        count += static_cast<std::size_t>(x1 - x0 + 1) * static_cast<std::size_t>(y1 - y0 + 1);
     }
     return count;
 }
 
-PrewarmPreview build_prewarm_preview(
-    const Options &options,
-    const std::filesystem::path &pack_root,
-    const std::vector<animus::terrain_core::TileRenderDecision> &visible_tiles)
+PrewarmPreview
+build_prewarm_preview(const Options &options,
+                      const std::filesystem::path &pack_root,
+                      const std::vector<animus::terrain_core::TileRenderDecision> &visible_tiles)
 {
     PrewarmPreview preview;
     preview.bounds =
@@ -130,11 +131,10 @@ PrewarmPreview build_prewarm_preview(
     preview.layers = prewarm_layers(options);
 
     std::ostringstream command;
-    command << "python3 animus/tools/prewarm_cache.py"
-            << " --bbox " << shell_quote(format_bbox(preview.bounds)) << " --min-z "
-            << options.min_z << " --max-z " << options.max_z << " --pack-root "
-            << shell_quote(pack_root.string()) << " --cache-root "
-            << shell_quote(options.cache_root.string());
+    command << "python3 animus/tools/prewarm_cache.py" << " --bbox "
+            << shell_quote(format_bbox(preview.bounds)) << " --min-z " << options.min_z
+            << " --max-z " << options.max_z << " --pack-root " << shell_quote(pack_root.string())
+            << " --cache-root " << shell_quote(options.cache_root.string());
     if (preview.layers != "imagery,elevation")
     {
         command << " --layers " << shell_quote(preview.layers);

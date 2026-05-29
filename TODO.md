@@ -14,7 +14,7 @@ Reusable Bayek framework follow-up is tracked separately in
 ## Baseline Health
 
 - [ ] Keep CI green for formatting, Debug/Release CMake, and CTest.
-- [ ] Reformat `animus/apps/animus/src/layer_offline.cpp` and
+- [x] Reformat `animus/apps/animus/src/layer_offline.cpp` and
   `animus/apps/animus/src/layer_offline.hpp` so `format_repo.py --check` passes
   without touching unrelated files.
 

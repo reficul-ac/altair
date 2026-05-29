@@ -340,6 +340,7 @@ void apply_options_to_ui(const Options &options, UiState &ui_state, Map2DCamera 
     ui_state.bathymetry_enabled = options.use_bathymetry;
     ui_state.developer_diagnostics_visible = options.developer_diagnostics_visible;
     ui_state.telemetry_diagnostics_visible = options.telemetry_diagnostics_visible;
+    ui_state.mavlink_inspector_visible = options.mavlink_inspector_visible;
     map_camera.orientation = map_orientation_from_config_value(options.map_orientation);
 }
 
@@ -359,6 +360,7 @@ void sync_options_from_ui(Options &options,
     options.use_bathymetry = ui_state.bathymetry_enabled;
     options.developer_diagnostics_visible = ui_state.developer_diagnostics_visible;
     options.telemetry_diagnostics_visible = ui_state.telemetry_diagnostics_visible;
+    options.mavlink_inspector_visible = ui_state.mavlink_inspector_visible;
     options.overlay_enabled = overlay_enabled;
     options.overlay_opacity = overlay_opacity;
     for (animus::app::OverlayLayerConfig &layer : options.overlays)

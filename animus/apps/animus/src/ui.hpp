@@ -175,6 +175,7 @@ struct UiState
     InspectorTarget inspector_target = InspectorTarget::Terrain;
     bool developer_diagnostics_visible = false;
     bool telemetry_diagnostics_visible = false;
+    bool mavlink_inspector_visible = true;
     bool telemetry_entity_selected = false;
     bool telemetry_tracks_visible = true;
     bool telemetry_labels_visible = true;
@@ -194,6 +195,7 @@ struct UiState
     int zoom_steps = 0;
     std::array<char, 64> telemetry_entity_filter{};
     std::array<char, 96> signal_filter{};
+    std::uint32_t selected_mavlink_inspector_message_id = 0U;
     TelemetryEventFilters telemetry_event_filters;
     std::vector<TimelineBookmark> timeline_bookmarks;
     std::vector<TimelineReviewMarker> timeline_frame_time_markers;

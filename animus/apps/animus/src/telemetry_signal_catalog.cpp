@@ -200,6 +200,29 @@ double message_time_s(const animus::telemetry_core::MavlinkMessage &message,
     return receive_time_s.value_or(0.0);
 }
 
+std::string mavlink_message_name(const std::uint32_t message_id)
+{
+    for (const animus::telemetry_core::MavlinkFieldDefinition &field :
+         animus::telemetry_core::mavlink_supported_fields())
+    {
+        if (field.message_id == message_id)
+        {
+            return std::string(field.message_name);
+        }
+    }
+    return {};
+}
+
+double approximate_hz(const std::deque<double> &times)
+{
+    if (times.size() < 2U)
+    {
+        return 0.0;
+    }
+    const double span_s = times.back() - times.front();
+    return span_s > 0.0 ? static_cast<double>(times.size() - 1U) / span_s : 0.0;
+}
+
 } // namespace
 
 std::uint32_t mavlink_message_id(const std::string_view message_name)
@@ -240,6 +263,14 @@ void MavlinkValueStore::ingest_messages(
     for (const animus::telemetry_core::MavlinkMessage &message : messages)
     {
         const double time_s = message_time_s(message, receive_time_s);
+        const std::string message_name = mavlink_message_name(message.message_id);
+        if (!message_name.empty())
+        {
+            record_message(
+                MessageKey{.entity_id = message.entity_id, .message_id = message.message_id},
+                message_name,
+                time_s);
+        }
         for (const animus::telemetry_core::MavlinkFieldDefinition &field :
              animus::telemetry_core::mavlink_supported_fields())
         {
@@ -292,7 +323,9 @@ MavlinkValueStats MavlinkValueStore::stats(const animus::telemetry_core::EntityI
     result.count = state.count;
     result.latest_value = state.latest_value;
     result.latest_time_s = state.latest_time_s;
+    result.last_changed_time_s = state.last_changed_time_s;
     result.last_age_s = std::max(0.0, now_s - state.latest_time_s);
+    result.last_changed_age_s = std::max(0.0, now_s - state.last_changed_time_s);
     result.min_value = state.min_value;
     result.max_value = state.max_value;
     result.retained_samples = state.history.size();
@@ -303,6 +336,118 @@ MavlinkValueStats MavlinkValueStore::stats(const animus::telemetry_core::EntityI
         {
             result.approximate_hz = static_cast<double>(state.history.size() - 1U) / span_s;
         }
+    }
+    return result;
+}
+
+std::vector<MavlinkMessageStats>
+MavlinkValueStore::observed_messages(const animus::telemetry_core::EntityId &entity_id,
+                                     const double now_s) const
+{
+    std::vector<MavlinkMessageStats> result;
+    for (const auto &[key, state] : messages_)
+    {
+        if (key.entity_id != entity_id)
+        {
+            continue;
+        }
+        MavlinkMessageStats stats;
+        stats.entity_id = key.entity_id;
+        stats.message_id = key.message_id;
+        stats.message_name = state.message_name;
+        stats.approximate_hz = approximate_hz(state.history_times_s);
+        stats.last_age_s = std::max(0.0, now_s - state.latest_time_s);
+        stats.count = state.count;
+        bool observed_nonnumeric = false;
+        bool supported_not_observed = false;
+        for (const auto &[field_key, field_state] : fields_)
+        {
+            if (field_key.entity_id != key.entity_id || field_key.message_id != key.message_id)
+            {
+                continue;
+            }
+            if (field_state.status == MavlinkFieldObservationStatus::ObservedNumeric)
+            {
+                ++stats.observed_numeric_field_count;
+            }
+            else if (field_state.status == MavlinkFieldObservationStatus::ObservedNonNumeric)
+            {
+                observed_nonnumeric = true;
+            }
+            else if (field_state.status == MavlinkFieldObservationStatus::SupportedNotObserved)
+            {
+                supported_not_observed = true;
+            }
+        }
+        if (stats.observed_numeric_field_count > 0U)
+        {
+            stats.status = MavlinkFieldObservationStatus::ObservedNumeric;
+        }
+        else if (observed_nonnumeric)
+        {
+            stats.status = MavlinkFieldObservationStatus::ObservedNonNumeric;
+        }
+        else if (supported_not_observed)
+        {
+            stats.status = MavlinkFieldObservationStatus::SupportedNotObserved;
+        }
+        result.push_back(std::move(stats));
+    }
+    std::sort(result.begin(),
+              result.end(),
+              [](const MavlinkMessageStats &lhs, const MavlinkMessageStats &rhs)
+              {
+                  if (lhs.message_name != rhs.message_name)
+                  {
+                      return lhs.message_name < rhs.message_name;
+                  }
+                  return lhs.message_id < rhs.message_id;
+              });
+    return result;
+}
+
+std::vector<MavlinkInspectorFieldStats>
+MavlinkValueStore::observed_fields(const animus::telemetry_core::EntityId &entity_id,
+                                   const std::uint32_t message_id,
+                                   const double now_s) const
+{
+    std::vector<MavlinkInspectorFieldStats> result;
+    for (const animus::telemetry_core::MavlinkFieldDefinition &definition :
+         animus::telemetry_core::mavlink_supported_fields())
+    {
+        if (definition.message_id != message_id)
+        {
+            continue;
+        }
+        const MavlinkFieldKey key{
+            .entity_id = entity_id,
+            .message_id = message_id,
+            .field_name = std::string(definition.field_name),
+        };
+        const auto found = fields_.find(key);
+        if (found == fields_.end())
+        {
+            continue;
+        }
+        const FieldState &state = found->second;
+        result.push_back(MavlinkInspectorFieldStats{
+            .entity_id = entity_id,
+            .message_id = message_id,
+            .message_name = std::string(definition.message_name),
+            .field_name = std::string(definition.field_name),
+            .display_name = std::string(definition.display_name),
+            .unit = std::string(definition.unit),
+            .numeric = definition.numeric,
+            .status = state.status,
+            .count = state.count,
+            .latest_value = state.latest_value,
+            .latest_time_s = state.latest_time_s,
+            .last_age_s = std::max(0.0, now_s - state.latest_time_s),
+            .last_changed_time_s = state.last_changed_time_s,
+            .last_changed_age_s = std::max(0.0, now_s - state.last_changed_time_s),
+            .min_value = state.min_value,
+            .max_value = state.max_value,
+        });
     }
     return result;
 }
@@ -354,9 +499,14 @@ void MavlinkValueStore::record_numeric(const MavlinkFieldKey &key,
 {
     FieldState &state = fields_[key];
     state.status = MavlinkFieldObservationStatus::ObservedNumeric;
+    const bool changed = !state.latest_value || *state.latest_value != value;
     ++state.count;
     state.latest_value = value;
     state.latest_time_s = time_s;
+    if (changed)
+    {
+        state.last_changed_time_s = time_s;
+    }
     state.min_value = state.min_value ? std::min(*state.min_value, value) : value;
     state.max_value = state.max_value ? std::max(*state.max_value, value) : value;
     state.history.push_back(MavlinkStoredSample{.time_s = time_s, .value = value});
@@ -369,6 +519,19 @@ void MavlinkValueStore::record_nonnumeric(const MavlinkFieldKey &key, const doub
     state.status = MavlinkFieldObservationStatus::ObservedNonNumeric;
     ++state.count;
     state.latest_time_s = time_s;
+    state.last_changed_time_s = time_s;
+}
+
+void MavlinkValueStore::record_message(const MessageKey &key,
+                                       std::string message_name,
+                                       const double time_s)
+{
+    MessageState &state = messages_[key];
+    state.message_name = std::move(message_name);
+    ++state.count;
+    state.latest_time_s = time_s;
+    state.history_times_s.push_back(time_s);
+    prune(state, time_s);
 }
 
 void MavlinkValueStore::prune(FieldState &state, const double newest_time_s) const
@@ -385,6 +548,23 @@ void MavlinkValueStore::prune(FieldState &state, const double newest_time_s) con
            state.history.size() > config_.max_samples_per_field)
     {
         state.history.pop_front();
+    }
+}
+
+void MavlinkValueStore::prune(MessageState &state, const double newest_time_s) const
+{
+    if (config_.history_seconds > 0.0)
+    {
+        const double oldest = newest_time_s - config_.history_seconds;
+        while (!state.history_times_s.empty() && state.history_times_s.front() < oldest)
+        {
+            state.history_times_s.pop_front();
+        }
+    }
+    while (config_.max_samples_per_field > 0U &&
+           state.history_times_s.size() > config_.max_samples_per_field)
+    {
+        state.history_times_s.pop_front();
     }
 }
 

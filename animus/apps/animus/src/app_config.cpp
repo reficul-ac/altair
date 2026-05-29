@@ -453,7 +453,8 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
                        "telemetry_labels_visible",
                        "bathymetry_enabled",
                        "developer_diagnostics_visible",
-                       "telemetry_diagnostics_visible"},
+                       "telemetry_diagnostics_visible",
+                       "mavlink_inspector_visible"},
                       "panels.",
                       result.diagnostics);
     read_value(panels, "active", result.config.active_panel, result.diagnostics);
@@ -473,6 +474,10 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
     read_value(panels,
                "telemetry_diagnostics_visible",
                result.config.telemetry_diagnostics_visible,
+               result.diagnostics);
+    read_value(panels,
+               "mavlink_inspector_visible",
+               result.config.mavlink_inspector_visible,
                result.diagnostics);
 
     const YAML::Node layers = root["layers"];
@@ -604,6 +609,8 @@ AppConfigSaveResult save_app_config_file(const std::filesystem::path &path, cons
         << config.developer_diagnostics_visible;
     out << YAML::Key << "telemetry_diagnostics_visible" << YAML::Value
         << config.telemetry_diagnostics_visible;
+    out << YAML::Key << "mavlink_inspector_visible" << YAML::Value
+        << config.mavlink_inspector_visible;
     out << YAML::EndMap;
     out << YAML::Key << "layers" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "overlay_enabled" << YAML::Value << config.overlay_enabled;

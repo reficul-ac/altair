@@ -50,6 +50,7 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     config.map_orientation = "track_up";
     config.overlay_enabled = false;
     config.overlay_opacity = 0.25F;
+    config.mavlink_inspector_visible = false;
     config.telemetry_live_udp_host = "0.0.0.0";
     config.telemetry_live_udp_port = 14560U;
     config.overlays.push_back({"overlay.tif", true, 0.5F, 3, "geotiff:overlay.tif"});
@@ -68,6 +69,7 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     EXPECT_EQ(load.config.map_orientation, "track_up");
     EXPECT_FALSE(load.config.overlay_enabled);
     EXPECT_FLOAT_EQ(load.config.overlay_opacity, 0.25F);
+    EXPECT_FALSE(load.config.mavlink_inspector_visible);
     ASSERT_EQ(load.config.overlays.size(), 1U);
     EXPECT_EQ(load.config.overlays.front().path.string(), "overlay.tif");
     EXPECT_EQ(load.config.telemetry_live_udp_host, "0.0.0.0");

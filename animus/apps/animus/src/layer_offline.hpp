@@ -26,13 +26,12 @@ view_bounds_from_tiles(const std::vector<animus::terrain_core::TileRenderDecisio
                        int fallback_x,
                        int fallback_y);
 
-[[nodiscard]] std::size_t estimate_prewarm_tile_count(animus::geo_core::GeoBounds bounds,
-                                                      int min_z,
-                                                      int max_z);
+[[nodiscard]] std::size_t
+estimate_prewarm_tile_count(animus::geo_core::GeoBounds bounds, int min_z, int max_z);
 
-[[nodiscard]] PrewarmPreview build_prewarm_preview(
-    const Options &options,
-    const std::filesystem::path &pack_root,
-    const std::vector<animus::terrain_core::TileRenderDecision> &visible_tiles);
+[[nodiscard]] PrewarmPreview
+build_prewarm_preview(const Options &options,
+                      const std::filesystem::path &pack_root,
+                      const std::vector<animus::terrain_core::TileRenderDecision> &visible_tiles);
 
 } // namespace animus::app

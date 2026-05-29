@@ -116,11 +116,47 @@ struct MavlinkValueStats
     std::uint64_t count = 0;
     std::optional<double> latest_value;
     double latest_time_s = 0.0;
+    double last_changed_time_s = 0.0;
     double approximate_hz = 0.0;
     double last_age_s = 0.0;
+    double last_changed_age_s = 0.0;
     std::optional<double> min_value;
     std::optional<double> max_value;
     std::size_t retained_samples = 0U;
+};
+
+struct MavlinkMessageStats
+{
+    animus::telemetry_core::EntityId entity_id;
+    std::uint32_t message_id = 0;
+    std::string message_name;
+    double approximate_hz = 0.0;
+    double last_age_s = 0.0;
+    std::uint64_t count = 0;
+    std::size_t observed_numeric_field_count = 0U;
+    animus::telemetry_core::MavlinkFieldObservationStatus status =
+        animus::telemetry_core::MavlinkFieldObservationStatus::SupportedNotObserved;
+};
+
+struct MavlinkInspectorFieldStats
+{
+    animus::telemetry_core::EntityId entity_id;
+    std::uint32_t message_id = 0;
+    std::string message_name;
+    std::string field_name;
+    std::string display_name;
+    std::string unit;
+    bool numeric = false;
+    animus::telemetry_core::MavlinkFieldObservationStatus status =
+        animus::telemetry_core::MavlinkFieldObservationStatus::SupportedNotObserved;
+    std::uint64_t count = 0;
+    std::optional<double> latest_value;
+    double latest_time_s = 0.0;
+    double last_age_s = 0.0;
+    double last_changed_time_s = 0.0;
+    double last_changed_age_s = 0.0;
+    std::optional<double> min_value;
+    std::optional<double> max_value;
 };
 
 class MavlinkValueStore
@@ -137,6 +173,12 @@ class MavlinkValueStore
                                           std::uint32_t message_id,
                                           const std::string &field_name,
                                           double now_s) const;
+    [[nodiscard]] std::vector<MavlinkMessageStats>
+    observed_messages(const animus::telemetry_core::EntityId &entity_id, double now_s) const;
+    [[nodiscard]] std::vector<MavlinkInspectorFieldStats>
+    observed_fields(const animus::telemetry_core::EntityId &entity_id,
+                    std::uint32_t message_id,
+                    double now_s) const;
     [[nodiscard]] std::optional<MavlinkStoredSample>
     latest(const animus::telemetry_core::EntityId &entity_id,
            std::uint32_t message_id,
@@ -155,16 +197,36 @@ class MavlinkValueStore
         std::deque<MavlinkStoredSample> history;
         std::optional<double> latest_value;
         double latest_time_s = 0.0;
+        double last_changed_time_s = 0.0;
         std::optional<double> min_value;
         std::optional<double> max_value;
     };
 
+    struct MessageKey
+    {
+        animus::telemetry_core::EntityId entity_id;
+        std::uint32_t message_id = 0;
+
+        auto operator<=>(const MessageKey &) const = default;
+    };
+
+    struct MessageState
+    {
+        std::string message_name;
+        std::uint64_t count = 0;
+        double latest_time_s = 0.0;
+        std::deque<double> history_times_s;
+    };
+
     void record_numeric(const MavlinkFieldKey &key, double time_s, double value);
     void record_nonnumeric(const MavlinkFieldKey &key, double time_s);
+    void record_message(const MessageKey &key, std::string message_name, double time_s);
     void prune(FieldState &state, double newest_time_s) const;
+    void prune(MessageState &state, double newest_time_s) const;
 
     MavlinkValueStoreConfig config_;
     std::map<MavlinkFieldKey, FieldState> fields_;
+    std::map<MessageKey, MessageState> messages_;
 };
 
 class SignalCatalog

@@ -9,6 +9,7 @@ add_executable(
     src/capture.cpp
     src/forward_clearance.cpp
     src/layer_offline.cpp
+    src/mavlink_inspector.cpp
     src/options.cpp
     src/plot_config.cpp
     src/plot_series_buffer.cpp

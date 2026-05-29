@@ -298,7 +298,7 @@ Audit artifact: [Animus Test Flight View Phase 0 Audit](animus_test_flight_view_
 
 #### Phase 1: Broader Persistent YAML App Config
 
-Status: planned.
+Status: complete.
 
 Goal: add broader user-editable YAML app config so a user can configure view,
 panels, plot layout, map mode, thresholds, and preferred defaults, save them,
@@ -760,11 +760,11 @@ Field path examples:
 
 Acceptance:
 
-- Inspector shows observed decoded messages.
-- Shows Hz, age, count, numeric fields.
-- Plot this creates a strip plot series.
-- Visibility persists.
-- Unsupported messages are not faked.
+- [x] Inspector shows observed decoded messages.
+- [x] Shows Hz, age, count, numeric fields.
+- [x] Plot this creates a strip plot series.
+- [x] Visibility persists.
+- [x] Unsupported messages are not faked.
 
 #### Phase 9: Operator Workspaces And Layout Presets
 

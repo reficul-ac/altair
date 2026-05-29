@@ -51,6 +51,7 @@ struct AppConfig
     bool bathymetry_enabled = false;
     bool developer_diagnostics_visible = false;
     bool telemetry_diagnostics_visible = false;
+    bool mavlink_inspector_visible = true;
     bool overlay_enabled = true;
     float overlay_opacity = 0.65F;
     std::vector<AppConfigOverlay> overlays;

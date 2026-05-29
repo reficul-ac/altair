@@ -2,8 +2,10 @@
 
 #include "animus/telemetry_core/mavlink.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -33,6 +35,13 @@ void push_u32(std::vector<std::uint8_t> &payload, const std::uint32_t value)
 void push_i32(std::vector<std::uint8_t> &payload, const std::int32_t value)
 {
     push_u32(payload, static_cast<std::uint32_t>(value));
+}
+
+void push_f32(std::vector<std::uint8_t> &payload, const float value)
+{
+    std::uint32_t bits = 0U;
+    std::memcpy(&bits, &value, sizeof(bits));
+    push_u32(payload, bits);
 }
 
 std::vector<std::uint8_t> frame_v1(const std::uint8_t sequence,
@@ -71,6 +80,19 @@ std::vector<std::uint8_t> global_position_payload(const std::uint32_t time_ms,
 std::vector<std::uint8_t> heartbeat_payload()
 {
     return {2U, 3U, 4U, 5U, 6U, 7U, 8U, 3U, 0U};
+}
+
+std::vector<std::uint8_t> attitude_payload(const std::uint32_t time_ms, const float roll)
+{
+    std::vector<std::uint8_t> payload;
+    push_u32(payload, time_ms);
+    push_f32(payload, roll);
+    push_f32(payload, 0.2F);
+    push_f32(payload, 0.3F);
+    push_f32(payload, 0.01F);
+    push_f32(payload, 0.02F);
+    push_f32(payload, 0.03F);
+    return payload;
 }
 
 animus::telemetry_core::TelemetrySample sample_fixture()
@@ -251,4 +273,104 @@ TEST(TelemetrySignalCatalog, MavlinkExtractionRejectsNonNumeric)
     const auto sample =
         catalog.extract_mavlink(ref, store, 1.0, animus::app::SignalTransform::None);
     EXPECT_EQ(sample.status, animus::app::SignalSampleStatus::NonNumeric);
+}
+
+TEST(TelemetrySignalCatalog, MavlinkInspectorSummarizesObservedMessages)
+{
+    animus::app::MavlinkValueStore store({.max_samples_per_field = 8U, .history_seconds = 10.0});
+    for (int index = 0; index < 3; ++index)
+    {
+        const auto frame =
+            frame_v1(static_cast<std::uint8_t>(index),
+                     33,
+                     global_position_payload(static_cast<std::uint32_t>(index) * 500U,
+                                             39.0,
+                                             -120.0,
+                                             1500000,
+                                             100000 + index * 1000));
+        animus::telemetry_live::ParsedUdpMavlinkDatagram datagram;
+        datagram.receive_time_s = static_cast<double>(index) * 0.5;
+        datagram.byte_count = frame.size();
+        datagram.parsed = animus::telemetry_core::parse_mavlink_stream(frame);
+        store.ingest(datagram);
+    }
+
+    const std::vector<animus::app::MavlinkMessageStats> messages =
+        store.observed_messages({1U, 1U}, 2.0);
+    ASSERT_EQ(messages.size(), 1U);
+    EXPECT_EQ(messages.front().message_name, "GLOBAL_POSITION_INT");
+    EXPECT_EQ(messages.front().count, 3U);
+    EXPECT_EQ(messages.front().observed_numeric_field_count, 9U);
+    EXPECT_NEAR(messages.front().approximate_hz, 2.0, 1.0e-9);
+    EXPECT_NEAR(messages.front().last_age_s, 1.0, 1.0e-9);
+    EXPECT_EQ(store.observed_messages({2U, 1U}, 2.0).size(), 0U);
+}
+
+TEST(TelemetrySignalCatalog, MavlinkInspectorReportsFieldLastChanged)
+{
+    animus::app::MavlinkValueStore store({.max_samples_per_field = 8U, .history_seconds = 10.0});
+    for (int index = 0; index < 3; ++index)
+    {
+        const auto frame = frame_v1(
+            static_cast<std::uint8_t>(index),
+            30,
+            attitude_payload(static_cast<std::uint32_t>(index) * 1000U, index == 2 ? 0.2F : 0.1F));
+        animus::telemetry_live::ParsedUdpMavlinkDatagram datagram;
+        datagram.receive_time_s = static_cast<double>(index);
+        datagram.byte_count = frame.size();
+        datagram.parsed = animus::telemetry_core::parse_mavlink_stream(frame);
+        store.ingest(datagram);
+    }
+
+    const std::vector<animus::app::MavlinkInspectorFieldStats> fields =
+        store.observed_fields({1U, 1U}, 30U, 4.0);
+    const auto roll = std::find_if(fields.begin(),
+                                   fields.end(),
+                                   [](const animus::app::MavlinkInspectorFieldStats &field)
+                                   { return field.field_name == "roll"; });
+    ASSERT_NE(roll, fields.end());
+    EXPECT_TRUE(roll->numeric);
+    EXPECT_EQ(roll->count, 3U);
+    EXPECT_NEAR(*roll->latest_value, 0.2, 1.0e-6);
+    EXPECT_NEAR(*roll->min_value, 0.1, 1.0e-6);
+    EXPECT_NEAR(*roll->max_value, 0.2, 1.0e-6);
+    EXPECT_NEAR(roll->last_changed_time_s, 2.0, 1.0e-9);
+    EXPECT_NEAR(roll->last_changed_age_s, 2.0, 1.0e-9);
+}
+
+TEST(TelemetrySignalCatalog, MavlinkInspectorIncludesNonNumericObservedFields)
+{
+    animus::app::MavlinkValueStore store;
+    const auto frame = frame_v1(1, 0, heartbeat_payload());
+    animus::telemetry_live::ParsedUdpMavlinkDatagram datagram;
+    datagram.receive_time_s = 1.0;
+    datagram.byte_count = frame.size();
+    datagram.parsed = animus::telemetry_core::parse_mavlink_stream(frame);
+    store.ingest(datagram);
+
+    const std::vector<animus::app::MavlinkInspectorFieldStats> fields =
+        store.observed_fields({1U, 1U}, 0U, 2.0);
+    const auto type = std::find_if(fields.begin(),
+                                   fields.end(),
+                                   [](const animus::app::MavlinkInspectorFieldStats &field)
+                                   { return field.field_name == "type"; });
+    ASSERT_NE(type, fields.end());
+    EXPECT_FALSE(type->numeric);
+    EXPECT_EQ(type->status,
+              animus::telemetry_core::MavlinkFieldObservationStatus::ObservedNonNumeric);
+    EXPECT_FALSE(type->latest_value);
+}
+
+TEST(TelemetrySignalCatalog, MavlinkInspectorOmitsUnsupportedMessages)
+{
+    animus::app::MavlinkValueStore store;
+    const auto frame = frame_v1(1, 200, {});
+    animus::telemetry_live::ParsedUdpMavlinkDatagram datagram;
+    datagram.receive_time_s = 1.0;
+    datagram.byte_count = frame.size();
+    datagram.parsed = animus::telemetry_core::parse_mavlink_stream(frame);
+    ASSERT_EQ(datagram.parsed.messages.size(), 1U);
+    store.ingest(datagram);
+
+    EXPECT_TRUE(store.observed_messages({1U, 1U}, 2.0).empty());
 }

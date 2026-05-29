@@ -2,6 +2,7 @@
 
 #include "capture.hpp"
 #include "layer_offline.hpp"
+#include "mavlink_inspector.hpp"
 #include "plot_ui.hpp"
 #include "selected_vehicle_card.hpp"
 #include "status_ribbon.hpp"
@@ -1707,7 +1708,144 @@ void draw_signal_catalog_table(const char *label,
     ImGui::EndTable();
 }
 
-void draw_signals_panel(TelemetryPlaybackState &playback,
+std::string mavlink_numeric_value_label(const std::optional<double> value)
+{
+    return value ? format_value("%.6g", *value) : std::string("n/a");
+}
+
+void draw_mavlink_inspector(Options &options, TelemetryPlaybackState &playback, UiState &ui)
+{
+    if (!ui.mavlink_inspector_visible)
+    {
+        return;
+    }
+
+    const double now_s = playback.live ? playback.timeline.end_time_s : playback.clock.time_s();
+    const std::vector<MavlinkMessageStats> messages =
+        playback.mavlink_values.observed_messages(playback.selected_entity, now_s);
+    if (messages.empty())
+    {
+        ImGui::TextColored(text_muted, "No supported MAVLink messages observed for this entity.");
+        return;
+    }
+    const auto selected_message =
+        std::find_if(messages.begin(),
+                     messages.end(),
+                     [&ui](const MavlinkMessageStats &message)
+                     { return message.message_id == ui.selected_mavlink_inspector_message_id; });
+    if (selected_message == messages.end())
+    {
+        ui.selected_mavlink_inspector_message_id = messages.front().message_id;
+    }
+
+    if (ImGui::BeginTable("mavlink_inspector_messages",
+                          6,
+                          ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders |
+                              ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY,
+                          ImVec2(0.0F, 126.0F)))
+    {
+        ImGui::TableSetupColumn("message");
+        ImGui::TableSetupColumn("Hz");
+        ImGui::TableSetupColumn("age");
+        ImGui::TableSetupColumn("count");
+        ImGui::TableSetupColumn("fields");
+        ImGui::TableSetupColumn("status");
+        ImGui::TableHeadersRow();
+        for (const MavlinkMessageStats &message : messages)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            if (ImGui::Selectable(message.message_name.c_str(),
+                                  ui.selected_mavlink_inspector_message_id == message.message_id,
+                                  ImGuiSelectableFlags_SpanAllColumns))
+            {
+                ui.selected_mavlink_inspector_message_id = message.message_id;
+            }
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%.2f", message.approximate_hz);
+            ImGui::TableSetColumnIndex(2);
+            ImGui::Text("%.2f", message.last_age_s);
+            ImGui::TableSetColumnIndex(3);
+            ImGui::Text("%llu", static_cast<unsigned long long>(message.count));
+            ImGui::TableSetColumnIndex(4);
+            ImGui::Text("%zu", message.observed_numeric_field_count);
+            ImGui::TableSetColumnIndex(5);
+            ImGui::TextUnformatted(mavlink_observation_label(message.status));
+        }
+        ImGui::EndTable();
+    }
+
+    const std::vector<MavlinkInspectorFieldStats> fields = playback.mavlink_values.observed_fields(
+        playback.selected_entity, ui.selected_mavlink_inspector_message_id, now_s);
+    if (ImGui::BeginTable("mavlink_inspector_fields",
+                          5,
+                          ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders |
+                              ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY,
+                          ImVec2(0.0F, 156.0F)))
+    {
+        ImGui::TableSetupColumn("field");
+        ImGui::TableSetupColumn("current");
+        ImGui::TableSetupColumn("min");
+        ImGui::TableSetupColumn("max");
+        ImGui::TableSetupColumn("changed");
+        ImGui::TableHeadersRow();
+        const SignalCatalog catalog;
+        for (const MavlinkInspectorFieldStats &field : fields)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            const std::string row_id = field.message_name + "." + field.field_name;
+            ImGui::Selectable(row_id.c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
+            if (ImGui::BeginPopupContextItem(row_id.c_str()))
+            {
+                if (ImGui::MenuItem("Plot this", nullptr, false, field.numeric))
+                {
+                    plot_mavlink_inspector_field(options.plots,
+                                                 ui.plot_ui,
+                                                 catalog,
+                                                 field.message_name,
+                                                 field.field_name,
+                                                 MavlinkInspectorPlotTarget::Dedicated);
+                }
+                if (ImGui::MenuItem("Add to existing plot", nullptr, false, field.numeric))
+                {
+                    plot_mavlink_inspector_field(options.plots,
+                                                 ui.plot_ui,
+                                                 catalog,
+                                                 field.message_name,
+                                                 field.field_name,
+                                                 MavlinkInspectorPlotTarget::Existing);
+                }
+                if (ImGui::MenuItem("Copy field path"))
+                {
+                    ImGui::SetClipboardText(
+                        mavlink_inspector_field_path(field.message_name, field.field_name).c_str());
+                }
+                if (ImGui::MenuItem(
+                        "Copy current value", nullptr, false, field.latest_value.has_value()))
+                {
+                    ImGui::SetClipboardText(
+                        mavlink_numeric_value_label(field.latest_value).c_str());
+                }
+                ImGui::EndPopup();
+            }
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextUnformatted(field.numeric
+                                       ? mavlink_numeric_value_label(field.latest_value).c_str()
+                                       : "non-numeric");
+            ImGui::TableSetColumnIndex(2);
+            ImGui::TextUnformatted(mavlink_numeric_value_label(field.min_value).c_str());
+            ImGui::TableSetColumnIndex(3);
+            ImGui::TextUnformatted(mavlink_numeric_value_label(field.max_value).c_str());
+            ImGui::TableSetColumnIndex(4);
+            ImGui::Text("%.2f s", field.last_changed_age_s);
+        }
+        ImGui::EndTable();
+    }
+}
+
+void draw_signals_panel(Options &options,
+                        TelemetryPlaybackState &playback,
                         const RuntimeSignalInputs &runtime,
                         UiState &ui)
 {
@@ -1722,6 +1860,9 @@ void draw_signals_panel(TelemetryPlaybackState &playback,
     draw_signal_catalog_table("Derived", SignalSource::Derived, catalog, playback, runtime, ui);
     draw_signal_catalog_table("Runtime", SignalSource::Runtime, catalog, playback, runtime, ui);
     draw_signal_catalog_table("MAVLink", SignalSource::Mavlink, catalog, playback, runtime, ui);
+    ImGui::Separator();
+    ImGui::Checkbox("MAVLink Inspector", &ui.mavlink_inspector_visible);
+    draw_mavlink_inspector(options, playback, ui);
 }
 
 void draw_capture_panel(ScreenshotToolState &screenshot_tool,
@@ -2625,7 +2766,7 @@ void draw_app_workspace(Options &options,
         break;
     case UiNavigationMode::Signals:
         ui_state.inspector_target = InspectorTarget::TelemetrySource;
-        draw_signals_panel(playback, runtime_signals, ui_state);
+        draw_signals_panel(options, playback, runtime_signals, ui_state);
         break;
     case UiNavigationMode::Capture:
         ui_state.inspector_target = InspectorTarget::None;
