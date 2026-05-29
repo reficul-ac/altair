@@ -32,6 +32,13 @@ enum class TimelineReviewMarkerCategory
     FrameTime,
     PlanDeviation,
     PlanAltitude,
+    LowLinkHz,
+    TerrainFallback,
+    SpeedExcursion,
+    ClimbExcursion,
+    ModelFallback,
+    Capture,
+    Geofence,
 };
 
 struct TimelineReviewMarker
@@ -73,6 +80,8 @@ struct TerrainClearanceSample
     double time_s = 0.0;
     double clearance_m = 0.0;
     bool planned_path = false;
+    bool fallback = false;
+    bool synthetic = false;
 };
 
 struct TimelineReviewData
@@ -112,6 +121,9 @@ struct TimelineReviewThresholds
     double telemetry_gap_critical_s = 5.0;
     double plan_deviation_warning_m = 50.0;
     double plan_altitude_error_warning_m = 25.0;
+    double link_hz_warning = 2.0;
+    double speed_warning_mps = 40.0;
+    double climb_warning_mps = 8.0;
 };
 
 struct TimelineFrameTimeReviewState

@@ -171,6 +171,24 @@ TEST(SelectedVehicleCard, ValidSelectedEntityFormatsTelemetry)
     EXPECT_EQ(metric_value(model.motion_metrics, "Yaw"), "90.0 deg");
 }
 
+TEST(SelectedVehicleCard, ShowsPersistedTestMetadata)
+{
+    animus::app::UiState ui = selected_ui();
+    ui.selected_vehicle_test.test_name = "FT-12";
+    ui.selected_vehicle_test.phase = "Cruise";
+    ui.selected_vehicle_test.target_speed = "24 m/s";
+    ui.selected_vehicle_test.target_altitude = "150 m";
+    ui.selected_vehicle_test.target_heading = "090";
+
+    const auto model = build(playback_with_sample(), ui);
+
+    EXPECT_EQ(model.test, "FT-12");
+    EXPECT_EQ(model.phase, "Cruise");
+    EXPECT_NE(model.target.find("24 m/s"), std::string::npos);
+    EXPECT_NE(model.target.find("150 m"), std::string::npos);
+    EXPECT_NE(model.target.find("090"), std::string::npos);
+}
+
 TEST(SelectedVehicleCard, TerrainConfidenceLabelsCoverAllStates)
 {
     TelemetryPlaybackState playback = playback_with_sample();

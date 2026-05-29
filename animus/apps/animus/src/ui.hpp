@@ -116,6 +116,8 @@ struct TelemetryPlaybackState
     };
     SelectedEntityTerrain selected_entity_terrain;
     TimelineReviewData review;
+    std::optional<animus::telemetry_core::Timeline> ghost_baseline;
+    std::string ghost_diagnostic;
     animus::telemetry_core::EntityId selected_entity;
     std::string live_endpoint;
     animus::telemetry_live::UdpMavlinkReceiverStats receiver_stats;
@@ -202,6 +204,11 @@ struct UiState
     bool telemetry_entity_selected = false;
     bool telemetry_tracks_visible = true;
     bool telemetry_labels_visible = true;
+    std::size_t selected_entity_tail_points = 1000U;
+    SelectedVehicleTestMetadata selected_vehicle_test;
+    std::filesystem::path ghost_recent_baseline_path;
+    bool ghost_layer_visible = false;
+    std::filesystem::path report_export_default_dir = "artifacts/animus/reports";
     bool bathymetry_enabled = false;
     AppLayerSettings layers;
     bool follow_selected_entity = false;

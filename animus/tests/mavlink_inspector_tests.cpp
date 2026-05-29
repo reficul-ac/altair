@@ -10,7 +10,12 @@ TEST(AnimusMavlinkInspector, PlotThisCreatesAndReusesDedicatedPlot)
     const animus::app::SignalCatalog catalog;
 
     const auto first = animus::app::plot_mavlink_inspector_field(
-        config, state, catalog, "ATTITUDE", "roll", animus::app::MavlinkInspectorPlotTarget::Dedicated);
+        config,
+        state,
+        catalog,
+        "ATTITUDE",
+        "roll",
+        animus::app::MavlinkInspectorPlotTarget::Dedicated);
     ASSERT_NE(first.plot, nullptr);
     ASSERT_NE(first.series, nullptr);
     EXPECT_TRUE(first.created_plot);
@@ -19,7 +24,12 @@ TEST(AnimusMavlinkInspector, PlotThisCreatesAndReusesDedicatedPlot)
     EXPECT_EQ(first.plot->title, "MAVLink Inspector");
 
     const auto second = animus::app::plot_mavlink_inspector_field(
-        config, state, catalog, "ATTITUDE", "roll", animus::app::MavlinkInspectorPlotTarget::Dedicated);
+        config,
+        state,
+        catalog,
+        "ATTITUDE",
+        "roll",
+        animus::app::MavlinkInspectorPlotTarget::Dedicated);
     EXPECT_FALSE(second.created_plot);
     EXPECT_FALSE(second.created_series);
     ASSERT_EQ(config.plots.front().series.size(), 1U);

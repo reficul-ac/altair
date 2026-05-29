@@ -3,6 +3,7 @@
 #include "forward_clearance.hpp"
 
 #include <algorithm>
+#include <span>
 
 #include <gtest/gtest.h>
 
@@ -123,6 +124,34 @@ TEST(AnimusStatusRibbon, LinkStatesFromRateGapAndDrops)
     playback.live = false;
     EXPECT_EQ(pill(build(options, thresholds, snapshot, runtime, playback), "LINK").level,
               StatusRibbonLevel::Unknown);
+}
+
+TEST(AnimusStatusRibbon, LinkDetailsExposeHeartbeatAge)
+{
+    animus::app::Options options;
+    animus::app::AppConfigStatusThresholds thresholds;
+    animus::terrain_core::TerrainStreamSnapshot snapshot;
+    RuntimeSignalInputs runtime;
+    TelemetryPlaybackState playback = loaded_playback();
+    playback.live = true;
+    playback.receiver_stats.connected = true;
+    runtime.packet_count = 10;
+    runtime.link_hz = 10.0;
+    runtime.telemetry_gap_s = 0.1;
+    animus::telemetry_core::MavlinkMessage heartbeat;
+    heartbeat.entity_id = playback.selected_entity;
+    heartbeat.message_id = 0U;
+    playback.mavlink_values.ingest_messages(std::span<const animus::telemetry_core::MavlinkMessage>(
+                                                &heartbeat, static_cast<std::size_t>(1U)),
+                                            9.0);
+
+    const auto link = pill(build(options, thresholds, snapshot, runtime, playback), "LINK");
+
+    EXPECT_EQ(link.level, StatusRibbonLevel::Ok);
+    EXPECT_TRUE(std::any_of(link.details.begin(),
+                            link.details.end(),
+                            [](const std::string &detail)
+                            { return detail.find("heartbeat age: 1.00 s") != std::string::npos; }));
 }
 
 TEST(AnimusStatusRibbon, TerrainStatesFromClearanceConfidenceAndTiles)

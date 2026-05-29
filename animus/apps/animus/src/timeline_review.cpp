@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace animus::app
@@ -42,13 +43,6 @@ TimelineReviewSeverity clearance_severity(const double clearance_m,
 {
     return clearance_m <= thresholds.terrain_clearance_critical_m ? TimelineReviewSeverity::Warning
                                                                   : TimelineReviewSeverity::Caution;
-}
-
-TimelineReviewSeverity import_severity(const animus::telemetry_core::EventSeverity severity)
-{
-    return severity == animus::telemetry_core::EventSeverity::Error
-               ? TimelineReviewSeverity::Warning
-               : TimelineReviewSeverity::Caution;
 }
 
 std::optional<TimelineReviewMarker>
@@ -144,6 +138,74 @@ void append_low_clearance_markers(std::vector<TimelineReviewMarker> &markers,
     {
         markers.push_back(*active);
     }
+}
+
+void append_terrain_confidence_markers(std::vector<TimelineReviewMarker> &markers,
+                                       const std::vector<TerrainClearanceSample> &samples,
+                                       const animus::telemetry_core::EntityId selected_entity)
+{
+    for (const TerrainClearanceSample &sample : samples)
+    {
+        if (!sample.fallback && !sample.synthetic)
+        {
+            continue;
+        }
+        TimelineReviewMarker marker;
+        marker.category = TimelineReviewMarkerCategory::TerrainFallback;
+        marker.severity =
+            sample.synthetic ? TimelineReviewSeverity::Warning : TimelineReviewSeverity::Caution;
+        marker.time_s = sample.time_s;
+        marker.entity_id = selected_entity;
+        marker.label = sample.synthetic ? "synthetic terrain" : "terrain fallback";
+        marker.value = sample.clearance_m;
+        markers.push_back(std::move(marker));
+    }
+}
+
+void append_event_marker(std::vector<TimelineReviewMarker> &markers,
+                         const animus::telemetry_core::Event &event)
+{
+    const std::string message = event.message;
+    TimelineReviewMarker marker;
+    marker.time_s = event.time_s;
+    marker.entity_id = event.entity_id;
+    marker.label = event.message;
+    marker.severity = event.severity == animus::telemetry_core::EventSeverity::Error
+                          ? TimelineReviewSeverity::Warning
+                      : event.severity == animus::telemetry_core::EventSeverity::Warning
+                          ? TimelineReviewSeverity::Caution
+                          : TimelineReviewSeverity::Info;
+    if (message.find("capture") != std::string::npos ||
+        message.find("screenshot") != std::string::npos ||
+        message.find("record") != std::string::npos)
+    {
+        marker.category = TimelineReviewMarkerCategory::Capture;
+    }
+    else if (message.find("geofence") != std::string::npos)
+    {
+        marker.category = TimelineReviewMarkerCategory::Geofence;
+    }
+    else if (message.find("model fallback") != std::string::npos ||
+             message.find("fallback icon") != std::string::npos)
+    {
+        marker.category = TimelineReviewMarkerCategory::ModelFallback;
+        marker.severity = TimelineReviewSeverity::Caution;
+    }
+    else if (event.severity == animus::telemetry_core::EventSeverity::Info)
+    {
+        return;
+    }
+    else
+    {
+        marker.category = event.severity == animus::telemetry_core::EventSeverity::Error
+                              ? TimelineReviewMarkerCategory::ImportError
+                              : TimelineReviewMarkerCategory::ImportWarning;
+    }
+    if (marker.label.empty())
+    {
+        marker.label = timeline_review_marker_label(marker.category);
+    }
+    markers.push_back(std::move(marker));
 }
 
 void append_plan_actual_markers(std::vector<TimelineReviewMarker> &markers,
@@ -378,6 +440,19 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
             if (sample.ground_speed_mps)
             {
                 review.ground_speed.points.push_back({sample.time_s, *sample.ground_speed_mps});
+                if (thresholds.speed_warning_mps > 0.0 &&
+                    *sample.ground_speed_mps >= thresholds.speed_warning_mps)
+                {
+                    TimelineReviewMarker marker;
+                    marker.category = TimelineReviewMarkerCategory::SpeedExcursion;
+                    marker.severity = warning_or_caution(*sample.ground_speed_mps,
+                                                         thresholds.speed_warning_mps * 1.5);
+                    marker.time_s = sample.time_s;
+                    marker.entity_id = selected_entity;
+                    marker.label = "speed excursion";
+                    marker.value = *sample.ground_speed_mps;
+                    review.markers.push_back(std::move(marker));
+                }
                 if (!max_speed || *sample.ground_speed_mps > *max_speed->value)
                 {
                     TimelineReviewMarker marker;
@@ -399,6 +474,19 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
                 marker.entity_id = selected_entity;
                 marker.label = "degraded";
                 review.markers.push_back(marker);
+            }
+            if (sample.climb_rate_mps && thresholds.climb_warning_mps > 0.0 &&
+                std::abs(*sample.climb_rate_mps) >= thresholds.climb_warning_mps)
+            {
+                TimelineReviewMarker marker;
+                marker.category = TimelineReviewMarkerCategory::ClimbExcursion;
+                marker.severity = warning_or_caution(std::abs(*sample.climb_rate_mps),
+                                                     thresholds.climb_warning_mps * 1.5);
+                marker.time_s = sample.time_s;
+                marker.entity_id = selected_entity;
+                marker.label = "climb excursion";
+                marker.value = *sample.climb_rate_mps;
+                review.markers.push_back(std::move(marker));
             }
             if (const auto marker = attitude_marker(
                     sample, selected_entity, "roll", sample.roll_rad, thresholds.roll_warning_deg))
@@ -426,6 +514,19 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
                     marker.entity_id = selected_entity;
                     marker.label = "telemetry gap";
                     marker.value = dt;
+                    review.markers.push_back(marker);
+                }
+                if (dt > 0.0 && thresholds.link_hz_warning > 0.0 &&
+                    (1.0 / dt) < thresholds.link_hz_warning)
+                {
+                    TimelineReviewMarker marker;
+                    marker.category = TimelineReviewMarkerCategory::LowLinkHz;
+                    marker.severity = TimelineReviewSeverity::Caution;
+                    marker.time_s = track->samples[index - 1U].time_s;
+                    marker.end_time_s = sample.time_s;
+                    marker.entity_id = selected_entity;
+                    marker.label = "low link rate";
+                    marker.value = 1.0 / dt;
                     review.markers.push_back(marker);
                 }
             }
@@ -463,23 +564,11 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
     }
     append_low_clearance_markers(
         review.markers, terrain_clearance_samples, selected_entity, thresholds);
+    append_terrain_confidence_markers(review.markers, terrain_clearance_samples, selected_entity);
 
     for (const auto &event : timeline.events)
     {
-        if (event.severity == animus::telemetry_core::EventSeverity::Info)
-        {
-            continue;
-        }
-        TimelineReviewMarker marker;
-        marker.category = event.severity == animus::telemetry_core::EventSeverity::Error
-                              ? TimelineReviewMarkerCategory::ImportError
-                              : TimelineReviewMarkerCategory::ImportWarning;
-        marker.severity = import_severity(event.severity);
-        marker.time_s = event.time_s;
-        marker.entity_id = event.entity_id;
-        marker.label =
-            event.message.empty() ? timeline_review_marker_label(marker.category) : event.message;
-        review.markers.push_back(marker);
+        append_event_marker(review.markers, event);
     }
 
     for (const auto &bookmark : bookmarks)
@@ -556,6 +645,19 @@ bool timeline_review_marker_visible(const TimelineReviewMarker &marker,
     case TimelineReviewMarkerCategory::PlanDeviation:
     case TimelineReviewMarkerCategory::PlanAltitude:
         return filters.show_plan;
+    case TimelineReviewMarkerCategory::LowLinkHz:
+        return filters.show_gap;
+    case TimelineReviewMarkerCategory::TerrainFallback:
+        return filters.show_clearance;
+    case TimelineReviewMarkerCategory::SpeedExcursion:
+    case TimelineReviewMarkerCategory::ClimbExcursion:
+        return filters.show_attitude;
+    case TimelineReviewMarkerCategory::ModelFallback:
+        return filters.show_degraded;
+    case TimelineReviewMarkerCategory::Capture:
+        return filters.show_bookmark;
+    case TimelineReviewMarkerCategory::Geofence:
+        return filters.show_plan;
     }
     return true;
 }
@@ -621,6 +723,20 @@ const char *timeline_review_marker_label(const TimelineReviewMarkerCategory cate
         return "plan deviation";
     case TimelineReviewMarkerCategory::PlanAltitude:
         return "plan altitude";
+    case TimelineReviewMarkerCategory::LowLinkHz:
+        return "low link Hz";
+    case TimelineReviewMarkerCategory::TerrainFallback:
+        return "terrain fallback";
+    case TimelineReviewMarkerCategory::SpeedExcursion:
+        return "speed";
+    case TimelineReviewMarkerCategory::ClimbExcursion:
+        return "climb";
+    case TimelineReviewMarkerCategory::ModelFallback:
+        return "model fallback";
+    case TimelineReviewMarkerCategory::Capture:
+        return "capture";
+    case TimelineReviewMarkerCategory::Geofence:
+        return "geofence";
     }
     return "marker";
 }

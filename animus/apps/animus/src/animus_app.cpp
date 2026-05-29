@@ -4,6 +4,7 @@
 #include "options.hpp"
 #include "ui.hpp"
 #include "vehicle_visual_style.hpp"
+#include "workspace_layout_model.hpp"
 
 #include "animus/render_core/gl_info.hpp"
 #include "animus/render_core/imgui_layer.hpp"
@@ -355,6 +356,11 @@ void apply_options_to_ui(const Options &options, UiState &ui_state, Map2DCamera 
     ui_state.follow_selected_entity = options.follow_selected_entity;
     ui_state.telemetry_tracks_visible = options.telemetry_tracks_visible;
     ui_state.telemetry_labels_visible = options.telemetry_labels_visible;
+    ui_state.selected_entity_tail_points = options.selected_entity_tail_points;
+    ui_state.selected_vehicle_test = options.selected_vehicle_test;
+    ui_state.ghost_recent_baseline_path = options.ghost_recent_baseline_path;
+    ui_state.ghost_layer_visible = options.ghost_layer_visible;
+    ui_state.report_export_default_dir = options.report_export_default_dir;
     ui_state.bathymetry_enabled = options.use_bathymetry;
     ui_state.layers = options.layers;
     ui_state.developer_diagnostics_visible = options.developer_diagnostics_visible;
@@ -378,6 +384,11 @@ void sync_options_from_ui(Options &options,
     options.map_orientation = map_orientation_config_value(map_camera.orientation);
     options.telemetry_tracks_visible = ui_state.telemetry_tracks_visible;
     options.telemetry_labels_visible = ui_state.telemetry_labels_visible;
+    options.selected_entity_tail_points = ui_state.selected_entity_tail_points;
+    options.selected_vehicle_test = ui_state.selected_vehicle_test;
+    options.ghost_recent_baseline_path = ui_state.ghost_recent_baseline_path;
+    options.ghost_layer_visible = ui_state.ghost_layer_visible;
+    options.report_export_default_dir = ui_state.report_export_default_dir;
     options.use_bathymetry = ui_state.bathymetry_enabled;
     options.layers = ui_state.layers;
     options.layers.track_tail_visible = ui_state.telemetry_tracks_visible;
@@ -2638,8 +2649,12 @@ draw_telemetry_overlay(const Options &options,
             selected_entity == playback.timeline.entities.end()
                 ? visual_registry.default_style()
                 : animus::app::resolve_entity_visual_style(visual_registry, trail_visual);
+        const std::size_t configured_tail_points =
+            std::max<std::size_t>(2U, ui_state.selected_entity_tail_points);
         const std::size_t max_points =
-            playback.live ? options.telemetry_live_render_max_points : track->samples.size();
+            playback.live
+                ? std::min(options.telemetry_live_render_max_points, configured_tail_points)
+                : std::min(track->samples.size(), configured_tail_points);
         const std::vector<std::size_t> trail_indices =
             animus::telemetry_live::decimated_trail_indices(track->samples.size(), max_points);
         stats.rendered_trail_points = trail_indices.size();
@@ -2666,6 +2681,39 @@ draw_telemetry_overlay(const Options &options,
                               trail_style.trail_thickness);
             }
             previous = point.visible ? std::optional<ImVec2>(point.screen) : std::nullopt;
+        }
+    }
+
+    if (ui_state.ghost_layer_visible && playback.ghost_baseline)
+    {
+        const auto *ghost_track = playback.ghost_baseline->track_for(playback.selected_entity);
+        if (ghost_track != nullptr && ghost_track->samples.size() >= 2U)
+        {
+            const std::vector<std::size_t> ghost_indices =
+                animus::telemetry_live::decimated_trail_indices(
+                    ghost_track->samples.size(),
+                    std::max<std::size_t>(2U, ui_state.selected_entity_tail_points));
+            std::optional<ImVec2> previous;
+            for (const std::size_t sample_index : ghost_indices)
+            {
+                const auto &sample = ghost_track->samples[sample_index];
+                bool unavailable = false;
+                bool unknown_datum = false;
+                const Vec3 world = telemetry_world_position(options,
+                                                            tiles,
+                                                            geoid_grid,
+                                                            sample,
+                                                            unavailable,
+                                                            unknown_datum,
+                                                            playback.geoid_correction_unavailable);
+                const ProjectedPoint point =
+                    project_to_screen(mvp, world, framebuffer_width, framebuffer_height);
+                if (point.visible && previous)
+                {
+                    draw->AddLine(*previous, point.screen, IM_COL32(136, 192, 255, 170), 1.2F);
+                }
+                previous = point.visible ? std::optional<ImVec2>(point.screen) : std::nullopt;
+            }
         }
     }
 
@@ -4023,8 +4071,7 @@ int run(Options options)
         if (ui_state.request_workspace_layout_reset)
         {
             const std::string workspace_id = workspace_config_value(ui_state.workspace_mode);
-            ui_state.workspace_layouts[workspace_id] =
-                animus::app::default_workspace_layout(workspace_id);
+            (void)animus::app::reset_workspace_layout(ui_state.workspace_layouts, workspace_id);
             ui_state.workspace_layout_applied = false;
             options.config_dirty = true;
             options.config_save_status = "not saved";

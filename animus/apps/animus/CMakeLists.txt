@@ -8,6 +8,7 @@ add_executable(
     src/animus_app.cpp
     src/capture.cpp
     src/forward_clearance.cpp
+    src/ghost_replay.cpp
     src/layer_offline.cpp
     src/layer_stack_model.cpp
     src/mavlink_inspector.cpp
@@ -17,11 +18,13 @@ add_executable(
     src/plot_ui.cpp
     src/plan_visualization.cpp
     src/selected_vehicle_card.cpp
+    src/report_export.cpp
     src/telemetry_signal_catalog.cpp
     src/status_ribbon.cpp
     src/timeline_review.cpp
     src/ui.cpp
     src/vehicle_visual_style.cpp
+    src/workspace_layout_model.cpp
 )
 
 target_link_libraries(

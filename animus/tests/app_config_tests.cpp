@@ -51,6 +51,7 @@ TEST(AnimusAppConfig, DefaultsAreVersioned)
     EXPECT_TRUE(config.layers.hillshade_visible);
     EXPECT_FALSE(config.layers.tile_state_debug_visible);
     EXPECT_FALSE(config.layers.fallback_highlight_visible);
+    EXPECT_EQ(config.selected_entity_tail_points, 1000U);
 }
 
 TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
@@ -92,6 +93,16 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     config.workspace_layouts["analyze"] = animus::app::default_workspace_layout("analyze");
     config.workspace_layouts["analyze"].main_panel = {200.0F, 80.0F, 520.0F, 460.0F};
     config.workspace_layouts["analyze"].plot_shelf_height_px = 320.0F;
+    config.selected_entity_tail_points = 250U;
+    config.layers.selected_entity_tail_points = 250U;
+    config.selected_vehicle_test.test_name = "FT-12";
+    config.selected_vehicle_test.phase = "Cruise";
+    config.selected_vehicle_test.target_speed = "24 m/s";
+    config.selected_vehicle_test.target_altitude = "150 m";
+    config.selected_vehicle_test.target_heading = "090";
+    config.ghost_recent_baseline_path = "baseline.tlog";
+    config.ghost_layer_visible = true;
+    config.report_export_default_dir = "reports";
 
     const auto save = animus::app::save_app_config_file(path, config);
     ASSERT_TRUE(save.saved);
@@ -139,6 +150,16 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").main_panel.x, 200.0F);
     EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").main_panel.width, 520.0F);
     EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").plot_shelf_height_px, 320.0F);
+    EXPECT_EQ(load.config.selected_entity_tail_points, 250U);
+    EXPECT_EQ(load.config.layers.selected_entity_tail_points, 250U);
+    EXPECT_EQ(load.config.selected_vehicle_test.test_name, "FT-12");
+    EXPECT_EQ(load.config.selected_vehicle_test.phase, "Cruise");
+    EXPECT_EQ(load.config.selected_vehicle_test.target_speed, "24 m/s");
+    EXPECT_EQ(load.config.selected_vehicle_test.target_altitude, "150 m");
+    EXPECT_EQ(load.config.selected_vehicle_test.target_heading, "090");
+    EXPECT_EQ(load.config.ghost_recent_baseline_path.string(), "baseline.tlog");
+    EXPECT_TRUE(load.config.ghost_layer_visible);
+    EXPECT_EQ(load.config.report_export_default_dir.string(), "reports");
 
     std::filesystem::remove(path);
 }

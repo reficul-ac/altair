@@ -17,10 +17,10 @@ std::string next_series_id(const PlotDefinition &plot)
 
 PlotDefinition &dedicated_plot(PlotShelfConfig &config, MavlinkInspectorPlotResult &result)
 {
-    auto found = std::find_if(config.plots.begin(),
-                              config.plots.end(),
-                              [](const PlotDefinition &plot)
-                              { return plot.id == inspector_plot_id; });
+    auto found =
+        std::find_if(config.plots.begin(),
+                     config.plots.end(),
+                     [](const PlotDefinition &plot) { return plot.id == inspector_plot_id; });
     if (found != config.plots.end())
     {
         return *found;
@@ -94,8 +94,8 @@ bool plot_series_matches_mavlink_field(const PlotSeriesDefinition &series,
                                        const PlotEntityBindingMode binding)
 {
     return series.signal.source == SignalSource::Mavlink &&
-           series.signal.mavlink_message == message_name && series.signal.mavlink_field == field_name &&
-           series.entity_binding == binding;
+           series.signal.mavlink_message == message_name &&
+           series.signal.mavlink_field == field_name && series.entity_binding == binding;
 }
 
 MavlinkInspectorPlotResult plot_mavlink_inspector_field(PlotShelfConfig &config,
@@ -122,16 +122,14 @@ MavlinkInspectorPlotResult plot_mavlink_inspector_field(PlotShelfConfig &config,
     result.plot = plot;
     state.selected_plot_id = plot->id;
 
-    auto existing = std::find_if(plot->series.begin(),
-                                 plot->series.end(),
-                                 [message_name, field_name](const PlotSeriesDefinition &series)
-                                 {
-                                     return plot_series_matches_mavlink_field(
-                                         series,
-                                         message_name,
-                                         field_name,
-                                         PlotEntityBindingMode::Selected);
-                                 });
+    auto existing =
+        std::find_if(plot->series.begin(),
+                     plot->series.end(),
+                     [message_name, field_name](const PlotSeriesDefinition &series)
+                     {
+                         return plot_series_matches_mavlink_field(
+                             series, message_name, field_name, PlotEntityBindingMode::Selected);
+                     });
     if (existing != plot->series.end())
     {
         result.series = &*existing;

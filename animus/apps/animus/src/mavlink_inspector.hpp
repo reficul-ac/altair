@@ -25,10 +25,8 @@ struct MavlinkInspectorPlotResult
 
 [[nodiscard]] std::string mavlink_inspector_field_path(std::string_view message_name,
                                                        std::string_view field_name);
-[[nodiscard]] std::optional<PlotSeriesDefinition>
-make_mavlink_inspector_series(const SignalCatalog &catalog,
-                              std::string_view message_name,
-                              std::string_view field_name);
+[[nodiscard]] std::optional<PlotSeriesDefinition> make_mavlink_inspector_series(
+    const SignalCatalog &catalog, std::string_view message_name, std::string_view field_name);
 [[nodiscard]] bool plot_series_matches_mavlink_field(const PlotSeriesDefinition &series,
                                                      std::string_view message_name,
                                                      std::string_view field_name,

@@ -1,6 +1,7 @@
 #include "ui.hpp"
 
 #include "capture.hpp"
+#include "ghost_replay.hpp"
 #include "layer_offline.hpp"
 #include "layer_stack_model.hpp"
 #include "mavlink_inspector.hpp"
@@ -18,6 +19,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <optional>
 #include <sstream>
@@ -837,7 +839,19 @@ ImU32 marker_color(const TimelineReviewMarkerCategory category)
         return IM_COL32(170, 188, 204, 255);
     case TimelineReviewMarkerCategory::PlanDeviation:
     case TimelineReviewMarkerCategory::PlanAltitude:
+    case TimelineReviewMarkerCategory::Geofence:
         return IM_COL32(236, 186, 82, 255);
+    case TimelineReviewMarkerCategory::LowLinkHz:
+        return IM_COL32(238, 158, 74, 255);
+    case TimelineReviewMarkerCategory::TerrainFallback:
+        return IM_COL32(210, 176, 92, 255);
+    case TimelineReviewMarkerCategory::SpeedExcursion:
+    case TimelineReviewMarkerCategory::ClimbExcursion:
+        return IM_COL32(235, 122, 92, 255);
+    case TimelineReviewMarkerCategory::ModelFallback:
+        return IM_COL32(187, 142, 255, 255);
+    case TimelineReviewMarkerCategory::Capture:
+        return IM_COL32(135, 196, 255, 255);
     }
     return IM_COL32(180, 186, 192, 255);
 }
@@ -938,9 +952,44 @@ void draw_review_charts(const TimelineReviewData &review)
 }
 
 void draw_ghost_replay_foundation(const PlanVisualizationState &plan_state,
-                                  const TelemetryPlaybackState &playback,
-                                  const UiState &ui)
+                                  TelemetryPlaybackState &playback,
+                                  const Options &options,
+                                  UiState &ui)
 {
+    ImGui::SeparatorText("Ghost replay");
+    ImGui::Checkbox("Show ghost track", &ui.ghost_layer_visible);
+    if (ImGui::Button("Load recent baseline"))
+    {
+        playback.ghost_diagnostic.clear();
+        if (ui.ghost_recent_baseline_path.empty() ||
+            !std::filesystem::exists(ui.ghost_recent_baseline_path))
+        {
+            playback.ghost_baseline.reset();
+            playback.ghost_diagnostic = "baseline path does not exist";
+        }
+        else
+        {
+            try
+            {
+                playback.ghost_baseline = animus::telemetry_core::load_telemetry(
+                    ui.ghost_recent_baseline_path, options.telemetry_format);
+            }
+            catch (const std::exception &error)
+            {
+                playback.ghost_baseline.reset();
+                playback.ghost_diagnostic = error.what();
+            }
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear baseline"))
+    {
+        playback.ghost_baseline.reset();
+    }
+    if (!playback.ghost_diagnostic.empty())
+    {
+        muted_text(playback.ghost_diagnostic.c_str());
+    }
     if (!plan_state.data || !playback.loaded || !ui.telemetry_entity_selected)
     {
         muted_text("Plan-vs-actual and ghost replay unavailable.");
@@ -953,16 +1002,40 @@ void draw_ghost_replay_foundation(const PlanVisualizationState &plan_state,
         return;
     }
 
-    const PlanActualAggregate comparison =
-        compare_plan_actual(*plan_state.data, *track, playback.clock.time_s());
-    const GhostReplayCurrentRunSummary ghost = ghost_replay_current_run_summary(comparison);
-    ImGui::SeparatorText("Ghost replay");
-    muted_text("Baseline not loaded in Phase 11.");
-    ImGui::Text("current run track %s", format_route_distance(ghost.selected_track_m).c_str());
-    ImGui::Text("route completion %s", format_percent(ghost.route_completion_ratio).c_str());
-    ImGui::Text("max route/alt error %s / %s",
-                format_distance_m(ghost.max_cross_track_error_m).c_str(),
-                format_distance_m(ghost.max_altitude_error_m).c_str());
+    GhostReplayComparison comparison;
+    if (playback.ghost_baseline)
+    {
+        comparison = compare_ghost_replay(playback.timeline,
+                                          *playback.ghost_baseline,
+                                          playback.selected_entity,
+                                          &*plan_state.data);
+    }
+    else
+    {
+        comparison.current =
+            summarize_telemetry_run(playback.timeline, playback.selected_entity, &*plan_state.data);
+    }
+    if (!playback.ghost_baseline)
+    {
+        muted_text("No baseline loaded.");
+    }
+    ImGui::Text("current duration %.1f s  distance %s",
+                comparison.current.duration_s,
+                format_route_distance(comparison.current.distance_m).c_str());
+    if (comparison.current.route_completion_ratio)
+    {
+        ImGui::Text("route completion %s",
+                    format_percent(*comparison.current.route_completion_ratio).c_str());
+    }
+    if (playback.ghost_baseline)
+    {
+        ImGui::Text("baseline duration %.1f s  distance %s",
+                    comparison.baseline.duration_s,
+                    format_route_distance(comparison.baseline.distance_m).c_str());
+        ImGui::Text("delta duration %.1f s  distance %s",
+                    comparison.duration_delta_s,
+                    format_route_distance(comparison.distance_delta_m).c_str());
+    }
 }
 
 void draw_review_jump_buttons(const TimelineReviewData &review, UiState &ui)
@@ -1367,6 +1440,13 @@ void draw_layer_stack(const Options &options,
     ImGui::Checkbox("Vehicle labels", &ui_state.layers.vehicle_labels_visible);
     ImGui::SameLine();
     ImGui::Checkbox("Track tail", &ui_state.layers.track_tail_visible);
+    int tail_points = static_cast<int>(std::min<std::size_t>(ui_state.selected_entity_tail_points,
+                                                             static_cast<std::size_t>(100000U)));
+    if (ImGui::SliderInt("Selected tail points", &tail_points, 2, 5000))
+    {
+        ui_state.selected_entity_tail_points = static_cast<std::size_t>(tail_points);
+        ui_state.layers.selected_entity_tail_points = ui_state.selected_entity_tail_points;
+    }
     ImGui::Checkbox("Heading vectors", &ui_state.layers.heading_vectors_visible);
     ImGui::SameLine();
     ImGui::Checkbox("Planned route", &ui_state.layers.planned_route_visible);
@@ -1711,7 +1791,7 @@ void draw_telemetry_panel(const Options &options,
         }
         if (ui.workspace_mode == WorkspaceMode::Analyze)
         {
-            draw_ghost_replay_foundation(plan_state, playback, ui);
+            draw_ghost_replay_foundation(plan_state, playback, options, ui);
         }
     }
     ImGui::Separator();
@@ -2537,6 +2617,47 @@ void draw_selected_entity_card(Options &options,
     }
 
     ImGui::SeparatorText("Test");
+    char test_name[96]{};
+    char test_phase[64]{};
+    char target_speed[64]{};
+    char target_altitude[64]{};
+    char target_heading[64]{};
+    std::snprintf(
+        test_name, sizeof(test_name), "%s", ui_state.selected_vehicle_test.test_name.c_str());
+    std::snprintf(
+        test_phase, sizeof(test_phase), "%s", ui_state.selected_vehicle_test.phase.c_str());
+    std::snprintf(target_speed,
+                  sizeof(target_speed),
+                  "%s",
+                  ui_state.selected_vehicle_test.target_speed.c_str());
+    std::snprintf(target_altitude,
+                  sizeof(target_altitude),
+                  "%s",
+                  ui_state.selected_vehicle_test.target_altitude.c_str());
+    std::snprintf(target_heading,
+                  sizeof(target_heading),
+                  "%s",
+                  ui_state.selected_vehicle_test.target_heading.c_str());
+    if (ImGui::InputText("Test name", test_name, sizeof(test_name)))
+    {
+        ui_state.selected_vehicle_test.test_name = test_name;
+    }
+    if (ImGui::InputText("Phase", test_phase, sizeof(test_phase)))
+    {
+        ui_state.selected_vehicle_test.phase = test_phase;
+    }
+    if (ImGui::InputText("Target speed", target_speed, sizeof(target_speed)))
+    {
+        ui_state.selected_vehicle_test.target_speed = target_speed;
+    }
+    if (ImGui::InputText("Target altitude", target_altitude, sizeof(target_altitude)))
+    {
+        ui_state.selected_vehicle_test.target_altitude = target_altitude;
+    }
+    if (ImGui::InputText("Target heading", target_heading, sizeof(target_heading)))
+    {
+        ui_state.selected_vehicle_test.target_heading = target_heading;
+    }
     metric_row("Test", card.test);
     metric_row("Phase", card.phase);
     metric_row("Target", card.target);

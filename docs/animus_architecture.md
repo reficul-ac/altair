@@ -115,6 +115,13 @@ telemetry, and terrain-first UI polish. Completed work includes:
   behind explicit Developer mode
 - initial vehicle asset registry and GLB fallback path sufficient to keep
   telemetry display working when richer vehicle assets are absent
+- persistent operator preferences for plot shelves, selected-entity tail
+  length, selected-vehicle metadata, workspace layout, layer visibility, ghost
+  replay, and static report export defaults
+- selected-vehicle cards, app-owned MAVLink inspector state, status ribbon
+  heartbeat age, user plot shelf, workspace layout transitions, timeline review
+  markers, loaded plan overlays, ghost replay comparison, and static Phase 13
+  report/export artifacts
 
 Remaining definition-of-done gaps are tracked later in this document under
 `Definition of fully designed` and in the root `TODO.md` only when they are
@@ -220,8 +227,8 @@ enum class ToolMode {
 
 ### Animus Test Flight View V1: Persistent Config, User Plots, And Operator Tools
 
-Status: planned roadmap only. This section documents future implementation
-work; it does not mark any feature below as implemented.
+Status: implemented through the Phase 13 V1 closeout described below. Checked
+acceptance items are complete; any unchecked items remain future work.
 
 This roadmap builds on the current Animus foundations:
 
@@ -374,7 +381,7 @@ Acceptance:
 
 #### Phase 2: Telemetry Signal Catalog And Field Access Layer
 
-Status: planned.
+Status: complete.
 
 Goal: create a unified plottable signal catalog so UI can list fields and users
 can build Desmos-style plots with source -> message/sample/derived -> field ->
@@ -463,7 +470,7 @@ Acceptance:
 
 #### Phase 3: User-Defined Real-Time Strip Plot System
 
-Status: planned.
+Status: complete.
 
 Goal: build lightweight user-defined strip plots where users can add a plot,
 choose sources/fields/transforms, and see live data. Plots must not be
@@ -540,7 +547,7 @@ Acceptance:
 
 #### Phase 4: QGC-Like Operator Status Ribbon
 
-Status: planned.
+Status: complete.
 
 Goal: add a compact QGC-inspired status ribbon focused on Animus as a
 terrain/test-flight viewer, not a full GCS.
@@ -588,7 +595,7 @@ Acceptance:
 
 #### Phase 5: Selected Vehicle / Flight Test Card
 
-Status: planned, reusing existing selected-entity UI where possible.
+Status: complete.
 
 Goal: add a compact selected vehicle card optimized for flight testing.
 
@@ -631,7 +638,7 @@ Acceptance:
 
 #### Phase 6: Timeline Flight Tape And Event Bookmarks
 
-Status: planned, extending existing timeline review/bookmark code.
+Status: complete.
 
 Automatic event types:
 
@@ -724,7 +731,7 @@ Acceptance:
 
 #### Phase 8: MAVLink Inspector Lite
 
-Status: planned.
+Status: complete.
 
 Goal: add lightweight QGC-like MAVLink Inspector for debugging and quick plot
 creation.
@@ -849,9 +856,9 @@ Acceptance:
 
 #### Phase 12: Vehicle Assignment And Model Lifecycle UI
 
-Status: complete for vehicle assignment/model lifecycle UI. Baseline telemetry
-loading, second-run comparison, and ghost rendering remain future ghost replay
-work.
+Status: complete for vehicle assignment/model lifecycle UI. Ghost replay
+baseline loading, second-run comparison, and lightweight rendering are tracked
+as complete in Phase 11.
 
 UI:
 
@@ -885,9 +892,10 @@ Acceptance:
 
 #### Phase 11: Plan-vs-Actual And Ghost Replay Foundation
 
-Status: complete as a foundation-only Phase 11 slice after Phases 1-10. Baseline
-loading, second-run comparison, and ghost rendering remain future ghost replay
-work.
+Status: complete after Phases 1-10 and 12. Plan-vs-actual is implemented, and
+Ghost Replay V1 adds app-owned baseline telemetry loading, current-vs-baseline
+summary metrics, persisted recent baseline path/visibility preferences, and a
+lightweight optional ghost track overlay.
 
 Plan-vs-actual:
 
@@ -900,18 +908,21 @@ Plan-vs-actual:
 
 Ghost replay:
 
-- baseline telemetry loading is not part of Phase 11
-- compare duration, max speed, min clearance, max roll/pitch, telemetry gaps,
-  p95 frame time, fallback/synthetic terrain percent, route deviation
+- baseline telemetry loading is app-owned and separate from the selected run
+- compare duration, distance, max speed, max roll/pitch, telemetry gaps, route
+  completion, and route deviation when a plan is loaded
+- render a lightweight optional baseline track layer; no heatmap renderer
 
 Acceptance:
 
 - [x] Keep P2/P3 after config/plots/status are robust.
 - [x] Avoid empty distracting panels.
+- [x] Baseline loading and clear unavailable diagnostics are app-owned.
+- [x] Ghost layer visibility and recent baseline path persist.
 
 #### Phase 13: Report / Export V1
 
-Status: planned.
+Status: complete for static V1 bundle export.
 
 Output bundle:
 
@@ -934,10 +945,16 @@ Summary fields:
 - worst frame time
 - event count by severity
 - config profile used
+- plan-vs-actual summary when a plan is loaded
+- ghost replay summary when a baseline is loaded
+- selected-vehicle test metadata
 
 Acceptance:
 
-- First pass exports YAML/Markdown/CSV.
+- [x] First pass exports YAML/Markdown/CSV.
+- [x] Plot CSVs are written under `plots/`.
+- [x] Screenshot destination directory is present under `screenshots/`.
+- [x] Clips/video remain out of scope for V1.
 - Screenshot export reuses existing capture path.
 - No new FFmpeg requirement unless already available.
 

@@ -171,6 +171,33 @@ std::string forward_clearance_summary(
            terrain_clearance_status_label(worst_forward_clearance_status(samples));
 }
 
+std::string target_summary(const SelectedVehicleTestMetadata &metadata)
+{
+    std::vector<std::string> parts;
+    if (!metadata.target_speed.empty())
+    {
+        parts.push_back("speed " + metadata.target_speed);
+    }
+    if (!metadata.target_altitude.empty())
+    {
+        parts.push_back("alt " + metadata.target_altitude);
+    }
+    if (!metadata.target_heading.empty())
+    {
+        parts.push_back("hdg " + metadata.target_heading);
+    }
+    if (parts.empty())
+    {
+        return "--";
+    }
+    std::string text = parts.front();
+    for (std::size_t index = 1U; index < parts.size(); ++index)
+    {
+        text += ", " + parts[index];
+    }
+    return text;
+}
+
 } // namespace
 
 const char *selected_vehicle_card_status_label(const SelectedVehicleCardStatus status)
@@ -209,6 +236,12 @@ build_selected_vehicle_card_model(const TelemetryPlaybackState &playback,
     model.altitude_placement = vehicle_status.selected_altitude_placement;
     model.visual_scale = vehicle_status.selected_scale;
     model.force_icon_only = vehicle_status.selected_force_icon_only;
+    model.test = ui_state.selected_vehicle_test.test_name.empty()
+                     ? "--"
+                     : ui_state.selected_vehicle_test.test_name;
+    model.phase =
+        ui_state.selected_vehicle_test.phase.empty() ? "--" : ui_state.selected_vehicle_test.phase;
+    model.target = target_summary(ui_state.selected_vehicle_test);
     model.terrain_confidence =
         terrain_confidence_label(playback.selected_entity_terrain.confidence);
     model.forward_clearance_summary =

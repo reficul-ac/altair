@@ -569,6 +569,8 @@ void read_layer_settings(const YAML::Node &node,
     read_value(node, "tile_state_debug_visible", settings.tile_state_debug_visible, diagnostics);
     read_value(
         node, "fallback_highlight_visible", settings.fallback_highlight_visible, diagnostics);
+    read_positive_size(
+        node, "selected_entity_tail_points", settings.selected_entity_tail_points, diagnostics);
 }
 
 void read_window_rect(const YAML::Node &node,
@@ -817,7 +819,10 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
                        "telemetry",
                        "status_thresholds",
                        "vehicle_visuals",
-                       "plots"},
+                       "plots",
+                       "selected_vehicle",
+                       "ghost_replay",
+                       "report_export"},
                       "",
                       result.diagnostics);
 
@@ -902,6 +907,7 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
                        "hillshade_visible",
                        "tile_state_debug_visible",
                        "fallback_highlight_visible",
+                       "selected_entity_tail_points",
                        "overlay_enabled",
                        "overlay_opacity",
                        "overlays"},
@@ -933,6 +939,7 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
         result.config.telemetry_labels_visible = result.config.layers.vehicle_labels_visible;
     }
     read_overlays(layers["overlays"], result.config.overlays, result.diagnostics);
+    result.config.selected_entity_tail_points = result.config.layers.selected_entity_tail_points;
 
     const YAML::Node telemetry = root["telemetry"];
     warn_unknown_keys(telemetry,
@@ -940,7 +947,8 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
                        "live_udp_port",
                        "live_buffer_seconds",
                        "max_samples",
-                       "render_max_points"},
+                       "render_max_points",
+                       "selected_entity_tail_points"},
                       "telemetry.",
                       result.diagnostics);
     read_value(
@@ -957,6 +965,53 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
                        "render_max_points",
                        result.config.telemetry_live_render_max_points,
                        result.diagnostics);
+    read_positive_size(telemetry,
+                       "selected_entity_tail_points",
+                       result.config.selected_entity_tail_points,
+                       result.diagnostics);
+    if (telemetry && telemetry["selected_entity_tail_points"])
+    {
+        result.config.layers.selected_entity_tail_points =
+            result.config.selected_entity_tail_points;
+    }
+
+    const YAML::Node selected_vehicle = root["selected_vehicle"];
+    warn_unknown_keys(selected_vehicle,
+                      {"test_name", "phase", "target_speed", "target_altitude", "target_heading"},
+                      "selected_vehicle.",
+                      result.diagnostics);
+    read_value(selected_vehicle,
+               "test_name",
+               result.config.selected_vehicle_test.test_name,
+               result.diagnostics);
+    read_value(
+        selected_vehicle, "phase", result.config.selected_vehicle_test.phase, result.diagnostics);
+    read_value(selected_vehicle,
+               "target_speed",
+               result.config.selected_vehicle_test.target_speed,
+               result.diagnostics);
+    read_value(selected_vehicle,
+               "target_altitude",
+               result.config.selected_vehicle_test.target_altitude,
+               result.diagnostics);
+    read_value(selected_vehicle,
+               "target_heading",
+               result.config.selected_vehicle_test.target_heading,
+               result.diagnostics);
+
+    const YAML::Node ghost = root["ghost_replay"];
+    warn_unknown_keys(
+        ghost, {"recent_baseline_path", "layer_visible"}, "ghost_replay.", result.diagnostics);
+    std::string baseline_path;
+    read_value(ghost, "recent_baseline_path", baseline_path, result.diagnostics);
+    result.config.ghost_recent_baseline_path = baseline_path;
+    read_value(ghost, "layer_visible", result.config.ghost_layer_visible, result.diagnostics);
+
+    const YAML::Node report = root["report_export"];
+    warn_unknown_keys(report, {"default_dir"}, "report_export.", result.diagnostics);
+    std::string report_dir = result.config.report_export_default_dir.string();
+    read_value(report, "default_dir", report_dir, result.diagnostics);
+    result.config.report_export_default_dir = report_dir;
 
     const YAML::Node thresholds = root["status_thresholds"];
     warn_unknown_keys(thresholds,
@@ -1102,6 +1157,8 @@ AppConfigSaveResult save_app_config_file(const std::filesystem::path &path, cons
         << config.layers.tile_state_debug_visible;
     out << YAML::Key << "fallback_highlight_visible" << YAML::Value
         << config.layers.fallback_highlight_visible;
+    out << YAML::Key << "selected_entity_tail_points" << YAML::Value
+        << config.layers.selected_entity_tail_points;
     out << YAML::Key << "overlay_enabled" << YAML::Value << config.overlay_enabled;
     out << YAML::Key << "overlay_opacity" << YAML::Value << config.overlay_opacity;
     out << YAML::Key << "overlays" << YAML::Value << YAML::BeginSeq;
@@ -1124,6 +1181,22 @@ AppConfigSaveResult save_app_config_file(const std::filesystem::path &path, cons
     out << YAML::Key << "max_samples" << YAML::Value << config.telemetry_live_max_samples;
     out << YAML::Key << "render_max_points" << YAML::Value
         << config.telemetry_live_render_max_points;
+    out << YAML::Key << "selected_entity_tail_points" << YAML::Value
+        << config.selected_entity_tail_points;
+    out << YAML::EndMap;
+    out << YAML::Key << "selected_vehicle" << YAML::Value << YAML::BeginMap;
+    write_string(out, "test_name", config.selected_vehicle_test.test_name);
+    write_string(out, "phase", config.selected_vehicle_test.phase);
+    write_string(out, "target_speed", config.selected_vehicle_test.target_speed);
+    write_string(out, "target_altitude", config.selected_vehicle_test.target_altitude);
+    write_string(out, "target_heading", config.selected_vehicle_test.target_heading);
+    out << YAML::EndMap;
+    out << YAML::Key << "ghost_replay" << YAML::Value << YAML::BeginMap;
+    write_string(out, "recent_baseline_path", config.ghost_recent_baseline_path.generic_string());
+    out << YAML::Key << "layer_visible" << YAML::Value << config.ghost_layer_visible;
+    out << YAML::EndMap;
+    out << YAML::Key << "report_export" << YAML::Value << YAML::BeginMap;
+    write_string(out, "default_dir", config.report_export_default_dir.generic_string());
     out << YAML::EndMap;
     out << YAML::Key << "status_thresholds" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "terrain_clearance_warning_m" << YAML::Value

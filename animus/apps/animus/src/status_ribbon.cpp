@@ -191,7 +191,30 @@ StatusRibbonPill make_link_pill(const RuntimeSignalInputs &runtime,
     pill.details.push_back("drops: " + std::to_string(runtime.drop_count));
     pill.details.push_back("parser rejects: " + std::to_string(parser_problem_count(
                                                     playback.live_stats.parser_diagnostics)));
-    pill.details.push_back("heartbeat age: n/a");
+    std::optional<double> heartbeat_age_s;
+    if (playback.loaded)
+    {
+        const auto messages = playback.mavlink_values.observed_messages(playback.selected_entity,
+                                                                        playback.clock.time_s());
+        const auto heartbeat = std::find_if(messages.begin(),
+                                            messages.end(),
+                                            [](const MavlinkMessageStats &message)
+                                            { return message.message_id == 0U; });
+        if (heartbeat != messages.end())
+        {
+            heartbeat_age_s = heartbeat->last_age_s;
+            if (heartbeat->last_age_s >= thresholds.telemetry_gap_critical_s)
+            {
+                pill.level = worst(pill.level, StatusRibbonLevel::Warning);
+            }
+            else if (heartbeat->last_age_s >= thresholds.telemetry_gap_warning_s)
+            {
+                pill.level = worst(pill.level, StatusRibbonLevel::Caution);
+            }
+        }
+    }
+    pill.details.push_back("heartbeat age: " + (heartbeat_age_s ? fmt("%.2f s", *heartbeat_age_s)
+                                                                : std::string("n/a")));
     return pill;
 }
 

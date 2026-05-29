@@ -43,8 +43,20 @@ struct AppLayerSettings
     bool hillshade_visible = true;
     bool tile_state_debug_visible = false;
     bool fallback_highlight_visible = false;
+    std::size_t selected_entity_tail_points = 1000U;
 
     bool operator==(const AppLayerSettings &) const = default;
+};
+
+struct SelectedVehicleTestMetadata
+{
+    std::string test_name;
+    std::string phase;
+    std::string target_speed;
+    std::string target_altitude;
+    std::string target_heading;
+
+    bool operator==(const SelectedVehicleTestMetadata &) const = default;
 };
 
 struct AppConfigStatusThresholds
@@ -116,6 +128,11 @@ struct AppConfig
     double telemetry_live_buffer_s = 120.0;
     std::size_t telemetry_live_max_samples = 20000U;
     std::size_t telemetry_live_render_max_points = 1000U;
+    std::size_t selected_entity_tail_points = 1000U;
+    SelectedVehicleTestMetadata selected_vehicle_test;
+    std::filesystem::path ghost_recent_baseline_path;
+    bool ghost_layer_visible = false;
+    std::filesystem::path report_export_default_dir = "artifacts/animus/reports";
     AppConfigStatusThresholds status_thresholds;
     VehicleVisualAssignments vehicle_visuals;
     PlotShelfConfig plots = default_plot_shelf_config();

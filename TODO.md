@@ -17,7 +17,7 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Reformat `animus/apps/animus/src/layer_offline.cpp` and
   `animus/apps/animus/src/layer_offline.hpp` so `format_repo.py --check` passes
   without touching unrelated files.
-- [ ] Reformat `animus/apps/animus/src/mavlink_inspector.cpp`,
+- [x] Reformat `animus/apps/animus/src/mavlink_inspector.cpp`,
   `animus/apps/animus/src/mavlink_inspector.hpp`, and
   `animus/tests/mavlink_inspector_tests.cpp` so `format_repo.py --check` passes.
 
@@ -47,19 +47,19 @@ Reusable Bayek framework follow-up is tracked separately in
   path after the operator UI/entity overlay foundation is stable.
 - [x] Add per-entity Animus vehicle assignment policy and UI after the default
   Generic RC Plane model path is exercised in operator workflows.
-- [ ] Add selected-entity tail length preference once the overlay renderer has
+- [x] Add selected-entity tail length preference once the overlay renderer has
   app-local tail-length wiring.
-- [ ] Add persisted Animus selected-vehicle test metadata for test name, phase,
+- [x] Add persisted Animus selected-vehicle test metadata for test name, phase,
   and target values once the display-only flight-test card placeholders are
   exercised.
-- [ ] Expose MAVLink heartbeat age to the Animus operator status ribbon once
+- [x] Expose MAVLink heartbeat age to the Animus operator status ribbon once
   heartbeat observation is available outside Developer diagnostics.
-- [ ] Add Animus review-tape marker sources for low link Hz, terrain
+- [x] Add Animus review-tape marker sources for low link Hz, terrain
   fallback/synthetic-under-vehicle, speed/climb excursions, geofence, capture
   events, and model fallback when those runtime/session sources are available.
-- [ ] Add Animus ghost replay baseline telemetry loading, comparison,
+- [x] Add Animus ghost replay baseline telemetry loading, comparison,
   and ghost track rendering on top of the Phase 11 current-run summary.
-- [ ] Add headless Animus workspace-layout transition tests for switching and
+- [x] Add headless Animus workspace-layout transition tests for switching and
   resetting layouts once the ImGui layout application logic is factored into a
   pure model helper.
 

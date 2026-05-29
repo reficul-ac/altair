@@ -210,6 +210,46 @@ TEST(TimelineReviewTests, CreatesHighRollAndPitchMarkersWithDegreeThresholds)
     EXPECT_EQ(attitude[1].severity, animus::app::TimelineReviewSeverity::Warning);
 }
 
+TEST(TimelineReviewTests, CreatesLowLinkSpeedClimbTerrainAndSessionMarkers)
+{
+    auto fast = sample(1.0);
+    fast.ground_speed_mps = 50.0;
+    fast.climb_rate_mps = 10.0;
+    auto later = sample(4.0);
+    animus::telemetry_core::Timeline timeline = timeline_with_samples({sample(0.0), fast, later});
+    timeline.events.push_back(
+        {1.5, entity_id(), 0U, animus::telemetry_core::EventSeverity::Info, "screenshot capture"});
+    timeline.events.push_back(
+        {2.0, entity_id(), 0U, animus::telemetry_core::EventSeverity::Warning, "geofence warning"});
+    timeline.events.push_back({2.5,
+                               entity_id(),
+                               0U,
+                               animus::telemetry_core::EventSeverity::Info,
+                               "model fallback active"});
+    auto status_thresholds = thresholds();
+    status_thresholds.link_hz_warning = 2.0;
+    status_thresholds.speed_warning_mps = 40.0;
+    status_thresholds.climb_warning_mps = 8.0;
+
+    const auto review =
+        build_review(timeline, {}, {{1.0, 50.0, false, true, false}}, {}, status_thresholds);
+
+    const auto has_category = [&review](const animus::app::TimelineReviewMarkerCategory category)
+    {
+        return std::any_of(review.markers.begin(),
+                           review.markers.end(),
+                           [category](const animus::app::TimelineReviewMarker &marker)
+                           { return marker.category == category; });
+    };
+    EXPECT_TRUE(has_category(animus::app::TimelineReviewMarkerCategory::LowLinkHz));
+    EXPECT_TRUE(has_category(animus::app::TimelineReviewMarkerCategory::SpeedExcursion));
+    EXPECT_TRUE(has_category(animus::app::TimelineReviewMarkerCategory::ClimbExcursion));
+    EXPECT_TRUE(has_category(animus::app::TimelineReviewMarkerCategory::TerrainFallback));
+    EXPECT_TRUE(has_category(animus::app::TimelineReviewMarkerCategory::Capture));
+    EXPECT_TRUE(has_category(animus::app::TimelineReviewMarkerCategory::Geofence));
+    EXPECT_TRUE(has_category(animus::app::TimelineReviewMarkerCategory::ModelFallback));
+}
+
 TEST(TimelineReviewTests, SelectsMaxSpeedAndMinClearanceMarkers)
 {
     auto first = sample(0.0);

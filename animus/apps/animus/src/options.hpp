@@ -76,6 +76,11 @@ struct Options
     bool developer_diagnostics_visible = false;
     bool telemetry_diagnostics_visible = false;
     bool mavlink_inspector_visible = true;
+    std::size_t selected_entity_tail_points = 1000U;
+    SelectedVehicleTestMetadata selected_vehicle_test;
+    std::filesystem::path ghost_recent_baseline_path;
+    bool ghost_layer_visible = false;
+    std::filesystem::path report_export_default_dir = "artifacts/animus/reports";
     AppConfigStatusThresholds status_thresholds;
     VehicleVisualAssignments vehicle_visuals;
     std::map<std::string, AppWorkspaceLayout> workspace_layouts;

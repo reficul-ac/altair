@@ -50,12 +50,14 @@ add_executable(
     ../apps/animus/src/selected_vehicle_card.cpp
     ../apps/animus/src/status_ribbon.cpp
     ../apps/animus/src/telemetry_signal_catalog.cpp
+    ../apps/animus/src/workspace_layout_model.cpp
     app_config_tests.cpp
     layer_stack_model_tests.cpp
     options_tests.cpp
     plot_config_tests.cpp
     selected_vehicle_card_tests.cpp
     status_ribbon_tests.cpp
+    workspace_layout_model_tests.cpp
 )
 target_include_directories(animus_options_tests PRIVATE ../apps/animus/src)
 target_link_libraries(
@@ -96,6 +98,23 @@ target_include_directories(animus_timeline_review_tests PRIVATE ../apps/animus/s
 target_link_libraries(animus_timeline_review_tests PRIVATE animus_telemetry_core GTest::gtest_main)
 animus_enable_warnings(animus_timeline_review_tests)
 gtest_discover_tests(animus_timeline_review_tests)
+
+add_executable(
+    animus_ghost_report_tests
+    ../apps/animus/src/ghost_replay.cpp
+    ../apps/animus/src/plan_visualization.cpp
+    ../apps/animus/src/report_export.cpp
+    ../apps/animus/src/timeline_review.cpp
+    ghost_replay_tests.cpp
+    report_export_tests.cpp
+)
+target_include_directories(animus_ghost_report_tests PRIVATE ../apps/animus/src)
+target_link_libraries(
+    animus_ghost_report_tests PRIVATE animus_telemetry_core animus_telemetry_live
+                                      animus_terrain_core GTest::gtest_main
+)
+animus_enable_warnings(animus_ghost_report_tests)
+gtest_discover_tests(animus_ghost_report_tests)
 
 add_executable(
     animus_telemetry_signal_catalog_tests ../apps/animus/src/telemetry_signal_catalog.cpp
