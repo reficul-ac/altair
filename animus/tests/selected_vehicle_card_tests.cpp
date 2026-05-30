@@ -189,6 +189,14 @@ TEST(SelectedVehicleCard, ShowsPersistedTestMetadata)
     EXPECT_NE(model.target.find("090"), std::string::npos);
 }
 
+TEST(SelectedVehicleCard, UiDefaultsToCompactInspector)
+{
+    const animus::app::UiState ui;
+
+    EXPECT_EQ(ui.selected_vehicle_inspector_mode,
+              animus::app::SelectedVehicleInspectorMode::Compact);
+}
+
 TEST(SelectedVehicleCard, TerrainConfidenceLabelsCoverAllStates)
 {
     TelemetryPlaybackState playback = playback_with_sample();

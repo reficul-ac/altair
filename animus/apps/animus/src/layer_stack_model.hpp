@@ -17,6 +17,14 @@ enum class LayerWarningLevel
     Warning,
 };
 
+enum class LayerStackCategory
+{
+    Display,
+    Mission,
+    Terrain,
+    Debug,
+};
+
 struct LayerStackContext
 {
     bool telemetry_loaded = false;
@@ -44,6 +52,7 @@ struct LayerStackRow
 {
     std::string id;
     std::string label;
+    LayerStackCategory category = LayerStackCategory::Display;
     bool visible = false;
     bool available = true;
     bool has_opacity = false;
@@ -60,6 +69,7 @@ struct LayerStackRow
 
 [[nodiscard]] std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settings,
                                                                 const LayerStackContext &context);
+[[nodiscard]] const char *layer_stack_category_label(LayerStackCategory category);
 [[nodiscard]] AppLayerSettings layer_preset_operator_clean(const AppLayerSettings &current,
                                                            bool plan_loaded);
 [[nodiscard]] AppLayerSettings layer_preset_terrain_analysis(const AppLayerSettings &current,

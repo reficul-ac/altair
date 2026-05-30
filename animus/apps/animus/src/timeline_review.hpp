@@ -110,6 +110,15 @@ struct TimelineReviewFilterState
     bool show_min_max = true;
 };
 
+enum class TimelineFilterPreset
+{
+    All,
+    Critical,
+    Warnings,
+    Bookmarks,
+    Custom,
+};
+
 struct TimelineReviewThresholds
 {
     double terrain_clearance_warning_m = 30.0;
@@ -158,6 +167,9 @@ build_timeline_review(const animus::telemetry_core::Timeline &timeline,
 
 [[nodiscard]] bool timeline_review_marker_visible(const TimelineReviewMarker &marker,
                                                   const TimelineReviewFilterState &filters);
+[[nodiscard]] TimelineReviewFilterState timeline_review_filter_preset(TimelineFilterPreset preset);
+[[nodiscard]] TimelineFilterPreset
+classify_timeline_review_filter(const TimelineReviewFilterState &filters);
 
 [[nodiscard]] std::optional<std::size_t>
 previous_review_marker(const std::vector<TimelineReviewMarker> &markers,
@@ -168,8 +180,13 @@ previous_review_marker(const std::vector<TimelineReviewMarker> &markers,
 next_review_marker(const std::vector<TimelineReviewMarker> &markers,
                    double current_time_s,
                    const TimelineReviewFilterState &filters = {});
+[[nodiscard]] std::optional<std::size_t>
+next_critical_review_marker(const std::vector<TimelineReviewMarker> &markers,
+                            double current_time_s,
+                            const TimelineReviewFilterState &filters = {});
 
 [[nodiscard]] const char *timeline_review_marker_label(TimelineReviewMarkerCategory category);
 [[nodiscard]] const char *timeline_review_severity_label(TimelineReviewSeverity severity);
+[[nodiscard]] const char *timeline_filter_preset_label(TimelineFilterPreset preset);
 
 } // namespace animus::app

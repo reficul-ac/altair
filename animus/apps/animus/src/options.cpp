@@ -764,6 +764,13 @@ AppConfig app_config_from_options(const Options &options)
     return config;
 }
 
+bool should_auto_save_config_on_exit(const Options &options)
+{
+    return options.config_dirty && !options.config_path.empty() && !options.smoke &&
+           options.frames == 0 && options.capture_ppm.empty() && options.capture_png.empty() &&
+           options.capture_sequence_dir.empty();
+}
+
 AppConfigSaveResult save_app_config(Options &options)
 {
     AppConfigSaveResult result;

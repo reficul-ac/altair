@@ -111,3 +111,24 @@ TEST(AnimusLayerStackModel, PresetsOnlyChangeLayerSettings)
     EXPECT_TRUE(capture.planned_route_visible);
     EXPECT_TRUE(capture.geofence_rally_visible);
 }
+
+TEST(AnimusLayerStackModel, RowsCarryOperatorCategories)
+{
+    animus::app::AppLayerSettings settings;
+    animus::app::LayerStackContext context;
+    context.telemetry_loaded = true;
+    context.plan_loaded = true;
+
+    const auto rows = animus::app::build_layer_stack_rows(settings, context);
+
+    ASSERT_NE(find_row(rows, "vehicle_icons"), nullptr);
+    EXPECT_EQ(find_row(rows, "vehicle_icons")->category, animus::app::LayerStackCategory::Display);
+    ASSERT_NE(find_row(rows, "planned_route"), nullptr);
+    EXPECT_EQ(find_row(rows, "planned_route")->category, animus::app::LayerStackCategory::Mission);
+    ASSERT_NE(find_row(rows, "hillshade"), nullptr);
+    EXPECT_EQ(find_row(rows, "hillshade")->category, animus::app::LayerStackCategory::Terrain);
+    ASSERT_NE(find_row(rows, "tile_state_debug"), nullptr);
+    EXPECT_EQ(find_row(rows, "tile_state_debug")->category, animus::app::LayerStackCategory::Debug);
+    EXPECT_STREQ(animus::app::layer_stack_category_label(animus::app::LayerStackCategory::Mission),
+                 "Mission");
+}

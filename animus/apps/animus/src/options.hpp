@@ -128,6 +128,7 @@ Options parse_options(int argc, char **argv);
 std::filesystem::path default_app_config_path();
 void apply_app_config_to_options(Options &options, const AppConfig &config);
 AppConfig app_config_from_options(const Options &options);
+bool should_auto_save_config_on_exit(const Options &options);
 AppConfigSaveResult save_app_config(Options &options);
 
 } // namespace animus::app

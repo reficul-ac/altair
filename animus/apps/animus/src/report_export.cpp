@@ -1,5 +1,6 @@
 #include "report_export.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <system_error>
 
@@ -90,8 +91,9 @@ ReportExportResult export_report_v1(const ReportExportInput &input,
         out << "- Distance: " << input.run.distance_m << " m\n";
         out << "- Events: " << input.events.size() << "\n";
         out << "- Test: "
-            << (input.selected_vehicle_test.test_name.empty() ? "n/a"
-                                                               : input.selected_vehicle_test.test_name)
+            << (input.selected_vehicle_test.test_name.empty()
+                    ? "n/a"
+                    : input.selected_vehicle_test.test_name)
             << "\n";
     }
     result.files.push_back(markdown_path);
@@ -102,8 +104,9 @@ ReportExportResult export_report_v1(const ReportExportInput &input,
         out << "time_s,end_time_s,severity,category,label,value\n";
         for (const TimelineReviewMarker &event : input.events)
         {
-            out << event.time_s << "," << (event.end_time_s ? std::to_string(*event.end_time_s) : "")
-                << "," << timeline_review_severity_label(event.severity) << ","
+            out << event.time_s << ","
+                << (event.end_time_s ? std::to_string(*event.end_time_s) : "") << ","
+                << timeline_review_severity_label(event.severity) << ","
                 << timeline_review_marker_label(event.category) << "," << event.label << ","
                 << (event.value ? std::to_string(*event.value) : "") << "\n";
         }
@@ -118,6 +121,95 @@ ReportExportResult export_report_v1(const ReportExportInput &input,
     result.files.push_back(directory / "plots" / "terrain_clearance.csv");
     result.ok = true;
     return result;
+}
+
+ReportExportResult export_report_v1_from_ui(const ReportExportInput &input,
+                                            const ReportExportUiState &state,
+                                            const std::filesystem::path &fallback)
+{
+    ReportExportResult result = export_report_v1(input, report_export_output_dir(state, fallback));
+    if (!result.ok)
+    {
+        return result;
+    }
+    const auto remove_artifact = [&result](const std::filesystem::path &path)
+    {
+        std::error_code error;
+        std::filesystem::remove_all(path, error);
+        result.files.erase(std::remove_if(result.files.begin(),
+                                          result.files.end(),
+                                          [&path](const std::filesystem::path &candidate) {
+                                              return candidate == path ||
+                                                     candidate.string().find(path.string() + "/") ==
+                                                         0U;
+                                          }),
+                           result.files.end());
+        if (error)
+        {
+            result.diagnostics.push_back("failed to remove disabled artifact " + path.string() +
+                                         ": " + error.message());
+            result.ok = false;
+        }
+    };
+    if (!state.include_summary_yaml)
+    {
+        remove_artifact(result.directory / "summary.yaml");
+    }
+    if (!state.include_summary_markdown)
+    {
+        remove_artifact(result.directory / "summary.md");
+    }
+    if (!state.include_events_csv)
+    {
+        remove_artifact(result.directory / "events.csv");
+    }
+    if (!state.include_plot_csvs)
+    {
+        remove_artifact(result.directory / "plots");
+    }
+    if (!state.include_screenshots_directory)
+    {
+        remove_artifact(result.directory / "screenshots");
+    }
+    return result;
+}
+
+std::filesystem::path report_export_output_dir(const ReportExportUiState &state,
+                                               const std::filesystem::path &fallback)
+{
+    const std::filesystem::path configured(state.output_dir.data());
+    return configured.empty() ? fallback : configured;
+}
+
+std::vector<std::string> report_export_preview_lines(const ReportExportInput &input,
+                                                     const ReportExportUiState &state)
+{
+    std::vector<std::string> lines;
+    lines.push_back("source: " +
+                    (input.run_source.empty() ? std::string("n/a") : input.run_source));
+    lines.push_back("duration: " + std::to_string(input.run.duration_s) + " s");
+    lines.push_back("events: " + std::to_string(input.events.size()));
+    if (state.include_summary_yaml)
+    {
+        lines.push_back("summary.yaml");
+    }
+    if (state.include_summary_markdown)
+    {
+        lines.push_back("summary.md");
+    }
+    if (state.include_events_csv)
+    {
+        lines.push_back("events.csv");
+    }
+    if (state.include_plot_csvs)
+    {
+        lines.push_back("plots/*.csv");
+    }
+    if (state.include_screenshots_directory)
+    {
+        lines.push_back("screenshots/");
+    }
+    return lines;
 }
 
 } // namespace animus::app

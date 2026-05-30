@@ -662,6 +662,76 @@ bool timeline_review_marker_visible(const TimelineReviewMarker &marker,
     return true;
 }
 
+TimelineReviewFilterState timeline_review_filter_preset(const TimelineFilterPreset preset)
+{
+    TimelineReviewFilterState filters;
+    switch (preset)
+    {
+    case TimelineFilterPreset::All:
+    case TimelineFilterPreset::Custom:
+        return filters;
+    case TimelineFilterPreset::Critical:
+        filters.show_info = false;
+        filters.show_caution = false;
+        return filters;
+    case TimelineFilterPreset::Warnings:
+        filters.show_info = false;
+        return filters;
+    case TimelineFilterPreset::Bookmarks:
+        filters.show_info = true;
+        filters.show_caution = true;
+        filters.show_warning = true;
+        filters.show_gap = false;
+        filters.show_degraded = false;
+        filters.show_import = false;
+        filters.show_bookmark = true;
+        filters.show_clearance = false;
+        filters.show_attitude = false;
+        filters.show_frame_time = false;
+        filters.show_plan = false;
+        filters.show_min_max = false;
+        return filters;
+    }
+    return filters;
+}
+
+TimelineFilterPreset classify_timeline_review_filter(const TimelineReviewFilterState &filters)
+{
+    const auto matches = [&filters](const TimelineFilterPreset preset)
+    {
+        const TimelineReviewFilterState expected = timeline_review_filter_preset(preset);
+        return filters.show_info == expected.show_info &&
+               filters.show_caution == expected.show_caution &&
+               filters.show_warning == expected.show_warning &&
+               filters.show_gap == expected.show_gap &&
+               filters.show_degraded == expected.show_degraded &&
+               filters.show_import == expected.show_import &&
+               filters.show_bookmark == expected.show_bookmark &&
+               filters.show_clearance == expected.show_clearance &&
+               filters.show_attitude == expected.show_attitude &&
+               filters.show_frame_time == expected.show_frame_time &&
+               filters.show_plan == expected.show_plan &&
+               filters.show_min_max == expected.show_min_max;
+    };
+    if (matches(TimelineFilterPreset::All))
+    {
+        return TimelineFilterPreset::All;
+    }
+    if (matches(TimelineFilterPreset::Critical))
+    {
+        return TimelineFilterPreset::Critical;
+    }
+    if (matches(TimelineFilterPreset::Warnings))
+    {
+        return TimelineFilterPreset::Warnings;
+    }
+    if (matches(TimelineFilterPreset::Bookmarks))
+    {
+        return TimelineFilterPreset::Bookmarks;
+    }
+    return TimelineFilterPreset::Custom;
+}
+
 std::optional<std::size_t> previous_review_marker(const std::vector<TimelineReviewMarker> &markers,
                                                   const double current_time_s,
                                                   const TimelineReviewFilterState &filters)
@@ -693,6 +763,18 @@ std::optional<std::size_t> next_review_marker(const std::vector<TimelineReviewMa
         }
     }
     return std::nullopt;
+}
+
+std::optional<std::size_t>
+next_critical_review_marker(const std::vector<TimelineReviewMarker> &markers,
+                            const double current_time_s,
+                            const TimelineReviewFilterState &filters)
+{
+    TimelineReviewFilterState critical = filters;
+    critical.show_info = false;
+    critical.show_caution = false;
+    critical.show_warning = true;
+    return next_review_marker(markers, current_time_s, critical);
 }
 
 const char *timeline_review_marker_label(const TimelineReviewMarkerCategory category)
@@ -753,6 +835,24 @@ const char *timeline_review_severity_label(const TimelineReviewSeverity severity
         return "warning";
     }
     return "info";
+}
+
+const char *timeline_filter_preset_label(const TimelineFilterPreset preset)
+{
+    switch (preset)
+    {
+    case TimelineFilterPreset::All:
+        return "All";
+    case TimelineFilterPreset::Critical:
+        return "Critical";
+    case TimelineFilterPreset::Warnings:
+        return "Warnings";
+    case TimelineFilterPreset::Bookmarks:
+        return "Bookmarks";
+    case TimelineFilterPreset::Custom:
+        return "Custom";
+    }
+    return "Custom";
 }
 
 } // namespace animus::app

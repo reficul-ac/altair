@@ -53,7 +53,7 @@ enum class PillState
 };
 
 const char *altitude_datum_label(animus::telemetry_core::AltitudeDatum datum);
-void draw_review_filters(TimelineReviewFilterState &filters);
+void draw_review_filters(UiState &ui_state);
 bool mode_visible_in_workspace(UiNavigationMode mode, WorkspaceMode workspace_mode);
 
 const char *workspace_label(const WorkspaceMode mode)
@@ -364,7 +364,11 @@ void nav_button(UiState &ui_state, UiNavigationMode mode)
     }
     if (ImGui::Button(workspace_tab_label(mode, ui_state.workspace_mode), ImVec2(-1.0F, 0.0F)))
     {
-        ui_state.active_mode = mode;
+        if (ui_state.active_mode != mode)
+        {
+            ui_state.active_mode = mode;
+            ui_state.main_panel_restore_pending = true;
+        }
         if (mode == UiNavigationMode::Developer)
         {
             ui_state.developer_diagnostics_visible = true;
@@ -430,6 +434,15 @@ void sanitize_active_mode(UiState &ui_state)
             break;
         }
     }
+}
+
+void request_workspace_layout_restore(UiState &ui_state)
+{
+    ui_state.workspace_layout_restore_pending = true;
+    ui_state.main_panel_restore_pending = true;
+    ui_state.inspector_restore_pending = true;
+    ui_state.timeline_restore_pending = true;
+    ui_state.plot_shelf_restore_pending = true;
 }
 
 AppWorkspaceLayout &workspace_layout(UiState &ui_state, const WorkspaceMode mode)
@@ -586,6 +599,7 @@ void apply_workspace_layout(UiState &ui_state,
         ui_state.inspector_visible = false;
     }
     sanitize_active_mode(ui_state);
+    request_workspace_layout_restore(ui_state);
 }
 
 void capture_workspace_layout(UiState &ui_state,
@@ -792,7 +806,7 @@ void draw_plan_controls(PlanVisualizationState &plan_state,
                         const TelemetryPlaybackState &playback,
                         const UiState &ui_state)
 {
-    ImGui::SeparatorText("Plan");
+    ImGui::SeparatorText("Mission Plan");
     ImGui::Checkbox("Plan overlay", &plan_state.overlay_visible);
     ImGui::InputText("Plan path", plan_state.path.data(), plan_state.path.size());
     if (ImGui::Button("Load"))
@@ -845,36 +859,44 @@ void draw_plan_controls(PlanVisualizationState &plan_state,
     {
         ImGui::TextWrapped("%s", plan_state.loaded_path.string().c_str());
     }
+    std::optional<PlanActualAggregate> aggregate;
     if (playback.loaded && ui_state.telemetry_entity_selected)
     {
         const auto *track = playback.timeline.track_for(playback.selected_entity);
         if (track != nullptr)
         {
-            const PlanActualAggregate comparison =
-                compare_plan_actual(plan, *track, playback.clock.time_s());
-            ImGui::Text("selected track %s",
-                        format_route_distance(comparison.selected_track_m).c_str());
-            ImGui::Text("route completion %s  compared %zu",
-                        format_percent(comparison.route_completion_ratio).c_str(),
-                        comparison.compared_samples);
-            ImGui::Text("cross-track avg/max %s / %s",
-                        format_distance_m(comparison.average_cross_track_error_m).c_str(),
-                        format_distance_m(comparison.max_cross_track_error_m).c_str());
-            if (comparison.current)
-            {
-                const PlanActualDeviation &current = *comparison.current;
-                ImGui::Text("active leg %zu->%zu  current error %s",
-                            current.progress.from_waypoint_index + 1U,
-                            current.progress.to_waypoint_index + 1U,
-                            format_distance_m(current.cross_track_error_m).c_str());
-                if (current.altitude_error_m)
-                {
-                    ImGui::Text("altitude error %s",
-                                format_distance_m(std::abs(*current.altitude_error_m)).c_str());
-                }
-            }
+            aggregate = compare_plan_actual(plan, *track, playback.clock.time_s());
         }
     }
+    const PlanRouteProfileSummary profile = plan_route_profile_summary(plan, aggregate);
+    ImGui::SeparatorText("Route profile");
+    ImGui::Text("route distance %s", format_route_distance(profile.route_distance_m).c_str());
+    if (!profile.telemetry_compared)
+    {
+        muted_text("No selected telemetry comparison.");
+    }
+    else
+    {
+        ImGui::Text("completion %s  compared %zu",
+                    format_percent(profile.route_completion_ratio).c_str(),
+                    profile.compared_samples);
+        ImGui::Text("cross-track avg/max %s / %s",
+                    format_distance_m(profile.average_cross_track_error_m).c_str(),
+                    format_distance_m(profile.max_cross_track_error_m).c_str());
+        if (profile.active_from_waypoint_index && profile.active_to_waypoint_index)
+        {
+            ImGui::Text("active leg %zu->%zu",
+                        *profile.active_from_waypoint_index + 1U,
+                        *profile.active_to_waypoint_index + 1U);
+        }
+        if (profile.current_altitude_error_m)
+        {
+            ImGui::Text("altitude error %s",
+                        format_distance_m(std::abs(*profile.current_altitude_error_m)).c_str());
+        }
+    }
+    ImGui::TextColored(
+        text_muted, "clearance/elevation profile %s", profile.clearance_profile_status.c_str());
     for (const std::string &diagnostic : plan_state.diagnostics)
     {
         ImGui::TextWrapped("warning: %s", diagnostic.c_str());
@@ -1606,7 +1628,7 @@ void draw_layer_stack(const Options &options,
         }
     }
 
-    ImGui::SeparatorText("Mutable Layers");
+    ImGui::SeparatorText("Display");
     ImGui::Checkbox("Vehicle icons", &ui_state.layers.vehicle_icons_visible);
     ImGui::SameLine();
     ImGui::Checkbox("Vehicle labels", &ui_state.layers.vehicle_labels_visible);
@@ -1620,10 +1642,11 @@ void draw_layer_stack(const Options &options,
         ui_state.layers.selected_entity_tail_points = ui_state.selected_entity_tail_points;
     }
     ImGui::Checkbox("Heading vectors", &ui_state.layers.heading_vectors_visible);
-    ImGui::SameLine();
+    ImGui::SeparatorText("Mission");
     ImGui::Checkbox("Planned route", &ui_state.layers.planned_route_visible);
     ImGui::SameLine();
     ImGui::Checkbox("Geofence/rally", &ui_state.layers.geofence_rally_visible);
+    ImGui::SeparatorText("Terrain");
     ImGui::Checkbox("Terrain confidence", &ui_state.layers.terrain_confidence_visible);
     ImGui::BeginDisabled();
     ImGui::Checkbox("Clearance heatmap", &ui_state.layers.terrain_clearance_heatmap_visible);
@@ -1650,7 +1673,7 @@ void draw_layer_stack(const Options &options,
         }
     }
     ImGui::Checkbox("Hillshade", &ui_state.layers.hillshade_visible);
-    ImGui::SameLine();
+    ImGui::SeparatorText("Debug");
     ImGui::Checkbox("Tile state debug", &ui_state.layers.tile_state_debug_visible);
     ImGui::SameLine();
     ImGui::Checkbox("Fallback highlight", &ui_state.layers.fallback_highlight_visible);
@@ -1665,75 +1688,95 @@ void draw_layer_stack(const Options &options,
     plan_state.overlay_visible =
         ui_state.layers.planned_route_visible || ui_state.layers.geofence_rally_visible;
 
-    ImGui::SeparatorText("Layer Stack");
-    if (ImGui::BeginTable("layer_stack",
-                          7,
-                          ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders |
-                              ImGuiTableFlags_SizingStretchProp))
+    LayerStackContext context;
+    context.telemetry_loaded = playback.loaded;
+    context.telemetry_live = playback.live;
+    context.plan_loaded = plan_state.data.has_value();
+    context.plan_error = !plan_state.error.empty();
+    context.plan_diagnostic_count = plan_state.diagnostics.size();
+    if (plan_state.data)
     {
-        ImGui::TableSetupColumn("layer");
-        ImGui::TableSetupColumn("visible");
-        ImGui::TableSetupColumn("opacity");
-        ImGui::TableSetupColumn("order");
-        ImGui::TableSetupColumn("source");
-        ImGui::TableSetupColumn("health");
-        ImGui::TableSetupColumn("");
-        ImGui::TableHeadersRow();
+        context.plan_route_points = plan_state.data->mission_waypoints.size();
+        context.plan_geofence_items =
+            plan_state.data->geofence_polygons.size() + plan_state.data->geofence_circles.size();
+        context.plan_rally_points = plan_state.data->rally_points.size();
+    }
+    context.geotiff_configured = !options.overlay_geotiff.empty() || !options.overlays.empty();
+    context.geotiff_missing =
+        !options.overlay_geotiff.empty() && !std::filesystem::exists(options.overlay_geotiff);
+    context.bathymetry_configured = !options.bathymetry_geotiff.empty();
+    context.bathymetry_missing =
+        !options.bathymetry_geotiff.empty() && !std::filesystem::exists(options.bathymetry_geotiff);
+    context.bathymetry_runtime_enabled = ui_state.bathymetry_enabled;
+    context.terrain_tiles_loaded = snapshot.resident_gpu_tiles > 0U;
+    context.failed_tiles = snapshot.failed_tiles;
+    for (const auto &tile : snapshot.tiles)
+    {
+        if (tile.state == animus::terrain_core::TileState::UsingFallback)
+        {
+            ++context.fallback_tiles;
+        }
+        if (tile.synthetic)
+        {
+            ++context.synthetic_tiles;
+        }
+    }
+    context.terrain_confidence_available = ui_state.telemetry_entity_selected;
+    context.terrain_clearance_available =
+        playback.selected_entity_terrain.terrain_clearance_m.has_value();
+    const std::vector<LayerStackRow> rows = build_layer_stack_rows(ui_state.layers, context);
+    ImGui::SeparatorText("Layer groups");
+    for (const LayerStackCategory category : {LayerStackCategory::Display,
+                                              LayerStackCategory::Mission,
+                                              LayerStackCategory::Terrain,
+                                              LayerStackCategory::Debug})
+    {
+        const std::size_t visible_count = static_cast<std::size_t>(
+            std::count_if(rows.begin(),
+                          rows.end(),
+                          [category](const LayerStackRow &row)
+                          { return row.category == category && row.visible; }));
+        ImGui::Text("%s %zu", layer_stack_category_label(category), visible_count);
+        if (category != LayerStackCategory::Debug)
+        {
+            ImGui::SameLine();
+        }
+    }
 
-        LayerStackContext context;
-        context.telemetry_loaded = playback.loaded;
-        context.telemetry_live = playback.live;
-        context.plan_loaded = plan_state.data.has_value();
-        context.plan_error = !plan_state.error.empty();
-        context.plan_diagnostic_count = plan_state.diagnostics.size();
-        if (plan_state.data)
+    if (ImGui::CollapsingHeader("Details"))
+    {
+        if (ImGui::BeginTable("layer_stack",
+                              7,
+                              ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders |
+                                  ImGuiTableFlags_SizingStretchProp))
         {
-            context.plan_route_points = plan_state.data->mission_waypoints.size();
-            context.plan_geofence_items = plan_state.data->geofence_polygons.size() +
-                                          plan_state.data->geofence_circles.size();
-            context.plan_rally_points = plan_state.data->rally_points.size();
-        }
-        context.geotiff_configured = !options.overlay_geotiff.empty() || !options.overlays.empty();
-        context.geotiff_missing =
-            !options.overlay_geotiff.empty() && !std::filesystem::exists(options.overlay_geotiff);
-        context.bathymetry_configured = !options.bathymetry_geotiff.empty();
-        context.bathymetry_missing = !options.bathymetry_geotiff.empty() &&
-                                     !std::filesystem::exists(options.bathymetry_geotiff);
-        context.bathymetry_runtime_enabled = ui_state.bathymetry_enabled;
-        context.terrain_tiles_loaded = snapshot.resident_gpu_tiles > 0U;
-        context.failed_tiles = snapshot.failed_tiles;
-        for (const auto &tile : snapshot.tiles)
-        {
-            if (tile.state == animus::terrain_core::TileState::UsingFallback)
-            {
-                ++context.fallback_tiles;
-            }
-            if (tile.synthetic)
-            {
-                ++context.synthetic_tiles;
-            }
-        }
-        context.terrain_confidence_available = ui_state.telemetry_entity_selected;
-        context.terrain_clearance_available =
-            playback.selected_entity_terrain.terrain_clearance_m.has_value();
+            ImGui::TableSetupColumn("layer");
+            ImGui::TableSetupColumn("visible");
+            ImGui::TableSetupColumn("opacity");
+            ImGui::TableSetupColumn("order");
+            ImGui::TableSetupColumn("source");
+            ImGui::TableSetupColumn("health");
+            ImGui::TableSetupColumn("");
+            ImGui::TableHeadersRow();
 
-        for (const LayerStackRow &row : build_layer_stack_rows(ui_state.layers, context))
-        {
-            char opacity_text[32]{};
-            std::snprintf(opacity_text, sizeof(opacity_text), "%.2f", row.opacity);
-            const std::string visible = row.available ? bool_label(row.visible) : "unavailable";
-            const std::string health = row.warning == LayerWarningLevel::None
-                                           ? row.status
-                                           : row.status + " / " + row.warning_badge;
-            draw_layer_row(row.label.c_str(),
-                           visible.c_str(),
-                           row.has_opacity ? opacity_text : "-",
-                           row.has_draw_order ? row.order_label.c_str() : "-",
-                           row.source.c_str(),
-                           health.c_str(),
-                           row.details);
+            for (const LayerStackRow &row : rows)
+            {
+                char opacity_text[32]{};
+                std::snprintf(opacity_text, sizeof(opacity_text), "%.2f", row.opacity);
+                const std::string visible = row.available ? bool_label(row.visible) : "unavailable";
+                const std::string health = row.warning == LayerWarningLevel::None
+                                               ? row.status
+                                               : row.status + " / " + row.warning_badge;
+                draw_layer_row(row.label.c_str(),
+                               visible.c_str(),
+                               row.has_opacity ? opacity_text : "-",
+                               row.has_draw_order ? row.order_label.c_str() : "-",
+                               row.source.c_str(),
+                               health.c_str(),
+                               row.details);
+            }
+            ImGui::EndTable();
         }
-        ImGui::EndTable();
     }
 }
 
@@ -1958,7 +2001,7 @@ void draw_telemetry_panel(const Options &options,
         if (ui.telemetry_entity_selected)
         {
             draw_review_jump_buttons(playback.review, ui);
-            draw_review_filters(ui.timeline_review_filters);
+            draw_review_filters(ui);
             draw_review_charts(playback.review);
         }
         if (ui.workspace_mode == WorkspaceMode::Analyze)
@@ -2405,6 +2448,93 @@ void draw_capture_panel(ScreenshotToolState &screenshot_tool,
     ImGui::TextWrapped("%s", mp4_recorder.status.c_str());
 }
 
+ReportExportInput build_report_export_input(const Options &options,
+                                            const TelemetryPlaybackState &playback,
+                                            const PlanVisualizationState &plan_state,
+                                            const UiState &ui)
+{
+    ReportExportInput input;
+    input.run_source = playback.live ? playback.live_endpoint
+                                     : (options.telemetry.empty() ? std::string("none")
+                                                                  : options.telemetry.string());
+    input.config_profile = options.config_path.empty() ? "default" : options.config_path.string();
+    if (playback.loaded && ui.telemetry_entity_selected)
+    {
+        input.run = summarize_telemetry_run(playback.timeline,
+                                            playback.selected_entity,
+                                            plan_state.data ? &*plan_state.data : nullptr,
+                                            options.status_thresholds.telemetry_gap_warning_s);
+    }
+    input.review = playback.review;
+    input.events = playback.review.markers;
+    input.selected_vehicle_test = ui.selected_vehicle_test;
+    if (playback.ghost_baseline && playback.loaded && ui.telemetry_entity_selected)
+    {
+        input.ghost = compare_ghost_replay(playback.timeline,
+                                           *playback.ghost_baseline,
+                                           playback.selected_entity,
+                                           plan_state.data ? &*plan_state.data : nullptr,
+                                           options.status_thresholds.telemetry_gap_warning_s);
+    }
+    return input;
+}
+
+void draw_export_panel(const Options &options,
+                       const TelemetryPlaybackState &playback,
+                       const PlanVisualizationState &plan_state,
+                       UiState &ui)
+{
+    ReportExportUiState &export_ui = ui.report_export;
+    if (export_ui.output_dir[0] == '\0')
+    {
+        std::snprintf(export_ui.output_dir.data(),
+                      export_ui.output_dir.size(),
+                      "%s",
+                      ui.report_export_default_dir.string().c_str());
+    }
+    const ReportExportInput input = build_report_export_input(options, playback, plan_state, ui);
+    ImGui::SeparatorText("Report bundle");
+    ImGui::InputText("Output dir", export_ui.output_dir.data(), export_ui.output_dir.size());
+    ImGui::Checkbox("Summary YAML", &export_ui.include_summary_yaml);
+    ImGui::SameLine();
+    ImGui::Checkbox("Summary Markdown", &export_ui.include_summary_markdown);
+    ImGui::Checkbox("Events CSV", &export_ui.include_events_csv);
+    ImGui::SameLine();
+    ImGui::Checkbox("Plot CSVs", &export_ui.include_plot_csvs);
+    ImGui::Checkbox("Screenshots directory", &export_ui.include_screenshots_directory);
+
+    ImGui::SeparatorText("Preview");
+    for (const std::string &line : report_export_preview_lines(input, export_ui))
+    {
+        ImGui::TextWrapped("%s", line.c_str());
+    }
+
+    if (!playback.loaded)
+    {
+        muted_text("No telemetry loaded; export will contain empty run summaries.");
+    }
+    if (ImGui::Button("Export Bundle"))
+    {
+        export_ui.diagnostics.clear();
+        export_ui.last_result =
+            export_report_v1_from_ui(input, export_ui, ui.report_export_default_dir);
+        export_ui.diagnostics = export_ui.last_result.diagnostics;
+    }
+    if (!export_ui.last_result.directory.empty())
+    {
+        ImGui::Text("last export %s", export_ui.last_result.ok ? "complete" : "failed");
+        ImGui::TextWrapped("%s", export_ui.last_result.directory.string().c_str());
+        for (const std::filesystem::path &path : export_ui.last_result.files)
+        {
+            ImGui::TextWrapped("%s", path.string().c_str());
+        }
+    }
+    for (const std::string &diagnostic : export_ui.diagnostics)
+    {
+        ImGui::TextColored(stale_amber, "%s", diagnostic.c_str());
+    }
+}
+
 void draw_developer_panel(
     const Options &options,
     const animus::render_core::GlInfo &gl_info,
@@ -2643,6 +2773,33 @@ void metric_grid(const char *id, const std::vector<SelectedVehicleCardMetric> &m
     }
 }
 
+std::string selected_metric_value(const std::vector<SelectedVehicleCardMetric> &metrics,
+                                  const char *label)
+{
+    const auto found = std::find_if(metrics.begin(),
+                                    metrics.end(),
+                                    [label](const SelectedVehicleCardMetric &metric)
+                                    { return metric.label == label; });
+    return found == metrics.end() ? std::string("--") : found->value;
+}
+
+void draw_selected_vehicle_compact_metrics(const SelectedVehicleCardModel &card)
+{
+    metric_row("Status", card.telemetry_state);
+    metric_row("Visual", card.detected_type + " / " + card.visual_status);
+    metric_row("Age", card.telemetry_age);
+    metric_row("Alt MSL", selected_metric_value(card.position_metrics, "Alt MSL"));
+    metric_row("Alt rel", selected_metric_value(card.position_metrics, "Alt Rel"));
+    metric_row("Clearance", selected_metric_value(card.position_metrics, "Clearance"));
+    metric_row("Ground", selected_metric_value(card.motion_metrics, "Ground"));
+    metric_row("Climb", selected_metric_value(card.motion_metrics, "Climb"));
+    metric_row("Heading", selected_metric_value(card.motion_metrics, "Heading"));
+    metric_row("Roll", selected_metric_value(card.motion_metrics, "Roll"));
+    metric_row("Pitch", selected_metric_value(card.motion_metrics, "Pitch"));
+    metric_row("Terrain", card.terrain_confidence);
+    metric_row("Forward", card.forward_clearance_summary);
+}
+
 void draw_selected_entity_card(Options &options,
                                TelemetryPlaybackState &playback,
                                const VehicleRuntimeStatus &vehicle_status,
@@ -2661,6 +2818,31 @@ void draw_selected_entity_card(Options &options,
     if (card.visual_fallback != "--")
     {
         ImGui::TextColored(stale_amber, "%s", card.visual_fallback.c_str());
+    }
+    if (ImGui::Button(ui_state.selected_vehicle_inspector_mode ==
+                              SelectedVehicleInspectorMode::Compact
+                          ? "Expanded details"
+                          : "Compact view"))
+    {
+        ui_state.selected_vehicle_inspector_mode =
+            ui_state.selected_vehicle_inspector_mode == SelectedVehicleInspectorMode::Compact
+                ? SelectedVehicleInspectorMode::Expanded
+                : SelectedVehicleInspectorMode::Compact;
+    }
+
+    if (ui_state.selected_vehicle_inspector_mode == SelectedVehicleInspectorMode::Compact)
+    {
+        ImGui::SeparatorText("Telemetry");
+        draw_selected_vehicle_compact_metrics(card);
+        if (!card.warnings.empty())
+        {
+            ImGui::SeparatorText("Warnings");
+            for (const std::string &warning : card.warnings)
+            {
+                ImGui::TextColored(stale_amber, "%s", warning.c_str());
+            }
+        }
+        return;
     }
 
     ImGui::SeparatorText("Controls");
@@ -2874,8 +3056,10 @@ void draw_inspector(Options &options,
                                  520.0F};
     const AppWindowRect rect =
         clamp_window_rect(layout.inspector, fallback, ImGui::GetIO().DisplaySize, {260.0F, 220.0F});
-    ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(rect.width, rect.height), ImGuiCond_Always);
+    const ImGuiCond rect_condition =
+        ui_state.inspector_restore_pending ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+    ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y), rect_condition);
+    ImGui::SetNextWindowSize(ImVec2(rect.width, rect.height), rect_condition);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
     ImGui::PushStyleColor(ImGuiCol_Border, panel_border);
@@ -2902,6 +3086,7 @@ void draw_inspector(Options &options,
         ImGui::TextUnformatted("Terrain view");
     }
     capture_current_window_rect(layout.inspector);
+    ui_state.inspector_restore_pending = false;
     ImGui::End();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
@@ -2916,17 +3101,25 @@ bool marker_in_tape_row(const TimelineReviewMarkerCategory category, const int r
     case 1:
         return category == TimelineReviewMarkerCategory::LowClearance ||
                category == TimelineReviewMarkerCategory::MinClearance ||
-               category == TimelineReviewMarkerCategory::PlanDeviation ||
-               category == TimelineReviewMarkerCategory::PlanAltitude;
+               category == TimelineReviewMarkerCategory::TerrainFallback;
     case 2:
+        return category == TimelineReviewMarkerCategory::PlanDeviation ||
+               category == TimelineReviewMarkerCategory::PlanAltitude ||
+               category == TimelineReviewMarkerCategory::Geofence;
+    case 3:
         return category == TimelineReviewMarkerCategory::Attitude ||
                category == TimelineReviewMarkerCategory::FrameTime ||
                category == TimelineReviewMarkerCategory::Degraded ||
                category == TimelineReviewMarkerCategory::ImportWarning ||
                category == TimelineReviewMarkerCategory::ImportError ||
-               category == TimelineReviewMarkerCategory::MaxSpeed;
-    case 3:
-        return category == TimelineReviewMarkerCategory::Bookmark;
+               category == TimelineReviewMarkerCategory::MaxSpeed ||
+               category == TimelineReviewMarkerCategory::LowLinkHz ||
+               category == TimelineReviewMarkerCategory::SpeedExcursion ||
+               category == TimelineReviewMarkerCategory::ClimbExcursion ||
+               category == TimelineReviewMarkerCategory::ModelFallback;
+    case 4:
+        return category == TimelineReviewMarkerCategory::Bookmark ||
+               category == TimelineReviewMarkerCategory::Capture;
     }
     return false;
 }
@@ -2934,23 +3127,63 @@ bool marker_in_tape_row(const TimelineReviewMarkerCategory category, const int r
 void draw_timeline_filter_toggle(const char *label, bool &value)
 {
     ImGui::Checkbox(label, &value);
-    ImGui::SameLine();
 }
 
-void draw_review_filters(TimelineReviewFilterState &filters)
+void draw_review_filters(UiState &ui_state)
 {
-    draw_timeline_filter_toggle("Info", filters.show_info);
-    draw_timeline_filter_toggle("Caution", filters.show_caution);
-    draw_timeline_filter_toggle("Warning", filters.show_warning);
-    draw_timeline_filter_toggle("Gaps", filters.show_gap);
-    draw_timeline_filter_toggle("Terrain", filters.show_clearance);
-    draw_timeline_filter_toggle("Plan", filters.show_plan);
-    draw_timeline_filter_toggle("Attitude", filters.show_attitude);
-    draw_timeline_filter_toggle("Frame", filters.show_frame_time);
-    draw_timeline_filter_toggle("Bookmarks", filters.show_bookmark);
-    draw_timeline_filter_toggle("Degraded", filters.show_degraded);
-    draw_timeline_filter_toggle("Min/max", filters.show_min_max);
-    ImGui::Checkbox("Import", &filters.show_import);
+    ui_state.timeline_review_filter_preset =
+        classify_timeline_review_filter(ui_state.timeline_review_filters);
+    for (const TimelineFilterPreset preset : {TimelineFilterPreset::All,
+                                              TimelineFilterPreset::Critical,
+                                              TimelineFilterPreset::Warnings,
+                                              TimelineFilterPreset::Bookmarks,
+                                              TimelineFilterPreset::Custom})
+    {
+        const bool selected = ui_state.timeline_review_filter_preset == preset;
+        if (selected)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.16F, 0.30F, 0.37F, 1.0F));
+        }
+        if (ImGui::SmallButton(timeline_filter_preset_label(preset)))
+        {
+            if (preset == TimelineFilterPreset::Custom)
+            {
+                ImGui::OpenPopup("Timeline filters");
+            }
+            else
+            {
+                ui_state.timeline_review_filters = timeline_review_filter_preset(preset);
+                ui_state.timeline_review_filter_preset = preset;
+            }
+        }
+        if (selected)
+        {
+            ImGui::PopStyleColor();
+        }
+        if (preset != TimelineFilterPreset::Custom)
+        {
+            ImGui::SameLine();
+        }
+    }
+    if (ImGui::BeginPopup("Timeline filters"))
+    {
+        TimelineReviewFilterState &filters = ui_state.timeline_review_filters;
+        draw_timeline_filter_toggle("Info", filters.show_info);
+        draw_timeline_filter_toggle("Caution", filters.show_caution);
+        draw_timeline_filter_toggle("Warning", filters.show_warning);
+        ImGui::Separator();
+        draw_timeline_filter_toggle("Gaps", filters.show_gap);
+        draw_timeline_filter_toggle("Terrain / clearance", filters.show_clearance);
+        draw_timeline_filter_toggle("Plan / geofence", filters.show_plan);
+        draw_timeline_filter_toggle("Attitude / performance", filters.show_attitude);
+        draw_timeline_filter_toggle("Frame time", filters.show_frame_time);
+        draw_timeline_filter_toggle("Bookmarks / capture", filters.show_bookmark);
+        draw_timeline_filter_toggle("Degraded / model", filters.show_degraded);
+        draw_timeline_filter_toggle("Min/max", filters.show_min_max);
+        draw_timeline_filter_toggle("Import", filters.show_import);
+        ui_state.timeline_review_filter_preset = TimelineFilterPreset::Custom;
+        ImGui::EndPopup();
+    }
 }
 
 void draw_review_tape(TelemetryPlaybackState &playback, UiState &ui_state, const float width)
@@ -2965,7 +3198,7 @@ void draw_review_tape(TelemetryPlaybackState &playback, UiState &ui_state, const
     ImGui::InvisibleButton("review_tape", tape_size);
     draw->AddRectFilled(tape_min, tape_max, IM_COL32(12, 15, 18, 235), 5.0F);
     draw->AddRect(tape_min, tape_max, IM_COL32(65, 73, 80, 230), 5.0F);
-    constexpr int row_count = 4;
+    constexpr int row_count = 5;
     constexpr float ruler_height = 10.0F;
     const float row_height = (tape_size.y - ruler_height - 4.0F) / static_cast<float>(row_count);
     for (int tick = 0; tick <= 4; ++tick)
@@ -2980,7 +3213,11 @@ void draw_review_tape(TelemetryPlaybackState &playback, UiState &ui_state, const
         draw->AddText(
             ImVec2(x + 3.0F, tape_min.y + 1.0F), IM_COL32(122, 130, 137, 220), label.c_str());
     }
-    const char *row_labels[row_count] = {"gap", "terrain", "warning", "bookmark"};
+    const char *row_labels[row_count] = {"Telemetry gaps",
+                                         "Terrain / clearance",
+                                         "Plan / geofence",
+                                         "Attitude / performance / data",
+                                         "Bookmarks / capture"};
     for (int row = 0; row < row_count; ++row)
     {
         const float y = tape_min.y + ruler_height + static_cast<float>(row) * row_height;
@@ -3145,10 +3382,12 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback,
                                  available_width,
                                  ui_state.timeline_height_px};
     const AppWindowRect rect =
-        clamp_window_rect(fallback, fallback, ImGui::GetIO().DisplaySize, {260.0F, 28.0F});
-    ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(rect.width, rect.height), ImGuiCond_Always);
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings;
+        clamp_window_rect(layout.timeline, fallback, ImGui::GetIO().DisplaySize, {260.0F, 28.0F});
+    const ImGuiCond rect_condition =
+        ui_state.timeline_restore_pending ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+    ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y), rect_condition);
+    ImGui::SetNextWindowSize(ImVec2(rect.width, rect.height), rect_condition);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055F, 0.064F, 0.072F, 0.88F));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 10.0F));
@@ -3166,6 +3405,7 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback,
                 text_muted, "min clearance %.1f s", playback.review.min_clearance_marker->time_s);
         }
         capture_current_window_rect(layout.timeline);
+        ui_state.timeline_restore_pending = false;
         ui_state.timeline_height_px = ImGui::GetWindowSize().y;
         layout.timeline_height_px = ui_state.timeline_height_px;
         ImGui::End();
@@ -3211,7 +3451,7 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback,
             visible_review_marker_count(playback.review.markers, ui_state.timeline_review_filters),
             playback.review.markers.size());
         draw_review_tape(playback, ui_state, ImGui::GetContentRegionAvail().x);
-        draw_review_filters(ui_state.timeline_review_filters);
+        draw_review_filters(ui_state);
         if (ImGui::Button(playback.clock.paused() ? "Play" : "Pause"))
         {
             playback.clock.set_paused(!playback.clock.paused());
@@ -3247,6 +3487,21 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback,
             ImGui::EndDisabled();
         }
         ImGui::SameLine();
+        const auto critical = next_critical_review_marker(
+            playback.review.markers, playback.clock.time_s(), ui_state.timeline_review_filters);
+        if (!critical)
+        {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Button("Next critical") && critical)
+        {
+            request_review_marker_jump(ui_state, playback.review.markers, *critical);
+        }
+        if (!critical)
+        {
+            ImGui::EndDisabled();
+        }
+        ImGui::SameLine();
         if (ImGui::Button("Bookmark"))
         {
             add_timeline_bookmark(ui_state.timeline_bookmarks, playback.clock.time_s());
@@ -3268,6 +3523,7 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback,
         }
     }
     capture_current_window_rect(layout.timeline);
+    ui_state.timeline_restore_pending = false;
     ui_state.timeline_height_px = ImGui::GetWindowSize().y;
     layout.timeline_height_px = ui_state.timeline_height_px;
     ImGui::End();
@@ -3433,8 +3689,10 @@ void draw_app_workspace(Options &options,
     const AppWindowRect main_fallback{panel_left, panel_top, main_width, 430.0F};
     const AppWindowRect main_rect = clamp_window_rect(
         layout.main_panel, main_fallback, ImGui::GetIO().DisplaySize, {320.0F, 220.0F});
-    ImGui::SetNextWindowPos(ImVec2(main_rect.x, main_rect.y), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(main_rect.width, main_rect.height), ImGuiCond_Always);
+    const ImGuiCond main_rect_condition =
+        ui_state.main_panel_restore_pending ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+    ImGui::SetNextWindowPos(ImVec2(main_rect.x, main_rect.y), main_rect_condition);
+    ImGui::SetNextWindowSize(ImVec2(main_rect.width, main_rect.height), main_rect_condition);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
     ImGui::PushStyleColor(ImGuiCol_Border, panel_border);
@@ -3482,7 +3740,14 @@ void draw_app_workspace(Options &options,
         break;
     case UiNavigationMode::Capture:
         ui_state.inspector_target = InspectorTarget::None;
-        draw_capture_panel(screenshot_tool, mp4_recorder, advanced_workspace);
+        if (ui_state.workspace_mode == WorkspaceMode::Export)
+        {
+            draw_export_panel(options, playback, plan_state, ui_state);
+        }
+        else
+        {
+            draw_capture_panel(screenshot_tool, mp4_recorder, advanced_workspace);
+        }
         break;
     case UiNavigationMode::Settings:
         ui_state.inspector_target = InspectorTarget::None;
@@ -3505,14 +3770,27 @@ void draw_app_workspace(Options &options,
         break;
     }
     capture_current_window_rect(layout.main_panel);
+    ui_state.main_panel_restore_pending = false;
     ImGui::End();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
 
     draw_inspector(options, playback, vehicle_status, options.status_thresholds, ui_state, layout);
-    draw_plot_shelf(options, playback, runtime_signals, ui_state.plot_ui, layout.plot_shelf);
+    draw_plot_shelf(options,
+                    playback,
+                    runtime_signals,
+                    ui_state.plot_ui,
+                    layout.plot_shelf,
+                    ui_state.plot_shelf_restore_pending);
+    if (options.plots.visible)
+    {
+        ui_state.plot_shelf_restore_pending = false;
+    }
     draw_bottom_timeline(playback, ui_state, layout);
     capture_workspace_layout(ui_state, map_camera, options);
+    ui_state.workspace_layout_restore_pending =
+        ui_state.main_panel_restore_pending || ui_state.inspector_restore_pending ||
+        ui_state.timeline_restore_pending || ui_state.plot_shelf_restore_pending;
 }
 
 } // namespace animus::app

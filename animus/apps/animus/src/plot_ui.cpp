@@ -591,7 +591,8 @@ void draw_plot_shelf(Options &options,
                      TelemetryPlaybackState &playback,
                      const RuntimeSignalInputs &runtime,
                      PlotUiState &state,
-                     AppWindowRect &rect)
+                     AppWindowRect &rect,
+                     const bool restore_rect)
 {
     PlotShelfConfig &config = options.plots;
     update_buffers(config, playback, runtime, state);
@@ -609,17 +610,21 @@ void draw_plot_shelf(Options &options,
     }
     const float timeline_reserve = playback.loaded ? 118.0F : 12.0F;
     config.height_px = std::clamp(config.height_px, 104.0F, ImGui::GetIO().DisplaySize.y * 0.55F);
-    rect = {left,
-            ImGui::GetIO().DisplaySize.y - timeline_reserve - config.height_px,
-            width,
-            config.height_px};
-    rect.width =
-        std::clamp(rect.width, 320.0F, std::max(320.0F, ImGui::GetIO().DisplaySize.x - 24.0F));
-    rect.height = std::clamp(rect.height, 104.0F, ImGui::GetIO().DisplaySize.y * 0.55F);
-    rect.x = std::clamp(rect.x, 0.0F, std::max(0.0F, ImGui::GetIO().DisplaySize.x - rect.width));
-    rect.y = std::clamp(rect.y, 38.0F, std::max(38.0F, ImGui::GetIO().DisplaySize.y - rect.height));
-    ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(rect.width, rect.height), ImGuiCond_Always);
+    const AppWindowRect fallback{left,
+                                 ImGui::GetIO().DisplaySize.y - timeline_reserve - config.height_px,
+                                 width,
+                                 config.height_px};
+    AppWindowRect requested = rect.width > 0.0F && rect.height > 0.0F ? rect : fallback;
+    requested.width =
+        std::clamp(requested.width, 320.0F, std::max(320.0F, ImGui::GetIO().DisplaySize.x - 24.0F));
+    requested.height = std::clamp(requested.height, 104.0F, ImGui::GetIO().DisplaySize.y * 0.55F);
+    requested.x = std::clamp(
+        requested.x, 0.0F, std::max(0.0F, ImGui::GetIO().DisplaySize.x - requested.width));
+    requested.y = std::clamp(
+        requested.y, 38.0F, std::max(38.0F, ImGui::GetIO().DisplaySize.y - requested.height));
+    const ImGuiCond rect_condition = restore_rect ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+    ImGui::SetNextWindowPos(ImVec2(requested.x, requested.y), rect_condition);
+    ImGui::SetNextWindowSize(ImVec2(requested.width, requested.height), rect_condition);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoSavedSettings;
     ImGui::Begin("Plot Shelf", &config.visible, flags);
     const ImVec2 pos = ImGui::GetWindowPos();

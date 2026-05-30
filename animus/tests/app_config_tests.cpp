@@ -92,6 +92,9 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
         "animus.rc_plane.generic", true, 1.5F, "none", "terrain_resolved"};
     config.workspace_layouts["analyze"] = animus::app::default_workspace_layout("analyze");
     config.workspace_layouts["analyze"].main_panel = {200.0F, 80.0F, 520.0F, 460.0F};
+    config.workspace_layouts["analyze"].inspector = {980.0F, 90.0F, 300.0F, 500.0F};
+    config.workspace_layouts["analyze"].timeline = {160.0F, 560.0F, 760.0F, 140.0F};
+    config.workspace_layouts["analyze"].plot_shelf = {170.0F, 330.0F, 740.0F, 180.0F};
     config.workspace_layouts["analyze"].plot_shelf_height_px = 320.0F;
     config.workspace_layouts["analyze"].bottom_drawer_state =
         animus::app::BottomDrawerState::Expanded;
@@ -151,6 +154,12 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     ASSERT_TRUE(load.config.workspace_layouts.contains("analyze"));
     EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").main_panel.x, 200.0F);
     EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").main_panel.width, 520.0F);
+    EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").inspector.x, 980.0F);
+    EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").inspector.height, 500.0F);
+    EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").timeline.y, 560.0F);
+    EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").timeline.width, 760.0F);
+    EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").plot_shelf.y, 330.0F);
+    EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").plot_shelf.height, 180.0F);
     EXPECT_FLOAT_EQ(load.config.workspace_layouts.at("analyze").plot_shelf_height_px, 320.0F);
     EXPECT_EQ(load.config.workspace_layouts.at("analyze").bottom_drawer_state,
               animus::app::BottomDrawerState::Expanded);

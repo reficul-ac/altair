@@ -399,6 +399,37 @@ TEST(TimelineReviewTests, PreviousAndNextMarkersRespectVisibleFilters)
     EXPECT_FALSE(next);
 }
 
+TEST(TimelineReviewTests, FilterPresetsAndNextCriticalMarkerAreDeterministic)
+{
+    const auto critical =
+        animus::app::timeline_review_filter_preset(animus::app::TimelineFilterPreset::Critical);
+    EXPECT_FALSE(critical.show_info);
+    EXPECT_FALSE(critical.show_caution);
+    EXPECT_TRUE(critical.show_warning);
+    EXPECT_EQ(animus::app::classify_timeline_review_filter(critical),
+              animus::app::TimelineFilterPreset::Critical);
+
+    std::vector<animus::app::TimelineReviewMarker> markers;
+    animus::app::TimelineReviewMarker caution;
+    caution.category = animus::app::TimelineReviewMarkerCategory::Attitude;
+    caution.severity = animus::app::TimelineReviewSeverity::Caution;
+    caution.time_s = 2.0;
+    markers.push_back(caution);
+    animus::app::TimelineReviewMarker warning;
+    warning.category = animus::app::TimelineReviewMarkerCategory::Gap;
+    warning.severity = animus::app::TimelineReviewSeverity::Warning;
+    warning.time_s = 3.0;
+    markers.push_back(warning);
+
+    const auto next = animus::app::next_critical_review_marker(markers, 1.0);
+
+    ASSERT_TRUE(next);
+    EXPECT_EQ(*next, 1U);
+    EXPECT_STREQ(
+        animus::app::timeline_filter_preset_label(animus::app::TimelineFilterPreset::Warnings),
+        "Warnings");
+}
+
 TEST(TimelineReviewTests, IncludesParserWarningsAndErrors)
 {
     auto timeline = timeline_with_samples({sample(0.0)});

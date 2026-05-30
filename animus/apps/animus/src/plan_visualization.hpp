@@ -106,6 +106,21 @@ struct GhostReplayCurrentRunSummary
     std::optional<double> max_altitude_error_m;
 };
 
+struct PlanRouteProfileSummary
+{
+    bool plan_loaded = false;
+    bool telemetry_compared = false;
+    double route_distance_m = 0.0;
+    double route_completion_ratio = 0.0;
+    std::size_t compared_samples = 0U;
+    std::optional<double> average_cross_track_error_m;
+    std::optional<double> max_cross_track_error_m;
+    std::optional<std::size_t> active_from_waypoint_index;
+    std::optional<std::size_t> active_to_waypoint_index;
+    std::optional<double> current_altitude_error_m;
+    std::string clearance_profile_status = "unavailable";
+};
+
 [[nodiscard]] PlanVisualizationLoadResult
 load_plan_visualization(const std::filesystem::path &path);
 
@@ -119,6 +134,9 @@ plan_actual_deviation_at(const PlanVisualizationData &plan,
                          const animus::telemetry_core::TelemetrySample &sample);
 [[nodiscard]] GhostReplayCurrentRunSummary
 ghost_replay_current_run_summary(const PlanActualAggregate &comparison);
+[[nodiscard]] PlanRouteProfileSummary
+plan_route_profile_summary(const PlanVisualizationData &plan,
+                           const std::optional<PlanActualAggregate> &comparison);
 
 [[nodiscard]] double plan_route_distance_m(const std::vector<PlanWaypoint> &waypoints);
 [[nodiscard]] double

@@ -24,6 +24,9 @@ TEST(WorkspaceLayoutModel, ResetOnlyReplacesCurrentWorkspace)
     layouts["analyze"] = animus::app::default_workspace_layout("analyze");
     layouts["terrain"] = animus::app::default_workspace_layout("terrain");
     layouts["analyze"].plot_shelf_height_px = 333.0F;
+    layouts["analyze"].main_panel = {42.0F, 43.0F, 444.0F, 445.0F};
+    layouts["analyze"].inspector = {900.0F, 80.0F, 280.0F, 520.0F};
+    layouts["terrain"].main_panel = {123.0F, 124.0F, 400.0F, 401.0F};
     layouts["terrain"].inspector_visible = false;
 
     const auto reset = animus::app::reset_workspace_layout(layouts, "analyze");
@@ -31,6 +34,11 @@ TEST(WorkspaceLayoutModel, ResetOnlyReplacesCurrentWorkspace)
     EXPECT_TRUE(reset.created_default);
     EXPECT_FLOAT_EQ(layouts["analyze"].plot_shelf_height_px,
                     animus::app::default_workspace_layout("analyze").plot_shelf_height_px);
+    EXPECT_EQ(layouts["analyze"].main_panel,
+              animus::app::default_workspace_layout("analyze").main_panel);
+    EXPECT_EQ(layouts["analyze"].inspector,
+              animus::app::default_workspace_layout("analyze").inspector);
+    EXPECT_FLOAT_EQ(layouts["terrain"].main_panel.x, 123.0F);
     EXPECT_FALSE(layouts["terrain"].inspector_visible);
 }
 

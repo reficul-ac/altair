@@ -7,6 +7,7 @@ namespace
 
 LayerStackRow make_row(std::string id,
                        std::string label,
+                       const LayerStackCategory category,
                        const bool visible,
                        const bool available,
                        std::string source,
@@ -16,6 +17,7 @@ LayerStackRow make_row(std::string id,
     LayerStackRow row;
     row.id = std::move(id);
     row.label = std::move(label);
+    row.category = category;
     row.visible = visible;
     row.available = available;
     row.source = std::move(source);
@@ -40,6 +42,7 @@ std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settin
 
     rows.push_back(make_row("vehicle_icons",
                             "Vehicle icons",
+                            LayerStackCategory::Display,
                             settings.vehicle_icons_visible,
                             context.telemetry_loaded,
                             context.telemetry_live ? "live telemetry" : "offline telemetry",
@@ -47,6 +50,7 @@ std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settin
                             "Fallback vehicle icons and selected-entity markers."));
     rows.push_back(make_row("vehicle_labels",
                             "Vehicle labels",
+                            LayerStackCategory::Display,
                             settings.vehicle_labels_visible,
                             context.telemetry_loaded,
                             context.telemetry_live ? "live telemetry" : "offline telemetry",
@@ -54,6 +58,7 @@ std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settin
                             "Compact entity labels gated independently from vehicle icons."));
     rows.push_back(make_row("track_tail",
                             "Track tail",
+                            LayerStackCategory::Display,
                             settings.track_tail_visible,
                             context.telemetry_loaded,
                             context.telemetry_live ? "live telemetry" : "offline telemetry",
@@ -61,6 +66,7 @@ std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settin
                             "Selected entity trail or live tail using existing decimation."));
     rows.push_back(make_row("heading_vectors",
                             "Heading vectors",
+                            LayerStackCategory::Display,
                             settings.heading_vectors_visible,
                             context.telemetry_loaded,
                             context.telemetry_live ? "live telemetry" : "offline telemetry",
@@ -70,6 +76,7 @@ std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settin
     LayerStackRow route =
         make_row("planned_route",
                  "Planned route",
+                 LayerStackCategory::Mission,
                  settings.planned_route_visible,
                  context.plan_loaded,
                  context.plan_loaded ? "QGC plan" : "none",
@@ -84,6 +91,7 @@ std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settin
 
     LayerStackRow fence = make_row("geofence_rally",
                                    "Geofence/rally",
+                                   LayerStackCategory::Mission,
                                    settings.geofence_rally_visible,
                                    context.plan_loaded,
                                    context.plan_loaded ? "QGC plan" : "none",
@@ -99,6 +107,7 @@ std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settin
     LayerStackRow confidence =
         make_row("terrain_confidence",
                  "Terrain confidence",
+                 LayerStackCategory::Terrain,
                  settings.terrain_confidence_visible,
                  context.terrain_confidence_available,
                  "resident terrain",
@@ -114,6 +123,7 @@ std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settin
     LayerStackRow heatmap =
         make_row("terrain_clearance_heatmap",
                  "Terrain clearance heatmap",
+                 LayerStackCategory::Terrain,
                  settings.terrain_clearance_heatmap_visible,
                  false,
                  "not implemented",
@@ -124,6 +134,7 @@ std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settin
 
     LayerStackRow overlay = make_row("geotiff_overlay",
                                      "GeoTIFF overlay",
+                                     LayerStackCategory::Terrain,
                                      settings.geotiff_overlay_visible,
                                      context.geotiff_configured && !context.geotiff_missing,
                                      context.geotiff_configured ? "GeoTIFF" : "none",
@@ -143,6 +154,7 @@ std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settin
 
     LayerStackRow bathy = make_row("bathymetry",
                                    "Bathymetry",
+                                   LayerStackCategory::Terrain,
                                    settings.bathymetry_visible,
                                    context.bathymetry_configured && !context.bathymetry_missing,
                                    context.bathymetry_configured ? "GeoTIFF" : "none",
@@ -159,6 +171,7 @@ std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settin
 
     rows.push_back(make_row("hillshade",
                             "Hillshade",
+                            LayerStackCategory::Terrain,
                             settings.hillshade_visible,
                             context.terrain_tiles_loaded,
                             "height raster",
@@ -168,6 +181,7 @@ std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settin
     LayerStackRow tile_debug =
         make_row("tile_state_debug",
                  "Tile state debug",
+                 LayerStackCategory::Debug,
                  settings.tile_state_debug_visible,
                  true,
                  "runtime state",
@@ -182,6 +196,7 @@ std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settin
     LayerStackRow fallback =
         make_row("fallback_highlight",
                  "Fallback highlight",
+                 LayerStackCategory::Debug,
                  settings.fallback_highlight_visible,
                  true,
                  "parent/synthetic",
@@ -194,6 +209,22 @@ std::vector<LayerStackRow> build_layer_stack_rows(const AppLayerSettings &settin
     rows.push_back(std::move(fallback));
 
     return rows;
+}
+
+const char *layer_stack_category_label(const LayerStackCategory category)
+{
+    switch (category)
+    {
+    case LayerStackCategory::Display:
+        return "Display";
+    case LayerStackCategory::Mission:
+        return "Mission";
+    case LayerStackCategory::Terrain:
+        return "Terrain";
+    case LayerStackCategory::Debug:
+        return "Debug";
+    }
+    return "Display";
 }
 
 AppLayerSettings layer_preset_operator_clean(const AppLayerSettings &current,

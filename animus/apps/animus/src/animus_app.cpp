@@ -370,6 +370,11 @@ void apply_options_to_ui(const Options &options, UiState &ui_state, Map2DCamera 
     ui_state.mavlink_inspector_visible = options.mavlink_inspector_visible;
     ui_state.workspace_layouts = options.workspace_layouts;
     ui_state.workspace_layout_applied = false;
+    ui_state.workspace_layout_restore_pending = false;
+    ui_state.main_panel_restore_pending = false;
+    ui_state.inspector_restore_pending = false;
+    ui_state.timeline_restore_pending = false;
+    ui_state.plot_shelf_restore_pending = false;
     map_camera.orientation = map_orientation_from_config_value(options.map_orientation);
 }
 
@@ -4075,6 +4080,7 @@ int run(Options options)
             const std::string workspace_id = workspace_config_value(ui_state.workspace_mode);
             (void)animus::app::reset_workspace_layout(ui_state.workspace_layouts, workspace_id);
             ui_state.workspace_layout_applied = false;
+            ui_state.workspace_layout_restore_pending = true;
             options.config_dirty = true;
             options.config_save_status = "not saved";
             options.config_diagnostics.push_back("reset current workspace layout to defaults");
@@ -4241,6 +4247,15 @@ int run(Options options)
         if (options.frames > 0 && stats.frame_count() >= options.frames)
         {
             window.request_close();
+        }
+    }
+
+    if (animus::app::should_auto_save_config_on_exit(options))
+    {
+        const animus::app::AppConfigSaveResult save_result = animus::app::save_app_config(options);
+        if (!save_result.saved)
+        {
+            std::cerr << "Config auto-save failed for " << options.config_path << '\n';
         }
     }
 

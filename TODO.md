@@ -20,6 +20,8 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Reformat `animus/apps/animus/src/mavlink_inspector.cpp`,
   `animus/apps/animus/src/mavlink_inspector.hpp`, and
   `animus/tests/mavlink_inspector_tests.cpp` so `format_repo.py --check` passes.
+- [ ] Reformat `animus/apps/animus/src/ghost_replay.cpp` and
+  `animus/apps/animus/src/ghost_replay.hpp` so `format_repo.py --check` passes.
 
 ## Vehicle And SITL
 
@@ -62,7 +64,7 @@ Reusable Bayek framework follow-up is tracked separately in
 - [x] Add headless Animus workspace-layout transition tests for switching and
   resetting layouts once the ImGui layout application logic is factored into a
   pure model helper.
-- [ ] Finish Animus operator UI cleanup after the foundational Export
+- [x] Finish Animus operator UI cleanup after the foundational Export
   workspace, docked drawer model, contextual navigation, and status semantics:
   selected-vehicle compact/expanded card split, Plan route profile, Analyze
   event lanes/filter popover, Terrain layer details collapse, and Export report

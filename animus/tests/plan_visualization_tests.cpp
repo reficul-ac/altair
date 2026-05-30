@@ -276,3 +276,36 @@ TEST(AnimusPlanVisualization, PlanActualHandlesUnavailableGeometry)
     EXPECT_FALSE(single.current);
     EXPECT_EQ(single.compared_samples, 0U);
 }
+
+TEST(AnimusPlanVisualization, RouteProfileSummaryUsesPlanAndActualWhenAvailable)
+{
+    const auto plan = straight_plan_with_altitudes();
+    animus::telemetry_core::Track track;
+    track.samples = {telemetry_sample(0.0, 39.0, -120.0, 100.0),
+                     telemetry_sample(1.0, 39.001, -120.0, 130.0)};
+    const auto aggregate = animus::app::compare_plan_actual(plan, track, 1.0);
+
+    const auto summary = animus::app::plan_route_profile_summary(plan, aggregate);
+
+    EXPECT_TRUE(summary.plan_loaded);
+    EXPECT_TRUE(summary.telemetry_compared);
+    EXPECT_NEAR(summary.route_completion_ratio, 0.5, 0.02);
+    EXPECT_EQ(summary.compared_samples, 2U);
+    ASSERT_TRUE(summary.active_from_waypoint_index);
+    EXPECT_EQ(*summary.active_from_waypoint_index, 0U);
+    ASSERT_TRUE(summary.current_altitude_error_m);
+    EXPECT_NEAR(*summary.current_altitude_error_m, 20.0, 0.5);
+    EXPECT_EQ(summary.clearance_profile_status, "unavailable");
+}
+
+TEST(AnimusPlanVisualization, RouteProfileSummaryFallsBackToPlanOnly)
+{
+    const auto plan = straight_plan_with_altitudes();
+
+    const auto summary = animus::app::plan_route_profile_summary(plan, std::nullopt);
+
+    EXPECT_TRUE(summary.plan_loaded);
+    EXPECT_FALSE(summary.telemetry_compared);
+    EXPECT_DOUBLE_EQ(summary.route_distance_m, plan.route_distance_m);
+    EXPECT_EQ(summary.compared_samples, 0U);
+}

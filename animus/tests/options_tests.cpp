@@ -83,6 +83,42 @@ TEST(AnimusOptions, RejectsInvalidViewMode)
     EXPECT_THROW(parse({"animus", "--view-mode", "oblique25d"}), std::invalid_argument);
 }
 
+TEST(AnimusOptions, AutoSaveOnExitOnlyForDirtyInteractiveConfig)
+{
+    animus::app::Options options;
+    options.config_path = "animus.yaml";
+    options.config_dirty = true;
+
+    EXPECT_TRUE(animus::app::should_auto_save_config_on_exit(options));
+
+    options.config_dirty = false;
+    EXPECT_FALSE(animus::app::should_auto_save_config_on_exit(options));
+
+    options.config_dirty = true;
+    options.smoke = true;
+    EXPECT_FALSE(animus::app::should_auto_save_config_on_exit(options));
+
+    options.smoke = false;
+    options.frames = 1;
+    EXPECT_FALSE(animus::app::should_auto_save_config_on_exit(options));
+
+    options.frames = 0;
+    options.capture_png = "capture.png";
+    EXPECT_FALSE(animus::app::should_auto_save_config_on_exit(options));
+
+    options.capture_png.clear();
+    options.capture_ppm = "capture.ppm";
+    EXPECT_FALSE(animus::app::should_auto_save_config_on_exit(options));
+
+    options.capture_ppm.clear();
+    options.capture_sequence_dir = "frames";
+    EXPECT_FALSE(animus::app::should_auto_save_config_on_exit(options));
+
+    options.capture_sequence_dir.clear();
+    options.config_path.clear();
+    EXPECT_FALSE(animus::app::should_auto_save_config_on_exit(options));
+}
+
 TEST(AnimusOptions, LoadsAndSavesWorkspaceMode)
 {
     const std::filesystem::path path =

@@ -1037,4 +1037,30 @@ GhostReplayCurrentRunSummary ghost_replay_current_run_summary(const PlanActualAg
     return summary;
 }
 
+PlanRouteProfileSummary
+plan_route_profile_summary(const PlanVisualizationData &plan,
+                           const std::optional<PlanActualAggregate> &comparison)
+{
+    PlanRouteProfileSummary summary;
+    summary.plan_loaded = true;
+    summary.route_distance_m = plan.route_distance_m;
+    summary.clearance_profile_status = "unavailable";
+    if (!comparison)
+    {
+        return summary;
+    }
+    summary.telemetry_compared = comparison->compared_samples > 0U;
+    summary.route_completion_ratio = comparison->route_completion_ratio;
+    summary.compared_samples = comparison->compared_samples;
+    summary.average_cross_track_error_m = comparison->average_cross_track_error_m;
+    summary.max_cross_track_error_m = comparison->max_cross_track_error_m;
+    if (comparison->current)
+    {
+        summary.active_from_waypoint_index = comparison->current->progress.from_waypoint_index;
+        summary.active_to_waypoint_index = comparison->current->progress.to_waypoint_index;
+        summary.current_altitude_error_m = comparison->current->altitude_error_m;
+    }
+    return summary;
+}
+
 } // namespace animus::app

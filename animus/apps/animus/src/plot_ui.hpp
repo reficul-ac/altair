@@ -41,6 +41,7 @@ void draw_plot_shelf(Options &options,
                      TelemetryPlaybackState &playback,
                      const RuntimeSignalInputs &runtime,
                      PlotUiState &state,
-                     AppWindowRect &rect);
+                     AppWindowRect &rect,
+                     bool restore_rect);
 
 } // namespace animus::app

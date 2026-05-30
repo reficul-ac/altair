@@ -10,6 +10,7 @@
 #include "options.hpp"
 #include "plot_ui.hpp"
 #include "plan_visualization.hpp"
+#include "report_export.hpp"
 #include "telemetry_signal_catalog.hpp"
 #include "timeline_review.hpp"
 
@@ -192,6 +193,12 @@ struct TelemetryEventFilters
     bool show_errors = true;
 };
 
+enum class SelectedVehicleInspectorMode
+{
+    Compact,
+    Expanded,
+};
+
 struct UiState
 {
     WorkspaceMode workspace_mode = WorkspaceMode::FlyTest;
@@ -206,9 +213,12 @@ struct UiState
     bool telemetry_labels_visible = true;
     std::size_t selected_entity_tail_points = 1000U;
     SelectedVehicleTestMetadata selected_vehicle_test;
+    SelectedVehicleInspectorMode selected_vehicle_inspector_mode =
+        SelectedVehicleInspectorMode::Compact;
     std::filesystem::path ghost_recent_baseline_path;
     bool ghost_layer_visible = false;
     std::filesystem::path report_export_default_dir = "artifacts/animus/reports";
+    ReportExportUiState report_export;
     bool bathymetry_enabled = false;
     AppLayerSettings layers;
     bool follow_selected_entity = false;
@@ -222,6 +232,11 @@ struct UiState
     bool request_config_reset = false;
     bool request_workspace_layout_reset = false;
     bool workspace_layout_applied = false;
+    bool workspace_layout_restore_pending = false;
+    bool main_panel_restore_pending = false;
+    bool inspector_restore_pending = false;
+    bool timeline_restore_pending = false;
+    bool plot_shelf_restore_pending = false;
     bool inspector_visible = true;
     bool timeline_visible = true;
     float timeline_height_px = 144.0F;
@@ -238,6 +253,7 @@ struct UiState
     std::vector<TimelineReviewMarker> timeline_frame_time_markers;
     TimelineFrameTimeReviewState timeline_frame_time_state;
     TimelineReviewFilterState timeline_review_filters;
+    TimelineFilterPreset timeline_review_filter_preset = TimelineFilterPreset::All;
     std::array<char, 96> timeline_bookmark_note{};
     int timeline_bookmark_severity = 0;
     int timeline_bookmark_category = 0;
