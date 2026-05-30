@@ -1,4 +1,5 @@
 #include "timeline_review.hpp"
+#include "timeline_transport.hpp"
 
 #include <algorithm>
 #include <iterator>
@@ -518,4 +519,30 @@ TEST(TimelineReviewTests, PlanMarkersRespectLabelsAndFilters)
     animus::app::TimelineReviewFilterState filters;
     filters.show_plan = false;
     EXPECT_FALSE(animus::app::timeline_review_marker_visible(deviation, filters));
+}
+
+TEST(TimelineReviewTests, TimelineFractionMappingClampsAndHandlesDegenerateRange)
+{
+    EXPECT_DOUBLE_EQ(animus::app::time_to_timeline_fraction(10.0, 20.0, 5.0), 0.0);
+    EXPECT_DOUBLE_EQ(animus::app::time_to_timeline_fraction(10.0, 20.0, 25.0), 1.0);
+    EXPECT_DOUBLE_EQ(animus::app::timeline_fraction_to_time(10.0, 20.0, -0.5), 10.0);
+    EXPECT_DOUBLE_EQ(animus::app::timeline_fraction_to_time(10.0, 20.0, 1.5), 20.0);
+    EXPECT_DOUBLE_EQ(animus::app::time_to_timeline_fraction(10.0, 10.0, 10.0), 0.0);
+    EXPECT_DOUBLE_EQ(animus::app::timeline_fraction_to_time(10.0, 10.0, 0.5), 10.0);
+}
+
+TEST(TimelineReviewTests, TimelineFractionMappingRoundTripsRepresentativeValues)
+{
+    for (const double time_s : {10.0, 12.5, 15.0, 19.75, 20.0})
+    {
+        const double fraction = animus::app::time_to_timeline_fraction(10.0, 20.0, time_s);
+        EXPECT_NEAR(animus::app::timeline_fraction_to_time(10.0, 20.0, fraction), time_s, 1.0e-9);
+    }
+}
+
+TEST(TimelineReviewTests, TimelineStepTimeClampsAtRangeEnds)
+{
+    EXPECT_DOUBLE_EQ(animus::app::timeline_step_time(10.0, 20.0, 10.25, -1.0), 10.0);
+    EXPECT_DOUBLE_EQ(animus::app::timeline_step_time(10.0, 20.0, 19.75, 1.0), 20.0);
+    EXPECT_DOUBLE_EQ(animus::app::timeline_step_time(10.0, 20.0, 15.0, 1.0), 16.0);
 }

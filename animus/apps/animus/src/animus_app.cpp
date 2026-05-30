@@ -3547,9 +3547,11 @@ int run(Options options)
                 const double snapshot_start_s = steady_time_s();
                 telemetry.timeline = live_buffer->timeline();
                 telemetry.live_snapshot_copy_ms = (steady_time_s() - snapshot_start_s) * 1000.0;
+                const double previous_timeline_time_s = telemetry.clock.time_s();
                 telemetry.clock.set_range(telemetry.timeline.start_time_s,
                                           telemetry.timeline.end_time_s);
-                telemetry.clock.seek(telemetry.timeline.end_time_s);
+                telemetry.clock.seek(ui_state.timeline_follow_latest ? telemetry.timeline.end_time_s
+                                                                     : previous_timeline_time_s);
                 if (!telemetry.timeline.entities.empty())
                 {
                     const bool selected_present =
@@ -3663,11 +3665,16 @@ int run(Options options)
         }
         ui_state.request_jump_latest_sample = false;
 
-        if (ui_state.request_review_jump_time_s && telemetry.loaded && !telemetry.live)
+        if (ui_state.request_timeline_seek_time_s && telemetry.loaded)
         {
-            telemetry.clock.seek(*ui_state.request_review_jump_time_s);
+            telemetry.clock.seek(*ui_state.request_timeline_seek_time_s);
+            if (telemetry.live &&
+                *ui_state.request_timeline_seek_time_s < telemetry.timeline.end_time_s)
+            {
+                ui_state.timeline_follow_latest = false;
+            }
         }
-        ui_state.request_review_jump_time_s.reset();
+        ui_state.request_timeline_seek_time_s.reset();
 
         if (ui_state.request_home_view)
         {

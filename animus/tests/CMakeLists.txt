@@ -91,8 +91,9 @@ animus_enable_warnings(animus_map_tools_tests)
 gtest_discover_tests(animus_map_tools_tests)
 
 add_executable(
-    animus_timeline_review_tests ../apps/animus/src/plan_visualization.cpp
-                                 ../apps/animus/src/timeline_review.cpp timeline_review_tests.cpp
+    animus_timeline_review_tests
+    ../apps/animus/src/plan_visualization.cpp ../apps/animus/src/timeline_review.cpp
+    ../apps/animus/src/timeline_transport.cpp timeline_review_tests.cpp
 )
 target_include_directories(animus_timeline_review_tests PRIVATE ../apps/animus/src)
 target_link_libraries(animus_timeline_review_tests PRIVATE animus_telemetry_core GTest::gtest_main)

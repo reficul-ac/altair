@@ -22,6 +22,7 @@ add_executable(
     src/telemetry_signal_catalog.cpp
     src/status_ribbon.cpp
     src/timeline_review.cpp
+    src/timeline_transport.cpp
     src/ui.cpp
     src/vehicle_visual_style.cpp
     src/workspace_layout_model.cpp

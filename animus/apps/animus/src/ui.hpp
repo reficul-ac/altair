@@ -241,7 +241,8 @@ struct UiState
     bool timeline_visible = true;
     float timeline_height_px = 144.0F;
     std::map<std::string, AppWorkspaceLayout> workspace_layouts;
-    std::optional<double> request_review_jump_time_s;
+    bool timeline_follow_latest = true;
+    std::optional<double> request_timeline_seek_time_s;
     std::optional<std::size_t> selected_review_marker_index;
     bool request_home_view = false;
     int zoom_steps = 0;

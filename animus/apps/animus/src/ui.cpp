@@ -8,6 +8,7 @@
 #include "plot_ui.hpp"
 #include "selected_vehicle_card.hpp"
 #include "status_ribbon.hpp"
+#include "timeline_transport.hpp"
 #include "vehicle_visual_style.hpp"
 #include "workspace_layout_model.hpp"
 
@@ -1043,11 +1044,6 @@ ImU32 marker_color(const TimelineReviewMarkerCategory category)
     return IM_COL32(180, 186, 192, 255);
 }
 
-void request_review_jump(UiState &ui, const double time_s)
-{
-    ui.request_review_jump_time_s = time_s;
-}
-
 void request_review_marker_jump(UiState &ui,
                                 const std::vector<TimelineReviewMarker> &markers,
                                 const std::size_t index)
@@ -1057,7 +1053,7 @@ void request_review_marker_jump(UiState &ui,
         return;
     }
     ui.selected_review_marker_index = index;
-    ui.request_review_jump_time_s = markers[index].time_s;
+    ui.request_timeline_seek_time_s = markers[index].time_s;
 }
 
 std::size_t visible_review_marker_count(const std::vector<TimelineReviewMarker> &markers,
@@ -1835,7 +1831,7 @@ void draw_layer_panel(const Options &options,
     draw_map_packs_panel(options, pack_root, visible_tiles);
 }
 
-void draw_timeline_controls(TelemetryPlaybackState &playback)
+void draw_timeline_controls(TelemetryPlaybackState &playback, UiState &ui)
 {
     bool paused = playback.clock.paused();
     if (ImGui::Checkbox("Paused", &paused))
@@ -1861,7 +1857,7 @@ void draw_timeline_controls(TelemetryPlaybackState &playback)
                             &playback.timeline.end_time_s,
                             "%.3f s"))
     {
-        playback.clock.seek(current_time);
+        ui.request_timeline_seek_time_s = current_time;
     }
 }
 
@@ -1997,7 +1993,7 @@ void draw_telemetry_panel(const Options &options,
         ImGui::Text("format %s",
                     animus::telemetry_core::to_string(playback.timeline.source_format));
         ImGui::TextWrapped("%s", options.telemetry.string().c_str());
-        draw_timeline_controls(playback);
+        draw_timeline_controls(playback, ui);
         if (ui.telemetry_entity_selected)
         {
             draw_review_jump_buttons(playback.review, ui);
@@ -3186,21 +3182,20 @@ void draw_review_filters(UiState &ui_state)
     }
 }
 
-void draw_review_tape(TelemetryPlaybackState &playback, UiState &ui_state, const float width)
+void draw_timeline_scrub_bar(TelemetryPlaybackState &playback, UiState &ui_state, const float width)
 {
     const double start = playback.timeline.start_time_s;
     const double end = playback.timeline.end_time_s;
-    const double duration = std::max(1.0e-6, end - start);
     ImDrawList *draw = ImGui::GetWindowDrawList();
     const ImVec2 tape_min = ImGui::GetCursorScreenPos();
-    const ImVec2 tape_size(width, 58.0F);
+    const ImVec2 tape_size(width, 64.0F);
     const ImVec2 tape_max(tape_min.x + tape_size.x, tape_min.y + tape_size.y);
-    ImGui::InvisibleButton("review_tape", tape_size);
+    ImGui::InvisibleButton("timeline_scrub_bar", tape_size);
     draw->AddRectFilled(tape_min, tape_max, IM_COL32(12, 15, 18, 235), 5.0F);
     draw->AddRect(tape_min, tape_max, IM_COL32(65, 73, 80, 230), 5.0F);
     constexpr int row_count = 5;
-    constexpr float ruler_height = 10.0F;
-    const float row_height = (tape_size.y - ruler_height - 4.0F) / static_cast<float>(row_count);
+    constexpr float ruler_height = 14.0F;
+    const float row_height = (tape_size.y - ruler_height - 8.0F) / static_cast<float>(row_count);
     for (int tick = 0; tick <= 4; ++tick)
     {
         const float x = tape_min.x + tape_size.x * static_cast<float>(tick) / 4.0F;
@@ -3208,7 +3203,8 @@ void draw_review_tape(TelemetryPlaybackState &playback, UiState &ui_state, const
                       ImVec2(x, tape_max.y - 3.0F),
                       IM_COL32(55, 62, 68, 180),
                       1.0F);
-        const double tick_time = start + duration * static_cast<double>(tick) / 4.0;
+        const double tick_time =
+            timeline_fraction_to_time(start, end, static_cast<double>(tick) / 4.0);
         const std::string label = format_value("%.1f", tick_time);
         draw->AddText(
             ImVec2(x + 3.0F, tape_min.y + 1.0F), IM_COL32(122, 130, 137, 220), label.c_str());
@@ -3234,7 +3230,8 @@ void draw_review_tape(TelemetryPlaybackState &playback, UiState &ui_state, const
             continue;
         }
         const float x =
-            tape_min.x + static_cast<float>((marker.time_s - start) / duration) * tape_size.x;
+            tape_min.x +
+            static_cast<float>(time_to_timeline_fraction(start, end, marker.time_s)) * tape_size.x;
         const bool selected = ui_state.selected_review_marker_index &&
                               *ui_state.selected_review_marker_index == index;
         for (int row = 0; row < row_count; ++row)
@@ -3251,7 +3248,8 @@ void draw_review_tape(TelemetryPlaybackState &playback, UiState &ui_state, const
             {
                 const float end_x =
                     tape_min.x +
-                    static_cast<float>((*marker.end_time_s - start) / duration) * tape_size.x;
+                    static_cast<float>(time_to_timeline_fraction(start, end, *marker.end_time_s)) *
+                        tape_size.x;
                 draw->AddRectFilled(ImVec2(x, row_min_y + 3.0F),
                                     ImVec2(std::max(x + 2.0F, end_x), row_max_y - 2.0F),
                                     color,
@@ -3274,8 +3272,16 @@ void draw_review_tape(TelemetryPlaybackState &playback, UiState &ui_state, const
             }
         }
     }
+    const float loaded_start_x = tape_min.x;
+    const float loaded_end_x = tape_max.x;
+    draw->AddRectFilled(ImVec2(loaded_start_x, tape_max.y - 7.0F),
+                        ImVec2(loaded_end_x, tape_max.y - 3.0F),
+                        playback.live ? IM_COL32(76, 179, 119, 210) : IM_COL32(91, 152, 205, 210),
+                        2.0F);
     const float current_x =
-        tape_min.x + static_cast<float>((playback.clock.time_s() - start) / duration) * tape_size.x;
+        tape_min.x +
+        static_cast<float>(time_to_timeline_fraction(start, end, playback.clock.time_s())) *
+            tape_size.x;
     draw->AddTriangleFilled(ImVec2(current_x, tape_min.y - 2.0F),
                             ImVec2(current_x - 5.0F, tape_min.y + 7.0F),
                             ImVec2(current_x + 5.0F, tape_min.y + 7.0F),
@@ -3287,8 +3293,105 @@ void draw_review_tape(TelemetryPlaybackState &playback, UiState &ui_state, const
     if (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left))
     {
         const float local_x = std::clamp(ImGui::GetIO().MousePos.x - tape_min.x, 0.0F, tape_size.x);
-        request_review_jump(ui_state,
-                            start + duration * static_cast<double>(local_x / tape_size.x));
+        ui_state.request_timeline_seek_time_s =
+            timeline_fraction_to_time(start, end, static_cast<double>(local_x / tape_size.x));
+        if (playback.live)
+        {
+            ui_state.timeline_follow_latest = false;
+            playback.clock.set_paused(true);
+        }
+    }
+}
+
+void draw_timeline_transport_controls(TelemetryPlaybackState &playback, UiState &ui_state)
+{
+    const double start = playback.timeline.start_time_s;
+    const double end = playback.timeline.end_time_s;
+    constexpr double step_s = 1.0;
+    const bool live_following_latest = playback.live && ui_state.timeline_follow_latest;
+    if (live_following_latest)
+    {
+        ImGui::BeginDisabled();
+    }
+    if (ImGui::Button(playback.clock.paused() ? "Play" : "Pause"))
+    {
+        playback.clock.set_paused(!playback.clock.paused());
+        if (playback.live)
+        {
+            ui_state.timeline_follow_latest = false;
+        }
+    }
+    if (live_following_latest)
+    {
+        ImGui::EndDisabled();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("|<"))
+    {
+        ui_state.request_timeline_seek_time_s = start;
+        if (playback.live)
+        {
+            ui_state.timeline_follow_latest = false;
+            playback.clock.set_paused(true);
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("<"))
+    {
+        ui_state.request_timeline_seek_time_s =
+            timeline_step_time(start, end, playback.clock.time_s(), -step_s);
+        if (playback.live)
+        {
+            ui_state.timeline_follow_latest = false;
+            playback.clock.set_paused(true);
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(">"))
+    {
+        ui_state.request_timeline_seek_time_s =
+            timeline_step_time(start, end, playback.clock.time_s(), step_s);
+        if (playback.live)
+        {
+            ui_state.timeline_follow_latest = false;
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(">|"))
+    {
+        ui_state.request_timeline_seek_time_s = end;
+        if (playback.live)
+        {
+            ui_state.timeline_follow_latest = true;
+        }
+    }
+    if (playback.live)
+    {
+        ImGui::SameLine();
+        if (ui_state.timeline_follow_latest)
+        {
+            ImGui::BeginDisabled();
+            ImGui::Button("Live");
+            ImGui::EndDisabled();
+        }
+        else if (ImGui::Button("Go Live"))
+        {
+            ui_state.timeline_follow_latest = true;
+            ui_state.request_timeline_seek_time_s = end;
+        }
+    }
+    ImGui::SameLine();
+    bool looping = playback.clock.looping();
+    if (ImGui::Checkbox("Loop", &looping))
+    {
+        playback.clock.set_looping(looping);
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120.0F);
+    float rate = static_cast<float>(playback.clock.rate());
+    if (ImGui::SliderFloat("Rate", &rate, 0.1F, 16.0F, "%.2fx"))
+    {
+        playback.clock.set_rate(rate);
     }
 }
 
@@ -3415,8 +3518,11 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback,
     }
     if (playback.live)
     {
-        ImGui::TextColored(
-            ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Live %.3f s", playback.timeline.end_time_s);
+        ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F),
+                           "%s %.3f s / %.3f s",
+                           ui_state.timeline_follow_latest ? "Live" : "Review",
+                           playback.clock.time_s(),
+                           playback.timeline.end_time_s);
         ImGui::SameLine();
         ImGui::TextColored(text_muted,
                            "samples %llu",
@@ -3428,9 +3534,21 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback,
                                ? entity_label(playback.selected_entity).c_str()
                                : "none");
         ImGui::SameLine();
-        ImGui::TextColored(playback.receiver_stats.stale ? stale_amber : live_green,
-                           "%s",
-                           playback.receiver_stats.stale ? "stale" : "tracking latest");
+        ImGui::TextColored(
+            playback.receiver_stats.stale ? stale_amber : live_green,
+            "%s",
+            playback.receiver_stats.stale
+                ? "stale"
+                : (ui_state.timeline_follow_latest ? "tracking latest" : "retained history"));
+        ImGui::SameLine();
+        ImGui::TextColored(
+            text_muted,
+            "markers %zu/%zu",
+            visible_review_marker_count(playback.review.markers, ui_state.timeline_review_filters),
+            playback.review.markers.size());
+        draw_timeline_scrub_bar(playback, ui_state, ImGui::GetContentRegionAvail().x);
+        draw_review_filters(ui_state);
+        draw_timeline_transport_controls(playback, ui_state);
     }
     else
     {
@@ -3450,15 +3568,12 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback,
             "markers %zu/%zu",
             visible_review_marker_count(playback.review.markers, ui_state.timeline_review_filters),
             playback.review.markers.size());
-        draw_review_tape(playback, ui_state, ImGui::GetContentRegionAvail().x);
+        draw_timeline_scrub_bar(playback, ui_state, ImGui::GetContentRegionAvail().x);
         draw_review_filters(ui_state);
-        if (ImGui::Button(playback.clock.paused() ? "Play" : "Pause"))
-        {
-            playback.clock.set_paused(!playback.clock.paused());
-        }
-        ImGui::SameLine();
+        draw_timeline_transport_controls(playback, ui_state);
         const auto previous = previous_review_marker(
             playback.review.markers, playback.clock.time_s(), ui_state.timeline_review_filters);
+        ImGui::SameLine();
         if (!previous)
         {
             ImGui::BeginDisabled();
@@ -3508,19 +3623,6 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback,
         }
         ImGui::SameLine();
         draw_bookmark_popup(playback, ui_state);
-        ImGui::SameLine();
-        bool looping = playback.clock.looping();
-        if (ImGui::Checkbox("Loop", &looping))
-        {
-            playback.clock.set_looping(looping);
-        }
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(120.0F);
-        float rate = static_cast<float>(playback.clock.rate());
-        if (ImGui::SliderFloat("Rate", &rate, 0.1F, 16.0F, "%.2fx"))
-        {
-            playback.clock.set_rate(rate);
-        }
     }
     capture_current_window_rect(layout.timeline);
     ui_state.timeline_restore_pending = false;
