@@ -9,6 +9,7 @@
 #include "selected_vehicle_card.hpp"
 #include "status_ribbon.hpp"
 #include "timeline_transport.hpp"
+#include "ui_theme.hpp"
 #include "vehicle_visual_style.hpp"
 #include "workspace_layout_model.hpp"
 
@@ -32,26 +33,18 @@ namespace animus::app
 namespace
 {
 
-constexpr float status_bar_height = 38.0F;
-constexpr float chrome_margin = 12.0F;
-constexpr float nav_width = 128.0F;
-constexpr float panel_gap = 10.0F;
-constexpr float inspector_width = 316.0F;
-const ImVec4 text_muted(0.64F, 0.68F, 0.72F, 1.0F);
-const ImVec4 panel_bg(0.075F, 0.088F, 0.098F, 0.92F);
-const ImVec4 panel_border(0.18F, 0.21F, 0.23F, 0.90F);
-const ImVec4 accent_blue(0.30F, 0.64F, 0.90F, 1.0F);
-const ImVec4 live_green(0.34F, 0.76F, 0.52F, 1.0F);
-const ImVec4 stale_amber(0.93F, 0.60F, 0.28F, 1.0F);
-const ImVec4 quiet_gray(0.46F, 0.49F, 0.52F, 1.0F);
-
-enum class PillState
-{
-    Good,
-    Warning,
-    Error,
-    Inactive,
-};
+const float status_bar_height = ui_theme().status_bar_height;
+const float chrome_margin = ui_theme().chrome_margin;
+const float nav_width = ui_theme().nav_width;
+const float panel_gap = ui_theme().panel_gap;
+const float inspector_width = ui_theme().inspector_width;
+const ImVec4 &text_muted = ui_theme().text_muted;
+const ImVec4 &panel_bg = ui_theme().panel_bg;
+const ImVec4 &panel_border = ui_theme().panel_border;
+const ImVec4 &accent_blue = ui_theme().accent;
+const ImVec4 &live_green = ui_theme().ok;
+const ImVec4 &stale_amber = ui_theme().caution;
+const ImVec4 &quiet_gray = ui_theme().inactive;
 
 const char *altitude_datum_label(animus::telemetry_core::AltitudeDatum datum);
 void draw_review_filters(UiState &ui_state);
@@ -272,7 +265,7 @@ std::string format_age(const double age_s)
 
 void muted_text(const char *text)
 {
-    ImGui::TextColored(text_muted, "%s", text);
+    ImGui::TextColored(ui_theme().text_muted, "%s", text);
 }
 
 void draw_status_dot(const ImVec4 color)
@@ -287,39 +280,7 @@ void draw_status_dot(const ImVec4 color)
         16);
 }
 
-ImVec4 pill_state_color(const PillState state)
-{
-    switch (state)
-    {
-    case PillState::Good:
-        return live_green;
-    case PillState::Warning:
-        return stale_amber;
-    case PillState::Error:
-        return ImVec4(0.94F, 0.28F, 0.28F, 1.0F);
-    case PillState::Inactive:
-        return quiet_gray;
-    }
-    return quiet_gray;
-}
-
-PillState pill_state_from_status_level(const StatusRibbonLevel level)
-{
-    switch (level)
-    {
-    case StatusRibbonLevel::Ok:
-        return PillState::Good;
-    case StatusRibbonLevel::Caution:
-        return PillState::Warning;
-    case StatusRibbonLevel::Warning:
-        return PillState::Error;
-    case StatusRibbonLevel::Unknown:
-        return PillState::Inactive;
-    }
-    return PillState::Inactive;
-}
-
-bool draw_status_pill(const char *popup_id, const char *summary, const PillState state)
+bool draw_status_pill(const char *popup_id, const char *summary, const StatusRibbonLevel level)
 {
     const ImVec2 text_size = ImGui::CalcTextSize(summary);
     const ImVec2 cursor = ImGui::GetCursorScreenPos();
@@ -331,15 +292,18 @@ bool draw_status_pill(const char *popup_id, const char *summary, const PillState
         ImGui::OpenPopup(popup_id);
     }
     ImDrawList *draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilled(cursor,
-                        ImVec2(cursor.x + size.x, cursor.y + size.y),
-                        hovered ? IM_COL32(38, 47, 53, 232) : IM_COL32(26, 31, 35, 214),
-                        6.0F);
+    draw->AddRectFilled(
+        cursor,
+        ImVec2(cursor.x + size.x, cursor.y + size.y),
+        ImGui::ColorConvertFloat4ToU32(hovered ? ui_theme().panel_hover : ui_theme().panel_bg),
+        ui_theme().pill_rounding);
     draw->AddCircleFilled(ImVec2(cursor.x + 10.0F, cursor.y + 11.5F),
                           3.5F,
-                          ImGui::ColorConvertFloat4ToU32(pill_state_color(state)),
+                          ImGui::ColorConvertFloat4ToU32(status_level_color(level)),
                           14);
-    draw->AddText(ImVec2(cursor.x + 18.0F, cursor.y + 4.0F), IM_COL32(219, 226, 232, 242), summary);
+    draw->AddText(ImVec2(cursor.x + 18.0F, cursor.y + 4.0F),
+                  ImGui::ColorConvertFloat4ToU32(ui_theme().text_primary),
+                  summary);
     return ImGui::BeginPopup(popup_id);
 }
 
@@ -351,19 +315,19 @@ void nav_button(UiState &ui_state, UiNavigationMode mode)
     }
     const bool selected = ui_state.active_mode == mode;
     ImGui::PushID(mode_label(mode));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, ui_theme().control_rounding);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12.0F, 8.0F));
     if (selected)
     {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15F, 0.29F, 0.37F, 0.96F));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.18F, 0.36F, 0.45F, 1.0F));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.86F, 0.94F, 0.98F, 1.0F));
+        ImGui::PushStyleColor(ImGuiCol_Button, ui_theme().panel_selected);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ui_theme().panel_hover);
+        ImGui::PushStyleColor(ImGuiCol_Text, ui_theme().text_primary);
     }
     else
     {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.09F, 0.105F, 0.115F, 0.0F));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15F, 0.17F, 0.18F, 0.88F));
-        ImGui::PushStyleColor(ImGuiCol_Text, text_muted);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ui_theme().panel_hover);
+        ImGui::PushStyleColor(ImGuiCol_Text, ui_theme().text_muted);
     }
     if (ImGui::Button(workspace_tab_label(mode, ui_state.workspace_mode), ImVec2(-1.0F, 0.0F)))
     {
@@ -696,19 +660,19 @@ void workspace_button(UiState &ui_state,
 {
     const bool selected = ui_state.workspace_mode == mode;
     ImGui::PushID(workspace_label(mode));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, ui_theme().control_rounding);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0F, 5.0F));
     if (selected)
     {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.16F, 0.28F, 0.34F, 0.96F));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.19F, 0.34F, 0.41F, 1.0F));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.86F, 0.94F, 0.98F, 1.0F));
+        ImGui::PushStyleColor(ImGuiCol_Button, ui_theme().panel_selected);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ui_theme().panel_hover);
+        ImGui::PushStyleColor(ImGuiCol_Text, ui_theme().text_primary);
     }
     else
     {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.09F, 0.105F, 0.115F, 0.55F));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15F, 0.17F, 0.18F, 0.88F));
-        ImGui::PushStyleColor(ImGuiCol_Text, text_muted);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ui_theme().panel_hover);
+        ImGui::PushStyleColor(ImGuiCol_Text, ui_theme().text_muted);
     }
     if (ImGui::Button(workspace_label(mode), ImVec2(0.0F, 0.0F)))
     {
@@ -727,19 +691,17 @@ ImVec4 telemetry_state_color(const TelemetryPlaybackState &playback)
 {
     if (!playback.loaded)
     {
-        return ImVec4(0.55F, 0.58F, 0.61F, 1.0F);
+        return ui_theme().inactive;
     }
     if (!playback.live)
     {
-        return playback.clock.paused() ? ImVec4(0.42F, 0.62F, 0.82F, 1.0F)
-                                       : ImVec4(0.38F, 0.78F, 0.58F, 1.0F);
+        return playback.clock.paused() ? ui_theme().accent : ui_theme().ok;
     }
     if (!playback.receiver_stats.connected)
     {
-        return ImVec4(0.55F, 0.58F, 0.61F, 1.0F);
+        return ui_theme().inactive;
     }
-    return playback.receiver_stats.stale ? ImVec4(0.95F, 0.58F, 0.22F, 1.0F)
-                                         : ImVec4(0.38F, 0.78F, 0.58F, 1.0F);
+    return playback.receiver_stats.stale ? ui_theme().caution : ui_theme().ok;
 }
 
 std::string entity_label(const animus::telemetry_core::EntityId id)
@@ -1009,49 +971,6 @@ bool entity_degraded(const animus::telemetry_core::TelemetrySample &sample)
     return !sample.fields.position;
 }
 
-ImU32 marker_color(const TimelineReviewMarkerCategory category)
-{
-    switch (category)
-    {
-    case TimelineReviewMarkerCategory::Gap:
-        return IM_COL32(238, 158, 74, 255);
-    case TimelineReviewMarkerCategory::Degraded:
-        return IM_COL32(224, 190, 84, 255);
-    case TimelineReviewMarkerCategory::ImportWarning:
-        return IM_COL32(230, 196, 80, 255);
-    case TimelineReviewMarkerCategory::ImportError:
-        return IM_COL32(235, 86, 86, 255);
-    case TimelineReviewMarkerCategory::Bookmark:
-        return IM_COL32(135, 196, 255, 255);
-    case TimelineReviewMarkerCategory::MinClearance:
-        return IM_COL32(93, 214, 145, 255);
-    case TimelineReviewMarkerCategory::MaxSpeed:
-        return IM_COL32(187, 142, 255, 255);
-    case TimelineReviewMarkerCategory::LowClearance:
-        return IM_COL32(238, 186, 74, 255);
-    case TimelineReviewMarkerCategory::Attitude:
-        return IM_COL32(235, 122, 92, 255);
-    case TimelineReviewMarkerCategory::FrameTime:
-        return IM_COL32(170, 188, 204, 255);
-    case TimelineReviewMarkerCategory::PlanDeviation:
-    case TimelineReviewMarkerCategory::PlanAltitude:
-    case TimelineReviewMarkerCategory::Geofence:
-        return IM_COL32(236, 186, 82, 255);
-    case TimelineReviewMarkerCategory::LowLinkHz:
-        return IM_COL32(238, 158, 74, 255);
-    case TimelineReviewMarkerCategory::TerrainFallback:
-        return IM_COL32(210, 176, 92, 255);
-    case TimelineReviewMarkerCategory::SpeedExcursion:
-    case TimelineReviewMarkerCategory::ClimbExcursion:
-        return IM_COL32(235, 122, 92, 255);
-    case TimelineReviewMarkerCategory::ModelFallback:
-        return IM_COL32(187, 142, 255, 255);
-    case TimelineReviewMarkerCategory::Capture:
-        return IM_COL32(135, 196, 255, 255);
-    }
-    return IM_COL32(180, 186, 192, 255);
-}
-
 void request_review_marker_jump(UiState &ui,
                                 const std::vector<TimelineReviewMarker> &markers,
                                 const std::size_t index)
@@ -1135,7 +1054,7 @@ void draw_series_chart(const TimelineReviewSeries &series, const ImVec2 size)
 void draw_review_charts(const TimelineReviewData &review)
 {
     ImGui::Separator();
-    ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Review charts");
+    ImGui::TextColored(ui_theme().text_primary, "Review charts");
     const float width = ImGui::GetContentRegionAvail().x;
     draw_series_chart(review.altitude, ImVec2(width, 76.0F));
     draw_series_chart(review.ground_speed, ImVec2(width, 76.0F));
@@ -1299,7 +1218,7 @@ void draw_top_status_bar(const Options &options,
                              ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                              ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize;
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055F, 0.065F, 0.073F, 0.94F));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ui_theme().chrome_bg);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 7.0F));
     ImGui::Begin("Animus Status", nullptr, flags);
     const auto pills = build_status_ribbon_model(options,
@@ -1316,8 +1235,7 @@ void draw_top_status_bar(const Options &options,
     for (const auto &pill : pills)
     {
         const std::string text = pill.label + " " + pill.summary;
-        if (draw_status_pill(
-                pill.id.c_str(), text.c_str(), pill_state_from_status_level(pill.level)))
+        if (draw_status_pill(pill.id.c_str(), text.c_str(), pill.level))
         {
             ImGui::Text("%s: %s", pill.label.c_str(), status_ribbon_level_label(pill.level));
             for (const std::string &detail : pill.details)
@@ -1355,7 +1273,7 @@ void draw_nav(UiState &ui_state,
                              ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
     ImGui::PushStyleColor(ImGuiCol_Border, panel_border);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, ui_theme().window_rounding);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0F, 12.0F));
     ImGui::Begin("Navigate", nullptr, flags);
     workspace_button(ui_state,
@@ -1892,7 +1810,7 @@ void draw_entity_list(TelemetryPlaybackState &playback, UiState &ui)
         return;
     }
 
-    ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Entities");
+    ImGui::TextColored(ui_theme().text_primary, "Entities");
     ImGui::SameLine();
     ImGui::TextColored(text_muted, "%zu", playback.timeline.entities.size());
     ImGui::SetNextItemWidth(-1.0F);
@@ -2000,7 +1918,7 @@ void draw_telemetry_panel(const Options &options,
 
     if (playback.live)
     {
-        ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Live UDP");
+        ImGui::TextColored(ui_theme().text_primary, "Live UDP");
         ImGui::TextColored(text_muted, "%s", playback.live_endpoint.c_str());
         draw_status_dot(telemetry_state_color(playback));
         ImGui::SameLine();
@@ -2762,20 +2680,9 @@ void metric_row(const char *label, const std::string &value)
     ImGui::TextWrapped("%s", value.c_str());
 }
 
-ImVec4 selected_vehicle_status_color(const SelectedVehicleCardStatus status)
+ImVec4 selected_vehicle_card_status_color(const SelectedVehicleCardStatus status)
 {
-    switch (status)
-    {
-    case SelectedVehicleCardStatus::Ok:
-        return live_green;
-    case SelectedVehicleCardStatus::Caution:
-        return stale_amber;
-    case SelectedVehicleCardStatus::Warning:
-        return ImVec4(0.94F, 0.28F, 0.28F, 1.0F);
-    case SelectedVehicleCardStatus::Unknown:
-        return quiet_gray;
-    }
-    return quiet_gray;
+    return animus::app::selected_vehicle_status_color(status);
 }
 
 void metric_grid(const char *id, const std::vector<SelectedVehicleCardMetric> &metrics)
@@ -2827,8 +2734,8 @@ void draw_selected_entity_card(Options &options,
 {
     const SelectedVehicleCardModel card =
         build_selected_vehicle_card_model(playback, ui_state, vehicle_status, thresholds);
-    const ImVec4 state_color = selected_vehicle_status_color(card.status);
-    ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "%s", card.entity_label.c_str());
+    const ImVec4 state_color = selected_vehicle_card_status_color(card.status);
+    ImGui::TextColored(ui_theme().text_primary, "%s", card.entity_label.c_str());
     ImGui::SameLine();
     draw_status_dot(state_color);
     ImGui::TextColored(state_color, "%s", card.status_label.c_str());
@@ -3082,12 +2989,12 @@ void draw_inspector(Options &options,
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
     ImGui::PushStyleColor(ImGuiCol_Border, panel_border);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, ui_theme().window_rounding);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 12.0F));
     ImGui::Begin("Inspector", nullptr, flags);
     if (!playback.loaded)
     {
-        ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F), "Telemetry");
+        ImGui::TextColored(ui_theme().text_primary, "Telemetry");
         muted_text("No telemetry loaded.");
     }
     else if (ui_state.inspector_target == InspectorTarget::Entity)
@@ -3214,8 +3121,14 @@ void draw_timeline_scrub_bar(TelemetryPlaybackState &playback, UiState &ui_state
     const ImVec2 tape_size(width, 64.0F);
     const ImVec2 tape_max(tape_min.x + tape_size.x, tape_min.y + tape_size.y);
     ImGui::InvisibleButton("timeline_scrub_bar", tape_size);
-    draw->AddRectFilled(tape_min, tape_max, IM_COL32(12, 15, 18, 235), 5.0F);
-    draw->AddRect(tape_min, tape_max, IM_COL32(65, 73, 80, 230), 5.0F);
+    draw->AddRectFilled(tape_min,
+                        tape_max,
+                        ImGui::ColorConvertFloat4ToU32(ui_theme().timeline_bg),
+                        ui_theme().pill_rounding);
+    draw->AddRect(tape_min,
+                  tape_max,
+                  ImGui::ColorConvertFloat4ToU32(ui_theme().timeline_border),
+                  ui_theme().pill_rounding);
     constexpr int row_count = 5;
     constexpr float ruler_height = 14.0F;
     const float row_height = (tape_size.y - ruler_height - 8.0F) / static_cast<float>(row_count);
@@ -3224,13 +3137,14 @@ void draw_timeline_scrub_bar(TelemetryPlaybackState &playback, UiState &ui_state
         const float x = tape_min.x + tape_size.x * static_cast<float>(tick) / 4.0F;
         draw->AddLine(ImVec2(x, tape_min.y + 2.0F),
                       ImVec2(x, tape_max.y - 3.0F),
-                      IM_COL32(55, 62, 68, 180),
+                      ImGui::ColorConvertFloat4ToU32(ui_theme().timeline_tick),
                       1.0F);
         const double tick_time =
             timeline_fraction_to_time(start, end, static_cast<double>(tick) / 4.0);
         const std::string label = format_value("%.1f", tick_time);
-        draw->AddText(
-            ImVec2(x + 3.0F, tape_min.y + 1.0F), IM_COL32(122, 130, 137, 220), label.c_str());
+        draw->AddText(ImVec2(x + 3.0F, tape_min.y + 1.0F),
+                      ImGui::ColorConvertFloat4ToU32(ui_theme().text_muted),
+                      label.c_str());
     }
     const char *row_labels[row_count] = {"Telemetry gaps",
                                          "Terrain / clearance",
@@ -3240,10 +3154,13 @@ void draw_timeline_scrub_bar(TelemetryPlaybackState &playback, UiState &ui_state
     for (int row = 0; row < row_count; ++row)
     {
         const float y = tape_min.y + ruler_height + static_cast<float>(row) * row_height;
-        draw->AddLine(
-            ImVec2(tape_min.x, y), ImVec2(tape_max.x, y), IM_COL32(43, 49, 54, 210), 1.0F);
-        draw->AddText(
-            ImVec2(tape_min.x + 5.0F, y + 1.0F), IM_COL32(120, 128, 135, 210), row_labels[row]);
+        draw->AddLine(ImVec2(tape_min.x, y),
+                      ImVec2(tape_max.x, y),
+                      ImGui::ColorConvertFloat4ToU32(ui_theme().timeline_lane),
+                      1.0F);
+        draw->AddText(ImVec2(tape_min.x + 5.0F, y + 1.0F),
+                      ImGui::ColorConvertFloat4ToU32(ui_theme().text_muted),
+                      row_labels[row]);
     }
     for (std::size_t index = 0U; index < playback.review.markers.size(); ++index)
     {
@@ -3266,7 +3183,7 @@ void draw_timeline_scrub_bar(TelemetryPlaybackState &playback, UiState &ui_state
             const float row_min_y =
                 tape_min.y + ruler_height + static_cast<float>(row) * row_height;
             const float row_max_y = row_min_y + row_height;
-            const ImU32 color = marker_color(marker.category);
+            const ImU32 color = timeline_marker_color(marker);
             if (marker.end_time_s)
             {
                 const float end_x =
@@ -3289,7 +3206,7 @@ void draw_timeline_scrub_bar(TelemetryPlaybackState &playback, UiState &ui_state
             {
                 draw->AddCircle(ImVec2(x, (row_min_y + row_max_y) * 0.5F),
                                 5.0F,
-                                IM_COL32(245, 250, 255, 255),
+                                ImGui::ColorConvertFloat4ToU32(ui_theme().text_primary),
                                 16,
                                 1.4F);
             }
@@ -3299,7 +3216,9 @@ void draw_timeline_scrub_bar(TelemetryPlaybackState &playback, UiState &ui_state
     const float loaded_end_x = tape_max.x;
     draw->AddRectFilled(ImVec2(loaded_start_x, tape_max.y - 7.0F),
                         ImVec2(loaded_end_x, tape_max.y - 3.0F),
-                        playback.live ? IM_COL32(76, 179, 119, 210) : IM_COL32(91, 152, 205, 210),
+                        ImGui::ColorConvertFloat4ToU32(playback.live
+                                                           ? ui_theme().timeline_loaded_live
+                                                           : ui_theme().timeline_loaded_review),
                         2.0F);
     const float current_x =
         tape_min.x +
@@ -3308,11 +3227,11 @@ void draw_timeline_scrub_bar(TelemetryPlaybackState &playback, UiState &ui_state
     draw->AddTriangleFilled(ImVec2(current_x, tape_min.y - 2.0F),
                             ImVec2(current_x - 5.0F, tape_min.y + 7.0F),
                             ImVec2(current_x + 5.0F, tape_min.y + 7.0F),
-                            IM_COL32(235, 244, 250, 255));
+                            ImGui::ColorConvertFloat4ToU32(ui_theme().timeline_now));
     draw->AddLine(ImVec2(current_x, tape_min.y + 4.0F),
                   ImVec2(current_x, tape_max.y),
-                  IM_COL32(235, 244, 250, 255),
-                  1.4F);
+                  ImGui::ColorConvertFloat4ToU32(ui_theme().timeline_now),
+                  2.0F);
     if (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left))
     {
         const float local_x = std::clamp(ImGui::GetIO().MousePos.x - tape_min.x, 0.0F, tape_size.x);
@@ -3514,13 +3433,13 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback,
     ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y), rect_condition);
     ImGui::SetNextWindowSize(ImVec2(rect.width, rect.height), rect_condition);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055F, 0.064F, 0.072F, 0.88F));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ui_theme().panel_bg);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, ui_theme().window_rounding);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 10.0F));
     ImGui::Begin("Timeline", nullptr, flags);
     if (ui_state.timeline_height_px <= 40.0F)
     {
-        ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F),
+        ImGui::TextColored(ui_theme().text_primary,
                            "Events %zu  markers %zu",
                            playback.timeline.events.size(),
                            playback.review.markers.size());
@@ -3541,7 +3460,7 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback,
     }
     if (playback.live)
     {
-        ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F),
+        ImGui::TextColored(ui_theme().text_primary,
                            "%s %.3f s / %.3f s",
                            ui_state.timeline_follow_latest ? "Live" : "Review",
                            playback.clock.time_s(),
@@ -3575,7 +3494,7 @@ void draw_bottom_timeline(TelemetryPlaybackState &playback,
     }
     else
     {
-        ImGui::TextColored(ImVec4(0.88F, 0.92F, 0.95F, 1.0F),
+        ImGui::TextColored(ui_theme().text_primary,
                            "%.3f s / %.3f s",
                            playback.clock.time_s(),
                            playback.timeline.end_time_s);
@@ -3821,7 +3740,7 @@ void draw_app_workspace(Options &options,
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, panel_bg);
     ImGui::PushStyleColor(ImGuiCol_Border, panel_border);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, ui_theme().window_rounding);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 12.0F));
     ImGui::Begin(mode_label(ui_state.active_mode), nullptr, flags);
     const bool advanced_workspace = ui_state.workspace_mode != WorkspaceMode::FlyTest;

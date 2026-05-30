@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -127,8 +128,11 @@ struct AppConfig
     int version = 1;
     std::string workspace_mode = "fly_test";
     std::string active_panel = "view";
+    std::optional<int> window_x;
+    std::optional<int> window_y;
     int window_width = 1280;
     int window_height = 720;
+    bool window_maximized = false;
     std::string view_mode = "terrain3d";
     FpvSettings fpv;
     bool follow_selected = false;

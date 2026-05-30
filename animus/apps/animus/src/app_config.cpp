@@ -901,9 +901,23 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
     }
 
     const YAML::Node window = root["window"];
-    warn_unknown_keys(window, {"width", "height"}, "window.", result.diagnostics);
+    warn_unknown_keys(
+        window, {"x", "y", "width", "height", "maximized"}, "window.", result.diagnostics);
+    int window_x = 0;
+    if (window && window["x"])
+    {
+        read_value(window, "x", window_x, result.diagnostics);
+        result.config.window_x = window_x;
+    }
+    int window_y = 0;
+    if (window && window["y"])
+    {
+        read_value(window, "y", window_y, result.diagnostics);
+        result.config.window_y = window_y;
+    }
     read_positive_int(window, "width", result.config.window_width, result.diagnostics);
     read_positive_int(window, "height", result.config.window_height, result.diagnostics);
+    read_value(window, "maximized", result.config.window_maximized, result.diagnostics);
 
     const YAML::Node view = root["view"];
     warn_unknown_keys(view,
@@ -1181,8 +1195,14 @@ AppConfigSaveResult save_app_config_file(const std::filesystem::path &path, cons
     write_string(out, "workspace", workspace.empty() ? std::string("fly_test") : workspace);
     out << YAML::EndMap;
     out << YAML::Key << "window" << YAML::Value << YAML::BeginMap;
+    if (config.window_x && config.window_y)
+    {
+        out << YAML::Key << "x" << YAML::Value << *config.window_x;
+        out << YAML::Key << "y" << YAML::Value << *config.window_y;
+    }
     out << YAML::Key << "width" << YAML::Value << config.window_width;
     out << YAML::Key << "height" << YAML::Value << config.window_height;
+    out << YAML::Key << "maximized" << YAML::Value << config.window_maximized;
     out << YAML::EndMap;
     out << YAML::Key << "view" << YAML::Value << YAML::BeginMap;
     write_string(out, "mode", config.view_mode);

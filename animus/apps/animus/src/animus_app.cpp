@@ -4,6 +4,7 @@
 #include "map_tools.hpp"
 #include "options.hpp"
 #include "ui.hpp"
+#include "ui_theme.hpp"
 #include "vehicle_visual_style.hpp"
 #include "workspace_layout_model.hpp"
 
@@ -92,6 +93,12 @@ struct InputState
     double last_x = 0.0;
     double last_y = 0.0;
     double pending_scroll_y = 0.0;
+};
+
+struct GlfwCallbackState
+{
+    InputState *input = nullptr;
+    Options *options = nullptr;
 };
 
 struct TerrainTileGpu
@@ -816,12 +823,114 @@ bool update_camera(GLFWwindow *window,
 
 void scroll_callback(GLFWwindow *window, double, double yoffset)
 {
-    auto *input = static_cast<InputState *>(glfwGetWindowUserPointer(window));
-    if (input == nullptr)
+    auto *state = static_cast<GlfwCallbackState *>(glfwGetWindowUserPointer(window));
+    if (state == nullptr || state->input == nullptr)
     {
         return;
     }
-    input->pending_scroll_y += yoffset;
+    state->input->pending_scroll_y += yoffset;
+}
+
+bool window_is_maximized(GLFWwindow *window)
+{
+    return glfwGetWindowAttrib(window, GLFW_MAXIMIZED) == GLFW_TRUE;
+}
+
+void window_position_callback(GLFWwindow *window, const int x, const int y)
+{
+    auto *state = static_cast<GlfwCallbackState *>(glfwGetWindowUserPointer(window));
+    if (state == nullptr || state->options == nullptr || window_is_maximized(window))
+    {
+        return;
+    }
+    state->options->window_x = x;
+    state->options->window_y = y;
+}
+
+void window_size_callback(GLFWwindow *window, const int width, const int height)
+{
+    auto *state = static_cast<GlfwCallbackState *>(glfwGetWindowUserPointer(window));
+    if (state == nullptr || state->options == nullptr || window_is_maximized(window) ||
+        width <= 0 || height <= 0)
+    {
+        return;
+    }
+    state->options->width = width;
+    state->options->height = height;
+}
+
+void window_maximize_callback(GLFWwindow *window, const int maximized)
+{
+    auto *state = static_cast<GlfwCallbackState *>(glfwGetWindowUserPointer(window));
+    if (state == nullptr || state->options == nullptr)
+    {
+        return;
+    }
+    state->options->window_maximized = maximized == GLFW_TRUE;
+}
+
+bool rects_intersect(const int ax,
+                     const int ay,
+                     const int aw,
+                     const int ah,
+                     const int bx,
+                     const int by,
+                     const int bw,
+                     const int bh)
+{
+    return std::max(ax, bx) < std::min(ax + aw, bx + bw) &&
+           std::max(ay, by) < std::min(ay + ah, by + bh);
+}
+
+bool saved_window_position_intersects_monitor(const Options &options)
+{
+    if (!options.window_x || !options.window_y)
+    {
+        return false;
+    }
+    int monitor_count = 0;
+    GLFWmonitor **monitors = glfwGetMonitors(&monitor_count);
+    for (int index = 0; index < monitor_count; ++index)
+    {
+        int x = 0;
+        int y = 0;
+        int width = 0;
+        int height = 0;
+        glfwGetMonitorWorkarea(monitors[index], &x, &y, &width, &height);
+        if (rects_intersect(*options.window_x,
+                            *options.window_y,
+                            options.width,
+                            options.height,
+                            x,
+                            y,
+                            width,
+                            height))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+void restore_window_placement(GLFWwindow *window, const Options &options)
+{
+    if (saved_window_position_intersects_monitor(options))
+    {
+        glfwSetWindowPos(window, *options.window_x, *options.window_y);
+    }
+
+    int width = 0;
+    int height = 0;
+    glfwGetWindowSize(window, &width, &height);
+    if (width != options.width || height != options.height)
+    {
+        glfwSetWindowSize(window, options.width, options.height);
+    }
+
+    if (options.window_maximized && !options.window_size_overridden)
+    {
+        glfwMaximizeWindow(window);
+    }
 }
 
 float zoom_scale_from_base(const int zoom, const int base_zoom)
@@ -3526,6 +3635,7 @@ int run(Options options)
         "Animus",
         !options.smoke,
     });
+    restore_window_placement(window.native_handle(), options);
     window.make_current();
     animus::render_core::initialize_glew();
     animus::render_core::enable_debug_callback();
@@ -3537,8 +3647,12 @@ int run(Options options)
     std::cout << animus::render_core::format_gl_info(info) << '\n';
 
     InputState input;
-    glfwSetWindowUserPointer(window.native_handle(), &input);
+    GlfwCallbackState callback_state{&input, &options};
+    glfwSetWindowUserPointer(window.native_handle(), &callback_state);
     glfwSetScrollCallback(window.native_handle(), scroll_callback);
+    glfwSetWindowPosCallback(window.native_handle(), window_position_callback);
+    glfwSetWindowSizeCallback(window.native_handle(), window_size_callback);
+    glfwSetWindowMaximizeCallback(window.native_handle(), window_maximize_callback);
 
     const animus::render_core::ShaderProgram program(vertex_shader, fragment_shader);
     const animus::render_core::ShaderProgram overlay_program(vertex_shader,
@@ -3579,6 +3693,10 @@ int run(Options options)
         options.debug_overlay
             ? std::make_unique<animus::render_core::ImGuiLayer>(window.native_handle())
             : nullptr;
+    if (debug_layer)
+    {
+        animus::app::apply_animus_imgui_theme();
+    }
     animus::render_core::RenderStats stats;
     bool captured = false;
     ScreenshotToolState screenshot_tool;

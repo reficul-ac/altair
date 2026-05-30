@@ -35,6 +35,9 @@ TEST(AnimusAppConfig, DefaultsAreVersioned)
     EXPECT_EQ(config.version, 1);
     EXPECT_EQ(config.workspace_mode, "fly_test");
     EXPECT_EQ(config.view_mode, "terrain3d");
+    EXPECT_FALSE(config.window_x);
+    EXPECT_FALSE(config.window_y);
+    EXPECT_FALSE(config.window_maximized);
     EXPECT_FLOAT_EQ(config.fpv.fov_deg, 72.0F);
     EXPECT_FLOAT_EQ(config.fpv.forward_offset_m, 0.7F);
     EXPECT_FLOAT_EQ(config.fpv.height_offset_m, 0.25F);
@@ -64,6 +67,11 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     animus::app::AppConfig config;
     config.workspace_mode = "developer";
     config.active_panel = "settings";
+    config.window_x = 120;
+    config.window_y = 80;
+    config.window_width = 1440;
+    config.window_height = 900;
+    config.window_maximized = true;
     config.view_mode = "map2d";
     config.fpv.fov_deg = 91.0F;
     config.fpv.forward_offset_m = 1.1F;
@@ -124,6 +132,13 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     EXPECT_EQ(load.status, animus::app::AppConfigLoadStatus::Loaded);
     EXPECT_EQ(load.config.workspace_mode, "developer");
     EXPECT_EQ(load.config.active_panel, "settings");
+    ASSERT_TRUE(load.config.window_x);
+    ASSERT_TRUE(load.config.window_y);
+    EXPECT_EQ(*load.config.window_x, 120);
+    EXPECT_EQ(*load.config.window_y, 80);
+    EXPECT_EQ(load.config.window_width, 1440);
+    EXPECT_EQ(load.config.window_height, 900);
+    EXPECT_TRUE(load.config.window_maximized);
     EXPECT_EQ(load.config.view_mode, "map2d");
     EXPECT_FLOAT_EQ(load.config.fpv.fov_deg, 91.0F);
     EXPECT_FLOAT_EQ(load.config.fpv.forward_offset_m, 1.1F);
@@ -200,6 +215,26 @@ TEST(AnimusAppConfig, ReportsUnknownKeys)
     const auto load = animus::app::load_app_config_file(path);
     EXPECT_EQ(load.status, animus::app::AppConfigLoadStatus::Loaded);
     EXPECT_TRUE(has_diagnostic(load.diagnostics, "unknown config key: app.mystery"));
+
+    std::filesystem::remove(path);
+}
+
+TEST(AnimusAppConfig, LoadsLegacyWindowSizeOnlyConfig)
+{
+    const std::filesystem::path path = temp_path("animus_app_config_window_compat.yaml");
+    {
+        std::ofstream output(path);
+        output << "version: 1\nwindow:\n  width: 1024\n  height: 768\n";
+    }
+
+    const auto load = animus::app::load_app_config_file(path);
+    EXPECT_EQ(load.status, animus::app::AppConfigLoadStatus::Loaded);
+    EXPECT_EQ(load.config.window_width, 1024);
+    EXPECT_EQ(load.config.window_height, 768);
+    EXPECT_FALSE(load.config.window_x);
+    EXPECT_FALSE(load.config.window_y);
+    EXPECT_FALSE(load.config.window_maximized);
+    EXPECT_TRUE(load.diagnostics.empty());
 
     std::filesystem::remove(path);
 }

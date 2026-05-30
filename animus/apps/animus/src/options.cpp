@@ -336,10 +336,14 @@ Options parse_options(int argc, char **argv)
         else if (arg == "--width")
         {
             options.width = parse_positive_int(arg, next_arg(argc, argv, index, arg));
+            options.window_maximized = false;
+            options.window_size_overridden = true;
         }
         else if (arg == "--height")
         {
             options.height = parse_positive_int(arg, next_arg(argc, argv, index, arg));
+            options.window_maximized = false;
+            options.window_size_overridden = true;
         }
         else if (arg == "--pack-root")
         {
@@ -674,8 +678,11 @@ void apply_app_config_to_options(Options &options, const AppConfig &config)
                                              config.map_orientation);
     }
 
+    options.window_x = config.window_x;
+    options.window_y = config.window_y;
     options.width = config.window_width;
     options.height = config.window_height;
+    options.window_maximized = config.window_maximized;
     options.fpv = config.fpv;
     options.follow_selected_entity = config.follow_selected;
     options.telemetry_tracks_visible = config.telemetry_tracks_visible;
@@ -725,8 +732,11 @@ AppConfig app_config_from_options(const Options &options)
     AppConfig config;
     config.workspace_mode = workspace_mode_config_value(options.workspace_mode);
     config.active_panel = options.active_panel;
+    config.window_x = options.window_x;
+    config.window_y = options.window_y;
     config.window_width = options.width;
     config.window_height = options.height;
+    config.window_maximized = options.window_maximized;
     config.view_mode = view_mode_config_value(options.view_mode);
     config.fpv = options.fpv;
     config.follow_selected = options.follow_selected_entity;

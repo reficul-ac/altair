@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -44,8 +45,12 @@ struct Options
 {
     bool smoke = false;
     int frames = 0;
+    std::optional<int> window_x;
+    std::optional<int> window_y;
     int width = 1280;
     int height = 720;
+    bool window_maximized = false;
+    bool window_size_overridden = false;
     std::filesystem::path pack_root = "animus/data/tiles/lake_tahoe";
     std::filesystem::path cache_root = "animus/cache/terrain";
     std::filesystem::path elevation_geotiff;

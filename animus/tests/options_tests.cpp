@@ -233,6 +233,76 @@ TEST(AnimusOptions, LoadsAndSavesViewMode)
     std::filesystem::remove(path);
 }
 
+TEST(AnimusOptions, LoadsAndSavesWindowPlacement)
+{
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "animus_options_window_placement_test.yaml";
+    {
+        std::ofstream output(path);
+        output << "version: 1\nwindow:\n"
+                  "  x: 44\n"
+                  "  y: 55\n"
+                  "  width: 1366\n"
+                  "  height: 768\n"
+                  "  maximized: true\n";
+    }
+
+    auto options = parse({"animus", "--config", path.string().c_str()});
+    ASSERT_TRUE(options.window_x);
+    ASSERT_TRUE(options.window_y);
+    EXPECT_EQ(*options.window_x, 44);
+    EXPECT_EQ(*options.window_y, 55);
+    EXPECT_EQ(options.width, 1366);
+    EXPECT_EQ(options.height, 768);
+    EXPECT_TRUE(options.window_maximized);
+
+    options.window_x = 88;
+    options.window_y = 99;
+    options.width = 1280;
+    options.height = 720;
+    options.window_maximized = false;
+    const auto save = animus::app::save_app_config(options);
+    EXPECT_TRUE(save.saved);
+
+    const auto restored = parse({"animus", "--config", path.string().c_str()});
+    ASSERT_TRUE(restored.window_x);
+    ASSERT_TRUE(restored.window_y);
+    EXPECT_EQ(*restored.window_x, 88);
+    EXPECT_EQ(*restored.window_y, 99);
+    EXPECT_EQ(restored.width, 1280);
+    EXPECT_EQ(restored.height, 720);
+    EXPECT_FALSE(restored.window_maximized);
+
+    std::filesystem::remove(path);
+}
+
+TEST(AnimusOptions, CliWindowSizeOverridesSuppressSavedMaximizedState)
+{
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "animus_options_window_cli_override_test.yaml";
+    {
+        std::ofstream output(path);
+        output << "version: 1\nwindow:\n"
+                  "  x: 10\n"
+                  "  y: 20\n"
+                  "  width: 1600\n"
+                  "  height: 900\n"
+                  "  maximized: true\n";
+    }
+
+    const auto options = parse({"animus", "--config", path.string().c_str(), "--width", "1024"});
+    ASSERT_TRUE(options.window_x);
+    ASSERT_TRUE(options.window_y);
+    EXPECT_EQ(*options.window_x, 10);
+    EXPECT_EQ(*options.window_y, 20);
+    EXPECT_EQ(options.width, 1024);
+    EXPECT_EQ(options.height, 900);
+    EXPECT_FALSE(options.window_maximized);
+    EXPECT_TRUE(options.window_size_overridden);
+
+    std::filesystem::remove(path);
+}
+
 TEST(AnimusFpvCamera, BuildsPoseFromHeadingAndYawFallback)
 {
     animus::telemetry_core::TelemetrySample sample;

@@ -25,6 +25,7 @@ add_executable(
     src/timeline_review.cpp
     src/timeline_transport.cpp
     src/ui.cpp
+    src/ui_theme.cpp
     src/vehicle_visual_style.cpp
     src/workspace_layout_model.cpp
 )
