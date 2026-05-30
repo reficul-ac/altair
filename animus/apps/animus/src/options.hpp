@@ -27,6 +27,7 @@ enum class ViewMode
     Terrain3D,
     Map2D,
     Oblique25D,
+    Fpv,
 };
 
 struct OverlayLayerConfig
@@ -69,6 +70,7 @@ struct Options
     std::vector<std::string> config_diagnostics;
     WorkspaceMode workspace_mode = WorkspaceMode::FlyTest;
     ViewMode view_mode = ViewMode::Terrain3D;
+    FpvSettings fpv;
     std::string active_panel = "view";
     bool follow_selected_entity = false;
     std::string map_orientation = "north_up";

@@ -107,6 +107,8 @@ const char *view_mode_label(const ViewMode mode)
         return "2D";
     case ViewMode::Oblique25D:
         return "2.5D";
+    case ViewMode::Fpv:
+        return "FPV";
     }
     return "3D";
 }
@@ -467,6 +469,10 @@ ViewMode view_mode_from_config_value(const std::string &value)
     {
         return ViewMode::Oblique25D;
     }
+    if (value == "fpv")
+    {
+        return ViewMode::Fpv;
+    }
     return ViewMode::Terrain3D;
 }
 
@@ -480,6 +486,8 @@ std::string view_mode_config_value(const ViewMode mode)
         return "map2d";
     case ViewMode::Oblique25D:
         return "oblique25d";
+    case ViewMode::Fpv:
+        return "fpv";
     }
     return "terrain3d";
 }
@@ -1483,6 +1491,11 @@ void draw_view_panel(const Options &options,
     ImGui::Button("2.5D");
     ImGui::EndDisabled();
     ImGui::SameLine();
+    if (ImGui::Button("FPV"))
+    {
+        ui_state.view_mode = ViewMode::Fpv;
+    }
+    ImGui::SameLine();
     ImGui::TextColored(text_muted, "%s", view_mode_label(ui_state.view_mode));
 
     if (ui_state.view_mode == ViewMode::Map2D)
@@ -1505,6 +1518,16 @@ void draw_view_panel(const Options &options,
         }
         ImGui::SameLine();
         ImGui::TextColored(text_muted, "%s", orientation_label(map_camera.orientation));
+    }
+    if (ui_state.view_mode == ViewMode::Fpv)
+    {
+        ImGui::SeparatorText("FPV");
+        ImGui::SliderFloat("FOV", &ui_state.fpv.fov_deg, 35.0F, 110.0F, "%.0f deg");
+        ImGui::SliderFloat("Forward offset", &ui_state.fpv.forward_offset_m, -1.0F, 3.0F, "%.2f m");
+        ImGui::SliderFloat("Height offset", &ui_state.fpv.height_offset_m, -1.0F, 3.0F, "%.2f m");
+        ImGui::SliderFloat("Smoothing", &ui_state.fpv.smoothing_s, 0.0F, 2.0F, "%.2f s");
+        ImGui::Text("status %s", ui_state.fpv_status.c_str());
+        ImGui::Text("selected %s", ui_state.fpv_selected_label.c_str());
     }
     ImGui::SeparatorText("Actions");
     ImGui::Checkbox("Follow selected", &ui_state.follow_selected_entity);

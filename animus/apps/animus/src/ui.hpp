@@ -203,6 +203,9 @@ struct UiState
 {
     WorkspaceMode workspace_mode = WorkspaceMode::FlyTest;
     ViewMode view_mode = ViewMode::Terrain3D;
+    FpvSettings fpv;
+    std::string fpv_status = "unavailable";
+    std::string fpv_selected_label = "none";
     UiNavigationMode active_mode = UiNavigationMode::View;
     InspectorTarget inspector_target = InspectorTarget::Terrain;
     bool developer_diagnostics_visible = false;

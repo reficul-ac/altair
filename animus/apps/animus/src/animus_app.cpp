@@ -1,4 +1,5 @@
 #include "capture.hpp"
+#include "fpv_camera.hpp"
 #include "forward_clearance.hpp"
 #include "map_tools.hpp"
 #include "options.hpp"
@@ -354,6 +355,7 @@ void apply_options_to_ui(const Options &options, UiState &ui_state, Map2DCamera 
 {
     ui_state.workspace_mode = options.workspace_mode;
     ui_state.view_mode = options.view_mode;
+    ui_state.fpv = options.fpv;
     ui_state.active_mode = panel_mode_from_config_value(options.active_panel);
     ui_state.follow_selected_entity = options.follow_selected_entity;
     ui_state.telemetry_tracks_visible = options.telemetry_tracks_visible;
@@ -386,6 +388,7 @@ void sync_options_from_ui(Options &options,
 {
     options.workspace_mode = ui_state.workspace_mode;
     options.view_mode = ui_state.view_mode;
+    options.fpv = animus::app::clamped_fpv_settings(ui_state.fpv);
     options.active_panel = panel_config_value(ui_state.active_mode);
     options.follow_selected_entity = ui_state.follow_selected_entity;
     options.map_orientation = map_orientation_config_value(map_camera.orientation);
@@ -638,6 +641,19 @@ Mat4 camera_mvp(const Camera &camera, int width, int height)
                     look_at(camera_eye(camera), camera.target, {0.0F, 1.0F, 0.0F}));
 }
 
+Mat4 fpv_mvp(const animus::app::FpvPose &pose,
+             const float fov_deg,
+             const int width,
+             const int height)
+{
+    const float aspect =
+        static_cast<float>(std::max(width, 1)) / static_cast<float>(std::max(height, 1));
+    return multiply(
+        perspective(
+            std::clamp(fov_deg, 35.0F, 110.0F) * 3.1415926535F / 180.0F, aspect, 0.002F, 120.0F),
+        look_at(pose.eye, pose.eye + pose.forward, pose.up));
+}
+
 Vec3 map_up_vector(const Map2DCamera &camera)
 {
     return {std::sin(camera.rotation_rad), 0.0F, -std::cos(camera.rotation_rad)};
@@ -668,8 +684,14 @@ Mat4 active_view_projection(const Camera &camera,
                             const Map2DCamera &map_camera,
                             const animus::app::ViewMode view_mode,
                             const int width,
-                            const int height)
+                            const int height,
+                            const animus::app::FpvPose *fpv_pose = nullptr,
+                            const float fpv_fov_deg = 72.0F)
 {
+    if (view_mode == animus::app::ViewMode::Fpv && fpv_pose != nullptr)
+    {
+        return fpv_mvp(*fpv_pose, fpv_fov_deg, width, height);
+    }
     return view_mode == animus::app::ViewMode::Map2D ? map2d_mvp(map_camera, width, height)
                                                      : camera_mvp(camera, width, height);
 }
@@ -677,6 +699,7 @@ Mat4 active_view_projection(const Camera &camera,
 bool update_camera(GLFWwindow *window,
                    InputState &input,
                    const animus::app::ViewMode view_mode,
+                   animus::app::FpvSettings &fpv_settings,
                    const bool camera_mouse_enabled,
                    const bool camera_keyboard_enabled)
 {
@@ -689,6 +712,23 @@ bool update_camera(GLFWwindow *window,
     const bool middle = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS;
     const double dx = x - input.last_x;
     const double dy = y - input.last_y;
+
+    if (view_mode == animus::app::ViewMode::Fpv)
+    {
+        if (camera_mouse_enabled && input.pending_scroll_y != 0.0)
+        {
+            fpv_settings.fov_deg =
+                std::clamp(fpv_settings.fov_deg - static_cast<float>(input.pending_scroll_y) * 3.0F,
+                           35.0F,
+                           110.0F);
+        }
+        input.pending_scroll_y = 0.0;
+        input.left_drag = camera_mouse_enabled && left;
+        input.middle_drag = camera_mouse_enabled && middle;
+        input.last_x = x;
+        input.last_y = y;
+        return false;
+    }
 
     if (view_mode == animus::app::ViewMode::Map2D)
     {
@@ -834,8 +874,20 @@ active_terrain_viewpoint(const Options &options,
                          const Camera &camera,
                          const Map2DCamera &map_camera,
                          const animus::app::ViewMode view_mode,
-                         const int zoom)
+                         const int zoom,
+                         const animus::app::FpvPose *fpv_pose = nullptr)
 {
+    if (view_mode == animus::app::ViewMode::Fpv && fpv_pose != nullptr)
+    {
+        constexpr float preload_distance = 5.0F;
+        const Vec3 center = fpv_pose->eye + fpv_pose->forward * preload_distance;
+        const double scale = static_cast<double>(zoom_scale_from_base(zoom, options.z));
+        return {
+            (static_cast<double>(options.center_x) + 0.5 + static_cast<double>(center.x)) * scale,
+            (static_cast<double>(options.center_y) + 0.5 + static_cast<double>(center.z)) * scale,
+            preload_distance,
+        };
+    }
     return view_mode == animus::app::ViewMode::Map2D ? terrain_viewpoint(options, map_camera, zoom)
                                                      : terrain_viewpoint(options, camera, zoom);
 }
@@ -2254,12 +2306,19 @@ void draw_map_tools_overlay(const MapToolState &tools,
                             const Camera &camera,
                             const Map2DCamera &map_camera,
                             const animus::app::ViewMode view_mode,
+                            const animus::app::FpvPose *fpv_pose,
+                            const float fpv_fov_deg,
                             const int framebuffer_width,
                             const int framebuffer_height)
 {
     ImDrawList *draw = ImGui::GetForegroundDrawList();
-    const Mat4 mvp = active_view_projection(
-        camera, map_camera, view_mode, framebuffer_width, framebuffer_height);
+    const Mat4 mvp = active_view_projection(camera,
+                                            map_camera,
+                                            view_mode,
+                                            framebuffer_width,
+                                            framebuffer_height,
+                                            fpv_pose,
+                                            fpv_fov_deg);
     for (const auto &marker : tools.markers)
     {
         draw_tool_point(draw,
@@ -2609,6 +2668,7 @@ draw_telemetry_overlay(const Options &options,
                        const UiState &ui_state,
                        const Camera &camera,
                        const Map2DCamera &map_camera,
+                       const animus::app::FpvPose *fpv_pose,
                        const int framebuffer_width,
                        const int framebuffer_height,
                        const bool selected_model_visible)
@@ -2630,8 +2690,13 @@ draw_telemetry_overlay(const Options &options,
         animus::app::VehicleVisualRegistry::defaults();
 
     ImDrawList *draw = ImGui::GetBackgroundDrawList();
-    const Mat4 mvp = active_view_projection(
-        camera, map_camera, ui_state.view_mode, framebuffer_width, framebuffer_height);
+    const Mat4 mvp = active_view_projection(camera,
+                                            map_camera,
+                                            ui_state.view_mode,
+                                            framebuffer_width,
+                                            framebuffer_height,
+                                            fpv_pose,
+                                            ui_state.fpv.fov_deg);
     const auto *track = ui_state.telemetry_entity_selected
                             ? playback.timeline.track_for(playback.selected_entity)
                             : nullptr;
@@ -2816,7 +2881,9 @@ draw_telemetry_overlay(const Options &options,
         const std::optional<float> heading = resolved_visual.heading_source == "none"
                                                  ? std::nullopt
                                                  : telemetry_heading_rad(*sample);
-        const bool suppress_selected_fallback_marker = selected && selected_model_visible;
+        const bool suppress_selected_fallback_marker =
+            selected &&
+            (selected_model_visible || ui_state.view_mode == animus::app::ViewMode::Fpv);
         if (ui_state.layers.vehicle_icons_visible && !suppress_selected_fallback_marker)
         {
             draw_vehicle_visual_icon(draw, style, variant, point.screen, heading);
@@ -2988,6 +3055,8 @@ void draw_plan_overlay(const Options &options,
                        const Camera &camera,
                        const Map2DCamera &map_camera,
                        const animus::app::ViewMode view_mode,
+                       const animus::app::FpvPose *fpv_pose,
+                       const float fpv_fov_deg,
                        const int framebuffer_width,
                        const int framebuffer_height)
 {
@@ -2997,8 +3066,13 @@ void draw_plan_overlay(const Options &options,
         return;
     }
     ImDrawList *draw = ImGui::GetBackgroundDrawList();
-    const Mat4 mvp = active_view_projection(
-        camera, map_camera, view_mode, framebuffer_width, framebuffer_height);
+    const Mat4 mvp = active_view_projection(camera,
+                                            map_camera,
+                                            view_mode,
+                                            framebuffer_width,
+                                            framebuffer_height,
+                                            fpv_pose,
+                                            fpv_fov_deg);
     const PlanVisualizationData &plan = *plan_state.data;
 
     if (layers.planned_route_visible)
@@ -3202,6 +3276,59 @@ void draw_map2d_overlay(const Options &options,
         ImVec2(arrow_tip.x - 4.0F, arrow_tip.y - 18.0F), IM_COL32(235, 241, 244, 244), "N");
 }
 
+void draw_fpv_hud(const animus::app::FpvCameraState &fpv_camera,
+                  const UiState &ui_state,
+                  const std::optional<animus::telemetry_core::TelemetrySample> &sample,
+                  const int framebuffer_width,
+                  const int framebuffer_height)
+{
+    if (ui_state.view_mode != animus::app::ViewMode::Fpv)
+    {
+        return;
+    }
+    ImDrawList *draw = ImGui::GetForegroundDrawList();
+    const ImVec2 center(static_cast<float>(framebuffer_width) * 0.5F,
+                        static_cast<float>(framebuffer_height) * 0.5F);
+    const float roll = fpv_camera.pose ? fpv_camera.pose->roll_rad : 0.0F;
+    const float pitch = fpv_camera.pose ? fpv_camera.pose->pitch_rad : 0.0F;
+    const float cr = std::cos(roll);
+    const float sr = std::sin(roll);
+    const ImVec2 right(cr, sr);
+    const ImVec2 up(-sr, cr);
+    const float pitch_offset = std::clamp(pitch * 90.0F, -70.0F, 70.0F);
+    const ImVec2 horizon_center(center.x + up.x * pitch_offset, center.y + up.y * pitch_offset);
+    const ImU32 hud = IM_COL32(218, 242, 252, 230);
+    const ImU32 muted = IM_COL32(218, 242, 252, 150);
+    draw->AddLine(ImVec2(horizon_center.x - right.x * 120.0F, horizon_center.y - right.y * 120.0F),
+                  ImVec2(horizon_center.x + right.x * 120.0F, horizon_center.y + right.y * 120.0F),
+                  hud,
+                  2.0F);
+    draw->AddLine(ImVec2(center.x - 18.0F, center.y), ImVec2(center.x - 5.0F, center.y), hud, 2.0F);
+    draw->AddLine(ImVec2(center.x + 5.0F, center.y), ImVec2(center.x + 18.0F, center.y), hud, 2.0F);
+    draw->AddCircle(center, 3.0F, hud, 14, 1.5F);
+
+    char left[128];
+    char right_text[128];
+    const double speed = sample && sample->ground_speed_mps ? *sample->ground_speed_mps : 0.0;
+    const double alt = sample && sample->altitude_msl_m ? *sample->altitude_msl_m : 0.0;
+    const double heading =
+        sample && sample->heading_deg
+            ? *sample->heading_deg
+            : (fpv_camera.pose ? fpv_camera.pose->heading_rad * 180.0 / 3.1415926535 : 0.0);
+    std::snprintf(left, sizeof(left), "SPD %.1f m/s\nALT %.0f m", speed, alt);
+    std::snprintf(right_text,
+                  sizeof(right_text),
+                  "HDG %03.0f\n%s",
+                  std::fmod(heading + 360.0, 360.0),
+                  fpv_camera.status.c_str());
+    draw->AddText(ImVec2(24.0F, static_cast<float>(framebuffer_height) - 68.0F), hud, left);
+    const ImVec2 text_size = ImGui::CalcTextSize(right_text);
+    draw->AddText(ImVec2(static_cast<float>(framebuffer_width) - text_size.x - 24.0F,
+                         static_cast<float>(framebuffer_height) - 68.0F),
+                  muted,
+                  right_text);
+}
+
 void render_frame(const animus::render_core::GlfwWindow &window,
                   const animus::render_core::ShaderProgram &program,
                   const animus::render_core::ShaderProgram &overlay_program,
@@ -3212,6 +3339,8 @@ void render_frame(const animus::render_core::GlfwWindow &window,
                   const Mat4 &selected_model_matrix,
                   const Camera &camera,
                   const Map2DCamera &map_camera,
+                  const animus::app::FpvPose *fpv_pose,
+                  const float fpv_fov_deg,
                   animus::app::ViewMode view_mode,
                   float height_scale,
                   bool state_colors,
@@ -3223,8 +3352,13 @@ void render_frame(const animus::render_core::GlfwWindow &window,
     glClearColor(0.11F, 0.15F, 0.17F, 1.0F);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    const Mat4 mvp = active_view_projection(
-        camera, map_camera, view_mode, framebuffer_width, framebuffer_height);
+    const Mat4 mvp = active_view_projection(camera,
+                                            map_camera,
+                                            view_mode,
+                                            framebuffer_width,
+                                            framebuffer_height,
+                                            fpv_pose,
+                                            fpv_fov_deg);
     const bool map_mode = view_mode == animus::app::ViewMode::Map2D;
     if (map_mode)
     {
@@ -3261,7 +3395,7 @@ void render_frame(const animus::render_core::GlfwWindow &window,
         tile.mesh.draw();
     }
 
-    if (selected_model != nullptr && !map_mode)
+    if (selected_model != nullptr && !map_mode && view_mode != animus::app::ViewMode::Fpv)
     {
         model_program.use();
         glUniformMatrix4fv(glGetUniformLocation(model_program.id(), "view_projection"),
@@ -3450,6 +3584,7 @@ int run(Options options)
     ScreenshotToolState screenshot_tool;
     Mp4RecorderState mp4_recorder;
     UiState ui_state;
+    animus::app::FpvCameraState fpv_camera;
     PlanVisualizationState plan_state;
     MapToolState map_tools;
     std::optional<MapToolPoint> map_context_point;
@@ -3580,6 +3715,7 @@ int run(Options options)
         const bool camera_target_panned = update_camera(window.native_handle(),
                                                         input,
                                                         ui_state.view_mode,
+                                                        ui_state.fpv,
                                                         camera_mouse_enabled,
                                                         camera_keyboard_enabled);
         if (camera_target_panned)
@@ -3678,7 +3814,11 @@ int run(Options options)
 
         if (ui_state.request_home_view)
         {
-            if (ui_state.view_mode == animus::app::ViewMode::Map2D)
+            if (ui_state.view_mode == animus::app::ViewMode::Fpv)
+            {
+                animus::app::reset_fpv_settings(ui_state.fpv);
+            }
+            else if (ui_state.view_mode == animus::app::ViewMode::Map2D)
             {
                 input.map_camera = Map2DCamera{};
             }
@@ -3692,7 +3832,14 @@ int run(Options options)
         if (ui_state.zoom_steps != 0)
         {
             const float zoom = std::pow(0.82F, static_cast<float>(ui_state.zoom_steps));
-            if (ui_state.view_mode == animus::app::ViewMode::Map2D)
+            if (ui_state.view_mode == animus::app::ViewMode::Fpv)
+            {
+                ui_state.fpv.fov_deg = std::clamp(
+                    ui_state.fpv.fov_deg - static_cast<float>(ui_state.zoom_steps) * 3.0F,
+                    35.0F,
+                    110.0F);
+            }
+            else if (ui_state.view_mode == animus::app::ViewMode::Map2D)
             {
                 input.map_camera.distance =
                     std::clamp(input.map_camera.distance * zoom, 0.35F, 80.0F);
@@ -3702,6 +3849,44 @@ int run(Options options)
                 input.camera.distance = std::clamp(input.camera.distance * zoom, 0.45F, 40.0F);
             }
             ui_state.zoom_steps = 0;
+        }
+        ui_state.fpv = animus::app::clamped_fpv_settings(ui_state.fpv);
+
+        const std::optional<animus::telemetry_core::TelemetrySample> fpv_sample =
+            ui_state.telemetry_entity_selected
+                ? telemetry.timeline.sample_at(telemetry.selected_entity, telemetry.clock.time_s())
+                : std::optional<animus::telemetry_core::TelemetrySample>{};
+        std::optional<Vec3> fpv_world_position;
+        if (fpv_sample && telemetry_sample_placeable(*fpv_sample))
+        {
+            bool terrain_unavailable = false;
+            bool unknown_datum = false;
+            bool geoid_unavailable = false;
+            fpv_world_position = telemetry_world_position(options,
+                                                          tiles,
+                                                          geoid_grid,
+                                                          *fpv_sample,
+                                                          terrain_unavailable,
+                                                          unknown_datum,
+                                                          geoid_unavailable);
+        }
+        animus::app::update_fpv_camera_from_world(
+            fpv_camera,
+            fpv_sample,
+            fpv_world_position,
+            ui_state.fpv,
+            {options.z, options.center_x, options.center_y, options.height_scale},
+            stats.last_frame_seconds());
+        ui_state.fpv_status = fpv_camera.status;
+        if (ui_state.telemetry_entity_selected)
+        {
+            ui_state.fpv_selected_label = std::to_string(telemetry.selected_entity.system_id) +
+                                          ":" +
+                                          std::to_string(telemetry.selected_entity.component_id);
+        }
+        else
+        {
+            ui_state.fpv_selected_label = "none";
         }
 
         if (ui_state.request_fit_all_entities && telemetry.loaded)
@@ -3776,13 +3961,19 @@ int run(Options options)
             }
         }
 
-        const float active_distance = ui_state.view_mode == animus::app::ViewMode::Map2D
-                                          ? input.map_camera.distance
-                                          : input.camera.distance;
+        const float active_distance =
+            ui_state.view_mode == animus::app::ViewMode::Fpv
+                ? 5.0F
+                : (ui_state.view_mode == animus::app::ViewMode::Map2D ? input.map_camera.distance
+                                                                      : input.camera.distance);
         const int selected_zoom = animus::terrain_core::select_zoom_for_distance(
             active_distance, options.min_z, options.max_z);
-        const auto view = active_terrain_viewpoint(
-            options, input.camera, input.map_camera, ui_state.view_mode, selected_zoom);
+        const auto view = active_terrain_viewpoint(options,
+                                                   input.camera,
+                                                   input.map_camera,
+                                                   ui_state.view_mode,
+                                                   selected_zoom,
+                                                   fpv_camera.pose ? &*fpv_camera.pose : nullptr);
         desired_tiles =
             animus::terrain_core::build_tile_wishlist(view, selected_zoom, options.tile_budget);
         const std::vector<TileCoord> requested_tiles =
@@ -3984,24 +4175,27 @@ int run(Options options)
                      selected_model_matrix_value,
                      input.camera,
                      input.map_camera,
+                     fpv_camera.pose ? &*fpv_camera.pose : nullptr,
+                     ui_state.fpv.fov_deg,
                      ui_state.view_mode,
                      options.height_scale,
                      state_colors,
                      debug_layer != nullptr && highlight_fallback);
         if (debug_layer != nullptr)
         {
-            const TelemetryOverlayDrawStats overlay_stats =
-                draw_telemetry_overlay(options,
-                                       tiles,
-                                       geoid_grid,
-                                       telemetry,
-                                       vehicle_render,
-                                       ui_state,
-                                       input.camera,
-                                       input.map_camera,
-                                       window.framebuffer_width(),
-                                       window.framebuffer_height(),
-                                       selected_model != nullptr);
+            const TelemetryOverlayDrawStats overlay_stats = draw_telemetry_overlay(
+                options,
+                tiles,
+                geoid_grid,
+                telemetry,
+                vehicle_render,
+                ui_state,
+                input.camera,
+                input.map_camera,
+                fpv_camera.pose ? &*fpv_camera.pose : nullptr,
+                window.framebuffer_width(),
+                window.framebuffer_height(),
+                selected_model != nullptr && ui_state.view_mode != animus::app::ViewMode::Fpv);
             telemetry.live_overlay_draw_ms = overlay_stats.draw_ms;
             telemetry.live_rendered_trail_points = overlay_stats.rendered_trail_points;
             draw_plan_overlay(options,
@@ -4011,6 +4205,8 @@ int run(Options options)
                               input.camera,
                               input.map_camera,
                               ui_state.view_mode,
+                              fpv_camera.pose ? &*fpv_camera.pose : nullptr,
+                              ui_state.fpv.fov_deg,
                               window.framebuffer_width(),
                               window.framebuffer_height());
             if (ui_state.view_mode == animus::app::ViewMode::Map2D)
@@ -4026,8 +4222,15 @@ int run(Options options)
                                    input.camera,
                                    input.map_camera,
                                    ui_state.view_mode,
+                                   fpv_camera.pose ? &*fpv_camera.pose : nullptr,
+                                   ui_state.fpv.fov_deg,
                                    window.framebuffer_width(),
                                    window.framebuffer_height());
+            draw_fpv_hud(fpv_camera,
+                         ui_state,
+                         fpv_sample,
+                         window.framebuffer_width(),
+                         window.framebuffer_height());
             if (map_context_point)
             {
                 draw_map_tool_popup(map_tools,

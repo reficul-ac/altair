@@ -75,6 +75,16 @@ struct AppConfigStatusThresholds
     bool operator==(const AppConfigStatusThresholds &) const = default;
 };
 
+struct FpvSettings
+{
+    float fov_deg = 72.0F;
+    float forward_offset_m = 0.7F;
+    float height_offset_m = 0.25F;
+    float smoothing_s = 0.25F;
+
+    bool operator==(const FpvSettings &) const = default;
+};
+
 struct AppWindowRect
 {
     float x = 0.0F;
@@ -120,6 +130,7 @@ struct AppConfig
     int window_width = 1280;
     int window_height = 720;
     std::string view_mode = "terrain3d";
+    FpvSettings fpv;
     bool follow_selected = false;
     std::string map_orientation = "north_up";
     bool telemetry_tracks_visible = true;

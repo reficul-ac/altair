@@ -35,6 +35,10 @@ TEST(AnimusAppConfig, DefaultsAreVersioned)
     EXPECT_EQ(config.version, 1);
     EXPECT_EQ(config.workspace_mode, "fly_test");
     EXPECT_EQ(config.view_mode, "terrain3d");
+    EXPECT_FLOAT_EQ(config.fpv.fov_deg, 72.0F);
+    EXPECT_FLOAT_EQ(config.fpv.forward_offset_m, 0.7F);
+    EXPECT_FLOAT_EQ(config.fpv.height_offset_m, 0.25F);
+    EXPECT_FLOAT_EQ(config.fpv.smoothing_s, 0.25F);
     EXPECT_EQ(config.telemetry_live_udp_port, 14550U);
     EXPECT_EQ(config.plots.plots.size(), 5U);
     EXPECT_TRUE(config.layers.vehicle_icons_visible);
@@ -61,6 +65,10 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     config.workspace_mode = "developer";
     config.active_panel = "settings";
     config.view_mode = "map2d";
+    config.fpv.fov_deg = 91.0F;
+    config.fpv.forward_offset_m = 1.1F;
+    config.fpv.height_offset_m = 0.3F;
+    config.fpv.smoothing_s = 0.5F;
     config.follow_selected = true;
     config.map_orientation = "track_up";
     config.overlay_enabled = false;
@@ -117,6 +125,10 @@ TEST(AnimusAppConfig, SavesAndLoadsRoundTrip)
     EXPECT_EQ(load.config.workspace_mode, "developer");
     EXPECT_EQ(load.config.active_panel, "settings");
     EXPECT_EQ(load.config.view_mode, "map2d");
+    EXPECT_FLOAT_EQ(load.config.fpv.fov_deg, 91.0F);
+    EXPECT_FLOAT_EQ(load.config.fpv.forward_offset_m, 1.1F);
+    EXPECT_FLOAT_EQ(load.config.fpv.height_offset_m, 0.3F);
+    EXPECT_FLOAT_EQ(load.config.fpv.smoothing_s, 0.5F);
     EXPECT_TRUE(load.config.follow_selected);
     EXPECT_EQ(load.config.map_orientation, "track_up");
     EXPECT_FALSE(load.config.overlay_enabled);

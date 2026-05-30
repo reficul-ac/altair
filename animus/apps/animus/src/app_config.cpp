@@ -906,11 +906,29 @@ AppConfigLoadResult load_app_config_file(const std::filesystem::path &path)
     read_positive_int(window, "height", result.config.window_height, result.diagnostics);
 
     const YAML::Node view = root["view"];
-    warn_unknown_keys(
-        view, {"mode", "follow_selected", "map_orientation"}, "view.", result.diagnostics);
+    warn_unknown_keys(view,
+                      {"mode",
+                       "follow_selected",
+                       "map_orientation",
+                       "fpv_fov_deg",
+                       "fpv_forward_offset_m",
+                       "fpv_height_offset_m",
+                       "fpv_smoothing_s"},
+                      "view.",
+                      result.diagnostics);
     read_value(view, "mode", result.config.view_mode, result.diagnostics);
     read_value(view, "follow_selected", result.config.follow_selected, result.diagnostics);
     read_value(view, "map_orientation", result.config.map_orientation, result.diagnostics);
+    read_value(view, "fpv_fov_deg", result.config.fpv.fov_deg, result.diagnostics);
+    read_value(
+        view, "fpv_forward_offset_m", result.config.fpv.forward_offset_m, result.diagnostics);
+    read_value(view, "fpv_height_offset_m", result.config.fpv.height_offset_m, result.diagnostics);
+    read_value(view, "fpv_smoothing_s", result.config.fpv.smoothing_s, result.diagnostics);
+    result.config.fpv.fov_deg = std::clamp(result.config.fpv.fov_deg, 35.0F, 110.0F);
+    result.config.fpv.forward_offset_m =
+        std::clamp(result.config.fpv.forward_offset_m, -1.0F, 3.0F);
+    result.config.fpv.height_offset_m = std::clamp(result.config.fpv.height_offset_m, -1.0F, 3.0F);
+    result.config.fpv.smoothing_s = std::clamp(result.config.fpv.smoothing_s, 0.0F, 2.0F);
 
     const YAML::Node panels = root["panels"];
     warn_unknown_keys(panels,
@@ -1170,6 +1188,14 @@ AppConfigSaveResult save_app_config_file(const std::filesystem::path &path, cons
     write_string(out, "mode", config.view_mode);
     out << YAML::Key << "follow_selected" << YAML::Value << config.follow_selected;
     write_string(out, "map_orientation", config.map_orientation);
+    out << YAML::Key << "fpv_fov_deg" << YAML::Value
+        << std::clamp(config.fpv.fov_deg, 35.0F, 110.0F);
+    out << YAML::Key << "fpv_forward_offset_m" << YAML::Value
+        << std::clamp(config.fpv.forward_offset_m, -1.0F, 3.0F);
+    out << YAML::Key << "fpv_height_offset_m" << YAML::Value
+        << std::clamp(config.fpv.height_offset_m, -1.0F, 3.0F);
+    out << YAML::Key << "fpv_smoothing_s" << YAML::Value
+        << std::clamp(config.fpv.smoothing_s, 0.0F, 2.0F);
     out << YAML::EndMap;
     out << YAML::Key << "panels" << YAML::Value << YAML::BeginMap;
     write_string(out, "active", config.active_panel);

@@ -7,6 +7,7 @@ add_executable(
     src/main.cpp
     src/animus_app.cpp
     src/capture.cpp
+    src/fpv_camera.cpp
     src/forward_clearance.cpp
     src/ghost_replay.cpp
     src/layer_offline.cpp

@@ -1,6 +1,8 @@
 #include "options.hpp"
+#include "fpv_camera.hpp"
 #include "layer_offline.hpp"
 
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -68,6 +70,9 @@ TEST(AnimusOptions, ParsesViewMode)
     const auto options = parse({"animus", "--view-mode", "map2d"});
 
     EXPECT_EQ(options.view_mode, animus::app::ViewMode::Map2D);
+
+    const auto fpv = parse({"animus", "--view-mode", "fpv"});
+    EXPECT_EQ(fpv.view_mode, animus::app::ViewMode::Fpv);
 }
 
 TEST(AnimusOptions, ParsesPlanPath)
@@ -196,20 +201,134 @@ TEST(AnimusOptions, LoadsAndSavesViewMode)
         std::filesystem::temp_directory_path() / "animus_options_view_mode_test.yaml";
     {
         std::ofstream output(path);
-        output << "version: 1\nview:\n  mode: map2d\n";
+        output << "version: 1\nview:\n  mode: fpv\n"
+                  "  fpv_fov_deg: 88\n"
+                  "  fpv_forward_offset_m: 1.2\n"
+                  "  fpv_height_offset_m: 0.4\n"
+                  "  fpv_smoothing_s: 0.6\n";
     }
 
     auto options = parse({"animus", "--config", path.string().c_str()});
-    EXPECT_EQ(options.view_mode, animus::app::ViewMode::Map2D);
+    EXPECT_EQ(options.view_mode, animus::app::ViewMode::Fpv);
+    EXPECT_FLOAT_EQ(options.fpv.fov_deg, 88.0F);
+    EXPECT_FLOAT_EQ(options.fpv.forward_offset_m, 1.2F);
+    EXPECT_FLOAT_EQ(options.fpv.height_offset_m, 0.4F);
+    EXPECT_FLOAT_EQ(options.fpv.smoothing_s, 0.6F);
 
     options.view_mode = animus::app::ViewMode::Terrain3D;
+    options.fpv.fov_deg = 65.0F;
+    options.fpv.forward_offset_m = 0.9F;
+    options.fpv.height_offset_m = 0.1F;
+    options.fpv.smoothing_s = 0.0F;
     const auto save = animus::app::save_app_config(options);
     EXPECT_TRUE(save.saved);
 
     const auto restored = parse({"animus", "--config", path.string().c_str()});
     EXPECT_EQ(restored.view_mode, animus::app::ViewMode::Terrain3D);
+    EXPECT_FLOAT_EQ(restored.fpv.fov_deg, 65.0F);
+    EXPECT_FLOAT_EQ(restored.fpv.forward_offset_m, 0.9F);
+    EXPECT_FLOAT_EQ(restored.fpv.height_offset_m, 0.1F);
+    EXPECT_FLOAT_EQ(restored.fpv.smoothing_s, 0.0F);
 
     std::filesystem::remove(path);
+}
+
+TEST(AnimusFpvCamera, BuildsPoseFromHeadingAndYawFallback)
+{
+    animus::telemetry_core::TelemetrySample sample;
+    sample.fields.position = true;
+    sample.lat_deg = 0.0;
+    sample.lon_deg = 0.0;
+    sample.altitude_msl_m = 100.0;
+    sample.heading_deg = 90.0;
+
+    const auto pose = animus::app::build_fpv_pose(sample, {}, {12, 2048, 2048, 0.01F});
+    ASSERT_TRUE(pose);
+    EXPECT_GT(pose->forward.x, 0.99F);
+    EXPECT_NEAR(pose->forward.z, 0.0F, 0.01F);
+
+    sample.heading_deg.reset();
+    sample.yaw_rad = 3.14159265358979323846 / 2.0;
+    const auto yaw_pose = animus::app::build_fpv_pose(sample, {}, {12, 2048, 2048, 0.01F});
+    ASSERT_TRUE(yaw_pose);
+    EXPECT_GT(yaw_pose->forward.x, 0.99F);
+}
+
+TEST(AnimusFpvCamera, DefaultsMissingPitchRollAndRollTiltsUpVector)
+{
+    animus::telemetry_core::TelemetrySample sample;
+    sample.fields.position = true;
+    sample.lat_deg = 0.0;
+    sample.lon_deg = 0.0;
+    sample.yaw_rad = 0.0;
+
+    const auto level = animus::app::build_fpv_pose(sample, {}, {12, 2048, 2048, 0.01F});
+    ASSERT_TRUE(level);
+    EXPECT_NEAR(level->up.x, 0.0F, 0.001F);
+    EXPECT_GT(level->up.y, 0.99F);
+
+    sample.roll_rad = 0.5;
+    const auto rolled = animus::app::build_fpv_pose(sample, {}, {12, 2048, 2048, 0.01F});
+    ASSERT_TRUE(rolled);
+    EXPECT_GT(std::abs(rolled->up.x), 0.001F);
+}
+
+TEST(AnimusFpvCamera, ClampsOffsetsAndSmoothingHolds)
+{
+    animus::app::FpvSettings settings;
+    settings.fov_deg = 5.0F;
+    settings.forward_offset_m = 9.0F;
+    settings.height_offset_m = -9.0F;
+    settings.smoothing_s = 9.0F;
+    const auto clamped = animus::app::clamped_fpv_settings(settings);
+    EXPECT_FLOAT_EQ(clamped.fov_deg, 35.0F);
+    EXPECT_FLOAT_EQ(clamped.forward_offset_m, 3.0F);
+    EXPECT_FLOAT_EQ(clamped.height_offset_m, -1.0F);
+    EXPECT_FLOAT_EQ(clamped.smoothing_s, 2.0F);
+
+    animus::telemetry_core::TelemetrySample sample;
+    sample.fields.position = true;
+    sample.lat_deg = 0.0;
+    sample.lon_deg = 0.0;
+    sample.heading_deg = 0.0;
+
+    animus::app::FpvCameraState state;
+    animus::app::update_fpv_camera(state, sample, {}, {12, 2048, 2048, 0.01F}, 0.0);
+    EXPECT_EQ(state.status, "live");
+    const float first_z = state.pose->eye.z;
+    animus::app::update_fpv_camera(state, std::nullopt, {}, {12, 2048, 2048, 0.01F}, 1.0);
+    EXPECT_EQ(state.status, "held");
+    EXPECT_FLOAT_EQ(state.pose->eye.z, first_z);
+
+    sample.lon_deg = 0.01;
+    settings = {};
+    settings.smoothing_s = 1.0F;
+    animus::app::update_fpv_camera(state, sample, settings, {12, 2048, 2048, 0.01F}, 0.1);
+    EXPECT_EQ(state.status, "live");
+    EXPECT_GT(state.pose->eye.x, 0.0F);
+}
+
+TEST(AnimusFpvCamera, UsesResolvedWorldHeightForRuntimePose)
+{
+    animus::telemetry_core::TelemetrySample sample;
+    sample.fields.position = true;
+    sample.lat_deg = 39.0;
+    sample.lon_deg = -120.0;
+    sample.altitude_msl_m = 100.0;
+    sample.altitude_relative_m = 20.0;
+    sample.heading_deg = 0.0;
+
+    animus::app::FpvSettings settings;
+    settings.forward_offset_m = 0.0F;
+    settings.height_offset_m = 0.0F;
+    const animus::app::Vec3 resolved_world{1.0F, 3.5F, 2.0F};
+    const auto pose =
+        animus::app::build_fpv_pose_from_world(sample, resolved_world, settings, {12, 0, 0, 0.01F});
+
+    ASSERT_TRUE(pose);
+    EXPECT_FLOAT_EQ(pose->eye.x, resolved_world.x);
+    EXPECT_FLOAT_EQ(pose->eye.y, resolved_world.y);
+    EXPECT_FLOAT_EQ(pose->eye.z, resolved_world.z);
 }
 
 TEST(AnimusOptions, LoadsAndSavesStatusThresholds)

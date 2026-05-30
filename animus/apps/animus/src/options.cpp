@@ -127,7 +127,11 @@ ViewMode parse_view_mode(std::string_view value)
     {
         return ViewMode::Oblique25D;
     }
-    throw std::invalid_argument("view mode must be terrain3d, map2d, or oblique25d");
+    if (value == "fpv")
+    {
+        return ViewMode::Fpv;
+    }
+    throw std::invalid_argument("view mode must be terrain3d, map2d, oblique25d, or fpv");
 }
 
 const char *workspace_mode_config_value(const WorkspaceMode mode)
@@ -160,6 +164,8 @@ const char *view_mode_config_value(const ViewMode mode)
         return "map2d";
     case ViewMode::Oblique25D:
         return "oblique25d";
+    case ViewMode::Fpv:
+        return "fpv";
     }
     return "terrain3d";
 }
@@ -204,7 +210,7 @@ bool valid_workspace(std::string_view value)
 
 bool valid_view_mode(std::string_view value)
 {
-    return value == "terrain3d" || value == "map2d";
+    return value == "terrain3d" || value == "map2d" || value == "fpv";
 }
 
 bool valid_active_panel(std::string_view value)
@@ -585,7 +591,7 @@ Options parse_options(int argc, char **argv)
                 << "                   [--capture-sequence-dir DIR]\n"
                 << "                   [--capture-sequence-fps FPS]\n"
                 << "                   [--debug-overlay] [--developer-workspace]\n"
-                << "                   [--view-mode terrain3d|map2d]\n"
+                << "                   [--view-mode terrain3d|map2d|fpv]\n"
                 << "                   [--no-debug-overlay]\n"
                 << "                   [--min-z N] [--max-z N] [--tile-budget N]\n"
                 << "                   [--cache-root PATH] [--elevation-geotiff PATH]\n"
@@ -670,6 +676,7 @@ void apply_app_config_to_options(Options &options, const AppConfig &config)
 
     options.width = config.window_width;
     options.height = config.window_height;
+    options.fpv = config.fpv;
     options.follow_selected_entity = config.follow_selected;
     options.telemetry_tracks_visible = config.telemetry_tracks_visible;
     options.telemetry_labels_visible = config.telemetry_labels_visible;
@@ -721,6 +728,7 @@ AppConfig app_config_from_options(const Options &options)
     config.window_width = options.width;
     config.window_height = options.height;
     config.view_mode = view_mode_config_value(options.view_mode);
+    config.fpv = options.fpv;
     config.follow_selected = options.follow_selected_entity;
     config.map_orientation = options.map_orientation;
     config.telemetry_tracks_visible = options.telemetry_tracks_visible;
